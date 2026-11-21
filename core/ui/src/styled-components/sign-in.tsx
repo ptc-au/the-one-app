@@ -3,6 +3,7 @@
 import { children, createSignal, Show } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Image, Text, View } from "#primitives"
+import { copy } from "#bridge"
 import { Button, Icon, Spinner } from "./button.tsx"
 import { styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
@@ -43,7 +44,8 @@ const look = styles({
 /// `<SignIn mark={logo} heading="Sign in" button="Sign in" onSignIn={passkey} />`: the one screen someone signs in on,
 /// wherever it's shown: the `mark` of whose it is (a picture's address, or what draws one), a `heading` and one
 /// `button`. `onSignIn` asks them, and what it throws is shown above the button to try again, as a `problem` given
-/// is. A `code` is shown big, under a grey `note` that says what to do with it. A `warning` says who will act as them
+/// is. A `code` is shown big, under a grey `note` that says what to do with it, with Copy, as a phone's finger can't
+/// select words drawn on the web's canvas. A `warning` says who will act as them
 /// if they do, and stays until they have. `stop` is a second button, for saying no, which `onStop` does. `done` is
 /// the one line that's left once they've answered. `status` is what's under way while there's nothing to press yet, a
 /// spinner and one line where the buttons go; with `quiet` the button is one of two ways on while it's under way, an
@@ -69,6 +71,7 @@ export function SignIn(props: {
 }) {
   const [working, setWorking] = createSignal<"sign-in" | "stop">()
   const [problem, setProblem] = createSignal<string>()
+  const [copied, setCopied] = createSignal(false)
   // What else it asks, made once, and nothing where each part of it is left out (`{asks && <Field>…}`).
   const asked = children(() => props.children)
 
@@ -114,6 +117,9 @@ export function SignIn(props: {
           <View style={look.part}>
             <Text style={look.grey}>{props.note}</Text>
             <Text style={look.shown}>{props.code}</Text>
+            <Button variant="ghost" onPress={() => copy(String(props.code)).then(() => setCopied(true))}>
+              {copied() ? "Copied" : "Copy"}
+            </Button>
           </View>
         </Show>
         <Show when={props.warning}>

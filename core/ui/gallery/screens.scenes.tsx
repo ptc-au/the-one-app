@@ -135,4 +135,17 @@ export default {
       </View>
     ),
   },
+  // A code to compare elsewhere, which a finger can copy: words drawn on the web's canvas can't be selected by one.
+  "Screens/Sign-in with a code": {
+    alone: true,
+    layout: "fullscreen",
+    touch: true,
+    safeArea: [47, 0, 34, 0],
+    render: () => (
+      <View style={look.phone}>
+        <SignIn heading="Add a passkey" note="Your passkey is created. To let it unlock your key, open the One App on Andre's MacBook Air and tap Allow beside this code." code="63038 96957 95028 61504" />
+      </View>
+    ),
+    checks: { "Copy copies it, and says so": [{ expect: { shown: { role: "button", name: "Copy" } } }, { press: { role: "button", name: "Copy" } }, { expect: { text: "Copied" } }] },
+  },
 } satisfies Scenes
