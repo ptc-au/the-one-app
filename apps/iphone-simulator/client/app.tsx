@@ -87,10 +87,10 @@ function Detail(props: { simulator: Simulator }) {
           <Status heading="Removing…" />
         </Match>
         <Match when={e().state === "gone"}>
-          <Problem warn heading="Gone from Xcode" text="It was deleted outside the One App." action={<Button variant="outline" loading={busy()} onPress={() => act("remove")}>Remove</Button>} />
+          <Problem warn heading="Gone from Xcode" text="It was deleted outside the One App." action={<Button loading={busy()} onPress={() => act("remove")}>Remove</Button>} />
         </Match>
         <Match when={e().why}>
-          <Problem heading={`Couldn't start ${e().name}`} text={e().why} action={<Button variant="outline" loading={busy()} onPress={() => act("start")}>Try Again</Button>} />
+          <Problem heading={`Couldn't start ${e().name}`} text={e().why} action={<Button loading={busy()} onPress={() => act("start")}>Try Again</Button>} />
         </Match>
         <Match when={e().state === "stopped"}>
           <Empty action={<Button loading={busy()} onPress={() => act("start")}>Start</Button>}>Stopped.</Empty>
@@ -105,7 +105,7 @@ function App() {
   changed(() => refresh(simulators))
   const opened = () => simulators().find((e) => e.name === open())
   return (
-    <Errored fallback={(error, reset) => <Problem heading="Couldn't list your simulators" text={error() as Error} action={<Button variant="outline" onPress={reset}>Try Again</Button>} />}>
+    <Errored fallback={(error, reset) => <Problem heading="Couldn't list your simulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} />}>
       <Loading fallback={<Skeleton rows={3} />}>
         <Split open={!!opened()} onClose={() => setOpen()} pick="Pick a simulator to use it." detail={<Show when={opened()}><Detail simulator={opened()!} /></Show>}>
           <Screen heading="iPhone Simulator">

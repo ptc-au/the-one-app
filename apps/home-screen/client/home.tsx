@@ -101,7 +101,7 @@ function Broken(props: { error: Error }) {
       <Problem
         heading="Home Screen didn't open."
         text={new Error(`Try again in a moment.\n\n${typeof props.error?.cause === "string" ? props.error.cause : (props.error?.message ?? props.error)}`)}
-        action={<Button variant="secondary" onPress={() => refresh(owners)}>Try Again</Button>}
+        action={<Button onPress={() => refresh(owners)}>Try Again</Button>}
       />
     </View>
   )
@@ -118,7 +118,7 @@ function Waiting() {
   return (
     <View style={[looks.broken, looks.tall(viewport().height)]}>
       <Show when={waited() >= 10} fallback={<Show when={waited() >= 1}><Status heading="Opening your Home Screen…" /></Show>}>
-        <Problem heading="Home Screen didn't open." text={said()} action={<Button variant="secondary" onPress={() => (setWaited(0), refresh(owners))}>Try Again</Button>} />
+        <Problem heading="Home Screen didn't open." text={said()} action={<Button onPress={() => (setWaited(0), refresh(owners))}>Try Again</Button>} />
       </Show>
     </View>
   )

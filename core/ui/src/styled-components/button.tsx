@@ -179,6 +179,9 @@ export interface ButtonProps {
  * Back does at the bar's start. */
 export const BarEnd = createContext(false)
 
+/** Whether it's a `Problem`'s action, which every one draws as `outline`, so a problem looks the same wherever it's shown. */
+export const InProblem = createContext(false)
+
 /// `<Button onPress={save}>Save</Button>`: something to press. `variant` says how much it matters: one `default`
 /// to a view, then `secondary`, `outline` and `ghost`, and `destructive` for what can't be undone. `size="icon"`
 /// is square, for an icon alone (`<Icon name="plus" />`), named by `aria-label`. `shape="capsule"` rounds its ends
@@ -199,10 +202,16 @@ export function Button(props: ButtonProps) {
   // What it says, made once: words in a text, or what it's given (an icon) as it is.
   const inside = children(() => props.children)
   const end = useContext(BarEnd)
+  const alerted = useContext(InProblem)
+  const variant = () => (alerted ? "outline" : props.variant)
+  const shown = () => {
+    const which = variant()
+    return which && which !== "default" ? look[which] : undefined
+  }
   // In a computer's screen's bar, it's one of the screen's actions, in its footer and its action panel, and draws
   // nothing there itself.
   const words = () => inside.toArray().filter((part) => typeof part === "string").join(" ") || props["aria-label"] || ""
-  if (collected(() => ({ label: words(), onAction: () => props.onPress?.(undefined as never), destructive: props.variant === "destructive", disabled: button.off() }))) return null
+  if (collected(() => ({ label: words(), onAction: () => props.onPress?.(undefined as never), destructive: variant() === "destructive", disabled: button.off() }))) return null
   return (
     <Pressable
       {...button.root()}
@@ -211,7 +220,7 @@ export function Button(props: ButtonProps) {
       aria-expanded={props["aria-expanded"]}
       autoFocus={props.autoFocus}
       onLayout={props.onLayout}
-      style={[look.button, props.variant && props.variant !== "default" && look[props.variant], props.size === "icon" && look.square, props.shape === "capsule" && look.capsule, end && props.variant === "ghost" && props.size === "icon" && look.pulled, button.off() && look.disabled, props["aria-expanded"] === "true" && (props.variant === "outline" || props.variant === "ghost") && look.open, props.style]}
+      style={[look.button, shown(), props.size === "icon" && look.square, props.shape === "capsule" && look.capsule, end && variant() === "ghost" && props.size === "icon" && look.pulled, button.off() && look.disabled, props["aria-expanded"] === "true" && (variant() === "outline" || variant() === "ghost") && look.open, props.style]}
     >
       <Show when={props.loading}>
         <Spinner />

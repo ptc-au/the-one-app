@@ -5,7 +5,7 @@ import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
 import { copy, touch } from "#bridge"
 import { ListStyle } from "./list.tsx"
-import { Button, Icon, Spinner } from "./button.tsx"
+import { Button, Icon, InProblem, Spinner } from "./button.tsx"
 import { Blank, Middle } from "./screen.tsx"
 import { messages, readable, whole } from "../words.ts"
 import { styles } from "../styles.ts"
@@ -159,7 +159,7 @@ export function Skeleton(props: { rows?: number }) {
 
 /// `<Problem heading="Couldn't load notes" text="The server didn't answer." action={<Button>Try again</Button>} />`:
 /// a problem, shown on the thing it's about: a symbol, a short `heading`, one sentence of `text`, and the action
-/// that fixes it. Red, for what needs the user now; `warn` for what can wait. It's what `<Errored fallback>` shows.
+/// that fixes it, a button drawn `outline` whatever it's given. Red, for what needs the user now; `warn` for what can wait. It's what `<Errored fallback>` shows.
 /// A `text` that's an error, as `call` throws it (`<Errored fallback={(error) => <Problem text={error()} />}>`), or a
 /// tool's error as text, shows what a person reads of it (`readable`), and the rest under Show Details, to copy for an
 /// agent or for support.
@@ -191,7 +191,9 @@ export function Problem(props: { heading: JSX.Element; text?: JSX.Element | Erro
           </Show>
         </View>
         <Show when={props.action}>
-          <View style={look.actions}>{props.action}</View>
+          <View style={look.actions}>
+            <InProblem value={true}>{props.action}</InProblem>
+          </View>
         </Show>
       </View>
     </View>

@@ -114,7 +114,7 @@ function App() {
 }
 
 render(() => (
-  <Errored fallback={(error, reset) => <Screen heading="Computer Use"><Problem heading="Couldn't list your screens" text={error() as Error} action={<Button variant="outline" onPress={() => (refresh(screens), reset())}>Try Again</Button>} /></Screen>}>
+  <Errored fallback={(error, reset) => <Screen heading="Computer Use"><Problem heading="Couldn't list your screens" text={error() as Error} action={<Button onPress={() => (refresh(screens), reset())}>Try Again</Button>} /></Screen>}>
     <Loading fallback={<Screen heading="Computer Use"><Skeleton rows={3} /></Screen>}>
       <App />
     </Loading>

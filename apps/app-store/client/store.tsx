@@ -386,7 +386,7 @@ function Failed(props: { all: Owners; owner: Owner; listed: Listed }) {
       <Problem
         heading={heading()}
         text={done()!.state === "not_installed" ? "This can't be installed yet" : "This update can't be installed yet"}
-        action={<Show when={!only(props.all, props.owner)}><Button variant="outline" loading={busy()} onPress={() => retry(props.owner, done()!)}>Try Again</Button></Show>}
+        action={<Show when={!only(props.all, props.owner)}><Button loading={busy()} onPress={() => retry(props.owner, done()!)}>Try Again</Button></Show>}
       />
     </Show>
   )

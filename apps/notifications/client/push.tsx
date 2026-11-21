@@ -56,11 +56,11 @@ export function PushState(props: { push: Push; settings: boolean; again: () => v
           warn
           heading="Notifications are off here"
           text="Turn them on in Settings for this app or site."
-          action={props.settings ? <Button variant="outline" onPress={openSettings}>Open Settings</Button> : undefined}
+          action={props.settings ? <Button onPress={openSettings}>Open Settings</Button> : undefined}
         />
       </Show>
       <Show when={props.push.state === "failed"}>
-        <Problem warn heading="This device isn't woken by notifications" text={"why" in props.push ? props.push.why : undefined} action={<Button variant="outline" onPress={() => tryPush(props.again)}>Try Again</Button>} />
+        <Problem warn heading="This device isn't woken by notifications" text={"why" in props.push ? props.push.why : undefined} action={<Button onPress={() => tryPush(props.again)}>Try Again</Button>} />
       </Show>
     </>
   )

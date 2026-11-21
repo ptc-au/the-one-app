@@ -90,7 +90,7 @@ function Updating(props: { profile: Profile; subject?: string }) {
     <Section heading="Updating">
       <LiveScreen label="The browser" screen={u().state === "ready" ? screen : undefined}>
         <Show when={u().state === "failed"}>
-          <Problem heading="Couldn't start the browser" text={u().why} action={<Button variant="outline" onPress={again}>Try Again</Button>} />
+          <Problem heading="Couldn't start the browser" text={u().why} action={<Button onPress={again}>Try Again</Button>} />
         </Show>
         <Show when={u().state === "starting" || u().state === "opening"}>
           <Steps
@@ -114,7 +114,7 @@ function Updating(props: { profile: Profile; subject?: string }) {
         <Problem
           heading={`Couldn't save ${p().profile}`}
           text={`Everything in its browser is kept, so nothing is lost.\n\n${u().why}`}
-          action={<Button variant="outline" loading={busy() === "save"} disabled={!!busy()} onPress={() => finish("save")}>Try Again</Button>}
+          action={<Button loading={busy() === "save"} disabled={!!busy()} onPress={() => finish("save")}>Try Again</Button>}
         />
       </Show>
       <Show when={u().state !== "failed" && !(u().state === "ready" && u().why)}>

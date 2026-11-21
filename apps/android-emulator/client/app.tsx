@@ -87,7 +87,7 @@ function Detail(props: { emulator: Emulator }) {
           <Status heading="Removing…" />
         </Match>
         <Match when={e().why}>
-          <Problem heading={`Couldn't start ${e().name}`} text={e().why} action={<Button variant="outline" loading={busy()} onPress={() => act("start")}>Try Again</Button>} />
+          <Problem heading={`Couldn't start ${e().name}`} text={e().why} action={<Button loading={busy()} onPress={() => act("start")}>Try Again</Button>} />
         </Match>
         <Match when={e().state === "stopped"}>
           <Empty action={<Button loading={busy()} onPress={() => act("start")}>Start</Button>}>Stopped.</Empty>
@@ -102,7 +102,7 @@ function App() {
   changed(() => refresh(emulators))
   const opened = () => emulators().find((e) => e.name === open())
   return (
-    <Errored fallback={(error, reset) => <Problem heading="Couldn't list your emulators" text={error() as Error} action={<Button variant="outline" onPress={reset}>Try Again</Button>} />}>
+    <Errored fallback={(error, reset) => <Problem heading="Couldn't list your emulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} />}>
       <Loading fallback={<Skeleton rows={3} />}>
         <Split open={!!opened()} onClose={() => setOpen()} pick="Pick an emulator to use it." detail={<Show when={opened()}><Detail emulator={opened()!} /></Show>}>
           <Screen heading="Android Emulator">
