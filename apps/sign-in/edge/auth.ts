@@ -3,10 +3,10 @@
 // invited joins with their Google account as with a passkey, and anyone whose Google Workspace domain the network's
 // owner named (`domains`) joins by signing in. An assistant becomes theirs when they answer that one question
 // for it, and a new device when they also say the code it shows matches the one they're shown, as Better Auth's
-// device authorization has it, or when a device or assistant of theirs lets it in by that code. Each is then a line
-// in this app's own artifact, `devices/<device>`, saying whose it is: that's where a server reads it, so no call
-// asks anything here. What a person goes by is a line there too, `people/<name>`: the name they chose as they
-// joined, and their email where how they signed in has one, which a server tells apps of by `people`.
+// device authorization has it, or when a device or assistant of theirs lets it in by that code. Whose each device is,
+// a server keeps a copy of, which it copies from here (`whose`), so a call asks nothing here. What a person goes by
+// is a line in this app's own artifact, `people/<name>`: the name they chose as they joined, and their email where
+// how they signed in has one, which a server tells apps of by `people`.
 import { env } from "cloudflare:workers";
 import { betterAuth, getCurrentAdapter } from "better-auth";
 import { APIError, createAuthEndpoint, createAuthMiddleware, getAuthoritativeSessionFromCtx, getOAuthState, getSessionFromCtx } from "better-auth/api";
@@ -109,7 +109,7 @@ const FRESH = 5 * 60;
  * How long a browser's session, once checked against the database, is believed without checking again, in seconds:
  * Better Auth's cookie cache, and an app's page's session (`worker.ts`). A session signed out or removed is still
  * let in here that long at most. The servers stop answering it at once, as its device is nobody's from then on
- * (`browserOut`), so all it still reaches is `/apps`, and app files' code.
+ * (`gone`), so all it still reaches is `/apps`, and app files' code.
  */
 export const BELIEVED = 60;
 /** How long an invitation lasts, in milliseconds. */
@@ -200,8 +200,9 @@ export async function keep() {
  * never kept over a newer one. It's a time, in milliseconds, or one more than the last where that's later, so it moves
  * on after a backup that kept an older one is given back (`keep`) too.
  */
-const changed = () =>
-  env.DB.prepare("insert into setting (name, value) values ('devices', ?1) on conflict (name) do update set value = max(cast(value as integer) + 1, ?1)").bind(Date.now()).run();
+async function changed() {
+  await env.DB.prepare("insert into setting (name, value) values ('devices', ?1) on conflict (name) do update set value = max(cast(value as integer) + 1, ?1)").bind(Date.now()).run();
+}
 
 /**
  * Has one of the network's servers copy whose each device is (`whose`), for every server: the server's `copy`, which
@@ -249,7 +250,6 @@ async function place(adapter: Adapter, device: string, kind: Device["kind"], nam
   if (was) await remove(adapter, was);
   await adapter.create({ model: "device", data: { id: device, userId: user.id, kind, name, createdAt: new Date() }, forceAllowId: true });
   await changed();
-  await env.OWN.write(`devices/${device}`, who(user));
 }
 
 /**
@@ -261,23 +261,9 @@ async function goesBy(user: User) {
   await env.OWN.update(`people/${user.name}`, () => JSON.stringify(person));
 }
 
-/** Makes a browser's session one of its person's devices. */
-async function browserIn(session: { id: string; userId: string }) {
-  await changed();
-  const user = await env.DB.prepare("select name from user where id = ?").bind(session.userId).first<{ name: string }>();
-  await env.OWN.write(`devices/${await browserDevice(session.id)}`, who(user!));
-}
-
-/** Makes a browser whose session ended nobody's, on every server. */
-async function browserOut(session: string) {
-  await env.OWN.remove(`devices/${await browserDevice(session)}`);
-  await gone();
-}
-
 /** Makes a device nobody's, on every server. */
 async function remove(adapter: Adapter, device: { id: string }) {
   await adapter.delete({ model: "device", where: [{ field: "id", value: device.id }] });
-  await env.OWN.remove(`devices/${device.id}`);
   await gone();
 }
 
@@ -599,9 +585,9 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
       // A browser that's signed in is one of its person's devices for as long as it is: the web client asks as its
       // session (`worker.ts`).
       session: {
-        create: { after: (session) => browserIn(session) },
+        create: { after: changed },
         // After, as a device is removed (`remove`): what servers copy is what's here.
-        delete: { after: (session) => browserOut(session.id) },
+        delete: { after: gone },
       },
     },
     // Better Auth limits how often an address asks only where NODE_ENV says production, which a Worker's doesn't,
@@ -933,11 +919,9 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   // Someone taken out of the network: nothing acts as them from then on, they sign in nowhere, and their name is free.
   if (ask === "remove_person") {
     for (const device of await adapter.findMany<Device>({ model: "device", where: mine })) await remove(adapter, device);
-    const sessions = await adapter.findMany<{ id: string }>({ model: "session", where: mine });
     for (const model of ["oauthRefreshToken", "oauthAccessToken", "oauthConsent", "session", "passkey", "invite", "account"])
       await adapter.deleteMany({ model, where: mine });
     await adapter.delete({ model: "user", where: [{ field: "id", value: user.id }] });
-    for (const { id } of sessions) await env.OWN.remove(`devices/${await browserDevice(id)}`);
     await gone();
     await env.OWN.remove(`people/${user.name}`);
     return { removed: user.called ?? user.name };
