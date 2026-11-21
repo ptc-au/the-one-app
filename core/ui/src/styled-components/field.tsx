@@ -219,13 +219,15 @@ export function Search(props: Omit<InputProps, "inputMode" | "style">) {
 /** A `Checkbox`'s or a `Switch`'s props. */
 export type ChoiceProps = ToggleProps
 
-/// One thing that's so or not, pressed to change it: its mark, `mark(on, wrong)`, before or after its words. A switch
-/// with a label on a computer, where there's room, is a form's row as a `Field`'s: its label beside, and the switch at
-/// the controls' start with its hint under it, as macOS's two-column preferences draw a control.
+/// One thing that's so or not, pressed to change it: its mark, `mark(on, wrong)`, before or after its words. On a computer,
+/// where there's room, it's a form's row as a `Field`'s, at the controls' start: a switch with its label beside and its
+/// hint under it, a checkbox with its words after its box and the label's column empty, as macOS's two-column
+/// preferences draw a control.
 function Choice(props: ChoiceProps & { role: "checkbox" | "switch"; mark: (on: boolean, wrong: boolean) => JSX.Element }) {
   const toggle = createToggle(props, props.role)
   const room = useContext(Room)
-  const beside = () => props.role === "switch" && !touch() && !!props.label && room() >= BESIDE
+  const beside = () => !touch() && !!props.label && room() >= BESIDE
+  const switched = () => props.role === "switch"
   const halves = () => beside() && room() >= pixels(tokens.length.readable)
   const words = () => (
     <Show when={props.label}>
@@ -240,11 +242,11 @@ function Choice(props: ChoiceProps & { role: "checkbox" | "switch"; mark: (on: b
   const control = () => (
     <>
       <Pressable {...toggle.control()} style={[look.choice, props.disabled && look.off]}>
-        <Show when={props.role === "switch" && !beside()}>{words()}</Show>
+        <Show when={switched() && !beside()}>{words()}</Show>
         {props.mark(toggle.checked(), !!props.error)}
         <Show when={props.role === "checkbox"}>{words()}</Show>
       </Pressable>
-      <Show when={beside() && props.hint}>
+      <Show when={switched() && beside() && props.hint}>
         <Text style={look.message}>{props.hint}</Text>
       </Show>
       <Show when={props.error}>
@@ -255,7 +257,9 @@ function Choice(props: ChoiceProps & { role: "checkbox" | "switch"; mark: (on: b
   return (
     <View style={[look.field, beside() && look.beside]}>
       <Show when={beside()} fallback={control()}>
-        <Text style={[look.label, look.besideLabel, halves() && look.halfLabel, props.disabled && look.dim]}>{props.label}</Text>
+        <Show when={switched()} fallback={<View style={[look.besideLabel, halves() && look.halfLabel]} />}>
+          <Text style={[look.label, look.besideLabel, halves() && look.halfLabel, props.disabled && look.dim]}>{props.label}</Text>
+        </Show>
         <View style={[look.control, halves() && look.halfControl]}>{control()}</View>
       </Show>
     </View>
