@@ -23,6 +23,17 @@ export function since(at: string | number | Date, style: "long" | "narrow" = "lo
 /// ago", never "Seen now". `at` is a time, or milliseconds since 1970.
 export const seen = (at: string | number | Date): string => `Seen ${since(Math.min(new Date(at).getTime(), Date.now() - 60_000))}`
 
+const counted: { numbers?: Intl.NumberFormat; rules?: Intl.PluralRules } = {}
+
+/// `plural(calls, "call")`: a count and its noun, as the language says them: "1 call", "2 calls", "1,200 calls". `other`
+/// is the noun for every count that isn't one, `one` + "s" unless it says: `plural(people, "person", "people")`. The
+/// count is Intl.NumberFormat's and the choice Intl.PluralRules', so a page never writes "1 calls". Use it wherever a count
+/// meets a noun; a scene fails on "1 calls".
+export function plural(count: number, one: string, other = `${one}s`): string {
+  const rules = (counted.rules ??= new Intl.PluralRules())
+  return `${(counted.numbers ??= new Intl.NumberFormat()).format(count)} ${rules.select(count) === "one" ? one : other}`
+}
+
 const units = ["kilobyte", "megabyte", "gigabyte", "terabyte", "petabyte"]
 
 /// `size(file.bytes)`: how big something is, in thousands as Apple's devices count, as Intl.NumberFormat says it:

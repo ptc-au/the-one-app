@@ -3,7 +3,7 @@
 // what's slowest and what AI cost, over the range picked above them, and last what's kept. An alert opens beside the list, saying when it fired and cleared; a failure opens its trace, as a
 // waterfall; a slow tool opens how long it took over time. What's fine is silent: with nothing failing, there's no Failing.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { call, changed, Empty, Icon, List, Problem, render, Row, Screen, Section, since, size, Skeleton, Split, styles, Tabs, Text, tokens, View } from "ui"
+import { call, changed, Empty, Icon, List, plural, Problem, render, Row, Screen, Section, since, size, Skeleton, Split, styles, Tabs, Text, tokens, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -178,7 +178,7 @@ function Calls(props: { steps: Overview["calls"] }) {
   const failed = () => props.steps.reduce((sum, s) => sum + s.failed, 0)
   return (
     <View style={look.calls}>
-      <View role="img" aria-label={`${all()} calls, ${failed()} failed`} style={look.chart}>
+      <View role="img" aria-label={`${plural(all(), "call")}, ${failed()} failed`} style={look.chart}>
         <For each={props.steps}>
           {(step) => (
             <View aria-hidden="true" style={[look.bar(`${(step.calls / max()) * 100}%`), look.callsBar]}>
@@ -212,7 +212,7 @@ function Trace(props: { id: string; names: Record<string, string> }) {
       <Loading fallback={<Skeleton rows={4} />}>
         <Text style={look.readableNote}>
           {took(total())}
-          <Show when={servers() > 1}> across {servers()} servers</Show>
+          <Show when={servers() > 1}> across {plural(servers(), "server")}</Show>
         </Text>
         <View role="list" style={look.spans}>
           <For each={trace().spans}>
@@ -402,7 +402,7 @@ function Telemetry(props: { all: Overview }) {
         </Show>
         <Spending days={all().spending} />
         <Text style={look.readableNote}>
-          {`Kept for ${all().retention.days} days, up to ${size(all().retention.most_bytes)}. ${size(all().retention.bytes)} now.`}
+          {`Kept for ${plural(all().retention.days, "day")}, up to ${size(all().retention.most_bytes)}. ${size(all().retention.bytes)} now.`}
         </Text>
       </Screen>
     </Split>

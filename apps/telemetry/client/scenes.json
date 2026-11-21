@@ -366,7 +366,7 @@
             "kind": "failing",
             "state": "firing",
             "title": "Tool 0 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767224400000,
             "last": 1767224400000
           },
@@ -454,7 +454,7 @@
             "kind": "failing",
             "state": "resolved",
             "title": "Tool 9 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767219000000,
             "last": 1767221700000,
             "ended": 1767222600000
@@ -542,7 +542,7 @@
             "kind": "failing",
             "state": "resolved",
             "title": "Tool 18 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767213600000,
             "last": 1767219000000,
             "ended": 1767220800000
@@ -630,7 +630,7 @@
             "kind": "failing",
             "state": "resolved",
             "title": "Tool 27 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767208200000,
             "last": 1767216300000,
             "ended": 1767219000000
@@ -718,7 +718,7 @@
             "kind": "failing",
             "state": "resolved",
             "title": "Tool 36 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767202800000,
             "last": 1767213600000,
             "ended": 1767217200000
@@ -807,7 +807,7 @@
             "kind": "failing",
             "state": "firing",
             "title": "Tool 45 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767197400000,
             "last": 1767210900000
           },
@@ -895,7 +895,7 @@
             "kind": "failing",
             "state": "resolved",
             "title": "Tool 54 is failing",
-            "text": "1 calls failed in the last hour.",
+            "text": "1 call failed in the last hour.",
             "began": 1767192000000,
             "last": 1767208200000,
             "ended": 1767213600000
@@ -984,7 +984,7 @@
                   "kind": "failing",
                   "state": "firing",
                   "title": "Tool 0 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767224400000,
                   "last": 1767224460000
                 },
@@ -1072,7 +1072,7 @@
                   "kind": "failing",
                   "state": "resolved",
                   "title": "Tool 9 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767219000000,
                   "last": 1767221760000,
                   "ended": 1767222600000
@@ -1160,7 +1160,7 @@
                   "kind": "failing",
                   "state": "resolved",
                   "title": "Tool 18 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767213600000,
                   "last": 1767219060000,
                   "ended": 1767220800000
@@ -1248,7 +1248,7 @@
                   "kind": "failing",
                   "state": "resolved",
                   "title": "Tool 27 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767208200000,
                   "last": 1767216360000,
                   "ended": 1767219000000
@@ -1336,7 +1336,7 @@
                   "kind": "failing",
                   "state": "resolved",
                   "title": "Tool 36 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767202800000,
                   "last": 1767213660000,
                   "ended": 1767217200000
@@ -1425,7 +1425,7 @@
                   "kind": "failing",
                   "state": "firing",
                   "title": "Tool 45 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767197400000,
                   "last": 1767210960000
                 },
@@ -1513,7 +1513,7 @@
                   "kind": "failing",
                   "state": "resolved",
                   "title": "Tool 54 is failing",
-                  "text": "1 calls failed in the last hour.",
+                  "text": "1 call failed in the last hour.",
                   "began": 1767192000000,
                   "last": 1767208260000,
                   "ended": 1767213600000

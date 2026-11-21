@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Badge, Button, Icon, type Scenes, Spinner, styles, Text, tokens, View } from "ui"
+import { Badge, Button, Icon, plural, type Scenes, Spinner, styles, Text, tokens, View } from "ui"
 
 const look = styles({
   column: { gap: tokens.grid[2], alignItems: "flex-start" },
@@ -17,7 +17,7 @@ const Moved = () => {
       <View style={look.moved(160)}>
         <Button onPress={() => setPressed(pressed() + 1)}>Moved</Button>
       </View>
-      <Text>{`Pressed ${pressed()} times`}</Text>
+      <Text>{`Pressed ${plural(pressed(), "time")}`}</Text>
     </View>
   )
 }
@@ -29,7 +29,7 @@ const Counted = () => {
     <View style={look.column}>
       <Button onPress={() => setCount(count() + 1)}>Save</Button>
       <Button disabled onPress={() => setCount(count() + 100)}>Delete</Button>
-      <Text>{`Pressed ${count()} times`}</Text>
+      <Text>{`Pressed ${plural(count(), "time")}`}</Text>
     </View>
   )
 }
@@ -40,11 +40,11 @@ export default {
   "Buttons/Pressed": {
     render: () => <Counted />,
     checks: {
-      "A press presses it": ["Save", { expect: { text: "Pressed 1 times" } }],
+      "A press presses it": ["Save", { expect: { text: "Pressed 1 time" } }],
       "Enter and Space press it": [{ key: "Tab" }, { key: "Enter" }, { key: " " }, { expect: { text: "Pressed 2 times" } }],
       "One that's off does nothing": [{ role: "button", name: "Delete" }, { expect: { text: "Pressed 0 times" } }],
       // Its pressed look is drawn on the first frame of the press, as a Mac's buttons' is, not faded in.
-      "Held down, it looks pressed at once": [{ down: "Save" }, { expect: { drawn: { of: { role: "button", name: "Save" }, opacity: 0.7 } }, within: 17 }, { up: true }, { expect: { text: "Pressed 1 times" } }],
+      "Held down, it looks pressed at once": [{ down: "Save" }, { expect: { drawn: { of: { role: "button", name: "Save" }, opacity: 0.7 } }, within: 17 }, { up: true }, { expect: { text: "Pressed 1 time" } }],
     },
   },
   "Buttons/Variants": () => (

@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Button, type Scenes, ScrollView, styles, Text, tokens, View } from "ui"
+import { Button, plural, type Scenes, ScrollView, styles, Text, tokens, View } from "ui"
 
 const look = styles({
   column: { gap: tokens.grid[2] },
@@ -42,7 +42,7 @@ function InlineLink() {
         </Text>{" "}
         before you go on.
       </Text>
-      <Text style={[look.caption, look.quiet]}>Pressed {pressed()} times</Text>
+      <Text style={[look.caption, look.quiet]}>Pressed {plural(pressed(), "time")}</Text>
     </View>
   )
 }

@@ -174,12 +174,14 @@ function internalWords(tree) {
   return tree.split("\n").filter((line) => INTERNAL.test(line) || CODE.test(line) || line.match(/[\w-]+_\w+/g)?.some((word) => tools.has(word))).map((line) => line.trim())
 }
 
-/// What a screen's words may not get wrong in English, whatever the data: a word run into the next, a lowercase one into
-/// a capitalised one ("used byBackups", as a join drops the space between a text and an app's name). Each line of a
-/// scene's semantic tree that has one.
+/// What a screen's words may not get wrong in English, whatever the data: a count of one with a plural noun after it
+/// ("1 calls failed", "Pressed 1 times": `plural` in the UI library says it by `Intl.PluralRules`), and a word run into
+/// the next, a lowercase one into a capitalised one ("used byBackups", as a join drops the space between a text and an
+/// app's name). Each line of a scene's semantic tree that has one.
+const ONE_PLURAL = /(?<![\w.,:/#$%-])1 [A-Za-z]{2,}s(?<![su]s|is)\b(?!['’])/
 const RUN_TOGETHER = /\b[a-z]{2,}[A-Z][a-z]{2,}\b/
 function misreadWords(tree) {
-  return tree.split("\n").filter((line) => RUN_TOGETHER.test(line)).map((line) => line.trim())
+  return tree.split("\n").filter((line) => ONE_PLURAL.test(line) || RUN_TOGETHER.test(line)).map((line) => line.trim())
 }
 
 /// Presses what's named or says `name` on our renderer's canvas, as a person would: found in its ARIA tree

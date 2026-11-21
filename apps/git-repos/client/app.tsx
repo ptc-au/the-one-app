@@ -3,7 +3,7 @@
 // closes. A file and a commit open in the repo's place, with Back.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { marked, type Token, type Tokens } from "marked"
-import { Button, call, changed, confirm, Empty, Field, go, Icon, Image, Input, List, Menu, Pressable, Problem, render, Row, ScrollView, Screen, Section, Select, share, Sheet, since, size, Skeleton, Split, styles, Tabs, Text, toast, tokens, View } from "ui"
+import { Button, call, changed, confirm, Empty, Field, go, Icon, Image, Input, List, Menu, plural, Pressable, Problem, render, Row, ScrollView, Screen, Section, Select, share, Sheet, since, size, Skeleton, Split, styles, Tabs, Text, toast, tokens, View } from "ui"
 
 /** A commit, as the tools answer it. */
 interface Commit {
@@ -44,7 +44,6 @@ const [adding, setAdding] = createSignal(false)
 
 /// Who something is, as its name's last part: users/alice is alice.
 const short = (name: unknown) => String(name ?? "").split("/").pop()!
-const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`
 
 // TODO: the UI library's Icon has no folder or git-branch (Phosphor's, drawn here from their SVGs in a mid grey, which
 // reads on light and dark), and an image can't take a colour of the tokens: restore them as Icon names in the UI library's contract.

@@ -2,7 +2,7 @@
 // what's wrong; how often they're made and which are kept. A destination opens beside the list with its backups,
 // Restore, Check and Stop Backing Up Here. Backups are the network's, so every call is for the network.
 import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, date, Empty, Field, Icon, Input, List, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Skeleton, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
+import { Button, call, changed, confirm, date, Empty, Field, Icon, Input, List, plural, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Skeleton, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   note: { color: tokens.colour.secondaryLabel },
@@ -266,7 +266,7 @@ function Restore(props: { destination: Destination; from?: string }) {
     const result = await doing(async () => {
       let restored = 0
       for (const one of blobs) restored += JSON.parse(await call("backups_restore", { destination: props.destination.name, backup: backup() ?? props.destination.backups[0]?.name, blobs: one }, network)).restored.length
-      return restored ? `Brought back ${restored === 1 ? "1 file" : `${restored} files`}.` : "Nothing was gone, so nothing changed."
+      return restored ? `Brought back ${plural(restored, "file")}.` : "Nothing was gone, so nothing changed."
     })
     setWorking()
     if (result) {
