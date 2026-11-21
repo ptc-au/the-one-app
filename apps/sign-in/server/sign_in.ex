@@ -1,10 +1,11 @@
 defmodule SignIn do
   @moduledoc """
   Signing in: whose each device is. People sign in at the network's address, where this app's edge function
-  (`edge/`) keeps their passkeys and what they let act as them, and writes each device into this app's own
-  artifact for the network as `devices/<device>`: the user whose it is. One Core asks whose a device is, the
-  `device` hook, and it's answered from that blob, so no call asks anything of the edge. What each person goes
-  by is there too, `people/<name>`, which `people` tells whoever may see who's in the network.
+  (`edge/`) keeps their passkeys and what they let act as them. Whose each device is, the server keeps a copy of
+  in its database, which it copies from the edge (`copy`) as a device it doesn't know asks, and as the edge has it do
+  once one is removed, and every ten minutes. One Core asks whose a device is, the `device` hook, and it's answered from
+  that copy, so a call asks nothing of the edge or the bucket but what the database does. What each person goes by
+  is in this app's own artifact, `people/<name>`, which `people` tells whoever may see who's in the network.
 
   What a person does with their devices in the app is asked of the edge function, which keeps them. A network
   with an address that isn't being built is joined by invitation, its first owner's included: until they've joined,
@@ -21,7 +22,13 @@ defmodule SignIn do
   def icon, do: "client/security.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.32.167"}
+  def requires, do: %{"core" => ">= 0.32.167", "database" => "to keep a copy of whose each device is"}
+
+  # Whose each device is, as the edge last said, and which version of that it was (`changed` in `edge/auth.ts`).
+  @schema [
+    "create table devices (device text primary key, who text not null)",
+    "create table copied (version integer not null)"
+  ]
 
   # Nothing looks into it as it runs (`server-debug`): what it's given and keeps are what people sign in with.
   @impl true
@@ -122,6 +129,20 @@ defmodule SignIn do
             told: %{type: "array", items: %{type: "string"}, description: "Those it notified the owners of just now"}
           },
           required: ["waiting", "told"]
+        }
+      },
+      %{
+        name: "copy",
+        by_link: true,
+        description: """
+        Copies whose each device is from the network's edge, which keeps it, as the edge has a server do once one is
+        removed, and every ten minutes. Anyone may ask: it only reads what the edge says
+        """,
+        inputs: none,
+        outputs: %{
+          type: "object",
+          properties: %{devices: %{type: "integer", description: "How many devices are someone's"}},
+          required: ["devices"]
         }
       },
       %{
@@ -340,13 +361,14 @@ defmodule SignIn do
   def hooks, do: ["device", "owner", "settings.sections"]
 
   @impl true
+  # A device the copy doesn't have is copied again first, as a device that was just let in asks. One the edge doesn't
+  # know either is nobody's. A copy that couldn't be read raises: that's not knowing, not nobody's.
   def hook("device", %{"device" => device}, call) do
     with true <- device =~ ~r/^[0-9a-f]{64}$/,
-         {:ok, who, _tag} <- Artifact.read(call.own, "devices/" <> device) do
+         who when is_binary(who) <- whose(call, device) || (copy(call) && whose(call, device)) do
       %{"who" => who}
     else
-      # A device it doesn't know is nobody's. A read that failed raises: that's not knowing, not nobody's.
-      not_known when not_known in [false, :absent] -> %{}
+      _nobody -> %{}
     end
   end
 
@@ -448,6 +470,8 @@ defmodule SignIn do
     %{waiting: named.(waiting), told: named.(new)}
   end
 
+  def call("copy", _inputs, call), do: %{devices: copy(call)}
+
   # The link makes a passkey of theirs for whoever opens it, so it's shown only on their own screen, which opens it.
   # Anything else that asks, an assistant or `one`, has them notified, and Sign In & Security makes it there.
   def call("add_passkey", _inputs, call) do
@@ -531,6 +555,39 @@ defmodule SignIn do
   def call("remove_passkey", %{"passkey" => passkey}, call) do
     %{"removed" => name} = ask(%{ask: "remove_passkey", who: person(call), passkey: passkey})
     %{removed: name}
+  end
+
+  defp whose(call, device) do
+    transaction(call, fn {database, db} ->
+      with [%{"who" => who}] <- database.query(db, "select who from devices where device = ?", [device]), do: who, else: (_ -> nil)
+    end)
+  end
+
+  # Copies what the edge says, unless the copy is of the same or a newer version, as a copy asked for before another
+  # that wrote first is. It gives how many devices are someone's.
+  defp copy(call) do
+    %{"version" => version, "devices" => devices} = ask(%{ask: "whose"})
+
+    transaction(call, fn {database, db} ->
+      case database.query(db, "select version from copied") do
+        [%{"version" => copied}] when copied >= version ->
+          :ok
+
+        _older ->
+          database.query(db, "delete from devices")
+          database.query(db, "insert into devices (device, who) select key, value from json_each(?)", [JSON.encode!(devices)])
+          database.query(db, "delete from copied")
+          database.query(db, "insert into copied (version) values (?)", [version])
+      end
+    end)
+
+    map_size(devices)
+  end
+
+  # The database module goes with the database it opened.
+  defp transaction(call, fun) do
+    database = Call.app(call, "database")
+    database.transaction(call, @schema, &fun.({database, &1}))
   end
 
   @doc """
