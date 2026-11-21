@@ -406,8 +406,8 @@ defmodule Database.Lease do
     error -> failed(event, data, error, __STACKTRACE__)
   end
 
-  # One that finds the lease run out while a look in the background hasn't come back is refused before it runs, a
-  # write too, which would wait on the same bucket.
+  # One that finds the lease run out while a look in the background hasn't come back waits for it (`proved/1`), and is
+  # refused before it runs if it doesn't, a write too, which would wait on the same bucket.
   # One run while holding has the connection that only reads keep the copy as it was before it, in case it writes.
   defp transacted(event, state, data, work) do
     case if(data.renewing, do: proved(data), else: {:ok, data}) do
@@ -894,15 +894,16 @@ defmodule Database.Lease do
   # sleeps; and then looks again. A server that took the lease meanwhile writes nothing until that's passed.
   #
   # It looks in the background while the database is in use (`renew/1`), so this most often finds it seen free
-  # already. Where it isn't, and a look is under way, the bucket hasn't answered it for half the lease at least, and
-  # the call isn't kept waiting on it, nor where the last look couldn't read the bucket; and otherwise one is begun,
-  # and waited for `@renew_within`.
+  # already. Where it isn't, a look is begun, unless one is under way, and waited for until `@renew_within` after it
+  # began: one begun in the background a moment ago, as a database that has just settled has one begun with its lease
+  # run out, is waited for, and one the bucket hasn't answered for that long isn't. The call isn't kept waiting where
+  # the last look couldn't read the bucket.
   defp proved(data) do
     if proved?(data.proved, clocks()) do
       {:ok, data}
     else
-      waits = if data.renewing || data.unreached, do: 0, else: @renew_within
       %{renewing: {task, began}} = data = renew(data)
+      waits = if data.unreached, do: 0, else: max(began + @renew_within - System.monotonic_time(:millisecond), 0)
 
       case Task.yield(task, waits) do
         {:ok, renewal} ->
