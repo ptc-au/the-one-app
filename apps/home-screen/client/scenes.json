@@ -3172,7 +3172,14 @@
             "name": "Productivity"
           }
         },
-        "seamless": true
+        "seamless": true,
+        "named": {
+          "role": "text",
+          "within": {
+            "role": "group",
+            "name": "Productivity"
+          }
+        }
       }
     }
   },
@@ -3226,7 +3233,14 @@
             "name": "Productivity"
           }
         },
-        "seamless": true
+        "seamless": true,
+        "named": {
+          "role": "text",
+          "within": {
+            "role": "group",
+            "name": "Productivity"
+          }
+        }
       },
       "Close it with less motion": {
         "from": {

@@ -152,6 +152,8 @@ export const looks = styles({
   scaledAt: (scale: number, translateX: number, translateY: number) => ({ scale, translateX, translateY }),
   // Its name and its apps' come in once its apps have nearly got where they go, and go first as it closes.
   named: { opacity: 1, transitionProperty: ["opacity"], transition: tokens.motion.settle, transitionDelay: 250 },
+  // Its square's apps' names come back once the apps flown home have landed (`landed`), not under them as they come in.
+  namedAfter: (ms: number) => ({ opacity: 1, transitionProperty: ["opacity"], transition: tokens.motion.settle, transitionDelay: ms }),
   unnamed: { opacity: 0, transitionProperty: ["opacity"], transition: tokens.motion.quick, transitionDelay: 0 },
   opened: { gap: tokens.grid[8] },
   categoryTitle: { font: tokens.type.largeTitle },

@@ -51,7 +51,7 @@ async function play(built, scene, name, motion, hz, folder) {
   }
   // Where what it opens should first be drawn: what `opensFrom` names, before the press.
   const origin = motion.opensFrom && { op: "query", ...selector(motion.opensFrom) }
-  const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), link: link(hz) }
+  const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.named ? { named: { ...selector(motion.named), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), link: link(hz) }
   const started = performance.now()
   const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), replay])
   const answer = ran.answers.at(-1)
@@ -86,7 +86,8 @@ async function play(built, scene, name, motion, hz, folder) {
   // does, once the finger has let go: while it's down, the pages are the finger's, as they are with all their motion.
   const lifted = events?.findLast((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase))
   const end = events ? (lifted ?? events.at(-1)).ms : stretches.reduce((sum, stretch) => sum + stretch.ms, 0)
-  const cutting = motion.reducedMotion && cut(frames.slice(Math.max(0, frames.findLastIndex((frame) => frame.at < end))))
+  const lifting = frames.slice(Math.max(0, frames.findLastIndex((frame) => frame.at < end)))
+  const cutting = motion.reducedMotion && cut(lifting)
   if (cutting) failed.push(cutting)
   // And it gets where the same gesture goes with all its motion: a drag that follows nothing with less motion, and so
   // changes nothing, is no cut.
@@ -214,6 +215,14 @@ async function play(built, scene, name, motion, hz, folder) {
     const hidden = first < 0 ? -1 : frames.findIndex((frame, n) => n >= first && n <= last && frame.holds === 0)
     if (first < 0) failed.push("what it follows doesn't move")
     else if (hidden >= 0) failed.push(`${JSON.stringify(motion.holds)} isn't drawn at frame ${hidden + 1} (${frames[hidden].at} ms), while what moves is on its way (frames ${first + 1} to ${last + 1})`)
+  }
+  // What `named` names (a square's captions) is never seen while an icon of what `apart` names is on its way (its box
+  // moves from the frame before): as a folder closes, its captions come in as its icons land, not under them.
+  if (motion.named) {
+    const flying = (frame, n) => (frame.apart ?? []).some((box, at) => n > 0 && frames[n - 1].apart?.[at] && (Math.abs(box.x - frames[n - 1].apart[at].x) > 0.5 || Math.abs(box.y - frames[n - 1].apart[at].y) > 0.5))
+    const under = frames.findIndex((frame, n) => frame.named > 0 && flying(frame, n))
+    if (!motion.apart) failed.push("`named` reads `apart`, which it hasn't")
+    else if (under >= 0) failed.push(`${JSON.stringify(motion.named)} is drawn at frame ${under + 1} (${frames[under].at} ms) while icons of what's apart are still on their way`)
   }
   // The last frame any of what `apart` names is drawn in and the one after, where they've been handed back, look the
   // same around each of them in the first (its box, grown by 12 pt for a badge at its corner), within a level of each

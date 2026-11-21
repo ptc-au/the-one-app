@@ -37,7 +37,7 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         }
         _ => None,
     };
-    let (mut track, count, shows, holds, apart) = (query("track"), query("count"), query("shows"), query("holds"), query("apart"));
+    let (mut track, count, shows, holds, named, apart) = (query("track"), query("count"), query("shows"), query("holds"), query("named"), query("apart"));
     let tracking = match request.inputs.get("track") {
         Some(Value::Object(selector)) => Some(renderer::inspect::Request { id: Value::Null, op: "query".into(), inputs: selector.clone() }),
         _ => None,
@@ -147,11 +147,11 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
                 None => frame["gone"] = json!(true),
             }
         }
-        // How many of what `count` matches a person sees, and the same for `shows` and `holds`.
+        // How many of what `count` matches a person sees, and the same for `shows`, `holds` and `named`.
         if let Some(query) = &count {
             frame["count"] = json!(seen(windows, query).len());
         }
-        for (name, query) in [("shows", &shows), ("holds", &holds)] {
+        for (name, query) in [("shows", &shows), ("holds", &holds), ("named", &named)] {
             if let Some(query) = query {
                 frame[name] = json!(seen(windows, query).len());
             }

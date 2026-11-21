@@ -55,6 +55,12 @@ export const wait = (index: number) => Math.min(index, 2) * 40
 /// motion, when they cross-fade.
 export const handed = (count: number) => [looks.handedAfter(1000 + wait(count - 1)), reducedMotion() && looks.handing]
 
+/// How long the names in a category's square wait to come back as it closes, in ms: its apps fly home by a spring of
+/// half a second, the last of them `wait` after the first, and are within half a point a refresh of landing a third of
+/// a second on, where a name under them would be cut by one; with less motion it waits for the name of the category
+/// opened, which goes by `quick`, so the two aren't seen at once.
+export const landed = (count: number) => (reducedMotion() ? 250 : 650 + wait(count - 1))
+
 /// Where each category's place was drawn as it was opened, which it grows out of and shrinks back into, and each of its
 /// apps' icons in it (`apps`), which that app grows out of.
 export const places: Record<string, Rect & { apps: Rect[] }> = {}
@@ -157,7 +163,7 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
                 style={[looks.folder, looks.folderBox(laid().columnGap, laid().rowGap, laid().category, laid().padding.top, laid().padding.inline, laid().padding.bottom)]}
               >
                 <For each={shown()} keyed={(entrypoint) => entrypoint.entrypoint ?? entrypoint.app}>
-                  {(entrypoint) => <LibraryEntrypoint entrypoint={entrypoint()} owner={props.owner} icon={laid().icon} small away={away()} handed={handed(count())} />}
+                  {(entrypoint) => <LibraryEntrypoint entrypoint={entrypoint()} owner={props.owner} icon={laid().icon} small away={away()} handed={handed(count())} landed={landed(count())} />}
                 </For>
                 <Show when={count() > 4}>
                   <Pressable role="button" aria-label={`All of ${category().category}`} onPress={opening(key, count)} style={[looks.more, looks.square(laid().icon + 14), handed(count()), away() && [looks.handing, looks.unseen]]}>
@@ -231,7 +237,7 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
 /// dropped on. In a category's square (`small`) its name is smaller, and its icon is handed over to its category opened
 /// as that says (`handed`), and not drawn while it's in it (`away`); its name stays in the square, going as the category
 /// opens and coming back as its apps fly home, as the opened one's go and come, so nothing changes as they're handed back.
-function LibraryEntrypoint(props: { entrypoint: Listed; owner: Owner; icon: number; small?: boolean; away?: boolean; handed?: Styles }) {
+function LibraryEntrypoint(props: { entrypoint: Listed; owner: Owner; icon: number; small?: boolean; away?: boolean; handed?: Styles; landed?: number }) {
   const badge = () => (opens(props.entrypoint) ? badgeOf(opens(props.entrypoint)!, props.owner) : undefined)
   const from = (event: Located): From => {
     const at = event.currentTarget.getBoundingClientRect()
@@ -257,7 +263,7 @@ function LibraryEntrypoint(props: { entrypoint: Listed; owner: Owner; icon: numb
         <Image src={src(props.entrypoint.icon)} alt="" style={[looks.iconImage(corner(props.icon)), looks.square(props.icon)]} />
         <Count count={badge()} />
       </View>
-      <Text style={[looks.name, props.small && [looks.smallName, props.away ? looks.unnamed : looks.named]]}>{props.entrypoint.name}</Text>
+      <Text style={[looks.name, props.small && [looks.smallName, props.away ? looks.unnamed : looks.namedAfter(props.landed ?? 0)]]}>{props.entrypoint.name}</Text>
     </Pressable>
   )
 }
