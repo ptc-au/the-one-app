@@ -195,14 +195,60 @@ export async function keep() {
   });
 }
 
-/** Tells every server that whose a device is has changed, so each asks again. */
-const invalidate = () => env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } }));
+/**
+ * Says whose a device is has changed: the version `whose` gives moves on, so a copy made from an older answer is
+ * never kept over a newer one. It's a time, in milliseconds, or one more than the last where that's later, so it moves
+ * on after a backup that kept an older one is given back (`keep`) too.
+ */
+const changed = () =>
+  env.DB.prepare("insert into setting (name, value) values ('devices', ?1) on conflict (name) do update set value = max(cast(value as integer) + 1, ?1)").bind(Date.now()).run();
+
+/**
+ * Has one of the network's servers copy whose each device is (`whose`), for every server: the server's `copy`, which
+ * only reads what's here, so whoever asks for it is nobody, as a sharing link's holder is to a server. One that finds
+ * the copy as new as what's here writes nothing.
+ */
+export async function copied() {
+  const call = { name: "sign-in_copy", arguments: {}, _meta: { link: "network/sign-in" } };
+  const reached = await env.RELAY.forward(await env.NETWORK.servers(), JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: call }));
+  const { result, error }: { result?: { isError?: boolean; content?: { text?: string }[] }; error?: { message?: string } } = JSON.parse(reached?.answer ?? "{}");
+  if (!reached || error || result?.isError)
+    console.error(`No server copied whose each device is just now: ${reached ? (error?.message ?? result?.content?.[0]?.text) : "none answered"}`);
+}
+
+/**
+ * Makes what's gone nobody's on every server: one of them copies whose each device is again, and then every server is
+ * told to ask again. Where none answers, one copies it at the next ten minutes (`scheduled` in `worker.ts`).
+ */
+async function gone() {
+  await changed();
+  await copied();
+  await env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } }));
+}
+
+/**
+ * Whose each device is, as a server keeps a copy of it (`SignIn`): each device and assistant, and each browser that's
+ * signed in, by its key, with the version of that (`changed`), all as one read.
+ */
+async function whose() {
+  const [version, devices, sessions] = await env.DB.batch<{ value?: string; id?: string; name: string }>([
+    env.DB.prepare("select value from setting where name = 'devices'"),
+    env.DB.prepare('select device.id, user.name from device join user on user.id = device."userId"'),
+    env.DB.prepare('select session.id, user.name from session join user on user.id = session."userId"'),
+  ]);
+  const browsers = await Promise.all(sessions.results.map(async ({ id, name }) => [await browserDevice(id!), who({ name })]));
+  return {
+    version: Number(version.results[0]?.value ?? 0),
+    devices: Object.fromEntries([...devices.results.map(({ id, name }) => [id, who({ name })]), ...browsers]),
+  };
+}
 
 /** Makes `device` the user's, under `name`, from now on. */
 async function place(adapter: Adapter, device: string, kind: Device["kind"], name: string, user: { id: string; name: string }) {
   const [was] = await adapter.findMany<Device>({ model: "device", where: [{ field: "id", value: device }] });
   if (was) await remove(adapter, was);
   await adapter.create({ model: "device", data: { id: device, userId: user.id, kind, name, createdAt: new Date() }, forceAllowId: true });
+  await changed();
   await env.OWN.write(`devices/${device}`, who(user));
 }
 
@@ -215,26 +261,24 @@ async function goesBy(user: User) {
   await env.OWN.update(`people/${user.name}`, () => JSON.stringify(person));
 }
 
-/** Makes a browser's session one of its person's devices, as a server reads whose a device is. */
+/** Makes a browser's session one of its person's devices. */
 async function browserIn(session: { id: string; userId: string }) {
+  await changed();
   const user = await env.DB.prepare("select name from user where id = ?").bind(session.userId).first<{ name: string }>();
   await env.OWN.write(`devices/${await browserDevice(session.id)}`, who(user!));
 }
 
-/** Makes a browser's session nobody's, on every server. */
+/** Makes a browser whose session ended nobody's, on every server. */
 async function browserOut(session: string) {
   await env.OWN.remove(`devices/${await browserDevice(session)}`);
-  await invalidate();
+  await gone();
 }
 
-/**
- * Makes a device nobody's, on every server. Servers read whose it is from the bucket, so it goes there first: one
- * whose removal there fails is still listed here, to be removed again, rather than gone from the list and still let in.
- */
+/** Makes a device nobody's, on every server. */
 async function remove(adapter: Adapter, device: { id: string }) {
-  await env.OWN.remove(`devices/${device.id}`);
-  await invalidate();
   await adapter.delete({ model: "device", where: [{ field: "id", value: device.id }] });
+  await env.OWN.remove(`devices/${device.id}`);
+  await gone();
 }
 
 /** The invitation a link carries, if it's one that still stands. The link is kept nowhere: only its hash is. */
@@ -556,8 +600,8 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
       // session (`worker.ts`).
       session: {
         create: { after: (session) => browserIn(session) },
-        // Before, as a device is removed (`remove`): a session whose device couldn't be removed isn't deleted.
-        delete: { before: (session) => browserOut(session.id) },
+        // After, as a device is removed (`remove`): what servers copy is what's here.
+        delete: { after: (session) => browserOut(session.id) },
       },
     },
     // Better Auth limits how often an address asks only where NODE_ENV says production, which a Worker's doesn't,
@@ -780,6 +824,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   // they're first asked about, so they approve a device's code as anyone who joined does.
   if (!user && building && ask !== "invite" && /^[a-z][a-z0-9-]*$/.test(named)) user = await made(adapter, origin, named);
 
+  if (ask === "whose") return whose();
   if (ask === "invite") return invite(adapter, origin, named, user, about.again === true);
   // The network's first owner is invited only until they've joined, so a link to join as them isn't made after.
   if (ask === "owner") return user && (await joined(adapter, user)) ? { joined: true } : invite(adapter, origin, named, user, false);
@@ -888,10 +933,12 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   // Someone taken out of the network: nothing acts as them from then on, they sign in nowhere, and their name is free.
   if (ask === "remove_person") {
     for (const device of await adapter.findMany<Device>({ model: "device", where: mine })) await remove(adapter, device);
-    for (const { id } of await adapter.findMany<{ id: string }>({ model: "session", where: mine })) await browserOut(id);
+    const sessions = await adapter.findMany<{ id: string }>({ model: "session", where: mine });
     for (const model of ["oauthRefreshToken", "oauthAccessToken", "oauthConsent", "session", "passkey", "invite", "account"])
       await adapter.deleteMany({ model, where: mine });
     await adapter.delete({ model: "user", where: [{ field: "id", value: user.id }] });
+    for (const { id } of sessions) await env.OWN.remove(`devices/${await browserDevice(id)}`);
+    await gone();
     await env.OWN.remove(`people/${user.name}`);
     return { removed: user.called ?? user.name };
   }

@@ -7,7 +7,7 @@
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { asked, assistant, at, BELIEVED, browserDevice, keep, who, type Ask, type Auth } from "./auth.ts";
+import { asked, assistant, at, BELIEVED, browserDevice, copied, keep, who, type Ask, type Auth } from "./auth.ts";
 
 export default {
   async fetch(request: Request, _env, ctx) {
@@ -22,7 +22,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled() {
-    await keep();
+    await Promise.all([keep(), copied()]);
   },
 } satisfies ExportedHandler;
 
@@ -241,7 +241,7 @@ async function ask(request: Request, auth: Auth, url: URL) {
   } catch {
     return Response.json({ error: "An ask is JSON" }, { status: 400 });
   }
-  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains"].includes(what.ask ?? "");
+  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "whose"].includes(what.ask ?? "");
   const acting = (await Promise.all([env.NETWORK.servers(), ...(ofNetwork ? [] : [env.NETWORK.servers(`${what.who}/`)])])).flat();
   if (!acting.includes(server)) return Response.json({ error: "Only a server acting for them asks this" }, { status: 403 });
   return Response.json(await asked(auth, url.origin, what));
