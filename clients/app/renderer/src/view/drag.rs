@@ -7,7 +7,8 @@
 //! its page hears `dragend` once, with how far it went (`offset`) and how fast it was going (`velocity`, pixels a
 //! second), and while it's dragged, `drag` as it moves, with how far it's held from where its style puts it (`offset`,
 //! its give included), as Motion's `onDrag` says, so what goes with it can (a pager's dots past its last page), and it springs from where it is, at that speed, to where its style puts it, wherever its page moves that
-//! meanwhile (`transition::Transitions::release`).
+//! meanwhile (`transition::Transitions::release`), and once it's come to rest there, `dragtransitionend`, as Motion's
+//! `onDragTransitionEnd`, so what waits for it to settle (a pager's arrows) can.
 
 use serde_json::{Value, json};
 

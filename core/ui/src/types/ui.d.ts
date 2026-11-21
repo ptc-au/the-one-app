@@ -137,6 +137,9 @@ export type ViewProps = Listens & {
   /** Let go: how far it went and how fast it was going, in pixels a second. It springs from where it is, at that
    * speed, to where its style puts it, which this may move. */
   onDragEnd?: (event: Dragged) => void
+  /** Let go, it has sprung to rest where its style puts it, as Motion's `onDragTransitionEnd`: what waits for it to
+   * settle (a pager's arrows) shows then. A host before this one doesn't say it. */
+  onDragTransitionEnd?: () => void
 }
 export declare function View(props: ViewProps): Element
 

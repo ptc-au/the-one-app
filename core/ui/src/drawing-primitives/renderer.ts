@@ -337,13 +337,15 @@ export interface Props {
    * input arrives: past `dragConstraints` (pixels from where its style puts it) it gives as a rubber band, as loose as
    * `dragElastic`; let go, it's told `dragend` (`offset`, `velocity` in pixels a second) and springs from there, at
    * that speed, to where its style puts it. While it's dragged, it's told `drag` as it moves (`offset`, as far as it's
-   * held from where its style puts it), which a host before this one doesn't say. */
+   * held from where its style puts it), which a host before this one doesn't say, and `dragtransitionend` once it has
+   * sprung to rest, as Motion's `onDragTransitionEnd`, which a host before that one doesn't say. */
   drag?: "x" | "y" | boolean
   dragConstraints?: { top?: number; left?: number; right?: number; bottom?: number }
   dragElastic?: number
   onDragStart?: true
   onDrag?: true
   onDragEnd?: true
+  onDragTransitionEnd?: true
   /** `box`, `scroll`: moves from where it was laid out to where it is as that changes, by a spring the host draws
    * (Motion's `layout`), and from where what has the same `layoutId` was a moment ago, where it's new. */
   layout?: boolean

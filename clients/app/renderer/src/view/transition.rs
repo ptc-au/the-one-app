@@ -316,6 +316,8 @@ pub(crate) struct Transitions {
     drawn: HashSet<Id>,
     /// Each node dragged, while it's held and as it springs back once let go.
     dragged: HashMap<Id, Dragged>,
+    /// The nodes let go whose spring has come to rest since the page was last told (`settled`).
+    rested: Vec<Id>,
     /// The nodes moving by their keyframes (`Look::animation`), which are styled again each frame they're drawn.
     animated: HashSet<Id>,
     /// Where each node that moves as it's laid out again (`layout`) was laid out last, in the window, unscrolled, and
@@ -644,9 +646,21 @@ impl Transitions {
     /// Ends a frame: forgets what's arrived. → whether anything's still moving.
     pub fn finish(&mut self, now: f64) -> bool {
         self.moving.retain(|_, moving| !moving.done(now));
-        self.dragged.retain(|_, dragged| !dragged.done(now));
+        let rested = &mut self.rested;
+        self.dragged.retain(|id, dragged| {
+            let done = dragged.done(now);
+            if done {
+                rested.push(*id);
+            }
+            !done
+        });
         self.flips.retain(|_, flip| !flip.done(now));
         !self.moving.is_empty() || !self.dragged.is_empty() || !self.animated.is_empty() || !self.flips.is_empty()
+    }
+
+    /// The nodes let go whose spring has come to rest since this was last asked, as Motion's `onDragTransitionEnd`.
+    pub fn settled(&mut self) -> Vec<Id> {
+        std::mem::take(&mut self.rested)
     }
 
     /// How many properties are still on their way, for the inspector's `settle`.

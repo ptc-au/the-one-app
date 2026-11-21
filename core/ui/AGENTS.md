@@ -52,6 +52,7 @@ Motion is the renderer's, on its own thread, never a turn of a page's JS a frame
 - `drag`, `dragConstraints`, `dragElastic` and `onDragEnd` on a View (Motion's): it follows the finger where the input
   arrives, and let go, springs from there at the finger's speed to wherever its style then puts it. A gesture that
   settles somewhere (a sheet closing, a page turned) sets that style in `onDragEnd`; it doesn't move the node itself.
+  What waits for it to come to rest there waits for `onDragTransitionEnd` (Motion's), never a timer.
 - `layout` and `layoutId` on a View (Motion's): it moves from where it was laid out to where it is, and from where the
   node with the same `layoutId` was a moment before (SwiftUI's `matchedGeometryEffect`), without layout per frame.
 - `animationName` as keyframes (CSS's `@keyframes`) and `animation`, a motion token: a loop (a spinner, a shimmer, a
