@@ -57,9 +57,9 @@ export const handed = (count: number) => [looks.handedAfter(1000 + wait(count - 
 
 /// How long the names in a category's square wait to come back as it closes, in ms: its apps fly home by a spring of
 /// half a second, the last of them `wait` after the first, and are within half a point a refresh of landing a third of
-/// a second on, where a name under them would be cut by one; with less motion it waits for the name of the category
-/// opened, which goes by `quick`, so the two aren't seen at once.
-export const landed = (count: number) => (reducedMotion() ? 250 : 650 + wait(count - 1))
+/// a second on, where a name under them would be cut by one. With less motion nothing flies: its apps, its name and
+/// theirs dissolve together.
+export const landed = (count: number) => (reducedMotion() ? 0 : 650 + wait(count - 1))
 
 /// Where each category's place was drawn as it was opened, which it grows out of and shrinks back into, and each of its
 /// apps' icons in it (`apps`), which that app grows out of.

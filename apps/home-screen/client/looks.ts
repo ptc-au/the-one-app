@@ -150,9 +150,8 @@ export const looks = styles({
   // Each of its apps leaves its square, and comes back, after the ones before it.
   after: (ms: number) => ({ transitionDelay: ms }),
   scaledAt: (scale: number, translateX: number, translateY: number) => ({ scale, translateX, translateY }),
-  // Its name and its apps' come in once its apps have nearly got where they go, and go first as it closes.
-  named: { opacity: 1, transitionProperty: ["opacity"], transition: tokens.motion.settle, transitionDelay: 250 },
-  // Its square's apps' names come back once the apps flown home have landed (`landed`), not under them as they come in.
+  // Its name and its apps' come in once its apps have nearly got where they go (`landed`, the same for its square's), and
+  // go first as it closes.
   namedAfter: (ms: number) => ({ opacity: 1, transitionProperty: ["opacity"], transition: tokens.motion.settle, transitionDelay: ms }),
   unnamed: { opacity: 0, transitionProperty: ["opacity"], transition: tokens.motion.quick, transitionDelay: 0 },
   opened: { gap: tokens.grid[8] },

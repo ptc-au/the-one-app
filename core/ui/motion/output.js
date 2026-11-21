@@ -11,9 +11,9 @@ import { finger } from "./gesture.js"
 /// differ by few levels in every pixel).
 const CUT = 0.6
 
-/// The frame of `frames` that cuts: the one that changes more than `CUT` of all that changes from the first of them to
-/// the last (the sum of each pixel's difference), if any does: its number, its time and its share.
-export function cut(frames) {
+/// How much each of `frames` differs from the one before it (the sum of each pixel's difference, 0 for the first), and
+/// how much the last differs from the first.
+function changes(frames) {
   const pictures = frames.map((frame) => (frame.png ? PNG.sync.read(Buffer.from(frame.png, "base64")) : undefined))
   const differ = (a, b) => {
     if (!a || !b || a.width !== b.width || a.height !== b.height) return 0
@@ -21,14 +21,37 @@ export function cut(frames) {
     for (let at = 0; at < a.data.length; at++) if (at % 4 < 3) sum += Math.abs(a.data[at] - b.data[at])
     return sum
   }
-  const whole = differ(pictures[0], pictures.at(-1))
+  return { steps: pictures.map((now, n) => (n ? differ(pictures[n - 1], now) : 0)), whole: differ(pictures[0], pictures.at(-1)) }
+}
+
+/// The frame of `frames` that cuts: the one that changes more than `CUT` of all that changes from the first of them to
+/// the last (the sum of each pixel's difference), if any does: its number, its time and its share.
+export function cut(frames) {
+  const { steps, whole } = changes(frames)
   if (!whole) return undefined
-  let worst = { share: CUT }
-  pictures.forEach((now, n) => {
-    const share = n ? differ(pictures[n - 1], now) / whole : 0
-    if (share > worst.share) worst = { share, n, at: frames[n].at }
-  })
-  return worst.n === undefined ? undefined : `${(worst.share * 100).toFixed(0)}% of all that changes changes in frame ${worst.n + 1} (${worst.at} ms), a cut where less motion fades`
+  const n = steps.findIndex((step) => step / whole > CUT)
+  return n < 0 ? undefined : `${((steps[n] / whole) * 100).toFixed(0)}% of all that changes changes in frame ${n + 1} (${frames[n].at} ms), a cut where less motion fades`
+}
+
+/// A frame is quiet where it changes less than `QUIET` of what the busiest changes, and a pause is quiet for `LULL` ms
+/// before something changes again: a cross-fade of everything at once has none (an eased fade's tail dies away, and
+/// nothing follows it), where a title and captions that wait for the icons, or the icons for them, leave one.
+const QUIET = 0.01
+const LULL = 40
+
+/// The first pause in `frames` between two parts that change, if there is one: its first frame and its length.
+export function lull(frames) {
+  const { steps } = changes(frames)
+  const loud = steps.map((step) => step >= QUIET * Math.max(...steps))
+  const first = loud.indexOf(true)
+  for (let n = first + 1; n < frames.length; n++) {
+    if (loud[n]) continue
+    let end = n
+    while (end < frames.length && !loud[end]) end++
+    const ms = end < frames.length ? frames[end].at - frames[n - 1].at : 0
+    if (ms > LULL) return `nothing changes for ${Math.round(ms)} ms from frame ${n + 1} (${frames[n].at} ms) while it fades, as if one part waited for another`
+    n = end
+  }
 }
 
 /// How many levels (of 255, in any channel) a pixel of the last frame may differ by from the full-motion run's, and how

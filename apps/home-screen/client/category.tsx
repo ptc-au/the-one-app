@@ -75,7 +75,7 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
     const flying = flight(index)
     return flying && looks.scaledAt(1, flying.icon.x + flying.icon.width - area().x - flying.at.x - (flying.at.width + ICON) / 2, flying.icon.y - area().y - flying.at.y)
   }
-  const named = () => (props.open ? looks.named : looks.unnamed)
+  const named = () => (props.open ? looks.namedAfter(reducedMotion() ? 0 : 250) : looks.unnamed)
   // In a launcher's card, its name and its apps are a column in the card's middle, as Home's pages are, as wide as its
   // apps take, as a Mac's Launchpad's folder is; a phone's are its whole screen, as an iPhone's.
   const column = () => {
