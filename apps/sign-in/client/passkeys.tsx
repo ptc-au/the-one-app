@@ -6,7 +6,7 @@
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
 import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, confirm, date, Empty, List, open, Problem, Row, Screen, Section, Skeleton, toast, visible } from "ui"
+import { Button, call, changed, client, confirm, date, Empty, List, open, Problem, Row, Screen, Section, Skeleton, toast, visible } from "ui"
 import { Remove } from "./mine.tsx"
 
 /** A passkey, as `sign-in_devices` answers it. */
@@ -17,6 +17,8 @@ interface Passkey {
   prf_key: string | null
   unlocks: boolean
   code: string | null
+  /** The device whose Add Passkey made it. */
+  from: string | null
 }
 
 const mine = createMemo(() => call("sign-in_devices").then((text): { passkeys: Passkey[] } => JSON.parse(text)))
@@ -72,6 +74,21 @@ async function allow(passkey: Passkey) {
   await call("sign-in_encrypt_for_passkeys", { passkey: passkey.id, code: passkey.code }).catch(toast)
   refresh(mine)
 }
+
+/// This device, which lets a passkey its own Add Passkey made unlock the key at once, where it holds it: that link was
+/// shown only here, and the edge ties the passkey to it (`from`, `edge/auth.ts`), so there's no code to check.
+const here = createMemo(() => client().then((it) => it.device))
+const allowing = new Set<string>()
+createEffect(
+  () => [mine(), holds(), here()] as const,
+  ([list, holding, device]) => {
+    if (!holding) return
+    for (const passkey of list.passkeys.filter((passkey) => waiting(passkey) && passkey.from === device && !allowing.has(passkey.id))) {
+      allowing.add(passkey.id)
+      call("sign-in_encrypt_for_passkeys", { passkey: passkey.id, code: passkey.code }).then(() => refresh(mine), toast)
+    }
+  },
+)
 
 async function remove(passkey: Passkey) {
   if (!(await confirm({ heading: `Remove ${passkey.name}?`, text: "You won't be able to sign in with it again, or unlock your key with it.", action: "Remove", destructive: true }))) return

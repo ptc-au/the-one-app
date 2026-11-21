@@ -96,11 +96,16 @@ interface DeviceCode {
  */
 type RequestState = "waiting" | "approved" | "denied" | "expired";
 
-/** An invitation: the hash of its link, whose it is, and when it ends. */
+/**
+ * An invitation: the hash of its link, whose it is, and when it ends; the device that asked for it, if one did; and
+ * the passkey made with it, by its credential ID, once one was, when it ended.
+ */
 interface Invite {
   id: string;
   userId: string;
   expiresAt: Date;
+  device?: string | null;
+  credential?: string | null;
 }
 
 /** How long ago someone may have answered the passkey question for it to count as them saying yes now, in seconds. */
@@ -296,6 +301,8 @@ interface Passkey {
   prfKey?: string | null;
   encryptedKey?: string | null;
   replaces?: string | null;
+  /** The device whose Add Passkey made it. */
+  device?: string | null;
 }
 
 /**
@@ -344,13 +351,13 @@ const devices = () => ({
         createdAt: { type: "date" },
       },
     },
-    invite: { fields: { userId: { type: "string", references: { model: "user", field: "id" } }, expiresAt: { type: "date" } } },
+    invite: { fields: { userId: { type: "string", references: { model: "user", field: "id" } }, expiresAt: { type: "date" }, device: { type: "string", required: false }, credential: { type: "string", required: false } } },
     // What a device that asked to be let in calls itself, which its person is shown with its code.
     deviceCode: { fields: { name: { type: "string", required: false } } },
     // What lets a passkey unlock its person's key on a new device (`page/passkey.ts`): the public key its PRF output
     // derives, empty for a passkey that said it has none, and their key, encrypted to it by a device that holds it.
     // A passkey made to replace one that can't unlock (`replaces`) takes its place once it unlocks the key.
-    passkey: { fields: { prfKey: { type: "string", required: false }, encryptedKey: { type: "string", required: false }, replaces: { type: "string", required: false } } },
+    passkey: { fields: { prfKey: { type: "string", required: false }, encryptedKey: { type: "string", required: false }, replaces: { type: "string", required: false }, device: { type: "string", required: false } } },
     // The passkey a browser's session was made with, by its credential ID.
     session: { fields: { passkey: { type: "string", required: false } } },
   },
@@ -376,6 +383,9 @@ const devices = () => ({
       // (`encrypt_for_passkeys`): the other stays until then, so they're never left with no way in.
       const [replaced] = key && ctx.body?.replaces ? await ctx.context.adapter.findMany<Passkey>({ model: "passkey", where: [{ field: "userId", value: passkey.userId }, { field: "id", value: String(ctx.body.replaces) }] }) : [];
       if (replaced && replaced.id !== passkey.id && !replaced.prfKey) await ctx.context.adapter.update({ model: "passkey", where: [{ field: "id", value: passkey.id }], update: { replaces: replaced.id } });
+      // Made with the link a device of theirs asked for, it's that device's, which lets it unlock with no code to check.
+      const [invite] = passkey.device ? [] : await ctx.context.adapter.findMany<Invite>({ model: "invite", where: [{ field: "credential", value: passkey.credentialID }] });
+      if (invite?.device) await ctx.context.adapter.update({ model: "passkey", where: [{ field: "id", value: passkey.id }], update: { device: invite.device } });
       // A passkey that gave no PRF output this time, where a web view or provider didn't pass it on, keeps the key it
       // gave before, and what's encrypted to it.
       if (!key && passkey.prfKey) return ctx.json({});
@@ -613,8 +623,11 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
             const user = (await ctx.context.internalAdapter.findUserById(invite.userId))! as User;
             return { id: user.id, name: account(user, origin), displayName: account(user, origin) };
           },
-          afterVerification: async ({ ctx, user, context }) => {
-            if (context) await ctx.context.adapter.delete({ model: "invite", where: [{ field: "id", value: await sha256(context) }] });
+          // An invitation is used once. It's kept, ended, with the passkey made by it, which is the device's that asked
+          // for it from when its key is first said (`/passkey/prf-key`).
+          afterVerification: async ({ ctx, user, context, verification }) => {
+            const credential = verification.registrationInfo?.credential.id;
+            if (context) await ctx.context.adapter.update({ model: "invite", where: [{ field: "id", value: await sha256(context) }], update: { expiresAt: new Date(), credential } });
             return { name: user.name };
           },
         },
@@ -727,12 +740,12 @@ function made(adapter: Adapter, origin: string, name: string): Promise<User> {
 
 /**
  * A new invitation for `user` to make a passkey by, lasting `lasts` milliseconds: what's carried after `#invite=` or
- * `#passkey=` in a link. It ends the one made for them before.
+ * `#passkey=` in a link, for the device that asked for it if one did. It ends the one made for them before.
  */
-async function invitation(adapter: Adapter, user: { id: string }, lasts: number) {
+async function invitation(adapter: Adapter, user: { id: string }, lasts: number, device?: string | null) {
   await adapter.deleteMany({ model: "invite", where: [{ field: "userId", value: user.id }] });
   const link = bytesToHex(randomBytes(24));
-  await adapter.create({ model: "invite", data: { id: await sha256(link), userId: user.id, expiresAt: new Date(Date.now() + lasts) }, forceAllowId: true });
+  await adapter.create({ model: "invite", data: { id: await sha256(link), userId: user.id, expiresAt: new Date(Date.now() + lasts), device: device ?? null }, forceAllowId: true });
   return link;
 }
 
@@ -865,13 +878,15 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
         ...browsers.map(({ id, userAgent, createdAt }) => ({ id, kind: "browser", name: browser(userAgent), added: createdAt })),
       ],
       // Whether each unlocks its person's key on a new device, and what a device that holds the key encrypts it to.
-      passkeys: passkeys.map(({ id, name, createdAt, credentialID, prfKey, encryptedKey }) => ({
+      passkeys: passkeys.map(({ id, name, createdAt, credentialID, prfKey, encryptedKey, device }) => ({
         id,
         name: name || "Passkey",
         added: createdAt,
         credential: credentialID,
         prf_key: prfKey ?? null,
         unlocks: !!(prfKey && encryptedKey),
+        // The device whose Add Passkey made it, which lets it unlock with no code to check, where it holds the key.
+        from: device ?? null,
       })),
     };
   }
@@ -929,7 +944,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   // A link that this person makes another passkey by, in a browser, within a quarter of an hour.
   // Its query makes it a page of its own: a browser that has the sign-in page open already (Safari, from the app) loads it
   // afresh, where a link that differs only after `#` kept what that page was doing (21 Nov: Unlock with Passkey's error).
-  if (ask === "passkey") return { link: `${origin}/sign-in/?passkey#passkey=${await invitation(adapter, user, 15 * 60 * 1000)}` };
+  if (ask === "passkey") return { link: `${origin}/sign-in/?passkey#passkey=${await invitation(adapter, user, 15 * 60 * 1000, about.device)}` };
   // A device that holds this person's key encrypted it to the passkey they confirmed there, whose PRF output derives
   // `prf_key`. It's kept only for that passkey, and only while that's its key: whatever else a device sends, as one
   // on a build that encrypted it to every passkey did, is never kept.

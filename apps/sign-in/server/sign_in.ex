@@ -242,6 +242,10 @@ defmodule SignIn do
                       "The key its PRF output derives, which your key is encrypted to so it unlocks it on a new device: empty if it has no PRF, null until it's next used"
                   },
                   unlocks: %{type: "boolean", description: "Whether it unlocks your key on a new device"},
+                  from: %{
+                    type: ["string", "null"],
+                    description: "The device whose Add Passkey made it: where that device holds your key, it lets it unlock with no code to check"
+                  },
                   code: %{
                     type: ["string", "null"],
                     description: "Its key's code, which the sign-in page showed as it was used: its person checks they're the same before it's allowed"
@@ -478,7 +482,8 @@ defmodule SignIn do
     who = person(call)
 
     if screen?(call) do
-      %{link: ask(%{ask: "passkey", who: who})["link"]}
+      # The device that asks lets the passkey made by its link unlock the key itself, where it holds it (`from`).
+      %{link: ask(%{ask: "passkey", who: who, device: device(call)["id"]})["link"]}
     else
       Call.tool(call, "notifications", "send", %{
         "title" => "Add a passkey",

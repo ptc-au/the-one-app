@@ -291,6 +291,91 @@
       }
     }
   },
+  "Passkeys, one this device made": {
+    "like": "Passkeys",
+    "answers": {
+      "sign-in_devices": {
+        "devices": [
+          {
+            "id": "dev1",
+            "name": "Alex's Laptop",
+            "kind": "app",
+            "added": "2025-11-01T10:00:00Z",
+            "connected": true
+          },
+          {
+            "id": "dev2",
+            "name": "Sam's Phone",
+            "kind": "app",
+            "added": "2025-12-10T08:00:00Z",
+            "connected": false,
+            "last_seen": "2025-12-31T21:00:00Z"
+          },
+          {
+            "id": "dev3",
+            "name": "Claude",
+            "kind": "assistant",
+            "added": "2025-12-20T09:00:00Z",
+            "connected": false
+          },
+          {
+            "id": "dev4",
+            "name": "Browser on Work PC",
+            "kind": "browser",
+            "added": "2025-12-22T09:00:00Z",
+            "connected": false
+          }
+        ],
+        "passkeys": [
+          {
+            "id": "pk1",
+            "name": "Alex's Laptop",
+            "added": "2025-11-01T10:00:00Z",
+            "prf_key": "k1",
+            "unlocks": true
+          },
+          {
+            "id": "pk2",
+            "name": "Security Key",
+            "added": "2025-12-28T10:00:00Z",
+            "prf_key": "k2",
+            "unlocks": false,
+            "code": "63038 96957 95028 61504",
+            "from": "dev1"
+          },
+          {
+            "id": "pk3",
+            "name": "Phone Passkey",
+            "added": "2025-12-30T10:00:00Z",
+            "prf_key": null,
+            "unlocks": false
+          }
+        ]
+      },
+      "sign-in_encrypt_for_passkeys": {
+        "passkeys": 1
+      }
+    },
+    "checks": {
+      "A passkey this device's Add Passkey made is let unlock its key, once, with no question": [
+        {
+          "expect": {
+            "asked": {
+              "sign-in_encrypt_for_passkeys": 1
+            }
+          },
+          "within": 3000
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "alertdialog"
+            }
+          }
+        }
+      ]
+    }
+  },
   "People & Groups": {
     "answers": {
       "sign-in_everyone": {

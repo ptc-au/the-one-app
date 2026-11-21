@@ -108,7 +108,7 @@ type Stage =
   | { stage: "denied"; name: string }
   | { stage: "ready"; app: App }
   | { stage: "confirm" }
-  | { stage: "created" }
+  | { stage: "created"; by?: string; on: string[] }
   | { stage: "unlocked"; name?: string; servers: string[]; whose: string }
   | { stage: "failed"; why: string; ended?: boolean }
 
@@ -284,6 +284,25 @@ async function made(result: Answered, again: boolean) {
   if (again) setStage({ stage: "confirm" })
 }
 
+/**
+ * Shows the passkey just made, and where it's let unlock the key: by the device whose Add Passkey made it, itself,
+ * where that device holds the key (`from`, `edge/auth.ts`), so there's no code to check; or on a device that holds it,
+ * whose person taps Allow beside the code this page shows too.
+ */
+async function created() {
+  type Mine = { devices: { id: string; name: string }[]; passkeys: { credential: string; from: string | null }[] }
+  type Holders = { devices: { device: string; name: string }[] }
+  // Where it can't tell, it says to allow it on a device that holds the key, which is always so.
+  const [{ devices: mine, passkeys }, { devices }] = await Promise.all([tool<Mine>("sign-in_devices", {}), tool<Holders>("encryption_key", {})]).catch((): [Mine, Holders] => [{ devices: [], passkeys: [] }, { devices: [] }])
+  // Each device by the name its person sees in Sign In & Security.
+  const named = devices.map((holder) => ({ ...holder, name: mine.find((device) => device.id === holder.device)?.name ?? holder.name }))
+  const from = passkeys.find((passkey) => passkey.credential === used?.credential)?.from
+  setStage({ stage: "created", by: named.find((device) => device.device === from)?.name, on: named.map((device) => device.name) })
+}
+
+/// Names as a sentence says them: "A", "A and B", "A, B and C".
+const listed = (names: string[]) => (names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`)
+
 /// What a browser said when a passkey wasn't made or used, in the page's words, with what to do. Its own words go to
 /// Telemetry, as they help whoever looks into it and nobody here: Safari's NotAllowedError says only that "the user
 /// agent or the platform" didn't allow it. What this network's sign-in says (`edge/auth.ts`) is said as it is.
@@ -423,7 +442,7 @@ async function signIn() {
     if ((error as { code?: string } | null)?.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") throw new Error("This device has a passkey of yours already. Open the link on another one.")
     if (error) throw await plainly("make", error)
     await made(result as Answered, true)
-    if (stage().stage !== "confirm") setStage({ stage: "created" })
+    if (stage().stage !== "confirm") await created()
     return
   }
   if (flow.flow === "join") {
@@ -580,13 +599,14 @@ function shows(): Shows {
       switch (now.stage) {
         // One more tap, for its PRF output, which a browser gives only right after one.
         case "confirm":
-          return { heading, note: "Use your new passkey once, so it can unlock your key on a new device.", button: "Use Passkey", onSignIn: () => withPasskey().then(() => setStage({ stage: "created" })) }
+          return { heading, note: "Use your new passkey once, so it can unlock your key on a new device.", button: "Use Passkey", onSignIn: () => withPasskey().then(created) }
         case "created":
+          if (!shownCode) return { heading, done: "Your passkey is created, and you can sign in with it, but it can't unlock your key on a new device. Passkeys saved in iCloud Keychain or Google Password Manager can." }
+          if (now.by) return { heading, done: `Your passkey is created. Go back to the One App on ${now.by}: it lets your passkey unlock your key.` }
           return {
             heading,
-            done: shownCode
-              ? `Your passkey is created. Go back to the app, and allow it there if it shows this code: ${shownCode}.${flow.replaces ? " Your old passkey is removed once it's allowed." : ""}`
-              : "Your passkey is created, and you can sign in with it, but it can't unlock your key on a new device. Passkeys saved in iCloud Keychain or Google Password Manager can.",
+            note: `Your passkey is created. To let it unlock your key, open the One App on ${now.on.length ? listed(now.on) : "a device that holds your key"} and tap Allow beside this code.${flow.replaces ? " Your old passkey is removed then." : ""}`,
+            code: shownCode,
           }
         default:
           return { heading, button: "Create a passkey", onSignIn: signIn }
