@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { basename, join, relative } from "node:path"
 import { against, keeping, only, out, present, rates, ssh } from "./options.js"
 import { build, pageFolder } from "./pages.js"
-import { device, devices, hostScore, judge } from "./tiers.js"
+import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./harness.js"
 import { finger, ios, moves, selector, single, travel } from "./gesture.js"
 import { apart, arrives, contactSheet, curve, cut, differs, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
@@ -334,6 +334,7 @@ async function play(built, scene, name, motion, hz, folder) {
   if (motion.keeps && (!tier || (!hostScore && !device))) failed.push(tier ? `this CPU isn't one of devices.json's hosts, to judge "${motion.keeps}" by` : `no tier named "${motion.keeps}" in devices.json`)
   const keeping = tier?.hz === hz && (hostScore || device) && judge(frames, hz, waits).find(({ tier }) => tier === motion.keeps)
   if (keeping?.dropped) failed.push(`${keeping.tier} drops ${keeping.dropped} of ${keeping.drawn} frames (the worst ${keeping.worst.ms.toFixed(1)} ms, its ${keeping.worst.by})`)
+  if (before) failed.push(...costlier(frames, before.frames, hz))
   if (failed.length) {
     process.exitCode = 1
     said.push(`  ${hz} Hz FAILS: ${failed.join("; ")}`)

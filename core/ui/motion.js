@@ -32,7 +32,8 @@
 // laptop's Intel GPU at 4K, a browser's WebGPU), from each frame's work, the same on any device, as calibrate.js
 // measured a real one's GPU and its drawing take for it and as the tier's CPU and GPU score beside this machine's and
 // that one's. With `--against` (an earlier run's `--out`), each is compared with that run's: how far apart the curves
-// come, at most, and how much of the filmstrips differs (`changed.png`). `--keeps` plays only the motions that keep a
+// come, at most, and how much of the filmstrips differs (`changed.png`), and it fails where a tier's GPU would take
+// longer for its median frame or its worst than for that run's, as the model prices their work (`costlier`). `--keeps` plays only the motions that keep a
 // tier (`keeps`). `index.html` in `--out` is a contact sheet of them all, before and after side by side. `--watch` plays them again as their app, the gallery or the UI library changes, a folder's
 // own motions alone where only it changed, each round said with how long it took.
 //

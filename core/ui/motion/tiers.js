@@ -62,10 +62,23 @@ export function judge(frames, hz, waits = true) {
           const drawn = draw !== undefined ? draw * (tier.draws ?? 1) * (anchor.cpu / tier.cpu) : hostScore && shipped ? ((frame.draw_ms ?? 0) * hostScore) / tier.cpu : 0
           const [cpuMs, jsMs] = [painted + drawn, hostScore && shipped && waits ? ((frame.script_ms ?? 0) * hostScore) / tier.cpu : 0]
           const ms = Math.max(gpuMs, cpuMs, jsMs)
-          return { ms, by: ms === gpuMs ? "GPU" : ms === jsMs ? "JS" : "CPU" }
+          return { ms, by: ms === gpuMs ? "GPU" : ms === jsMs ? "JS" : "CPU", gpuMs }
         })
       const budget = 1000 / tier.hz
       const worst = times.reduce((worst, time) => (time.ms > worst.ms ? time : worst), { ms: 0, by: "" })
-      return { tier: tier.name, dropped: times.filter((time) => time.ms > budget).length, drawn: times.length, worst }
+      const gpu = times.map((time) => time.gpuMs).sort((a, b) => a - b)
+      return { tier: tier.name, dropped: times.filter((time) => time.ms > budget).length, drawn: times.length, worst, gpu: { median: gpu[Math.floor(gpu.length / 2)] ?? 0, worst: gpu.at(-1) ?? 0 } }
     })
+}
+
+/// Where each tier's GPU would take longer for `frames` than for `before`'s, an earlier run's of the same motion, as the
+/// tiers' model has them (the same on any machine: their work, priced): its median frame or its worst, by more than
+/// noise in what's drawn (2%, and a twentieth of a ms). A change that draws more of each frame, copies more, blurs more
+/// or takes more passes shows here, where a device's own timestamps move with its clock and its heat.
+export function costlier(frames, before, hz) {
+  if (device) return []
+  const was = Object.fromEntries(judge(before, hz).map((judged) => [judged.tier, judged.gpu]))
+  return judge(frames, hz).flatMap(({ tier, gpu }) =>
+    ["median", "worst"].filter((which) => was[tier] && gpu[which] > was[tier][which] * 1.02 + 0.05).map((which) => `${tier}'s ${which} frame takes its GPU ${gpu[which].toFixed(2)} ms, ${was[tier][which].toFixed(2)} before`),
+  )
 }

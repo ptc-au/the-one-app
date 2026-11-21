@@ -446,7 +446,7 @@ impl Screen {
     /// than one where it painted again before the display's refresh), its thread's CPU time drawing those frames for
     /// the GPU (`draw_ms`) and its time drawing them that it waited (`draw_wait_ms`: for pipelines being compiled, an image to
     /// draw on, the GPU), and, as `renderer` last drew it, its draw calls and render passes (`draws`, `passes`), what its GPU did (`work`,
-    /// `Renderer::work`), its GPU's time by its timestamps of its passes, where it takes them, once it's waited for
+    /// `Renderer::work`), its GPU's time by its timestamps of its passes and copies, where it takes them, once it's waited for
     /// (`gpu_ms`, `Renderer::finish`: a frame that draws everything again costs it there, on a software GPU too), and
     /// of it its blurs' (`blur_ms`), and what its atlas holds (`atlas`).
     pub fn cost(&mut self, renderer: &crate::render::renderer::Renderer) -> Value {

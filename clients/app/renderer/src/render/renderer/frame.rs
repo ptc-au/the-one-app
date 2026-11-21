@@ -387,7 +387,7 @@ impl Renderer {
                 if clip.as_ref().is_none_or(|clip| !clip.rects.is_empty()) {
                     self.draw_batches(encoder, target, &canvas, &canvas_view, globals, buffer, batches, instances, blurs, decided, from..batches.len(), clip.as_ref());
                 }
-                encoder.copy_texture_to_texture(canvas.as_image_copy(), texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 });
+                self.copy(encoder, false, |encoder| encoder.copy_texture_to_texture(canvas.as_image_copy(), texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 }));
                 target.canvas = Some((canvas, true));
             }
             None => {
@@ -412,12 +412,14 @@ impl Renderer {
         let whole = [[0, 0, into.width(), into.height()]];
         let rects = clip.map_or(&whole[..], |clip| &clip.rects);
         let mut work = self.work.get();
-        for [left, top, right, bottom] in rects {
-            let at = wgpu::Origin3d { x: *left, y: *top, z: 0 };
-            let texel = |texture| wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: at, aspect: wgpu::TextureAspect::All };
-            encoder.copy_texture_to_texture(texel(&kept.texture), texel(into), wgpu::Extent3d { width: right - left, height: bottom - top, depth_or_array_layers: 1 });
-            work.copied += f64::from(right - left) * f64::from(bottom - top);
-        }
+        self.copy(encoder, false, |encoder| {
+            for [left, top, right, bottom] in rects {
+                let at = wgpu::Origin3d { x: *left, y: *top, z: 0 };
+                let texel = |texture| wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: at, aspect: wgpu::TextureAspect::All };
+                encoder.copy_texture_to_texture(texel(&kept.texture), texel(into), wgpu::Extent3d { width: right - left, height: bottom - top, depth_or_array_layers: 1 });
+                work.copied += f64::from(right - left) * f64::from(bottom - top);
+            }
+        });
         self.work.set(work);
     }
 

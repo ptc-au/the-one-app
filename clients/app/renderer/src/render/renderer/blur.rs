@@ -208,13 +208,15 @@ impl Renderer {
         let readable = frame.usage().contains(wgpu::TextureUsages::TEXTURE_BINDING);
         if !readable {
             let source = backdrop.source.get_or_insert_with(|| make(size, wgpu::TextureUsages::COPY_DST));
-            for blur in blurs {
-                let (width, height) = (blur.region[2] - blur.region[0], blur.region[3] - blur.region[1]);
-                if width > 0 && height > 0 {
-                    let (left, top) = (blur.region[0], blur.region[1]);
-                    encoder.copy_texture_to_texture(texel(frame, left, top), texel(&source.0, left, top), wgpu::Extent3d { width, height, depth_or_array_layers: 1 });
+            self.copy(encoder, true, |encoder| {
+                for blur in blurs {
+                    let (width, height) = (blur.region[2] - blur.region[0], blur.region[3] - blur.region[1]);
+                    if width > 0 && height > 0 {
+                        let (left, top) = (blur.region[0], blur.region[1]);
+                        encoder.copy_texture_to_texture(texel(frame, left, top), texel(&source.0, left, top), wgpu::Extent3d { width, height, depth_or_array_layers: 1 });
+                    }
                 }
-            }
+            });
         }
         let backdrop = target.backdrop.as_ref().expect("made above");
         let texture_of = |which: usize| &backdrop.levels[level - 1][which].as_ref().expect("made above").1;
@@ -279,7 +281,7 @@ impl Renderer {
             };
             let (left, top, width, height) = region(copied, level, (width, height));
             if width > 0 && height > 0 {
-                encoder.copy_texture_to_texture(texel(down, left, top), texel(view.texture(), left, top), wgpu::Extent3d { width, height, depth_or_array_layers: 1 });
+                self.copy(encoder, true, |encoder| encoder.copy_texture_to_texture(texel(down, left, top), texel(view.texture(), left, top), wgpu::Extent3d { width, height, depth_or_array_layers: 1 }));
             }
             if let Some(behind) = blur.behind {
                 target.blurred.insert(behind, KeptBlur { view: view.clone(), used: true, sigma: blur.sigma, region: blur.whole, over: blur.over, prints: blur.prints.clone() });

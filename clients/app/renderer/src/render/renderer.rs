@@ -339,6 +339,15 @@ impl Renderer {
         })
     }
 
+    /// Makes `copy`'s copies, of a blur (`blurs`) or not, timed where the GPU takes timestamps between commands
+    /// (`Stamps::copy`).
+    fn copy(&self, encoder: &mut wgpu::CommandEncoder, blurs: bool, copy: impl FnOnce(&mut wgpu::CommandEncoder)) {
+        match &self.stamps {
+            Some(stamps) => stamps.copy(encoder, blurs, copy),
+            None => copy(encoder),
+        }
+    }
+
     /// What the last frame's GPU did, the same on any GPU, as the inspector's `profile` and `replay` say it: how many
     /// device pixels each kind of thing it drew covered, what it copied of the frames before, and the bytes it uploaded.
     pub fn work(&self) -> serde_json::Value {
@@ -477,7 +486,7 @@ impl Renderer {
         self.scene.as_ref()
     }
 
-    /// The GPU time of the last frame it has, summed over its passes, and its blurs' (a backdrop's glass), where the
+    /// The GPU time of the last frame it has, summed over its passes and copies, and its blurs' (a backdrop's glass), where the
     /// GPU says (a frame or two behind).
     pub fn gpu(&self) -> Option<(web_time::Duration, web_time::Duration)> {
         self.stamps.as_ref()?.gpu

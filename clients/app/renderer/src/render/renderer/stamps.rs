@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-/// How many passes a frame's GPU time is taken of, each a timestamp as it begins and one as it ends.
-const STAMPED: u32 = 32;
+/// How many passes and copies a frame's GPU time is taken of, each a timestamp as it begins and one as it ends.
+const STAMPED: u32 = 48;
 
-/// Timestamps of a frame's passes, as WebGPU's `timestamp-query` takes them (at a pass's start and end: a tiled GPU's
+/// Timestamps of a frame's passes and copies (`copy`), as WebGPU's `timestamp-query` takes them (at a pass's start and end: a tiled GPU's
 /// stage boundaries), resolved into one of a few buffers that are read back once the GPU's done, never waited for:
 /// the GPU time of the frame drawn a frame or two before.
 pub(super) struct Stamps {
@@ -16,6 +16,8 @@ pub(super) struct Stamps {
     passes: std::cell::RefCell<Vec<bool>>,
     /// Nanoseconds a tick.
     period: f64,
+    /// Whether it takes them between commands too (`copy`), as Direct3D 12 and Vulkan do, not only at a pass's ends.
+    inside: bool,
     /// The last frame read back's GPU time, all of it and its blurs'.
     pub(super) gpu: Option<(web_time::Duration, web_time::Duration)>,
 }
@@ -34,7 +36,8 @@ impl Stamps {
         let read = (0..3)
             .map(|_| (device.create_buffer(&wgpu::BufferDescriptor { label: None, size: bytes, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false }), Arc::default(), None))
             .collect();
-        Some(Stamps { set, resolved, read, writing: None, passes: Default::default(), period: f64::from(queue.get_timestamp_period()), gpu: None })
+        let inside = device.features().contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
+        Some(Stamps { set, resolved, read, writing: None, passes: Default::default(), period: f64::from(queue.get_timestamp_period()), inside, gpu: None })
     }
 
     /// As a frame starts: what the GPU has finished of the frames before is read, and a buffer free for this one's
@@ -78,11 +81,30 @@ impl Stamps {
     /// for them this frame. A pass that draws nothing is never given them: a tiled GPU takes its timestamps where its
     /// stages begin and end, and one with no vertex stage would keep an earlier frame's.
     pub(super) fn pass(&self, blurs: bool) -> Option<wgpu::RenderPassTimestampWrites<'_>> {
+        self.take(blurs).map(|at| wgpu::RenderPassTimestampWrites { query_set: &self.set, beginning_of_pass_write_index: Some(at), end_of_pass_write_index: Some(at + 1) })
+    }
+
+    /// Copies `copy` makes, of a blur (`blurs`) or not, timed as a pass is where it takes timestamps between commands
+    /// (`inside`), so a frame's GPU time is its copies' too: a canvas copied whole into its image each frame
+    /// (`Renderer::draw_target`) is the GPU's work as much as a pass, and a frame's model prices its pixels (`copied`).
+    pub(super) fn copy(&self, encoder: &mut wgpu::CommandEncoder, blurs: bool, copy: impl FnOnce(&mut wgpu::CommandEncoder)) {
+        let at = self.inside.then(|| self.take(blurs)).flatten();
+        if let Some(at) = at {
+            encoder.write_timestamp(&self.set, at);
+        }
+        copy(encoder);
+        if let Some(at) = at {
+            encoder.write_timestamp(&self.set, at + 1);
+        }
+    }
+
+    /// Where the timestamps of a pass or a copy about to begin go, while there's room for them this frame.
+    fn take(&self, blurs: bool) -> Option<u32> {
         let mut passes = self.passes.borrow_mut();
         let at = passes.len() as u32 * 2;
         (self.writing.is_some() && at + 2 <= STAMPED * 2).then(|| {
             passes.push(blurs);
-            wgpu::RenderPassTimestampWrites { query_set: &self.set, beginning_of_pass_write_index: Some(at), end_of_pass_write_index: Some(at + 1) }
+            at
         })
     }
 
