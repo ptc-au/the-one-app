@@ -118,7 +118,7 @@ defmodule Database do
         cond do
           cannot_run -> :cannot_run
           passed -> :unanswered
-          Task.await(relay, :infinity) == true -> :relayed
+          relay && Task.await(relay, :infinity) == true -> :relayed
           true -> :alone
         end
 
