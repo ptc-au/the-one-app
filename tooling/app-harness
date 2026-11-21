@@ -30,6 +30,10 @@
 #            5 s on, it says so, and Telemetry hears it once the server answers, with the step its opening reached.
 #   loading  an app's window opened while the server holds every request, so its page can't be read: the app's
 #            background as soon as it's listed, never black, and a second on its loading state, a spinner over "Loading".
+#   passkey  Add Passkey's link opened in a tab with the sign-in page open already shows Add a passkey; one made there with
+#            PRF says to go back to the app, no code, and the app lets it unlock its key by itself as it's opened again.
+#   keys     Sign In & Security while servers wait for two groups' keys, sealed to the owner's as the network's is: one
+#            row says both, and goes as they're handed over, while it's open and while it's closed (within 30 s of each).
 #   open    the app started as an update starts it, its windows to open again, on the Surface's costs
 #            (`measured.surface.open` in core/ui/devices.json): each window is made before the pipelines it draws with
 #            could have been compiled, so it waited for none being compiled, and none of its page's start.
@@ -39,7 +43,7 @@
 # instead (`clients/app`'s `phone`): Tauri's, its event loop and its page (in WebKitGTK), and its native windows a
 # phone's (`Native::phone`), each the whole of a 390 × 844 screen, the launcher its Home Screen, the root window under
 # every app's, which its system can close, where a computer's is a panel it only puts away. A phone has no checks of a
-# second start that hands a `one:` link to the app running (`reopen`, `loading`), which a phone's system does and
+# second start that hands a `one:` link to the app running (`reopen`, `loading`, `keys`, `passkey`), which a phone's system does and
 # Tauri's phone app on Linux can't (each start is an app of its own, which never ends), nor of the windows a
 # computer's update opens again (`stale`, `open`, `ONE_REOPEN`): it refuses them. It needs what
 # `tooling/network` does, and `xvfb-run`, `dbus-run-session` and ImageMagick's `import`, as the app's event loop is
@@ -47,20 +51,20 @@
 set -euo pipefail
 shopt -s extglob
 root=$(cd "$(dirname "$0")/.." && pwd)
-usage="tooling/app-harness <folder> [--seed <n>] [--phone] [start|reopen|closed|unopened|reloaded|stale|cached|restart|updated|twice|blank|loading|open]…"
+usage="tooling/app-harness <folder> [--seed <n>] [--phone] [start|reopen|closed|unopened|reloaded|stale|cached|restart|updated|twice|blank|loading|keys|passkey|open]…"
 folder= seed=1 phone= checks=()
 while (($#)); do
   case $1 in
     --seed) seed=${2:?$usage} && shift ;;
     --phone) phone=390x844 ;;
-    start | reopen | closed | unopened | reloaded | stale | cached | restart | updated | twice | blank | loading | open) checks+=("$1") ;;
+    start | reopen | closed | unopened | reloaded | stale | cached | restart | updated | twice | blank | loading | keys | passkey | open) checks+=("$1") ;;
     -*) echo "$usage" >&2 && exit 1 ;;
     *) folder=$1 ;;
   esac
   shift
 done
 [[ -n $folder ]] || { echo "$usage" >&2 && exit 1; }
-computers_only=" reopen stale loading open "
+computers_only=" reopen stale loading keys passkey open "
 if [[ -n $phone ]]; then
   for name in "${checks[@]}"; do
     [[ $computers_only != *" $name "* ]] ||
@@ -68,7 +72,7 @@ if [[ -n $phone ]]; then
   done
   ((${#checks[@]})) || checks=(start closed unopened reloaded cached restart updated twice blank)
 fi
-((${#checks[@]})) || checks=(start reopen closed unopened reloaded stale cached restart updated twice blank loading open)
+((${#checks[@]})) || checks=(start reopen closed unopened reloaded stale cached restart updated twice blank loading keys passkey open)
 mkdir -p "$folder/app"
 folder=$(cd "$folder" && pwd)
 RANDOM=$seed
@@ -280,6 +284,63 @@ server() {
 # server was given up for gone (issue 26: windows ready in 22-34 s). It's asked as an app's window asks, over the
 # app's own channel (`hosts::talk`), as a view of its own: a read another view kept, a write (a group made), the
 # server stopped, then the read.
+# Sign In & Security while the servers are waiting for the keys of two groups the owner has, each sealed to the owner's
+# key, as the network's is (made on this device, each group's Vault listed, so the servers should hold its keys): one
+# row says both, and goes as they're handed over, the first while it's open and the second while it's closed, as an
+# iPhone's app is behind the browser its passkey hands them over in, which shows none waiting as it opens again. On 21
+# Nov Andre's row for the network's key stayed after his passkey handed it to every server.
+keys() {
+  # Groups new to the network each run, which keeps it: `$RANDOM` is the seed's, the same each time.
+  local first=first$(date +%s) second=second$(date +%s) group
+  for group in "$first" "$second"; do
+    "$one" permissions group --name "$group" >/dev/null &&
+      bun "$root/tooling/keys.ts" make "groups/$group" >/dev/null &&
+      bun "$root/tooling/keys.ts" wrap "groups/$group" >/dev/null || { echo "        $group's key wasn't made" && return 1; }
+    # It says its servers are waiting for its key, which is what's wanted here.
+    ONE_SUBJECT="groups/$group" "$one" vault list >/dev/null 2>&1 || true
+  done
+  [[ -n $app ]] || start_app || return 1
+  local link="one:settings#sign-in/passkeys"
+  "$folder/app/one" "$link"
+  says() { [[ -n $(open_window settings) ]] && "$one" inspector tree --window "$(open_window settings)" 2>/dev/null | grep -q -- "$1"; }
+  shown() { "$one" inspector tree --window "$(open_window settings)" 2>&1 | jq -Rr 'fromjson? // . | if type == "string" then . else (.. | .name? // empty) end' | grep -i "waiting\|fail\|error" | head -5 | tr '\n' ';'; }
+  within 30 "says \"waiting for $first's and $second's keys\"" || { echo "        Sign In & Security didn't say in one row that servers wait for both groups' keys: $(shown)" && return 1; }
+  bun "$root/tooling/keys.ts" servers "groups/$first" >/dev/null
+  within 30 "says \"waiting for $second's key\"" || { echo "        30 s after $first's key was handed over, it said: $(shown)" && return 1; }
+  "$one" inspector close --window "$(open_window settings)" >/dev/null
+  within 5 '[[ -z $(open_window settings) ]]' || { echo "        Settings didn't close" && return 1; }
+  bun "$root/tooling/keys.ts" servers "groups/$second" >/dev/null
+  "$folder/app/one" "$link"
+  within 30 'says "Sign In & Security"' || { echo "        Sign In & Security didn't open again" && return 1; }
+  within 30 '! says "waiting for"' || { echo "        opened again after $second's key was handed over, 30 s on it said: $(shown)" && return 1; }
+}
+
+# Add Passkey in the app's Sign In & Security, on this device, which holds the owner's key: its link, opened in a tab
+# that has the sign-in page open already, as an iPhone's Safari had it (21 Nov: it kept Unlock with Passkey's error),
+# shows Add a passkey; a passkey made there that unlocks (Chrome's virtual one, with PRF) says to go back to the app,
+# with no code; and Sign In & Security, opened again as an iPhone's app comes back, lets it unlock its key by itself.
+passkey() {
+  local opened=$folder/opened unlocks
+  : >"$opened"
+  printf '#!/bin/sh\necho "$1" >>"%s"\n' "$opened" >"$folder/browser" && chmod +x "$folder/browser"
+  # The device's browser, which the app opens a link in (`xdg-open`, with no desktop of its own), keeps the link.
+  BROWSER=$folder/browser start_app || return 1
+  local link="one:settings#sign-in/passkeys"
+  "$folder/app/one" "$link"
+  says() { [[ -n $(open_window settings) ]] && "$one" inspector tree --window "$(open_window settings)" 2>/dev/null | grep -o -- "$1" | wc -l; }
+  within 30 '(($(says "Sign In & Security") > 0))' || { echo "        Sign In & Security didn't open" && return 1; }
+  unlocks=$(says "Unlocks your key on a new device")
+  "$one" inspector tap --window "$(open_window settings)" --role button --name "Add Passkey" >/dev/null
+  within 30 '[[ -s $opened ]]' || { echo "        Add Passkey opened no link in the browser" && return 1; }
+  local page
+  page=$(bun "$root/tooling/passkey-tab.mjs" "$("$one" sign-in unlock_with_passkey | jq -r .link)" "$(head -1 "$opened")" 2>&1)
+  [[ $page == *"Go back to the One App"* ]] || { echo "        the sign-in page said: ${page:0:400}" && return 1; }
+  "$one" inspector close --window "$(open_window settings)" >/dev/null
+  within 5 '[[ -z $(open_window settings) ]]' || { echo "        Settings didn't close" && return 1; }
+  "$folder/app/one" "$link"
+  within 30 '(($(says "Unlocks your key on a new device") > unlocks))' || { echo "        opened again, Sign In & Security didn't let the new passkey unlock within 30 s: $("$one" inspector tree --window "$(open_window settings)" 2>&1 | jq -Rr 'fromjson? // . | if type == "string" then . else (.. | .name? // empty) end' | grep -i "unlock\|allow\|passkey\|can't" | head -8 | tr '\n' ';')" && return 1; }
+}
+
 cached() {
   [[ -n $app ]] || start_app || return 1
   local channel
@@ -534,6 +595,8 @@ for name in "${checks[@]}"; do
     twice) check "twice: the Home Screen updated again as it opens on an update ends on the last, with one window at every moment" twice ;;
     blank) check "blank: a window still blank 5 s after it opened says so, and Telemetry hears it" blanked ;;
     loading) check "loading: a window whose page can't be read is the app's background, then its loading state" loading ;;
+    passkey) check "passkey: Add Passkey's link in a reused tab adds one, which the app lets unlock with no code" passkey ;;
+    keys) check "keys: Sign In & Security's waiting row goes as the servers are handed the key" keys ;;
     open) check "open: on the Surface's costs, each window opened again is made before its pipelines could compile" opened ;;
   esac
 done
