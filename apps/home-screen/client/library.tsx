@@ -53,7 +53,7 @@ export const wait = (index: number) => Math.min(index, 2) * 40
 
 /// How a category's `count` apps are handed between its square and it: once they've all flown, or at once with less
 /// motion, when they cross-fade.
-export const handed = (count: number) => [looks.handedAfter(1000 + wait(count - 1)), reducedMotion() && looks.handing]
+export const handed = (count: number) => [looks.handedAfter(1200 + wait(count - 1)), reducedMotion() && looks.handing]
 
 /// How long the names in a category's square wait to come back as it closes, in ms: its apps fly home by a spring of
 /// half a second, the last of them `wait` after the first, and are within half a point a refresh of landing a third of
