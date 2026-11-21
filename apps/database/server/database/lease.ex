@@ -37,14 +37,14 @@ defmodule Database.Lease do
 
   It's a `:gen_statem`, in one of these states:
 
-  - `:looking`: it's reading the log, in a process of its own, as it does when it starts, and after it lost the
-    lease or a write it couldn't finish. A transaction waits for it, until the bucket hasn't answered its first read
+  - `:looking`: it's reading the log, in a process of its own, as it does when it starts, after it lost the
+    lease or a write it couldn't finish, and to take the lease over from the server it follows. A transaction waits for it, until the bucket hasn't answered its first read
     for `@renew_within`; then it's `:unreached`, and a transaction is refused at once while it reads the log again
     every `@renew_every`. So a database started again while the bucket is away doesn't hold up whoever asked for it.
   - `{:following, server}`: `server` holds the lease. A transaction is answered with who holds it, to be passed on
     to them. One they didn't run has this server read what was logged after the last entry it read, and take the
-    lease if they handed it on, or if that's nothing and it's not the one out of reach (`Database.transaction/3`);
-    one that another server took meanwhile is followed there. `nil` is nobody: the log is empty or handed on, and this server isn't up
+    lease if they handed it on, or if that's nothing and it's not the one out of reach (`Database.transaction/3`),
+    looking at the log meanwhile; one that another server took meanwhile is followed there. `nil` is nobody: the log is empty or handed on, and this server isn't up
     to take it.
   - `:settling`: this server has just opened the database, and writes nothing until `@writes_after` has passed.
     Its copy is read-only meanwhile: a transaction that only reads is answered from it at once, and one that would
@@ -131,8 +131,8 @@ defmodule Database.Lease do
   # whether it's `marked` as run yet; `lost_to` the server that last took the lease from this one; `renewing` the look
   # at the log under way in the background, `unreached` why the last look couldn't read the bucket, `used` when by its
   # monotonic clock it last ran a transaction, and `ticking` whether it looks again every `@renew_every`; `reader` the
-  # copy's second connection, which only reads, `writing` the write being logged (`write/4`), and `looking` the
-  # process reading the log (`looking/3`). A field's default is what's safe for a database that was open under a
+  # copy's second connection, which only reads, `writing` the write being logged (`write/4`), `looking` the
+  # process reading the log (`looking/3`), and `taking` the take-over waiting on it, to be answered. A field's default is what's safe for a database that was open under a
   # version of this module without it (`code_change/4`): never seen free, so it looks before it answers.
   defstruct [
     :artifact,
@@ -146,6 +146,7 @@ defmodule Database.Lease do
     :settled,
     :failed,
     :lost_to,
+    :taking,
     :renewing,
     :unreached,
     :used,
@@ -155,6 +156,10 @@ defmodule Database.Lease do
     pages: 0,
     firing: %{}
   ]
+
+  # How long, in milliseconds, a server that's stopping waits for the bucket to answer its handing the lease on: the
+  # bucket answers a write well within a second, and OTP gives a process 5 s to stop.
+  @handed_within 2_000
 
   # How long, in milliseconds, a server whose own copy of the database failed takes no lease after it handed this one
   # on, so a server that can open files takes it rather than this one again (`failed/4`).
@@ -196,8 +201,9 @@ defmodule Database.Lease do
     {:ok, state, data, actions}
   end
 
-  # What the process reading the log found, where it's `{state, looked}`, of which only what reading the log changes is
-  # kept. One that couldn't read it has calls refused, and reads it again in a while.
+  # What the process reading the log found, where it's `{answer, {state, looked}}`, of which only what reading the log
+  # changes is kept, and a take-over waiting on it is answered `answer`. One that couldn't read it has calls refused,
+  # and reads it again in a while.
   @impl true
   def handle_event(:info, {ref, found}, state, %{looking: %Task{ref: ref}} = data) when state in [:looking, :unreached] do
     Process.demonitor(ref, [:flush])
@@ -206,11 +212,11 @@ defmodule Database.Lease do
     case found do
       {:unreached, why} ->
         Logger.warning("#{data.artifact.prefix}: couldn't read its log: #{why}")
-        {:next_state, :unreached, %{data | unreached: why}, {:state_timeout, @renew_every, :look}}
+        {:next_state, :unreached, %{data | unreached: why, taking: nil}, [{:state_timeout, @renew_every, :look} | told(data, :unreached)]}
 
-      {state, looked} ->
+      {answer, {state, looked}} ->
         kept = Map.take(looked, [:number, :db, :reader, :proved, :settled, :logged, :failed, :lost_to])
-        moved({state, Map.merge(%{data | unreached: nil}, kept)})
+        moved({state, Map.merge(%{data | unreached: nil, taking: nil}, kept)}, told(data, answer))
     end
   end
 
@@ -219,9 +225,9 @@ defmodule Database.Lease do
     do: {:keep_state_and_data, {:state_timeout, :cancel}}
 
   def handle_event(:state_timeout, :unreached, :looking, data),
-    do: {:next_state, :unreached, %{data | unreached: "the bucket hasn't answered for #{@renew_within} ms"}}
+    do: {:next_state, :unreached, %{data | unreached: "the bucket hasn't answered for #{@renew_within} ms", taking: nil}, told(data, :unreached)}
 
-  def handle_event(:state_timeout, :look, :unreached, data), do: {:keep_state, look_in_task(data)}
+  def handle_event(:state_timeout, :look, :unreached, data), do: {:keep_state, in_task(data, looks(data, false))}
 
   # Once settled, its copy takes writes, and the transactions that would have written while settling run again.
   def handle_event(:state_timeout, :settled, :settling, data) do
@@ -229,54 +235,11 @@ defmodule Database.Lease do
     {:next_state, :holding, data}
   end
 
-  # The server this one follows didn't run a call passed on to it, `why`: `:cannot_run` where it answered that it
-  # would pass it on in turn, `:unanswered` where neither this server nor another it asked reached it, and `:alone`
-  # where this one couldn't and had no other to ask, or `:relayed` where the relay at the network's address still
-  # reached it meanwhile (`Database.transaction/3`). If it handed the lease on, this server takes it; if the log names
-  # nobody after it, this server takes it, unless it's `:relayed` and that server took it from this one; and otherwise
-  # it has learnt who holds it now. Only what was logged after the last entry it read is read,
-  # which is one request: every call passed to a holder that's gone asks this, one after another, and each waits for
-  # the ones before. One that isn't up takes nothing, and says so.
-  def handle_event({:call, from}, {:take_over, server, why}, {:following, server}, data) do
-    entries = Log.since(data.artifact, data.number)
-    data = %{data | number: data.number + length(entries)}
-
-    case List.last(entries) do
-      _free when not is_nil(server) and entries == [] ->
-        cond do
-          not OneCore.Server.up?() ->
-            {:keep_state_and_data, {:reply, from, :not_up}}
-
-          failed?(data) ->
-            {:keep_state_and_data, {:reply, from, :failed}}
-
-          why == :relayed and data.lost_to == server ->
-            {:keep_state_and_data, {:reply, from, :connected}}
-
-          true ->
-            Logger.info("#{data.artifact.prefix}: #{server}, which holds its lease, didn't run a call passed to it")
-            moved(take(data, "unanswered"), [{:reply, from, :ok}])
-        end
-
-      free when free in [nil, %{server: nil}] ->
-        cond do
-          not OneCore.Server.up?() -> {:keep_state, data, {:reply, from, :not_up}}
-          failed?(data) -> {:keep_state, data, {:reply, from, :failed}}
-          true -> moved(take(data, if(free, do: "handed_on", else: "free")), [{:reply, from, :ok}])
-        end
-
-      %{server: holder} when holder != data.server ->
-        Logger.info("#{data.artifact.prefix}: its lease is held by #{holder}")
-        {:next_state, {:following, holder}, data, {:reply, from, :ok}}
-
-      _this ->
-        moved(look(data), [{:reply, from, :ok}])
-    end
-  rescue
-    unreachable in OneCore.Edge.Unreachable ->
-      Logger.warning("#{data.artifact.prefix}: couldn't read its log to take its lease over: #{Exception.message(unreachable)}")
-      {:keep_state_and_data, {:reply, from, :unreached}}
-  end
+  # The server this one follows didn't run a call passed on to it, `why` (`taken/4`): the log is read in a process of
+  # its own, as it is to look at it, and the call is answered once it's read, or refused once the bucket hasn't answered
+  # for `@renew_within`.
+  def handle_event({:call, from}, {:take_over, server, why}, {:following, server}, data),
+    do: looking(%{data | taking: from}, [], fn reached -> taken(data, server, why, reached) end)
 
   # Another holds it now, or this server does: the call is asked again, and goes there.
   def handle_event({:call, from}, {:take_over, _server, _why}, _state, _data),
@@ -386,15 +349,25 @@ defmodule Database.Lease do
   end
 
   # A server stopping as it was asked to hands on the lease it holds: its copy is closed first, so it answers nothing
-  # from it after, and then the log's next entry names nobody. One that has lost the lease meanwhile writes nothing.
+  # from it after, and then the log's next entry names nobody, unless the bucket hasn't answered that within
+  # `@handed_within`, when nobody could take the lease anyway. One that has lost the lease meanwhile writes nothing.
   @impl true
   def terminate(why, state, data) do
     {_event, data} = abandon(data)
     data = close(data)
 
     if state in [:settling, :holding, :writing] and (why == :shutdown or match?({:shutdown, _}, why)) do
-      wrote = Log.write(data.artifact, data.number + 1, %{server: nil})
-      Logger.info("#{data.artifact.prefix}: handing its lease on at #{data.number + 1}: #{wrote}")
+      {artifact, number} = {data.artifact, data.number + 1}
+      handing = Task.async(fn -> Log.write(artifact, number, %{server: nil}) end)
+
+      wrote =
+        case Task.yield(handing, @handed_within) || Task.shutdown(handing, :brutal_kill) do
+          {:ok, wrote} -> wrote
+          {:exit, why} -> Exception.format_exit(why)
+          nil -> "the bucket hasn't answered for #{@handed_within} ms"
+        end
+
+      Logger.info("#{data.artifact.prefix}: handing its lease on at #{number}: #{wrote}")
     end
   end
 
@@ -510,7 +483,9 @@ defmodule Database.Lease do
   end
 
   # Its copy is thrown away, which may fail too where files can't be opened, and is made anew where it's opened next:
-  # then the log's next entry names nobody, as a server stopping writes it.
+  # then the log's next entry names nobody, as a server stopping writes it, in a process of its own, which nothing waits
+  # for: this server takes no lease for `@failed_for` meanwhile, and of it and another server taking the lease, only one
+  # writes that entry.
   defp hand_on_failed(data, error) do
     data =
       try do
@@ -519,8 +494,17 @@ defmodule Database.Lease do
         _closing -> %{data | db: nil}
       end
 
-    wrote = Log.write(data.artifact, data.number + 1, %{server: nil})
-    Logger.error("#{data.artifact.prefix}: this server's copy failed (#{Exception.message(error)}), so it hands its lease on at #{data.number + 1}: #{wrote}")
+    {prefix, artifact, number} = {data.artifact.prefix, data.artifact, data.number + 1}
+    Logger.error("#{prefix}: this server's copy failed (#{Exception.message(error)}), so it hands its lease on at #{number}")
+
+    Task.start(fn ->
+      try do
+        Log.write(artifact, number, %{server: nil})
+      catch
+        kind, reason -> Logger.warning("#{prefix}: didn't hand its lease on at #{number}: #{Exception.format_banner(kind, reason)}")
+      end
+    end)
+
     %{data | failed: System.monotonic_time(:millisecond)}
   end
 
@@ -573,24 +557,22 @@ defmodule Database.Lease do
   defp lost(data, what, actions \\ []) do
     Logger.info("#{data.artifact.prefix}: lost its lease, #{what}")
     {writing, data} = abandon(data)
-    looking(close(data), actions ++ if(writing, do: next(writing), else: []), true)
+    data = close(data)
+    looking(data, actions ++ if(writing, do: next(writing), else: []), looks(data, true))
   end
 
-  defp looking(data, actions \\ [], lost \\ false),
-    do: {:next_state, :looking, look_in_task(data, lost), [{:state_timeout, @renew_within, :unreached} | actions]}
+  # Reads the log in a process of its own, by `look/2` or as `read` does, which is given what to call once the bucket
+  # has answered its first read.
+  defp looking(data, actions \\ [], read \\ nil),
+    do: {:next_state, :looking, in_task(data, read || looks(data, false)), [{:state_timeout, @renew_within, :unreached} | actions]}
 
-  # Reads the log in a process of its own (`look/2`), which says once the bucket has answered its first read. One that
-  # `lost` the lease notes who it lost it to.
-  defp look_in_task(data, lost \\ false) do
+  defp in_task(data, read) do
     lease = self()
 
     task =
       Task.async(fn ->
         try do
-          case look(data, fn -> send(lease, {:reached, self()}) end) do
-            {{:following, holder}, data} when lost -> {{:following, holder}, %{data | lost_to: holder}}
-            looked -> looked
-          end
+          read.(fn -> send(lease, {:reached, self()}) end)
         catch
           kind, reason -> {:unreached, Exception.format_banner(kind, reason)}
         end
@@ -598,6 +580,20 @@ defmodule Database.Lease do
 
     %{data | looking: task}
   end
+
+  # Looks at the log (`look/2`), for `data`. One that `lost` the lease notes who it lost it to.
+  defp looks(data, lost) do
+    fn reached ->
+      case look(data, reached) do
+        {{:following, holder}, data} when lost -> {:ok, {{:following, holder}, %{data | lost_to: holder}}}
+        looked -> {:ok, looked}
+      end
+    end
+  end
+
+  # A take-over waiting on the log being read is answered `answer`.
+  defp told(%{taking: nil}, _answer), do: []
+  defp told(%{taking: from}, answer), do: [{:reply, from, answer}]
 
   # Where it is once it has read the log: settling waits out its time before it writes.
   defp moved(looked, actions \\ [])
@@ -715,6 +711,52 @@ defmodule Database.Lease do
       %{server: server} ->
         Logger.info("#{data.artifact.prefix}: its lease is held by #{server}")
         {{:following, server}, data}
+    end
+  end
+
+  # Reads what was logged after the last entry it read, as the server it follows, `server`, didn't run a call passed on to
+  # it, `why`: `:cannot_run` where it answered that it would pass it on in turn, `:unanswered` where neither this server
+  # nor another it asked reached it, and `:alone` where this one couldn't and had no other to ask, or `:relayed` where
+  # the relay at the network's address still reached it meanwhile (`Database.transaction/3`). If it handed the lease on,
+  # this server takes it; if the log names nobody after it, this server takes it, unless it's `:relayed` and that server
+  # took it from this one; and otherwise it has learnt who holds it now. Only what was logged after the last entry it
+  # read is read, which is one request. One that isn't up takes nothing, and says so. Gives `{answer, {state, looked}}`.
+  defp taken(data, server, why, reached) do
+    entries = Log.since(data.artifact, data.number)
+    reached.()
+    data = %{data | number: data.number + length(entries)}
+    kept = {{:following, server}, data}
+
+    case List.last(entries) do
+      _free when not is_nil(server) and entries == [] ->
+        cond do
+          not OneCore.Server.up?() ->
+            {:not_up, kept}
+
+          failed?(data) ->
+            {:failed, kept}
+
+          why == :relayed and data.lost_to == server ->
+            {:connected, kept}
+
+          true ->
+            Logger.info("#{data.artifact.prefix}: #{server}, which holds its lease, didn't run a call passed to it")
+            {:ok, take(data, "unanswered")}
+        end
+
+      free when free in [nil, %{server: nil}] ->
+        cond do
+          not OneCore.Server.up?() -> {:not_up, kept}
+          failed?(data) -> {:failed, kept}
+          true -> {:ok, take(data, if(free, do: "handed_on", else: "free"))}
+        end
+
+      %{server: holder} when holder != data.server ->
+        Logger.info("#{data.artifact.prefix}: its lease is held by #{holder}")
+        {:ok, {{:following, holder}, data}}
+
+      _this ->
+        {:ok, look(data)}
     end
   end
 
