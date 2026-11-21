@@ -1386,6 +1386,13 @@ fn vs_blur(@builtin(vertex_index) vertex_id: u32) -> BlurVarying {
     return out;
 }
 
+// Nothing, replacing what's there: what of a frame a scissor leaves is cleared, to be drawn again on the frame before
+// (`Renderer::draw_run`).
+@fragment
+fn fs_clear() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0);
+}
+
 // One way of a separable Gaussian: two taps a sample, between texels, for linear filtering to weigh. With no
 // `sigma`, it's the average of the `shrink` × `shrink` texels under each: a tap at the middle of each 2 × 2 of them,
 // which linear filtering averages, as halving the source that many times over did.

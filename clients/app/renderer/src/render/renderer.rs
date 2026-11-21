@@ -12,6 +12,7 @@ use crate::geometry::{Bounds, ContentMask, DevicePixels, ScaledPixels, Size};
 use std::sync::Arc;
 
 mod blur;
+mod damage;
 mod frame;
 mod params;
 mod pipelines;
@@ -100,6 +101,9 @@ pub struct Renderer {
     /// How many frames it's submitted, and how many of them the GPU has finished (`Queue::on_submitted_work_done`).
     frames: u64,
     finished: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`).
+    #[cfg(feature = "fake")]
+    scene: Option<Scene>,
 }
 
 
@@ -124,9 +128,11 @@ struct Drawn {
 /// pictures (sprites), backdrops and layers' images (rasters) it drew, each counted as often as it's drawn over, the
 /// pixels it copied of the frames before, the bytes it uploaded to the atlas, and the device pixels of what it blurred
 /// afresh behind backdrops (`blurred`), where a blur kept from the frames before costs none; and how many blurs it took
-/// afresh, whole or in part (`blurs`) and drew as they were kept from the frames before (`blurs_kept`).
+/// afresh, whole or in part (`blurs`) and drew as they were kept from the frames before (`blurs_kept`); and the device
+/// pixels of its targets it drew again, all of each but where only what changed was (`damage`).
 #[derive(Clone, Copy, Default)]
 struct Work {
+    damage: f64,
     quads: f64,
     shadows: f64,
     sprites: f64,
@@ -139,8 +145,10 @@ struct Work {
     blurs_kept: u32,
 }
 
-/// What a layer's texture is for, a raster's or a frame kept: drawn into, sampled, and copied out of.
-const LAYER: wgpu::TextureUsages = wgpu::TextureUsages::RENDER_ATTACHMENT.union(wgpu::TextureUsages::TEXTURE_BINDING).union(wgpu::TextureUsages::COPY_SRC);
+/// What a layer's texture is for, a raster's, a frame kept or a target's canvas (`Target::canvas`): drawn into,
+/// sampled, copied out of, and into, from what's kept of the frames before; one use for all, so each takes one another
+/// let go of (`spare`), where making one its window's size took a Surface's Intel driver 500 ms.
+const LAYER: wgpu::TextureUsages = wgpu::TextureUsages::RENDER_ATTACHMENT.union(wgpu::TextureUsages::TEXTURE_BINDING).union(wgpu::TextureUsages::COPY_SRC).union(wgpu::TextureUsages::COPY_DST);
 
 struct Kept {
     texture: wgpu::Texture,
@@ -231,6 +239,8 @@ impl Renderer {
             presented: Default::default(),
             frames: 0,
             finished: Default::default(),
+            #[cfg(feature = "fake")]
+            scene: None,
         }
     }
 
@@ -345,23 +355,31 @@ impl Renderer {
             "blurred": px(work.blurred),
             "blurs": work.blurs,
             "blurs_kept": work.blurs_kept,
+            "damage": px(work.damage),
         })
     }
 
-    /// The device pixels batch `batch` covers, each thing in it cut to what it's drawn inside, added to its kind's.
-    fn covered(&self, batch: &PrimitiveBatch<'_>) {
-        fn area<'a>(all: impl Iterator<Item = (&'a Bounds<ScaledPixels>, &'a ContentMask<ScaledPixels>)>) -> f64 {
-            all.map(|(bounds, mask)| bounds.intersect(&mask.bounds)).map(|cut| f64::from(cut.size.width.0) * f64::from(cut.size.height.0)).sum()
-        }
+    /// The device pixels batch `batch` covers, each thing in it cut to what it's drawn inside, and to `clip` where
+    /// it's drawn only there (in the scene's pixels), added to its kind's.
+    fn covered(&self, batch: &PrimitiveBatch<'_>, clip: Option<&[Bounds<ScaledPixels>]>) {
+        let size = |cut: Bounds<ScaledPixels>| f64::from(cut.size.width.0.max(0.0)) * f64::from(cut.size.height.0.max(0.0));
+        let area = |all: &mut dyn Iterator<Item = (&Bounds<ScaledPixels>, &ContentMask<ScaledPixels>)>| -> f64 {
+            all.map(|(bounds, mask)| bounds.intersect(&mask.bounds))
+                .map(|cut| match clip {
+                    Some(rects) => rects.iter().map(|rect| size(cut.intersect(rect))).sum(),
+                    None => size(cut),
+                })
+                .sum()
+        };
         let mut work = self.work.get();
         match batch {
-            PrimitiveBatch::Quads(quads) => work.quads += area(quads.iter().map(|quad| (&quad.bounds, &quad.content_mask))),
-            PrimitiveBatch::Underlines(lines) => work.quads += area(lines.iter().map(|line| (&line.bounds, &line.content_mask))),
-            PrimitiveBatch::Shadows(shadows) => work.shadows += area(shadows.iter().map(|shadow| (&shadow.bounds, &shadow.content_mask))),
-            PrimitiveBatch::MonochromeSprites { sprites, .. } => work.sprites += area(sprites.iter().map(|sprite| (&sprite.bounds, &sprite.content_mask))),
-            PrimitiveBatch::PolychromeSprites { sprites, .. } => work.sprites += area(sprites.iter().map(|sprite| (&sprite.bounds, &sprite.content_mask))),
-            PrimitiveBatch::Backdrops(backdrops) => work.backdrops += area(backdrops.iter().map(|backdrop| (&backdrop.bounds, &backdrop.content_mask))),
-            PrimitiveBatch::Rasters(rasters) => work.rasters += area(rasters.iter().map(|raster| (&raster.bounds, &raster.content_mask))),
+            PrimitiveBatch::Quads(quads) => work.quads += area(&mut quads.iter().map(|quad| (&quad.bounds, &quad.content_mask))),
+            PrimitiveBatch::Underlines(lines) => work.quads += area(&mut lines.iter().map(|line| (&line.bounds, &line.content_mask))),
+            PrimitiveBatch::Shadows(shadows) => work.shadows += area(&mut shadows.iter().map(|shadow| (&shadow.bounds, &shadow.content_mask))),
+            PrimitiveBatch::MonochromeSprites { sprites, .. } => work.sprites += area(&mut sprites.iter().map(|sprite| (&sprite.bounds, &sprite.content_mask))),
+            PrimitiveBatch::PolychromeSprites { sprites, .. } => work.sprites += area(&mut sprites.iter().map(|sprite| (&sprite.bounds, &sprite.content_mask))),
+            PrimitiveBatch::Backdrops(backdrops) => work.backdrops += area(&mut backdrops.iter().map(|backdrop| (&backdrop.bounds, &backdrop.content_mask))),
+            PrimitiveBatch::Rasters(rasters) => work.rasters += area(&mut rasters.iter().map(|raster| (&raster.bounds, &raster.content_mask))),
         }
         self.work.set(work);
     }
@@ -382,7 +400,7 @@ impl Renderer {
         sheets.dedup_by(|one, other| Arc::ptr_eq(one, other));
         serde_json::json!({
             "surface": self.targets.iter().map(Target::surface_bytes).sum::<u64>(),
-            "kept": self.targets.iter().filter_map(|target| target.kept.as_ref()).map(|kept| bytes(&kept.texture)).sum::<u64>(),
+            "kept": self.targets.iter().flat_map(|target| target.kept.as_ref().map(|kept| &kept.texture).into_iter().chain(target.canvas.as_ref().map(|(canvas, _)| canvas))).map(bytes).sum::<u64>(),
             "spare": self.spare.iter().map(bytes).sum::<u64>(),
             "backdrop": backdrop.chain(blurred).sum::<u64>(),
             "rasters": sheets.iter().map(|sheet| bytes(&sheet.texture)).sum::<u64>(),
@@ -435,6 +453,10 @@ impl Renderer {
     pub fn draw(&mut self, scene: &Scene, origins: &[[f32; 2]]) -> bool {
         let (started, began) = (crate::platform::on_cpu(), web_time::Instant::now());
         let drawn = self.draw_frame(scene, origins);
+        #[cfg(feature = "fake")]
+        {
+            self.scene = Some(scene.clone());
+        }
         let on_cpu = crate::platform::on_cpu().saturating_sub(started);
         self.on_cpu.set(self.on_cpu.get() + on_cpu);
         self.waiting.set(self.waiting.get() + began.elapsed().saturating_sub(on_cpu));
@@ -442,6 +464,18 @@ impl Renderer {
     }
 
 
+
+    /// Draws its layers from `other`'s layers' images (`Windows::whole`).
+    #[cfg(feature = "fake")]
+    pub fn layers_of(&mut self, other: &Renderer) {
+        self.rasters = other.rasters.clone();
+    }
+
+    /// The scene it last drew.
+    #[cfg(feature = "fake")]
+    pub fn scene(&self) -> Option<&Scene> {
+        self.scene.as_ref()
+    }
 
     /// The GPU time of the last frame it has, summed over its passes, and its blurs' (a backdrop's glass), where the
     /// GPU says (a frame or two behind).

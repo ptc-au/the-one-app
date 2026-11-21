@@ -20,6 +20,8 @@ pub(crate) struct Pipelines {
     /// shadow from its tile.
     pub(super) coverage: wgpu::RenderPipeline,
     pub(super) tiles: wgpu::RenderPipeline,
+    /// What clears where a frame is drawn again, replacing what's there.
+    pub(super) clear: wgpu::RenderPipeline,
 }
 
 /// What every pipeline of a format is made from: the shaders, the target's format and blending, and the layouts of
@@ -210,7 +212,7 @@ impl Pipelines {
         // All of them before a window's first frame, as Flutter's Impeller and Chromium's Graphite make theirs ahead:
         // a pipeline compiled as a frame first needs it made that frame wait, the first to show glass half a second on
         // the Surface while its blur's were compiled.
-        let [quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles] = side_by_side([
+        let [quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear] = side_by_side([
             &|| l.pipeline(&bindings::QUADS, blend),
             &|| l.pipeline(&bindings::SHADOWS, blend),
             &|| l.pipeline(&bindings::UNDERLINES, blend),
@@ -223,8 +225,9 @@ impl Pipelines {
             // A tile holds how much of each point the blurred box covers, nothing else, and replaces what's there.
             &|| l.pipeline_into(TILE_FORMAT, &bindings::SHADOW_COVERAGE, None),
             &|| l.pipeline(&bindings::SHADOW_TILES, blend),
+            &|| l.pipeline(&bindings::CLEAR, None),
         ]);
-        Self { layouts, quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles }
+        Self { layouts, quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear }
     }
 
     /// The pipelines for targets of `format`, compiled the first time a renderer draws to one, or ahead of it

@@ -32,7 +32,7 @@ pub(super) fn tiled(shadow: &Shadow) -> Option<(TileKey, [f32; 2])> {
 
 impl Renderer {
     /// Draws a batch of shadows, each from its tile where it has one, else worked out where it's drawn, in runs.
-    pub(super) fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, shadows: &[Shadow], instances: &wgpu::BindGroup, offset: u32) {
+    pub(super) fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, shadows: &[Shadow], instances: &wgpu::BindGroup, offset: u32, rects: Option<&[super::damage::Rect]>) {
         pass.set_bind_group(1, instances, &[offset]);
         let mut at = 0;
         while at < shadows.len() {
@@ -40,16 +40,14 @@ impl Renderer {
                 Some((_, group)) => {
                     pass.set_pipeline(&self.pipelines.tiles);
                     pass.set_bind_group(2, group, &[]);
-                    pass.draw(0..10, at as u32..at as u32 + 1);
-                    self.drew();
+                    self.clipped(pass, rects, &|pass| pass.draw(0..10, at as u32..at as u32 + 1));
                     at += 1;
                 }
                 None => {
                     // The run of those worked out where they're drawn.
                     let end = (at..shadows.len()).find(|one| tiled(&shadows[*one]).is_some_and(|(key, _)| self.tiles.contains_key(&key))).unwrap_or(shadows.len());
                     pass.set_pipeline(&self.pipelines.shadows);
-                    pass.draw(0..10, at as u32..end as u32);
-                    self.drew();
+                    self.clipped(pass, rects, &|pass| pass.draw(0..10, at as u32..end as u32));
                     at = end;
                 }
             }

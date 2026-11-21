@@ -19,6 +19,12 @@ pub(super) struct Target {
     /// same behind one, as iOS's materials blur what's behind them once while it holds still; and whether this frame
     /// used it.
     pub(super) blurred: std::collections::HashMap<u64, super::blur::KeptBlur>,
+    /// What its last frame drew, thing by thing, over what (`Drawn::over`), by which the next is drawn again only where
+    /// that changed (`damage`), and its canvas, the texture it draws such frames on and copies into its image, with
+    /// whether it holds its last frame: kept while frames are drawn whole too, as making one again its window's size
+    /// took a Surface's Intel driver 500 ms.
+    pub(super) shown: Option<(u64, super::blur::Prints)>,
+    pub(super) canvas: Option<(wgpu::Texture, bool)>,
 }
 
 /// A window's surface, or a texture of our own, which `read` reads back.
@@ -55,7 +61,7 @@ fn offscreen(device: &wgpu::Device, (width, height): (u32, u32)) -> Output {
 
 impl Target {
     fn with(output: Output, size: (u32, u32)) -> Self {
-        Self { output, reserved: None, size, last: Drawn::default(), kept: None, backdrop: None, blurred: Default::default() }
+        Self { output, reserved: None, size, last: Drawn::default(), kept: None, backdrop: None, blurred: Default::default(), shown: None, canvas: None }
     }
 
     /// An image `size` device pixels drawn offscreen, read back by `read`.
@@ -203,12 +209,13 @@ impl Target {
 
     /// Whether it holds what it lets go of when idle (`idle`).
     pub(super) fn holds(&self) -> bool {
-        self.kept.is_some() || self.backdrop.is_some() || !self.blurred.is_empty()
+        self.kept.is_some() || self.backdrop.is_some() || !self.blurred.is_empty() || self.canvas.is_some()
     }
 
-    /// Lets go of the frame it kept and its backdrops' textures and blurs (`Renderer::idle`).
+    /// Lets go of the frames it kept and its backdrops' textures and blurs (`Renderer::idle`).
     pub(super) fn idle(&mut self) {
         self.kept = None;
+        self.canvas = None;
         self.backdrop = None;
         self.blurred.clear();
     }

@@ -27,6 +27,8 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
     let every = 1000.0 / request.f64("input_hz").unwrap_or(hz).clamp(1.0, 1000.0);
     let after = request.f64("after").unwrap_or(2000.0).max(0.0);
     let snaps = renderer::inspect::snaps(request);
+    // Each frame against the same drawn whole (`Windows::whole`), as one drawn only where it changed must be.
+    let checks_whole = request.inputs.get("whole").and_then(Value::as_bool) == Some(true);
     let query = |input: &str| match request.inputs.get(input) {
         Some(Value::Object(selector)) => {
             let mut query = json!({"op": "query"});
@@ -122,7 +124,7 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         }
         if !drew {
             frame["draws"] = json!(0);
-            frame["work"] = json!({"quads": 0, "shadows": 0, "sprites": 0, "backdrops": 0, "rasters": 0, "copied": 0, "uploaded": 0, "blurred": 0, "blurs": 0, "blurs_kept": 0});
+            frame["work"] = json!({"quads": 0, "shadows": 0, "sprites": 0, "backdrops": 0, "rasters": 0, "copied": 0, "uploaded": 0, "blurred": 0, "blurs": 0, "blurs_kept": 0, "damage": 0});
         }
         frame["at"] = json!((tick * 100.0).round() / 100.0);
         frame["pressure"] = json!(windows.pressure());
@@ -187,6 +189,13 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
                 frame["own"] = renderer::inspect::png(w, h, rgba)?["png"].clone();
             }
         }
+        if checks_whole && drew {
+            let ids = std::iter::once(u64::from(id)).chain(stacked.as_array().into_iter().flatten().filter_map(|window| window["window"].as_u64()));
+            let unlike: Vec<Value> = ids.collect::<std::collections::BTreeSet<_>>().into_iter().filter_map(|window| unlike_whole(windows, window as renderer::platform::WindowId).transpose()).collect::<anyhow::Result<_>>()?;
+            if !unlike.is_empty() {
+                frame["unlike_whole"] = json!(unlike);
+            }
+        }
         frames.push(frame);
         // Halfway to the refresh, so what it draws is after the read, as what the loop's own clock draws a refresh on
         // from it is after the next: drawn at the read itself, it was read in that refresh's frame. Its time is the
@@ -234,3 +243,24 @@ pub(crate) static EMPTY: Vec<Value> = Vec::new();
 
 /// How long before a refresh what the display shows at it is read: what's drawn after is shown at the next.
 pub(crate) const JUST_BEFORE: f64 = 0.01;
+
+/// How window `id`'s frame as presented differs from the same scene drawn whole (`Windows::whole`), where it does by
+/// more than a level in a channel: how many pixels, by how much at most, where, and the picture drawn whole.
+fn unlike_whole(windows: &mut Windows, id: renderer::platform::WindowId) -> anyhow::Result<Option<Value>> {
+    let (Some((width, height, presented)), Some((_, _, whole))) = (windows.presented(id), windows.whole(id)) else { return Ok(None) };
+    if presented.len() != whole.len() {
+        return Ok(Some(json!({"window": id, "sizes": [presented.len() / 4, whole.len() / 4]})));
+    }
+    let (mut differ, mut most, mut left, mut top, mut right, mut bottom) = (0u32, 0u8, width, height, 0, 0);
+    for (at, (was, now)) in presented.chunks(4).zip(whole.chunks(4)).enumerate() {
+        let apart = was.iter().zip(now).map(|(was, now)| was.abs_diff(*now)).max().unwrap_or(0);
+        if apart > 1 {
+            let (x, y) = (at as u32 % width, at as u32 / width);
+            (differ, most, left, top, right, bottom) = (differ + 1, most.max(apart), left.min(x), top.min(y), right.max(x + 1), bottom.max(y + 1));
+        }
+    }
+    if differ == 0 {
+        return Ok(None);
+    }
+    Ok(Some(json!({"window": id, "differ": differ, "most": most, "box": {"x": left, "y": top, "width": right - left, "height": bottom - top}, "whole": renderer::inspect::png(width, height, whole)?["png"]})))
+}

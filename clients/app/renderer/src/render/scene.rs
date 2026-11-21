@@ -13,7 +13,7 @@ use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, Sca
 
 pub(crate) type DrawOrder = u32;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Scene {
     primitive_bounds: BoundsTree<ScaledPixels>,
     pub(crate) shadows: Vec<Shadow>,

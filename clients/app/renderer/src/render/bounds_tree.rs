@@ -9,7 +9,7 @@ use std::{
     ops::{Add, Sub},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct BoundsTree<U>
 where
     U: Clone + Debug + Default + PartialEq,

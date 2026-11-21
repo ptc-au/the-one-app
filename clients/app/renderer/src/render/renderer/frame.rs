@@ -1,13 +1,55 @@
 use super::super::scene::{Raster, Recording, TransformationMatrix};
+use super::blur::Prints;
+use super::damage::{self, Rect};
 use super::*;
 
 /// What a target draws of a frame: the batches that reach its box of the scene, by where they are among the scene's,
-/// what it drew (`Drawn`), and the blurs behind its backdrops.
+/// what it drew (`Drawn`), the blurs behind its backdrops, each thing it draws, in order, and where (`damage`), and its
+/// box's top left in the scene.
 struct Planned {
     globals: (u64, u64),
     batches: Vec<usize>,
     drawn: Drawn,
     blurs: Vec<Vec<Blur>>,
+    things: Prints,
+    origin: [f32; 2],
+}
+
+/// Where a frame is drawn again (`damage`), on the one before: its rectangles, apart, in its device pixels and in the
+/// scene's.
+struct Clip {
+    rects: Vec<Rect>,
+    scene: Vec<Bounds<ScaledPixels>>,
+}
+
+impl Clip {
+    fn new(rects: Vec<Rect>, origin: [f32; 2]) -> Self {
+        let px = crate::geometry::ScaledPixels;
+        let scene = rects
+            .iter()
+            .map(|[left, top, right, bottom]| Bounds {
+                origin: crate::geometry::Point { x: px(*left as f32 + origin[0]), y: px(*top as f32 + origin[1]) },
+                size: crate::geometry::Size { width: px((right - left) as f32), height: px((bottom - top) as f32) },
+            })
+            .collect();
+        Self { rects, scene }
+    }
+}
+
+/// How a frame's backdrops' blurs are had: kept from the frames before (`blurred`, by batch and backdrop), else taken
+/// (`fresh`), some of them again only where what's behind them changed (`partly`, as `Target::kept_blur` has them).
+#[derive(Default)]
+struct Decided {
+    blurred: std::collections::HashMap<(usize, usize), wgpu::TextureView>,
+    fresh: Vec<(usize, usize)>,
+    partly: std::collections::HashMap<(usize, usize), Blur>,
+}
+
+impl Decided {
+    /// What of the frame its blurs taken read, in device pixels, which is drawn again before they're taken.
+    fn reads<'a>(&'a self, blurs: &'a [Vec<Blur>]) -> impl Iterator<Item = Rect> + 'a {
+        self.fresh.iter().map(|place| self.partly.get(place).unwrap_or(&blurs[place.0][place.1]).region)
+    }
 }
 
 impl Renderer {
@@ -87,13 +129,12 @@ impl Renderer {
                 hash(&|hasher| (std::mem::discriminant(batch), texture, bytes).hash(hasher))
             })
             .collect();
-        // Each thing in each batch, where a frame has glass: what it is (its kind, texture and instance) and where it's
-        // drawn, by which a blur that's behind it changed only in part is taken again there (`Blur::damaged`).
-        let glass = batches.iter().any(|batch| matches!(batch, PrimitiveBatch::Backdrops(_)));
+        // Each thing in each batch: what it is (its kind, texture and instance) and where it's drawn, by which a frame
+        // is drawn again only where they changed (`damage`), and a blur that's behind them changed only in part is
+        // taken again there (`Blur::damaged`).
         let things: Vec<Vec<(u64, Bounds<ScaledPixels>)>> = batches
             .iter()
             .zip(&instances)
-            .filter(|_| glass)
             .map(|(batch, (offset, _))| {
                 use std::hash::Hash;
                 let (texture, stride) = match batch {
@@ -171,7 +212,15 @@ impl Renderer {
                     }
                     blurs.push(these);
                 }
-                Some(Planned { globals, batches: reaching, drawn, blurs })
+                // Each thing it draws, in order, a backdrop with the blur behind it.
+                let things: Prints = reaching
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(at, batch)| things[*batch].iter().enumerate().map(move |(one, thing)| (at, one, thing)))
+                    .filter(|(.., (_, extent))| extent.intersects(&area))
+                    .map(|(at, one, (thing, extent))| (blurs[at].get(one).and_then(|blur| blur.behind).map_or(*thing, |behind| hash(&|hasher| std::hash::Hash::hash(&(thing, behind), hasher))), device(extent)))
+                    .collect();
+                Some(Planned { globals, batches: reaching, drawn, blurs, things, origin: *origin })
             })
             .collect();
         // The tiles of the frame's shadows that haven't one yet, each its box alone, blurred, in a frame of its own.
@@ -247,7 +296,7 @@ impl Renderer {
             let globals = self.pipelines.layouts.globals(&buffer, planned.globals, gamma);
             let batches: Vec<PrimitiveBatch<'_>> = planned.batches.iter().map(|at| batches[*at]).collect();
             let instances = Instances { group: group.clone(), offsets: planned.batches.iter().map(|at| instances[*at].0 as u32).collect() };
-            self.draw_target(&mut encoder, target, image, &globals, &buffer, &batches, &instances, &planned.blurs, planned.drawn);
+            self.draw_target(&mut encoder, target, image, &globals, &buffer, &batches, &instances, &planned.blurs, planned.drawn, planned.things, planned.origin);
         }
         self.targets = targets;
 
@@ -287,11 +336,15 @@ impl Renderer {
 
     /// Draws `target`'s batches into its `image`: from what it kept of its frames before, where its frame starts as
     /// that did, or what's the same as its last frame's start, two frames running, kept now, where it's worth more
-    /// than its copy; then the rest.
+    /// than its copy; then the rest. Where little changed since its last frame (`damage`), only that is drawn again,
+    /// on its last frame as it kept it (its canvas), which is then copied into its image, as a surface's images come
+    /// back in no known order with what was drawn on them frames before; where most did, it's drawn whole in its
+    /// image, and the next frame that changes little draws whole into its canvas.
     #[allow(clippy::too_many_arguments)]
-    fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn) {
+    fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn, things: Prints, origin: [f32; 2]) {
         let (texture, view) = (&image.texture, &image.view);
         let size = (texture.width(), texture.height());
+        let whole = u64::from(size.0) * u64::from(size.1);
         let copies = texture.usage().contains(wgpu::TextureUsages::COPY_DST);
         let same = |kept: &Drawn| kept.over == drawn.over && drawn.batches.starts_with(&kept.batches);
         if (!copies || target.kept.as_ref().is_some_and(|kept| !same(&kept.drawn)))
@@ -306,24 +359,93 @@ impl Renderer {
             if worth {
                 let made = self.made(size, LAYER);
                 let made_view = made.create_view(&wgpu::TextureViewDescriptor::default());
-                self.draw_batches(encoder, target, &made, &made_view, globals, buffer, batches, instances, blurs, 0..start);
+                let decided = self.decide(target, blurs, 0..start, true);
+                self.draw_batches(encoder, target, &made, &made_view, globals, buffer, batches, instances, blurs, decided, 0..start, None);
                 target.kept = Some(Kept { texture: made, drawn: Drawn { over: drawn.over, batches: drawn.batches[..start].to_vec() } });
             }
         }
-        let from = match &target.kept {
-            Some(kept) => {
-                encoder.copy_texture_to_texture(kept.texture.as_image_copy(), texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 });
-                let mut work = self.work.get();
-                work.copied += f64::from(size.0) * f64::from(size.1);
+        let from = target.kept.as_ref().map_or(0, |kept| kept.drawn.batches.len());
+        // Its blurs, before where it's drawn again is known: what a blur taken reads is drawn again first.
+        let blurrable = copies || texture.usage().intersects(wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC);
+        let decided = self.decide(target, blurs, from..batches.len(), blurrable);
+        let changed = target.shown.as_ref().filter(|(over, _)| *over == drawn.over).map(|(_, last)| damage::damage(last, &things));
+        target.shown = Some((drawn.over, things));
+        let rects = changed.map(|changed| damage::apart(changed.into_iter().chain(decided.reads(blurs)), size)).filter(|rects| copies && damage::area(rects) * 4 < whole * 3);
+        let mut work = self.work.get();
+        match rects {
+            Some(rects) => {
+                let (canvas, held) = match target.canvas.take().filter(|(canvas, _)| (canvas.width(), canvas.height()) == size) {
+                    Some(canvas) => canvas,
+                    None => (self.made(size, LAYER), false),
+                };
+                let clip = held.then(|| Clip::new(rects, origin));
+                let canvas_view = canvas.create_view(&wgpu::TextureViewDescriptor::default());
+                work.damage += clip.as_ref().map_or(whole as f64, |clip| damage::area(&clip.rects) as f64);
+                work.copied += whole as f64;
                 self.work.set(work);
-                kept.drawn.batches.len()
+                self.start(encoder, target, &canvas, clip.as_ref());
+                if clip.as_ref().is_none_or(|clip| !clip.rects.is_empty()) {
+                    self.draw_batches(encoder, target, &canvas, &canvas_view, globals, buffer, batches, instances, blurs, decided, from..batches.len(), clip.as_ref());
+                }
+                encoder.copy_texture_to_texture(canvas.as_image_copy(), texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 });
+                target.canvas = Some((canvas, true));
             }
-            None => 0,
-        };
-        self.draw_batches(encoder, target, texture, view, globals, buffer, batches, instances, blurs, from..batches.len());
+            None => {
+                if let Some((_, held)) = &mut target.canvas {
+                    *held = false;
+                }
+                work.damage += whole as f64;
+                self.work.set(work);
+                self.start(encoder, target, texture, None);
+                self.draw_batches(encoder, target, texture, view, globals, buffer, batches, instances, blurs, decided, from..batches.len(), None);
+            }
+        }
         target.last = drawn;
         // What's behind no backdrop this frame isn't kept; what's still drawn starts the next frame unused.
         target.blurred.retain(|_, kept| std::mem::take(&mut kept.used));
+    }
+
+    /// Starts `into` as what `target` kept of its frames before (`Kept`), where it did: copied whole, or where `clip`
+    /// draws again.
+    fn start(&self, encoder: &mut wgpu::CommandEncoder, target: &Target, into: &wgpu::Texture, clip: Option<&Clip>) {
+        let Some(kept) = &target.kept else { return };
+        let whole = [[0, 0, into.width(), into.height()]];
+        let rects = clip.map_or(&whole[..], |clip| &clip.rects);
+        let mut work = self.work.get();
+        for [left, top, right, bottom] in rects {
+            let at = wgpu::Origin3d { x: *left, y: *top, z: 0 };
+            let texel = |texture| wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: at, aspect: wgpu::TextureAspect::All };
+            encoder.copy_texture_to_texture(texel(&kept.texture), texel(into), wgpu::Extent3d { width: right - left, height: bottom - top, depth_or_array_layers: 1 });
+            work.copied += f64::from(right - left) * f64::from(bottom - top);
+        }
+        self.work.set(work);
+    }
+
+    /// How the blurs of `range` of a frame's batches are had (`Decided`): kept from the frames before, else taken
+    /// afresh, or again in part, where its target can be read (`blurrable`).
+    fn decide(&self, target: &mut Target, blurs: &[Vec<Blur>], range: std::ops::Range<usize>, blurrable: bool) -> Decided {
+        let mut decided = Decided::default();
+        if !blurrable {
+            return decided;
+        }
+        for at in range {
+            for (one, blur) in blurs[at].iter().enumerate() {
+                match target.kept_blur(blur) {
+                    Some(Ok(kept)) => {
+                        let mut work = self.work.get();
+                        work.blurs_kept += 1;
+                        self.work.set(work);
+                        decided.blurred.insert((at, one), kept);
+                    }
+                    Some(Err(part)) => {
+                        decided.partly.insert((at, one), part);
+                        decided.fresh.push((at, one));
+                    }
+                    None => decided.fresh.push((at, one)),
+                }
+            }
+        }
+        decided
     }
 
     /// Writes the frame's data into its buffer, grown to hold it, and what's been added to the atlas into its
@@ -348,8 +470,8 @@ impl Renderer {
         self.work.set(work);
     }
 
-    /// Draws the batches `run` names into `view` in one pass; a backdrop as one of its batch's, with what's behind it
-    /// blurred.
+    /// Draws the batches `run` names into `view` in one pass, only where `clip` says where it does; a backdrop as one
+    /// of its batch's, with what's behind it blurred. Cleared first where `load` says, only there where it's clipped.
     #[allow(clippy::too_many_arguments)]
     fn draw_run(
         &self,
@@ -360,21 +482,35 @@ impl Renderer {
         batches: &[PrimitiveBatch<'_>],
         instances: &Instances,
         run: &[(usize, Option<(wgpu::TextureView, usize)>)],
+        clip: Option<&Clip>,
     ) {
         if run.is_empty() && !matches!(load, wgpu::LoadOp::Clear(_)) {
             return;
         }
+        let clears = clip.is_some() && matches!(load, wgpu::LoadOp::Clear(_));
+        let load = if clears { wgpu::LoadOp::Load } else { load };
         let mut pass = self.pass(encoder, view, load, self.stamps.as_ref().filter(|_| !run.is_empty()).and_then(|stamps| stamps.pass(false)));
         pass.set_bind_group(0, globals, &[]);
+        if clears {
+            pass.set_pipeline(&self.pipelines.clear);
+            pass.set_bind_group(1, &instances.group, &[0]);
+            self.clipped(&mut pass, clip.map(|clip| &clip.rects[..]), &|pass| pass.draw(0..4, 0..1));
+        }
         for (at, blurred) in run {
             let at = *at;
-            // A backdrop is drawn alone, one of its batch's.
-            match (&batches[at], blurred) {
-                (PrimitiveBatch::Backdrops(backdrops), Some((_, one))) => self.covered(&PrimitiveBatch::Backdrops(&backdrops[*one..*one + 1])),
-                (batch, _) => self.covered(batch),
+            // A backdrop is drawn alone, one of its batch's; where it's clipped, only in the rectangles it reaches.
+            let batch = match (&batches[at], blurred) {
+                (PrimitiveBatch::Backdrops(backdrops), Some((_, one))) => PrimitiveBatch::Backdrops(&backdrops[*one..*one + 1]),
+                (batch, _) => *batch,
+            };
+            let reached: Option<(Vec<Rect>, Vec<Bounds<ScaledPixels>>)> = clip.map(|clip| clip.rects.iter().zip(&clip.scene).filter(|(_, scene)| batch.reaches(scene)).map(|(rect, scene)| (*rect, *scene)).unzip());
+            if reached.as_ref().is_some_and(|(rects, _)| rects.is_empty()) {
+                continue;
             }
+            let (rects, scene) = (reached.as_ref().map(|(rects, _)| &rects[..]), reached.as_ref().map(|(_, scene)| &scene[..]));
+            self.covered(&batch, scene);
             if let PrimitiveBatch::Shadows(shadows) = &batches[at] {
-                self.draw_shadows(&mut pass, shadows, &instances.group, instances.offsets[at]);
+                self.draw_shadows(&mut pass, shadows, &instances.group, instances.offsets[at], rects);
                 continue;
             }
             if let PrimitiveBatch::Rasters(rasters) = &batches[at] {
@@ -388,8 +524,7 @@ impl Renderer {
                     let end = start + 1 + rasters[start + 1..].iter().take_while(|raster| sheet(raster).zip(first).is_some_and(|(one, other)| Arc::ptr_eq(one, other))).count();
                     if let Some(first) = first {
                         pass.set_bind_group(2, &first.group, &[]);
-                        pass.draw(0..4, start as u32..end as u32);
-                        self.drew();
+                        self.clipped(&mut pass, rects, &|pass| pass.draw(0..4, start as u32..end as u32));
                     }
                     start = end;
                 }
@@ -406,8 +541,7 @@ impl Renderer {
                     pass.set_pipeline(&self.pipelines.backdrops);
                     pass.set_bind_group(1, &instances.group, &[instances.offsets[at]]);
                     pass.set_bind_group(2, &self.texture(blurred), &[]);
-                    pass.draw(0..4, *one as u32..*one as u32 + 1);
-                    self.drew();
+                    self.clipped(&mut pass, rects, &|pass| pass.draw(0..4, *one as u32..*one as u32 + 1));
                     continue;
                 }
             };
@@ -416,12 +550,26 @@ impl Renderer {
             if let Some(id) = texture {
                 pass.set_bind_group(2, &self.atlas_group(id), &[]);
             }
-            pass.draw(0..4, 0..count as u32);
+            self.clipped(&mut pass, rects, &|pass| pass.draw(0..4, 0..count as u32));
+        }
+    }
+
+    /// Makes `draw`, a draw call, counted (`draws`): once, or once in each of `rects` where it's drawn only there.
+    pub(super) fn clipped(&self, pass: &mut wgpu::RenderPass<'_>, rects: Option<&[Rect]>, draw: &dyn Fn(&mut wgpu::RenderPass<'_>)) {
+        let Some(rects) = rects else {
+            draw(pass);
+            self.drew();
+            return;
+        };
+        for [left, top, right, bottom] in rects {
+            pass.set_scissor_rect(*left, *top, right - left, bottom - top);
+            draw(pass);
             self.drew();
         }
     }
 
-    /// Draws `range` of the frame's batches into `texture` (`view` of it), in runs, one pass each, broken only where a
+    /// Draws `range` of the frame's batches into `texture` (`view` of it), only where `clip` says where it does, with
+    /// their blurs as `decided`, in runs, one pass each, broken only where a
     /// backdrop blurs what's drawn before it afresh, as a pass must end for what it drew to be read: a backdrop whose
     /// blur is kept from the frames before, and the batches either side, are one pass. Each pass costs its driver a
     /// command list (two, as wgpu-core puts each pass's barriers in one of their own), which Intel's Direct3D 12
@@ -439,7 +587,9 @@ impl Renderer {
         batches: &[PrimitiveBatch<'_>],
         instances: &Instances,
         blurs: &[Vec<Blur>],
+        decided: Decided,
         range: std::ops::Range<usize>,
+        clip: Option<&Clip>,
     ) {
         let blurrable = texture.usage().intersects(wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC);
         let mut load = if range.start == 0 { wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT) } else { wgpu::LoadOp::Load };
@@ -448,29 +598,7 @@ impl Renderer {
         // with each after it that's ready (`Blur::ready`, `Blur::together`): one break in the frame and one blur's three
         // passes for all of them, where each broke it and took three of its own (a launcher's backdrops over its turning
         // pages made 13 passes a frame).
-        let mut blurred: std::collections::HashMap<(usize, usize), wgpu::TextureView> = Default::default();
-        let mut fresh: Vec<(usize, usize)> = Vec::new();
-        // Those taken again only where what's behind them changed (`Target::kept_blur`).
-        let mut partly: std::collections::HashMap<(usize, usize), Blur> = Default::default();
-        if blurrable {
-            for at in range.clone() {
-                for (one, blur) in blurs[at].iter().enumerate() {
-                    match target.kept_blur(blur) {
-                        Some(Ok(kept)) => {
-                            let mut work = self.work.get();
-                            work.blurs_kept += 1;
-                            self.work.set(work);
-                            blurred.insert((at, one), kept);
-                        }
-                        Some(Err(part)) => {
-                            partly.insert((at, one), part);
-                            fresh.push((at, one));
-                        }
-                        None => fresh.push((at, one)),
-                    }
-                }
-            }
-        }
+        let Decided { mut blurred, fresh, partly } = decided;
         let blur_of = |(at, one): (usize, usize)| partly.get(&(at, one)).unwrap_or(&blurs[at][one]);
         for at in range {
             let PrimitiveBatch::Backdrops(backdrops) = &batches[at] else {
@@ -491,7 +619,7 @@ impl Renderer {
                             group.push((later, of));
                         }
                     }
-                    self.draw_run(encoder, view, load, globals, batches, instances, &run);
+                    self.draw_run(encoder, view, load, globals, batches, instances, &run, clip);
                     run.clear();
                     load = wgpu::LoadOp::Load;
                     let taking: Vec<&Blur> = group.iter().map(|place| blur_of(*place)).collect();
@@ -501,7 +629,7 @@ impl Renderer {
                 run.push((at, Some((blurred[&(at, one)].clone(), one))));
             }
         }
-        self.draw_run(encoder, view, load, globals, batches, instances, &run);
+        self.draw_run(encoder, view, load, globals, batches, instances, &run, clip);
     }
 
     /// Adds a batch's instances to the frame's data, and says where.
@@ -529,7 +657,7 @@ impl Renderer {
         let batches: Vec<PrimitiveBatch<'_>> = drawn.batches().collect();
         let instances = Instances { group: group.clone(), offsets: offsets.iter().map(|(offset, _)| *offset as u32).collect() };
         let run: Vec<(usize, Option<(wgpu::TextureView, usize)>)> = (0..batches.len()).map(|at| (at, None)).collect();
-        self.draw_run(encoder, view, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), &globals, &batches, &instances, &run);
+        self.draw_run(encoder, view, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), &globals, &batches, &instances, &run, None);
     }
 }
 

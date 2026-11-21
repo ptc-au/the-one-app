@@ -51,7 +51,7 @@ async function play(built, scene, name, motion, hz, folder) {
   }
   // Where what it opens should first be drawn: what `opensFrom` names, before the press.
   const origin = motion.opensFrom && { op: "query", ...selector(motion.opensFrom) }
-  const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.named ? { named: { ...selector(motion.named), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), link: link(hz) }
+  const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.named ? { named: { ...selector(motion.named), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), ...(ssh ? {} : { whole: true }), link: link(hz) }
   const started = performance.now()
   const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), replay])
   const answer = ran.answers.at(-1)
@@ -64,7 +64,7 @@ async function play(built, scene, name, motion, hz, folder) {
   // at once, as a browser's compositor does (`Windows::waits`); a press, a key or a finger does.
   const waits = !events?.every((event) => ["wheel", "move"].includes(event.kind))
   const [way, values] = travel(frames)
-  const kept = frames.map(({ png, width, height, ...frame }) => frame)
+  const kept = frames.map(({ png, width, height, unlike_whole, ...frame }) => ({ ...frame, ...(unlike_whole ? { unlike_whole: unlike_whole.map(({ whole, ...unlike }) => unlike) } : {}) }))
   const beforeAt = against && join(against, relative(out, folder))
   const before = beforeAt && existsSync(join(beforeAt, "frames.json")) ? JSON.parse(readFileSync(join(beforeAt, "frames.json"), "utf8")) : undefined
   const beforeTravel = before && { frames: before.frames, values: travel(before.frames)[1] }
@@ -82,6 +82,11 @@ async function play(built, scene, name, motion, hz, folder) {
   // What fails it: anything it took out still drawn once it's settled, and glass it should keep blurred drawn plain.
   const failed = []
   if (leaving) failed.push(`${leaving} taken out still drawn going once it settled`)
+  // Every frame, drawn only where it changed on what was kept of the frames before, is the one drawn whole, within a
+  // level: the frame drawn whole beside it as `frames/<n>-whole.png`.
+  const unlike = frames.findIndex((frame) => frame.unlike_whole)
+  frames.forEach((frame, n) => frame.unlike_whole?.forEach(({ whole, window }) => writeFileSync(join(folder, "frames", `${String(n).padStart(3, "0")}-whole-${window}.png`), Buffer.from(whole, "base64"))))
+  if (unlike >= 0) failed.push(`${frames.filter((frame) => frame.unlike_whole).length} frames differ from the same drawn whole, the first frame ${unlike} (${frames[unlike].at} ms): ${frames[unlike].unlike_whole.map(({ window, differ, most, box, sizes }) => (sizes ? `window ${window} drawn at another size` : `window ${window} in ${differ} pixels, by up to ${most} levels, from ${box.x},${box.y} ${box.width}×${box.height} px`)).join("; ")}`)
   // With less motion what moves fades instead, as iOS's Reduce Motion has it: no frame cuts more of the window than a fade
   // does, once the finger has let go: while it's down, the pages are the finger's, as they are with all their motion.
   const lifted = events?.findLast((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase))

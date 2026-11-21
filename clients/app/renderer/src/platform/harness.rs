@@ -285,6 +285,25 @@ impl Windows {
         let (room, scale) = (window.room(), window.parts[0].native.scale());
         let mut scene = crate::render::scene::Scene::default();
         window.screen.as_mut().ok()?.paint_afresh(room, scale, &mut self.text, &self.atlas, &mut scene);
+        self.alone(id, &scene, false)
+    }
+
+    /// Window `id`'s last frame drawn whole, from the scene its renderer drew (its page's, with what covers it), as its
+    /// compositor would show it (`presented`): each of its parts drawn where it is by a renderer of its own, from its
+    /// renderer's layers' images, so nothing else kept from frames before (a blur, the frame's start, the frame before
+    /// it drew only what changed on) is in it. Its frame as presented must be the same, every frame of a motion. Its
+    /// layers' images are the same ones: drawn afresh, packed otherwise into textures of other sizes, linear filtering
+    /// reads them a level or two apart, which `afresh` compares at rest.
+    pub fn whole(&mut self, id: WindowId) -> Option<(u32, u32, Vec<u8>)> {
+        let scene = self.windows.get(&id)?.renderer.as_ref()?.scene()?.clone();
+        self.alone(id, &scene, true)
+    }
+
+    /// `scene` drawn as window `id` would draw it, each part by a renderer of its own, from its renderer's layers'
+    /// images where `layers` says, composed.
+    fn alone(&mut self, id: WindowId, scene: &crate::render::scene::Scene, layers: bool) -> Option<(u32, u32, Vec<u8>)> {
+        let window = self.windows.get_mut(&id)?;
+        let scale = window.parts[0].native.scale();
         let size = |length: f32| DevicePixels((length * scale).round() as i32);
         let drawn = window
             .parts
@@ -292,7 +311,10 @@ impl Windows {
             .map(|part| {
                 let device = if window.panel { Size { width: size(part.bounds.size.width), height: size(part.bounds.size.height) } } else { part.native.device_size() };
                 let mut renderer = Renderer::offscreen(&self.context, self.atlas.clone(), device);
-                renderer.draw(&scene, &[[(part.bounds.origin.x * scale).round(), (part.bounds.origin.y * scale).round()]]);
+                if layers && let Some(drew) = &window.renderer {
+                    renderer.layers_of(drew);
+                }
+                renderer.draw(scene, &[[(part.bounds.origin.x * scale).round(), (part.bounds.origin.y * scale).round()]]);
                 let read = renderer.read(0);
                 renderer.destroy();
                 read

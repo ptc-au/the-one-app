@@ -68,8 +68,10 @@ pub const RASTERS: Pipeline = drawing("vs_raster", "fs_raster", true);
 pub const SHADOW_COVERAGE: Pipeline = drawing("vs_shadow_whole", "fs_shadow_coverage", false);
 pub const SHADOW_TILES: Pipeline = drawing("vs_shadow", "fs_shadow_tile", true);
 pub const BACKDROPS: Pipeline = drawing("vs_backdrop", "fs_backdrop", true);
+/// What clears a frame where it's drawn again (`fs_clear`), over the whole target as a blur's passes are.
+pub const CLEAR: Pipeline = drawing("vs_blur", "fs_clear", false);
 pub const BLUR: Pipeline = Pipeline { vertex: "vs_blur", fragment: "fs_blur", data: Data::BlurParams, samples: true };
 
 /// Every pipeline the renderer draws with, which `build.rs` compiles Windows' shaders for.
 #[allow(dead_code)]
-pub const PIPELINES: &[Pipeline] = &[QUADS, SHADOWS, UNDERLINES, MONO_SPRITES, POLY_SPRITES, RASTERS, SHADOW_COVERAGE, SHADOW_TILES, BACKDROPS, BLUR];
+pub const PIPELINES: &[Pipeline] = &[QUADS, SHADOWS, UNDERLINES, MONO_SPRITES, POLY_SPRITES, RASTERS, SHADOW_COVERAGE, SHADOW_TILES, BACKDROPS, BLUR, CLEAR];
