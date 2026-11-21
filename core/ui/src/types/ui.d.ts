@@ -495,7 +495,7 @@ export type CheckStep = Tap | { press: Tap; hold?: number; clicks?: number; agen
  * on one line (`unbroken`: a regular expression's source); what's named drawn to both of the window's edges (`bleeds`), as a
  * shelf is; every node named the same distance along its row from the window's end, or its start with `at: "start"`, or its middle with `at: "middle"`
  * (`aligned`: `{ of, with?, at? }`), as controls at the end of rows form a column; nothing of what's named or inside it clipped away (`unclipped`), as a badge
- * overhanging its icon is drawn whole; what's named clear of what's in `from`, as a page's arrow is of the content (`apart`: `{ of, from }`); what's named in the middle of the window across, within a point
+ * overhanging its icon is drawn whole; what's named clear of what's in `from`, inert or not, as a page's arrow is of the content, and what isn't drawn is (`apart`: `{ of, from }`); what's named in the middle of the window across, within a point
  * (`centred`); nothing named so wider than `most` points (`widest`: `{ of, most }`); what's named standing off what's
  * around it by at least `least`:1, WCAG's contrast between the colour just outside its start and its first 4 points in,
  * where a control's ring or a card's edge is (`contrast`: `{ of, least }`); each text named drawn where the inspector's rect for it

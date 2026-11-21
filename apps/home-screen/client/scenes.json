@@ -1167,6 +1167,35 @@
         },
         "steady": true
       }
+    },
+    "checks": {
+      "Its page arrows are clear of the App Library as the pages are held dragged toward it": [
+        {
+          "trace": "traces/drag-held.json"
+        },
+        {
+          "wait": 400
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "up": true
+        },
+        {
+          "wait": 1000
+        }
+      ]
     }
   },
   "Launcher on Windows, its pages wheeled": {
@@ -2491,6 +2520,14 @@
         },
         {
           "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Previous Page"
+            }
+          }
+        },
+        {
+          "expect": {
             "apart": {
               "of": {
                 "role": "button",
@@ -2925,6 +2962,14 @@
         },
         {
           "wait": 400
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Previous Page"
+            }
+          }
         },
         {
           "expect": {

@@ -155,19 +155,16 @@ export function requests(steps, folder, answers = {}) {
       // Every text named is drawn in a monospace face (`monospaced`).
       if (monospace) out.push({ request: { op: "query", text: "" }, judge: (answer) => monospaced(answer?.result?.nodes ?? [], monospace) })
       // What's named drawn clear of what `from` names, as a floating control (a page's arrow) is clear of the content it
-      // isn't about: no two of them, both in sight, share any of their boxes.
+      // isn't about: no two of them, both in sight, share any of their boxes; what isn't drawn is over nothing.
       if (apart)
         out.push({
           request: { op: "query", ...selector(apart.of) },
-          judge: (answer) => {
-            const floating = (answer?.result?.nodes ?? []).filter((node) => node.rect && node.opacity > 0 && node.seen > 0)
-            if (!floating.length) return `${named(apart.of)} isn't drawn`
-            apartFrom = floating
-          },
+          judge: (answer) => void (apartFrom = (answer?.result?.nodes ?? []).filter((node) => node.rect && node.opacity > 0 && node.seen > 0)),
         })
       if (apart)
         out.push({
-          request: { op: "query", ...selector(apart.from) },
+          // What's drawn there, inert or not: the App Library peeking in beside Home is drawn before it takes a press.
+          request: { op: "query", ...selector(apart.from), includeHidden: true },
           judge: (answer) => {
             const over = apartFrom.flatMap((one) =>
               (answer?.result?.nodes ?? [])

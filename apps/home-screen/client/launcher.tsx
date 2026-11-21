@@ -307,11 +307,12 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
   const { pages, laid } = props.layout
   const { card, cardLeft, xOf, pitch, dragged, sectionsX, opacityOf, along, wheel } = props.paging
   const { showing, words, toggleLibrary } = props.launching
-  // Under the pointer, the card shows a chevron at each side there's a screenful that way, which turns to it.
+  // Under the pointer, the card shows a chevron at each side there's a screenful that way, which turns to it, and none
+  // while the pages are held dragged, as the App Library comes in under them; Launchpad has no buttons over its pages.
   const [hovered, setHovered] = createSignal(false)
   const turns = (by: 1 | -1) => {
     const to = at().screen + by
-    return hovered() && browsing() && state().matches("nothing") && to >= 0 && to < (screensOf()[at().owner]?.length ?? 1)
+    return hovered() && browsing() && state().matches("nothing") && dragged() === undefined && to >= 0 && to < (screensOf()[at().owner]?.length ?? 1)
   }
   // The owner shown, how far along their pages and the App Library are drawn, and how opaque they are: for whoever
   // asked for less motion, they fade out, go there and fade in, as iOS's pages do (`glide`).
