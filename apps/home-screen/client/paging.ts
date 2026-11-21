@@ -116,8 +116,9 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
   }
 
   /// Whether the pages are dragged along by the host, as a finger, a trackpad's fingers or a mouse goes, where nothing's
-  /// carried: the screen's own drag, with no turn of the page's JS a move.
-  const dragsAlong = createMemo(() => !reducedMotion() && (state().matches("nothing") || state().matches({ editing: "still" })))
+  /// carried: the screen's own drag, with no turn of the page's JS a move. Less motion keeps it, as iOS's does: a hand
+  /// on the pages is theirs, and only the settling after it is a fade.
+  const dragsAlong = createMemo(() => state().matches("nothing") || state().matches({ editing: "still" }))
   /// The pages, along: the host drags them as the finger goes, giving past the first and the App Library as a rubber
   /// band, as an iPhone's do; let go, they go to the page the finger's motion would carry them nearest to (`settle`),
   /// springing there from where they are at the finger's speed.
@@ -138,13 +139,20 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
       look()
     },
     onDragEnd: ({ offset, velocity, canceled }: Dragged) => {
+      const left = held
       drag(undefined)
       if (canceled) return look()
       const owner = home.getSnapshot().context.at.owner
       const from = Math.round(sideways(owner).value / pitch())
       const screen = settle(from, from - offset.x / pitch(), -velocity.x, stops(owner), pitch())
       quietFor(350)
-      jump(sideways(owner), screen * pitch())
+      const moving = sideways(owner)
+      // Less motion: the pages stay where the hand left them, and fade out, go to the page and fade in (`glide`), where
+      // the host's spring would have slid them.
+      if (untrack(reducedMotion)) {
+        jump(moving, moving.value - left)
+        glide(moving, screen * pitch())
+      } else jump(moving, screen * pitch())
       home.send({ type: "settled", at: { owner, screen } })
     },
   }

@@ -400,7 +400,7 @@ impl Transitions {
     #[allow(clippy::too_many_arguments)]
     pub fn apply(&mut self, id: Id, computed: &mut Computed, entering: Option<&Computed>, now: f64, since: f64, reduced: bool, unseen: bool, size: Size<f32>) {
         self.drawn.insert(id);
-        let dragged = self.drag(id, computed, now, size);
+        let dragged = self.drag(id, computed, now, size, reduced);
         let Some(transition) = computed.transition.clone() else { return };
         for (property, moves) in PROPERTIES {
             let key = (id, property);
@@ -529,9 +529,11 @@ impl Transitions {
     /// Node `id` is let go at `now` going `velocity` pixels a second, along and down: it springs from where it is to
     /// where its style puts it, or where its page is yet to say where it goes (`answered`), carries on at that speed
     /// till it does, so it's never pulled back toward where it was before its page has moved it.
-    pub fn release(&mut self, id: Id, velocity: Point<f32>, now: f64, answered: bool) {
+    /// With less motion (`reduced`) it carries on at no speed, staying where it was let go till its page answers.
+    pub fn release(&mut self, id: Id, velocity: Point<f32>, now: f64, answered: bool, reduced: bool) {
         let Some(dragged) = self.dragged.get_mut(&id).filter(|dragged| dragged.held) else { return };
         (dragged.held, dragged.coasting, dragged.answered) = (false, !answered, false);
+        let velocity = if reduced { Point::default() } else { velocity };
         for (axis, speed) in dragged.axes.iter_mut().zip([velocity.x, velocity.y]) {
             (axis.velocity, axis.start) = (f64::from(speed), now);
         }
@@ -547,8 +549,9 @@ impl Transitions {
 
     /// Draws node `id` where it's dragged: where its style puts it, in pixels, and how far it's held or springing
     /// from there, its spring set off again from where it is where its style moved meanwhile, so it goes on at the
-    /// speed it had. → whether it's dragged.
-    fn drag(&mut self, id: Id, computed: &mut Computed, now: f64, size: Size<f32>) -> bool {
+    /// speed it had; with less motion (`reduced`), where its style moves meanwhile it's there at once, as what slides
+    /// elsewhere is. → whether it's dragged.
+    fn drag(&mut self, id: Id, computed: &mut Computed, now: f64, size: Size<f32>, reduced: bool) -> bool {
         let Some(dragged) = self.dragged.get_mut(&id) else { return false };
         if dragged.spring.is_none() && !dragged.held {
             let transition = computed.transition.as_ref();
@@ -579,7 +582,7 @@ impl Transitions {
         let state = dragged.state(now);
         for (((axis, rest), (off, velocity)), styled) in dragged.axes.iter_mut().zip(rests).zip(state).zip(styled) {
             if let Some(was) = axis.rest.or(styled).filter(|was| *was != rest && !dragged.held) {
-                (axis.off, axis.velocity, axis.start) = (off + f64::from(was - rest), velocity, now);
+                (axis.off, axis.velocity, axis.start) = if reduced { (0.0, 0.0, now) } else { (off + f64::from(was - rest), velocity, now) };
             }
             axis.rest = Some(rest);
         }

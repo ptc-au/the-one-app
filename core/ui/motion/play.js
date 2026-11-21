@@ -7,7 +7,7 @@ import { build, pageFolder } from "./pages.js"
 import { device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./harness.js"
 import { finger, ios, moves, selector, single, travel } from "./gesture.js"
-import { apart, contactSheet, curve, cut, differs, filmstrip, rect, strayInk } from "./output.js"
+import { apart, arrives, contactSheet, curve, cut, differs, filmstrip, rect, strayInk } from "./output.js"
 
 
 /// How the display's link ticks at `hz`, as a real one: a Mac's starts three refreshes after it's asked for frames,
@@ -82,15 +82,26 @@ async function play(built, scene, name, motion, hz, folder) {
   // What fails it: anything it took out still drawn once it's settled, and glass it should keep blurred drawn plain.
   const failed = []
   if (leaving) failed.push(`${leaving} taken out still drawn going once it settled`)
-  // With less motion what moves fades instead, as iOS's Reduce Motion has it: no frame cuts more of the window than a fade does.
-  const cutting = motion.reducedMotion && cut(frames)
+  // With less motion what moves fades instead, as iOS's Reduce Motion has it: no frame cuts more of the window than a fade
+  // does, once the finger has let go: while it's down, the pages are the finger's, as they are with all their motion.
+  const lifted = events?.findLast((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase))
+  const end = events ? (lifted ?? events.at(-1)).ms : stretches.reduce((sum, stretch) => sum + stretch.ms, 0)
+  const cutting = motion.reducedMotion && cut(frames.slice(Math.max(0, frames.findLastIndex((frame) => frame.at < end))))
   if (cutting) failed.push(cutting)
+  // And it gets where the same gesture goes with all its motion: a drag that follows nothing with less motion, and so
+  // changes nothing, is no cut.
+  if (motion.reducedMotion) {
+    const whole = join(folder, "full")
+    mkdirSync(whole, { recursive: true })
+    const full = await run(at, whole, { ...scene, reducedMotion: false, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), replay])
+    const there = full.answers.at(-1)?.result?.frames
+    const short = there?.length ? arrives(frames, there) : `the full-motion run drew nothing: ${full.said.split("\n").at(-1)}`
+    if (short) failed.push(short)
+  }
   // A refresh that drew nothing new (a busy device's) shows the frame drawn before it.
   let blurs
   const plain = motion.blurred ? frames.findIndex((frame, n) => ((blurs = frame.drawn === false ? blurs : frame.work?.backdrops), n > 0 && !blurs)) : -1
   // What a swipe moves goes one way while it's under the fingers, a trace's till they lift: never back.
-  const lifted = events?.findLast((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase))
-  const end = events ? (lifted ?? events.at(-1)).ms : stretches.reduce((sum, stretch) => sum + stretch.ms, 0)
   const toward = Math.sign(values.at(-1) - values[0])
   const back = motion.steady ? values.findIndex((value, n) => n > 0 && frames[n].at <= end && (value - values[n - 1]) * toward < -1) : -1
   // What `onward` follows never goes back against the way it's going, in any frame, as a frame that draws it where it began
@@ -164,7 +175,7 @@ async function play(built, scene, name, motion, hz, folder) {
   // what goes back the way it came, at the top of its arc, as a card let go past its end springs back.
   const resized = (n) => frames[n].rect && frames[n - 1].rect && Math.max(Math.abs(frames[n].rect.width - frames[n - 1].rect.width), Math.abs(frames[n].rect.height - frames[n - 1].rect.height)) >= 0.05
   const turned = (n) => n > 1 && n + 1 < values.length && (values[n - 1] - values[n - 2]) * (values[n + 1] - values[n]) < 0
-  const held = moved < 0 || motion.frameMs ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && Math.abs(value - values.at(-1)) > 2)
+  const held = moved < 0 || motion.frameMs || motion.reducedMotion ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && Math.abs(value - values.at(-1)) > 2)
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
   // Each refresh moves it as far as the time between refreshes takes it, once what moves it is done, and as it moves it
   // where that's even (a finger along its moves, a wheel's notches as they turn): no step is longer than both beside it

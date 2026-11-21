@@ -251,7 +251,7 @@ impl Screen {
         // 6.9). Its page hears the press's, as Motion's `dragend` says it.
         let by = point(if drag.along { at.x - drag.start.x } else { 0.0 }, if drag.down { at.y - drag.start.y } else { 0.0 });
         let slope = self.given(drag.id, by).map_or(point(1.0, 1.0), |(_, slope)| slope);
-        self.transitions.release(drag.id, point(velocity.x * slope.x, velocity.y * slope.y), now, !answers);
+        self.transitions.release(drag.id, point(velocity.x * slope.x, velocity.y * slope.y), now, !answers, self.reduced_motion);
         self.changed();
         if answers {
             let offset = json!({"x": if drag.along { at.x - drag.start.x } else { 0.0 }, "y": if drag.down { at.y - drag.start.y } else { 0.0 }});

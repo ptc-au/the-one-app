@@ -6,29 +6,45 @@ import pixelmatch from "pixelmatch"
 import { out } from "./options.js"
 import { finger } from "./gesture.js"
 
-/// How much of the window a frame may change from the one before it, with less motion, unless a fade covers it: a pixel
-/// that changes by more than `CUT` levels (of 255, in any channel) in one frame is cut, not faded (a 200 ms fade, eased
-/// out, moves a pixel about 40% of the way in its first frame at 60 Hz: 100 levels of black on white), and more than
-/// `SHARE` of the window doing it is a hard cut, as iOS's Reduce Motion has none.
-const CUT = 128
-const SHARE = 0.02
+/// How much of what changes with less motion one frame may change: a fade, eased out, does at most about 40% of its
+/// way in its first frame at 60 Hz, and a cut, all of it in one, however alike what it cuts between are (two pale pages
+/// differ by few levels in every pixel).
+const CUT = 0.6
 
-/// The frame of `frames` that cuts the most, if any cuts more than `SHARE` of the window: its number, its time and its share.
+/// The frame of `frames` that cuts: the one that changes more than `CUT` of all that changes from the first of them to
+/// the last (the sum of each pixel's difference), if any does: its number, its time and its share.
 export function cut(frames) {
-  let worst = { share: SHARE }
-  let before
-  frames.forEach((frame, n) => {
-    if (!frame.png) return
-    const now = PNG.sync.read(Buffer.from(frame.png, "base64"))
-    if (before?.width === now.width && before.height === now.height) {
-      let changed = 0
-      for (let at = 0; at < now.data.length; at += 4) if (Math.max(...[0, 1, 2].map((channel) => Math.abs(now.data[at + channel] - before.data[at + channel]))) > CUT) changed++
-      const share = changed / (now.width * now.height)
-      if (share > worst.share) worst = { share, n, at: frame.at }
-    }
-    before = now
+  const pictures = frames.map((frame) => (frame.png ? PNG.sync.read(Buffer.from(frame.png, "base64")) : undefined))
+  const differ = (a, b) => {
+    if (!a || !b || a.width !== b.width || a.height !== b.height) return 0
+    let sum = 0
+    for (let at = 0; at < a.data.length; at++) if (at % 4 < 3) sum += Math.abs(a.data[at] - b.data[at])
+    return sum
+  }
+  const whole = differ(pictures[0], pictures.at(-1))
+  if (!whole) return undefined
+  let worst = { share: CUT }
+  pictures.forEach((now, n) => {
+    const share = n ? differ(pictures[n - 1], now) / whole : 0
+    if (share > worst.share) worst = { share, n, at: frames[n].at }
   })
-  return worst.n === undefined ? undefined : `${(worst.share * 100).toFixed(1)}% of the window changes by more than ${CUT} levels at frame ${worst.n + 1} (${worst.at} ms), a cut where less motion fades`
+  return worst.n === undefined ? undefined : `${(worst.share * 100).toFixed(0)}% of all that changes changes in frame ${worst.n + 1} (${worst.at} ms), a cut where less motion fades`
+}
+
+/// How many levels (of 255, in any channel) a pixel of the last frame may differ by from the full-motion run's, and how
+/// much of the window may.
+const ARRIVED = 24
+const AWAY = 0.01
+
+/// Whether the last of `frames`, played with less motion, is the last of `full`, the same gesture played with all its
+/// motion: less motion changes how it gets there, never where. → what's different, if anything.
+export function arrives(frames, full) {
+  const [now, there] = [frames, full].map((played) => PNG.sync.read(Buffer.from(played.at(-1).png, "base64")))
+  if (now.width !== there.width || now.height !== there.height) return "its last frame isn't the size of the full-motion run's"
+  let changed = 0
+  for (let at = 0; at < now.data.length; at += 4) if (Math.max(...[0, 1, 2].map((channel) => Math.abs(now.data[at + channel] - there.data[at + channel]))) > ARRIVED) changed++
+  const share = changed / (now.width * now.height)
+  return share > AWAY ? `it doesn't get where the same gesture does with full motion: ${(share * 100).toFixed(1)}% of its last frame differs from that run's` : undefined
 }
 
 /// The curve: what moved, and the finger, over time, each frame over its budget red.
