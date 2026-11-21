@@ -13,7 +13,7 @@
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, connection, covers, haptic, keydown, Problem, render, Status, View, viewport } from "ui"
+import { Button, connection, covers, haptic, keydown, Problem, render, Screen, Status, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth } from "./store.ts"
 import { type Owner, owners } from "./owners.ts"
@@ -97,13 +97,13 @@ function HomeScreen(props: { owners: Owner[] }) {
 /// one meeting what's new is the likeliest cause.
 function Broken(props: { error: Error }) {
   return (
-    <View style={[looks.broken, looks.tall(viewport().height)]}>
+    <Screen heading="Home Screen">
       <Problem
         heading="Home Screen didn't open."
         text={new Error(`Try again in a moment.\n\n${typeof props.error?.cause === "string" ? props.error.cause : (props.error?.message ?? props.error)}`)}
         action={<Button onPress={() => refresh(owners)}>Try Again</Button>}
       />
-    </View>
+    </Screen>
   )
 }
 
@@ -116,11 +116,20 @@ function Waiting() {
   onCleanup(() => clearInterval(ticking))
   const said = () => (connection() === "online" ? "Your network hasn't answered yet." : "This device isn't reaching your network.")
   return (
-    <View style={[looks.broken, looks.tall(viewport().height)]}>
-      <Show when={waited() >= 10} fallback={<Show when={waited() >= 1}><Status heading="Opening your Home Screen…" /></Show>}>
+    <Show
+      when={waited() >= 10}
+      fallback={
+        <View style={[looks.broken, looks.tall(viewport().height)]}>
+          <Show when={waited() >= 1}>
+            <Status heading="Opening your Home Screen…" />
+          </Show>
+        </View>
+      }
+    >
+      <Screen heading="Home Screen">
         <Problem heading="Home Screen didn't open." text={said()} action={<Button onPress={() => (setWaited(0), refresh(owners))}>Try Again</Button>} />
-      </Show>
-    </View>
+      </Screen>
+    </Show>
   )
 }
 

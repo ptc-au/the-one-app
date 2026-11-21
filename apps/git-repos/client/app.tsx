@@ -670,7 +670,7 @@ function App() {
 }
 
 render(() => (
-  <Errored fallback={(error) => <Problem heading="Can't show your repos" text={error() as Error} />}>
+  <Errored fallback={(error) => <Screen heading="Git Repos"><Problem heading="Can't show your repos" text={error() as Error} /></Screen>}>
     <Loading fallback={<Skeleton rows={4} />}>
       <App />
     </Loading>

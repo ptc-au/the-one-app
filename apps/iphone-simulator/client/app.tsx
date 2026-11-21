@@ -105,7 +105,7 @@ function App() {
   changed(() => refresh(simulators))
   const opened = () => simulators().find((e) => e.name === open())
   return (
-    <Errored fallback={(error, reset) => <Problem heading="Couldn't list your simulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} />}>
+    <Errored fallback={(error, reset) => <Screen heading="iPhone Simulator"><Problem heading="Couldn't list your simulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} /></Screen>}>
       <Loading fallback={<Skeleton rows={3} />}>
         <Split open={!!opened()} onClose={() => setOpen()} pick="Pick a simulator to use it." detail={<Show when={opened()}><Detail simulator={opened()!} /></Show>}>
           <Screen heading="iPhone Simulator">

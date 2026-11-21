@@ -102,7 +102,7 @@ function App() {
   changed(() => refresh(emulators))
   const opened = () => emulators().find((e) => e.name === open())
   return (
-    <Errored fallback={(error, reset) => <Problem heading="Couldn't list your emulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} />}>
+    <Errored fallback={(error, reset) => <Screen heading="Android Emulator"><Problem heading="Couldn't list your emulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} /></Screen>}>
       <Loading fallback={<Skeleton rows={3} />}>
         <Split open={!!opened()} onClose={() => setOpen()} pick="Pick an emulator to use it." detail={<Show when={opened()}><Detail emulator={opened()!} /></Show>}>
           <Screen heading="Android Emulator">
