@@ -72,6 +72,16 @@ pub fn rubber_band(past: f32, size: f32, elastic: f32) -> f32 {
     (1.0 - 1.0 / (past.abs() * elastic / size + 1.0)) * size * past.signum()
 }
 
+/// How far what `rubber_band` gives moves for each point it's pulled on, `past` its end: its slope there, by which a
+/// stretch let go goes on at the speed it was drawn going, not the finger's.
+pub fn rubber_band_slope(past: f32, size: f32, elastic: f32) -> f32 {
+    if size <= 0.0 || elastic <= 0.0 {
+        return 0.0;
+    }
+    let pulled = past.abs() * elastic / size + 1.0;
+    elastic / (pulled * pulled)
+}
+
 /// Where a finger has been lately, for how fast it was going as it lets go, by whatever clock its caller keeps, in
 /// milliseconds: a screen's, which an agent's paused clock steps, or the system's (`now`).
 #[derive(Default)]

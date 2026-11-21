@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::{Phase, Screen};
 use crate::geometry::{Point, point};
-use crate::motion::{Velocity, rubber_band};
+use crate::motion::{Velocity, rubber_band, rubber_band_slope};
 use crate::tree::Id;
 
 /// How far a pointer moves before it drags, in points: Motion's three for a mouse, and for a finger, UIScrollView's
@@ -205,25 +205,31 @@ impl Screen {
     /// rubber band.
     fn hold_at(&mut self, by: Point<f32>) {
         let Some(id) = self.drag.as_ref().map(|drag| drag.id) else { return };
-        let Some(node) = self.tree.nodes.get(&id) else { return self.drag = None };
+        let Some((shown, _)) = self.given(id, by) else { return self.drag = None };
+        self.transitions.hold(id, shown);
+        self.changed();
+        if self.tree.nodes.get(&id).is_some_and(|node| node.listens("drag")) {
+            self.tell(id, "drag", json!({"offset": {"x": shown.x, "y": shown.y}}));
+        }
+    }
+
+    /// Where node `id` is drawn held `by` from where it was pressed, as its constraints let it, giving past them as a
+    /// rubber band, and how far it moves there for each point the press does, each way. → none where it's gone.
+    fn given(&self, id: Id, by: Point<f32>) -> Option<(Point<f32>, Point<f32>)> {
+        let node = self.tree.nodes.get(&id)?;
         let constraints = node.prop("dragConstraints");
         let bound = |side: &str| constraints.and_then(|constraints| constraints[side].as_f64()).map(|px| px as f32);
         let elastic = node.prop("dragElastic").and_then(Value::as_f64).map_or(ELASTIC, |elastic| elastic as f32);
-        let told = node.listens("drag");
         // As stretchy as UIScrollView's against its bounds: what it's dragged within, as a pager's strip is the window.
         let within = self.tree.parent(id).and_then(|parent| self.rects.get(&parent)).or(self.rects.get(&id));
         let size = within.map_or((0.0, 0.0), |rect| (rect.width, rect.height));
         let give = |by: f32, least: Option<f32>, most: Option<f32>, size: f32| match (least.map(|least| -least), most) {
-            (Some(least), _) if by < least => least + rubber_band(by - least, size, elastic),
-            (_, Some(most)) if by > most => most + rubber_band(by - most, size, elastic),
-            _ => by,
+            (Some(least), _) if by < least => (least + rubber_band(by - least, size, elastic), rubber_band_slope(by - least, size, elastic)),
+            (_, Some(most)) if by > most => (most + rubber_band(by - most, size, elastic), rubber_band_slope(by - most, size, elastic)),
+            _ => (by, 1.0),
         };
-        let shown = point(give(by.x, bound("left"), bound("right"), size.0), give(by.y, bound("top"), bound("bottom"), size.1));
-        self.transitions.hold(id, shown);
-        self.changed();
-        if told {
-            self.tell(id, "drag", json!({"offset": {"x": shown.x, "y": shown.y}}));
-        }
+        let ((x, along), (y, down)) = (give(by.x, bound("left"), bound("right"), size.0), give(by.y, bound("top"), bound("bottom"), size.1));
+        Some((point(x, y), point(along, down)))
     }
 
     /// The press came up at `at`, or the system took it (`cancelled`): a node dragged is let go, springing on at the
@@ -235,7 +241,12 @@ impl Screen {
         let going = if cancelled { point(0.0, 0.0) } else { drag.velocity.get(time) };
         let velocity = point(if drag.along { going.x } else { 0.0 }, if drag.down { going.y } else { 0.0 });
         let answers = self.tree.nodes.get(&drag.id).is_some_and(|node| node.listens("dragend"));
-        self.transitions.release(drag.id, velocity, now, !answers);
+        // It springs on from the speed it was drawn going, which a rubber band past its constraints gives less of than
+        // the press, as UIScrollView's stretch does: at the press's, it sped up as it was let go (3.4 pt a refresh, then
+        // 6.9). Its page hears the press's, as Motion's `dragend` says it.
+        let by = point(if drag.along { at.x - drag.start.x } else { 0.0 }, if drag.down { at.y - drag.start.y } else { 0.0 });
+        let slope = self.given(drag.id, by).map_or(point(1.0, 1.0), |(_, slope)| slope);
+        self.transitions.release(drag.id, point(velocity.x * slope.x, velocity.y * slope.y), now, !answers);
         self.changed();
         if answers {
             let offset = json!({"x": if drag.along { at.x - drag.start.x } else { 0.0 }, "y": if drag.down { at.y - drag.start.y } else { 0.0 }});

@@ -7,7 +7,7 @@ use serde_json::json;
 
 use super::Screen;
 use crate::geometry::{Point, point};
-use crate::motion::{Spring, decay, rubber_band};
+use crate::motion::{Spring, decay, rubber_band, rubber_band_slope};
 use crate::tree::Id;
 
 /// How loose the rubber band is: UIScrollView's.
@@ -101,12 +101,15 @@ impl Screen {
     }
 
     /// The finger on what scrolls at `at` lifted going `velocity` points a second (as a scroll goes): stretched, it
-    /// springs back at that speed; otherwise, fast enough, it's flung.
+    /// springs back from the speed its stretch was going, which gives less the further it's pulled, as UIScrollView's
+    /// does (at the finger's, it sped up as it was let go: 2.8 pt a refresh, then 5.1); otherwise, fast enough, it's
+    /// flung.
     pub fn release_scroll(&mut self, at: Point<f32>, velocity: Point<f32>) {
         let now = self.js.clock().now();
         if let Some(id) = self.under(at).into_iter().find(|id| self.coasts.get(id).is_some_and(|coast| coast.held)) {
+            let size = self.placed(id).map_or(0.0, |placed| if self.coasts[&id].along { placed.shown.size.width } else { placed.shown.size.height });
             let coast = self.coasts.get_mut(&id).expect("it's held");
-            coast.velocity = if coast.along { velocity.x } else { velocity.y };
+            coast.velocity = rubber_band_slope(coast.pulled, size, ELASTIC) * if coast.along { velocity.x } else { velocity.y };
             (coast.held, coast.stepped) = (false, now);
             return self.changed();
         }
