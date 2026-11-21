@@ -366,7 +366,7 @@ impl Windows {
             let (width, height) = (device.width.0 as u32, device.height.0 as u32);
             if let Some(at) = window.presented
                 && window.summoned.is_none()
-                && (ticking || now() < shows(self.vsync, refresh, at))
+                && (ticking || now() + ROUNDING < shows(self.vsync, refresh, at))
             {
                 held |= window.dirty;
                 continue;
@@ -594,13 +594,18 @@ impl Windows {
     }
 }
 
+/// How far a refresh's time, as a clock gives it in whole ns, is from a refresh's length (60 Hz's 16.666667 ms) on from
+/// a frame's: a few ns either side, which held a frame due at the refresh it came at for a refresh more, the App
+/// Library's category opening at 60 Hz showing its 8th frame twice and then jumping 45 pt.
+const ROUNDING: std::time::Duration = std::time::Duration::from_micros(1);
+
 /// The display's refresh a frame presented at `at` shows on: the first a quarter of a refresh or more after it, counted
 /// from the link's last tick (`vsync`), as one presented in the quarter before a refresh is too late for it (`turned`);
 /// a refresh after it where the display has never ticked. What changes after it is drawn there, at the start of the
 /// refresh after, with what comes before it, as a display link's frame begins at its tick: a refresh after the frame
 /// itself, a frame drawn as the page answered just before a refresh had every move after it drawn just before the
 /// next, which a move that comes then missed, a refresh late (a finger's pan held a frame, and took two steps at once
-/// as it was let go).
+/// as it was let go). A turn within `ROUNDING` of it is at it.
 fn shows(vsync: Option<web_time::Instant>, refresh: std::time::Duration, at: web_time::Instant) -> web_time::Instant {
     let ready = at + refresh / 4;
     match vsync {

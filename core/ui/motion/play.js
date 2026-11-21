@@ -181,6 +181,11 @@ async function play(built, scene, name, motion, hz, folder) {
   const turned = (n) => n > 1 && n + 1 < values.length && (values[n - 1] - values[n - 2]) * (values[n + 1] - values[n]) < 0
   const held = moved < 0 || motion.frameMs || motion.reducedMotion ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && Math.abs(value - values.at(-1)) > 2)
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
+  // No refresh draws nothing while something on the window is on its way somewhere (the harness's `held`), whatever
+  // it follows: a refresh so is one the loop missed, the frame before shown twice, then a jump. A device others load
+  // (`frameMs`) takes several refreshes a frame.
+  const missed = motion.frameMs ? -1 : frames.findIndex((frame) => frame.held)
+  if (missed >= 0) failed.push(`the refresh at frame ${missed} (${frames[missed].at} ms) drew nothing as it moved`)
   // Each refresh moves it as far as the time between refreshes takes it, once what moves it is done, and as it moves it
   // where that's even (a finger along its moves, a wheel's notches as they turn): no step is longer than both beside it
   // and the next shorter than both beside it, by more than 2 pt and a quarter of their mean, as a frame drawn for a

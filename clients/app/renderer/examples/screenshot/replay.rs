@@ -127,6 +127,11 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         frame["at"] = json!((tick * 100.0).round() / 100.0);
         frame["pressure"] = json!(windows.pressure());
         frame["drawn"] = json!(drew);
+        // A refresh that drew nothing while something on it is on its way somewhere shows the frame before again: a
+        // frame the loop held, which a person sees as a stop and then a jump.
+        if !drew && windows.arriving(id) {
+            frame["held"] = json!(true);
+        }
         // What's tracked, where it's drawn, or that it's gone, as a page that's left takes it with it: the node the
         // selector first found, not another it finds once that's gone (an App Library's Notes, as Home's goes).
         if let Some(query) = &mut track {
