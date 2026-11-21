@@ -86,8 +86,10 @@ const look = styles({
   pane: { minHeight: 0, minWidth: 0, overflow: "hidden", backgroundColor: tokens.colour.background },
   // Where there's no room for both, one shows at a time, over the other, which keeps its place and where it's
   // scrolled to: it's hidden, not gone.
-  over: { position: "absolute", inset: 0 },
-  hidden: { opacity: 0, pointerEvents: "none" },
+  // The one that comes in fades in over the one that goes, which stays drawn till it has (a push), as a cross-dissolve
+  // does, not under it as both fade (the window's background shows through).
+  over: { position: "absolute", inset: 0, transitionProperty: ["opacity"], transition: tokens.motion.travel },
+  hidden: { opacity: 0, pointerEvents: "none", transitionDelay: 300 },
   // Where there is, the list keeps a readable width and what it opens has the rest.
   list: { flexBasis: "38%", minWidth: tokens.length.columnMin, maxWidth: tokens.length.column, flexShrink: 0, borderEndWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   // A window's sidebar is narrower, as macOS's and Raycast's Settings' are.
