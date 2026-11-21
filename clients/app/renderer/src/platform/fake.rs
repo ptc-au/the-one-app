@@ -33,6 +33,10 @@ pub struct Display {
     /// How long each frame takes to draw, in ms, where it's longer than a refresh, as on a device others load
     /// (`set_frame_ms`).
     drawing: Cell<f64>,
+    /// Until when, on the clock, the windows' thread is busy drawing the frame it last drew (`drawing`).
+    busy: Cell<f64>,
+    /// Something woke the loop that it hasn't turned for yet: a page's post, or what it had due itself.
+    woken: Cell<bool>,
     /// The panels put on the screen since the display last showed a frame, which the frame it shows next is checked
     /// on (`Windows::tick`): a host's summon shows its window at once, with what it last presented.
     summoned: RefCell<Vec<WindowId>>,
@@ -172,6 +176,8 @@ impl Display {
             refreshed: Cell::new(None),
             random: Cell::new(0),
             drawing: Cell::new(0.0),
+            busy: Cell::new(0.0),
+            woken: Cell::new(false),
             summoned: RefCell::default(),
             wrong: RefCell::default(),
             keyboard: RefCell::default(),
@@ -438,6 +444,31 @@ impl Display {
 
     pub(crate) fn events(&self) -> Vec<(WindowId, usize, Input)> {
         self.events.borrow_mut().drain(..).collect()
+    }
+
+    /// Something woke the loop: a page's post, or what it had due itself.
+    pub fn wake(&self) {
+        self.woken.set(true);
+    }
+
+    /// Whether something woke the loop that it hasn't turned for yet: input, its link's tick, or what `wake` says.
+    pub fn woke(&self) -> bool {
+        self.woken.get() || self.tick.get().is_some() || !self.events.borrow().is_empty()
+    }
+
+    /// The loop turns for what woke it.
+    pub fn turned(&self) {
+        self.woken.set(false);
+    }
+
+    /// The windows' thread is busy drawing a frame until `at` on the clock, in ms.
+    pub fn busy_until(&self, at: f64) {
+        self.busy.set(at);
+    }
+
+    /// How long until the windows' thread is done with the frame it's drawing, in ms, while it is.
+    pub fn busy(&self) -> Option<f64> {
+        Some(self.busy.get() - time()).filter(|left| *left > 0.001)
     }
 }
 

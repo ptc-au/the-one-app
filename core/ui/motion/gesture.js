@@ -43,9 +43,14 @@ export function single(answer, tap) {
   return nodes[nth ?? 0] ? { node: nodes[nth ?? 0] } : { why: `only ${nodes.length} nodes match ${said}, so there's no nth ${nth}` }
 }
 
-/// How far what moved had gone at each frame: what `follow` names where it's said and moved, else what scrolls.
+/// How far what moved had gone at each frame: what `follow` names where it's said and moved, else what scrolls. What
+/// `follow` names that's drawn only from some frame on (a category's button, as the category opens) is where it first
+/// shows in the frames before: left out, its motion went unjudged, and a frame held as it opened passed.
 export function travel(frames) {
-  const series = (pick) => frames.map((frame) => pick(frame)).map((at) => (at === undefined ? undefined : at - pick(frames[0])))
+  const series = (pick) => {
+    const from = Math.max(frames.findIndex((frame) => pick(frame) !== undefined), 0)
+    return frames.map((frame, n) => (n < from ? 0 : pick(frame) === undefined ? undefined : pick(frame) - pick(frames[from])))
+  }
   const candidates = [
     ["along", series((frame) => frame.x)],
     ["down", series((frame) => frame.y)],

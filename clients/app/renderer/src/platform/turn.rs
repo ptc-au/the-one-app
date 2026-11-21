@@ -124,6 +124,9 @@ impl Windows {
     /// A turn of the loop: what the display said, timers that are due, then each window that changed drawn.
     pub(super) fn turned(&mut self) {
         let turned = now();
+        // The fake platform's loop has turned for what woke it (`Windows::run`).
+        #[cfg(feature = "fake")]
+        self.display.turned();
         if self.context.lost() {
             self.recover();
         }

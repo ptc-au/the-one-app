@@ -19,9 +19,10 @@ impl Windows {
         self.context.wait_compiled();
     }
 
-    /// Whether the loop wants the display's next frame: something on a window moves.
+    /// Whether the loop wants the display's next frame: something on a window moves, or a frame keeps its thread busy
+    /// (`set_frame_ms`), which the display shows once it's drawn.
     pub fn wanted(&self) -> bool {
-        self.display.wanted()
+        self.display.wanted() || self.display.busy().is_some()
     }
 
     /// The display's refreshes come late as `seed` decides (`fake::Display::seed`), and `random` draws from it too, and
@@ -327,29 +328,24 @@ impl Windows {
     /// its own time, and while the loop wants frames the display ticks each refresh, the loop taking a turn for each,
     /// as a host's do. What each page sent is run before each turn (`wait`), and what a turn sent one (input that
     /// waited for it) is run and drawn at once, on a turn of its own, as its post wakes a host's loop (`posted`).
+    /// The loop turns only as something wakes it, as a host's does: input, the display's link, a page's post, or what
+    /// it has due itself (`due`). Turned wherever a driver started or stopped it (each read of a frame, just before a
+    /// refresh), it stepped what moves by the loop's own clock to that moment, which no device's loop does.
     pub fn run(&mut self, ms: f64) {
         let refresh = self.display.refresh().as_secs_f64() * 1000.0;
         let started = fake::time();
         let mut late = 0;
         loop {
-            self.wait();
-            let drawn: u64 = self.windows.values().map(|window| window.frames).sum();
-            self.turn();
-            if self.wait() {
-                self.turn();
+            if self.wait() | self.due().is_some_and(|due| due.is_zero()) {
+                self.display.wake();
             }
-            // A frame drawn on a device others load keeps its thread busy, the display's refreshes going by unseen.
-            let busy = self.display.frame_ms();
-            if busy > 0.0 && self.windows.values().map(|window| window.frames).sum::<u64>() > drawn {
-                fake::advance(busy);
-                for window in self.windows.values_mut() {
-                    if let Ok(screen) = &mut window.screen {
-                        window.dirty |= screen.advance(0.0);
-                    }
-                }
+            if self.display.woke() && self.display.busy().is_none() {
+                self.woken();
             }
             // What the turn set off decoding has decoded, so when it's there is known before time moves on past it.
-            self.wait();
+            if self.wait() {
+                self.display.wake();
+            }
             let now = fake::time();
             let left = started + ms - now;
             // The display's next refresh: the one it's at now, give or take a microsecond, unless it's taken it, as the
@@ -360,14 +356,20 @@ impl Windows {
             let at = (now / refresh).round();
             let reached = (now - at * refresh).abs() < 0.001;
             let due = if reached && self.display.refreshed() != Some(at as i64) { now } else { (if reached { at + 1.0 } else { (now / refresh).floor() + 1.0 }) * refresh };
-            let tick = (self.display.wanted() || self.windows.values().any(|window| window.dirty && window.on_screen())).then(|| (due - now).max(0.0));
+            // While a frame keeps the windows' thread busy (`set_frame_ms`), the display's refreshes go by unseen, and
+            // the loop turns once it's done, for what woke it meanwhile.
+            let busy = self.display.busy();
+            let tick = (busy.is_none() && (self.display.wanted() || self.windows.values().any(|window| window.dirty && window.on_screen()))).then(|| (due - now).max(0.0));
             let timer = self.windows.values().filter_map(|window| window.screen.as_ref().ok()?.timer_due()).chain(self.display.answer_due().map(|at| at - now)).reduce(f64::min).map(|due| due.max(0.0));
             // What the loop has due by itself (`due`), as a host's waits for it: the loop's own clock standing in for
-            // a display link that's stopped, a refresh after its last frame, not at the display's next refresh.
-            let woken = self.due().map(|due| due.as_secs_f64() * 1000.0).filter(|due| *due > 0.001);
+            // a display link that's stopped, a refresh after its last frame, not at the display's next refresh. A
+            // host's timer fires at its time or after, never before, so it's woken a whole microsecond on: the clock's
+            // ms land a few ns either side of an `Instant` counted in a refresh's whole ns, and woken a hair early, the
+            // loop drew nothing, its frame held till the next wake (a category opening in the App Library at 60 Hz).
+            let woke = self.due().map(|due| (due.as_secs_f64() * 1e6).ceil() / 1000.0).filter(|due| *due > 0.0);
             // A refresh a hair past the end, as a driver's own refresh, `1000 / hz` ms, is a hair short of the
             // display's (a `Duration`, whole nanoseconds), is the one it ends on, where it was never shown.
-            let next = tick.into_iter().chain(timer).chain(woken).reduce(f64::min).filter(|next| *next <= left + 0.001);
+            let next = tick.into_iter().chain(timer).chain(woke).chain(busy).reduce(f64::min).filter(|next| *next <= left + 0.001);
             // The platform's time moves on once, its pages' clock with it, then each page runs what's due by then.
             let by = next.unwrap_or(left.max(0.0));
             fake::advance(by);
@@ -375,12 +377,18 @@ impl Windows {
                 self.with(id, |screen| screen.message(&answer));
             }
             for window in self.windows.values_mut() {
-                if let Ok(screen) = &mut window.screen {
-                    window.dirty |= screen.advance(0.0);
+                if let Ok(screen) = &mut window.screen
+                    && screen.advance(0.0)
+                {
+                    window.dirty = true;
+                    self.display.wake();
                 }
             }
             if next.is_none() {
                 break;
+            }
+            if next == woke {
+                self.display.wake();
             }
             if next == tick {
                 self.display.reached((fake::time() / refresh).round() as i64);
@@ -394,8 +402,28 @@ impl Windows {
                 }
             }
         }
-        self.wait();
+        if self.wait() {
+            self.display.wake();
+        }
+        if self.display.woke() && self.display.busy().is_none() {
+            self.woken();
+        }
+    }
+
+    /// The loop's turn for what woke it, and one more for what that sent a page (input that waited for it), as its post
+    /// wakes a host's loop (`posted`). Each frame drawn keeps the windows' thread busy for as long as a frame takes on
+    /// the device (`set_frame_ms`).
+    fn woken(&mut self) {
+        let frames = |windows: &Windows| windows.windows.values().map(|window| window.frames).sum::<u64>();
+        let drawn = frames(self);
         self.turn();
+        if self.wait() {
+            self.turn();
+        }
+        let busy = self.display.frame_ms() * (frames(self) - drawn) as f64;
+        if busy > 0.0 {
+            self.display.busy_until(fake::time() + busy);
+        }
     }
 
     /// Where `x`, `y` of window `id`'s page is to its system: in the uppermost of its native windows there (each of a
