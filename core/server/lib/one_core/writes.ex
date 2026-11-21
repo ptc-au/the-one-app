@@ -25,6 +25,7 @@ defmodule OneCore.Writes do
   by saying it speaks only that one, and a server runs it only where every server that could have been asked it
   first speaks it too: one from before would have run it without claiming it.
   """
+  require Logger
   alias OneCore.{Bucket, Cache, Iroh, Protocol, Server, Servers, User}
   alias OneCore.Call.State
 
@@ -46,6 +47,13 @@ defmodule OneCore.Writes do
   the wait for it is over (`@awaited`), or isn't to be asked again. A client or a server that asked it of another too waits for the first (`core/client/src/rpc.rs`).
   """
   def not_run, do: -32004
+
+  @doc """
+  What a write is answered whose outcome isn't known yet, as one still being done elsewhere (`claim/4`), or one whose
+  database write the bucket hasn't answered (`Database.Lease`): never that it failed, as it may yet be done.
+  """
+  def taking_longer,
+    do: "This is taking longer than usual. It's done only once, so look again in a moment rather than doing it again."
 
   @doc "Whether the server whose key is `server` keeps to idempotency keys, so a write is safe to ask of it again."
   def keeps?(server), do: Protocol.overlap?(Servers.protocol(server), @keys)
@@ -134,9 +142,8 @@ defmodule OneCore.Writes do
         Process.sleep(@looks)
         awaited(path, until)
       else
-        {:not_run,
-         "This is still being done on #{Servers.name(server) || "another server"}, which is slow to answer just now. " <>
-           "It's done only once, so look again in a moment to see it, rather than doing it again."}
+        Logger.warning("A write asked again is still being done on #{Servers.name(server) || server}")
+        {:not_run, taking_longer()}
       end
     else
       %{"status" => "done"} = record -> {:done, done(record["sealed"])}

@@ -20,8 +20,8 @@ defmodule Database.Lease do
   answered from the copy as it was before that write (a second connection to it, in a read transaction begun before
   the write was committed, as SQLite's write-ahead log keeps it), while the lease holds: a bucket that's slow to answer
   a write, or gone, holds up none of the reads, as every call's hooks read Permissions' and Sign-in's databases. A
-  write the bucket hasn't answered within `@written_within` is refused, and its copy thrown away, since whether the
-  write got there only the log says.
+  write the bucket hasn't answered within `@written_within` is answered as taking longer, never as failed, and its copy
+  thrown away, since whether the write got there only the log says.
 
   The server holding the lease also makes the calls of the app's scheduled jobs. When each job last ran is a
   row of the database, in `database_scheduled`: the time it was due at. A job that's due is called in a process
@@ -115,7 +115,8 @@ defmodule Database.Lease do
   # hasn't in this long isn't answering.
   @renew_within 2_000
 
-  # How long, in milliseconds, a transaction's write may take to reach the bucket before it's refused, and this many
+  # How long, in milliseconds, a transaction's write may take to reach the bucket before it's answered as taking
+  # longer (`unwritten/4`), and this many
   # more for each kilobyte of it: the bucket answers a write well within a second, and every hook gives up at 10 s
   # (`OneCore.Hooks`).
   @written_within 8_000
@@ -296,8 +297,8 @@ defmodule Database.Lease do
   end
 
   # What logging a transaction's write found: it's in the bucket, and the transaction is answered; another server wrote
-  # the log's next entry first, so the lease is theirs; or the bucket couldn't be reached, so the transaction is
-  # refused and the copy, which holds it, thrown away, as whether it got there only the log says.
+  # the log's next entry first, so the lease is theirs; or the bucket couldn't be reached, so the transaction is told
+  # it may still be done and the copy, which holds it, thrown away, as whether it got there only the log says.
   def handle_event(:info, {ref, wrote}, :writing, %{writing: %{task: %Task{ref: ref}} = writing} = data) do
     Process.demonitor(ref, [:flush])
     data = %{data | writing: nil}
@@ -462,11 +463,13 @@ defmodule Database.Lease do
   defp reply({{:call, from}, _content}, answer), do: [{:reply, from, answer}]
   defp reply({:info, _message}, _answer), do: []
 
-  # A transaction whose write didn't reach the bucket is refused, saying only that its app couldn't be reached, and
-  # why goes to this server's log. Its copy holds that write, so it's thrown away, and the log read again.
+  # A transaction whose write the bucket didn't answer may still get there, so it's answered `:ambiguous`, as
+  # CockroachDB's ambiguous result is: whoever asked is told it's taking longer, and isn't to do it again
+  # (`Database.transaction/3`), and why goes to this server's log. Its copy holds that write, so it's thrown away, and
+  # the log read again, which says whether it got there.
   defp unwritten(event, data, why, actions \\ []) do
-    Logger.warning("#{data.artifact.prefix}: refused a transaction, as its write didn't reach the bucket: #{why}")
-    looking(close(data), actions ++ reply(event, :unreached))
+    Logger.warning("#{data.artifact.prefix}: didn't answer a transaction, as the bucket didn't answer its write: #{why}")
+    looking(close(data), actions ++ reply(event, :ambiguous))
   end
 
   defp read_only?({:raised, :error, error, _stacktrace}) when is_exception(error), do: Exception.message(error) =~ @read_only
@@ -478,7 +481,7 @@ defmodule Database.Lease do
   # A write being logged is given up on with it.
   defp failed(event, data, error, stacktrace) do
     {writing, data} = abandon(data)
-    abandoned = if writing, do: reply(writing, :unreached), else: []
+    abandoned = if writing, do: reply(writing, :ambiguous), else: []
     {:next_state, {:following, nil}, hand_on_failed(data, error), abandoned ++ reply(event, {:raised, :error, error, stacktrace})}
   end
 

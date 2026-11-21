@@ -9,7 +9,7 @@ defmodule Database do
   def icon, do: "icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.250"}
+  def requires, do: %{"core" => ">= 0.34.330"}
 
   require Logger
   alias Database.Lease
@@ -37,6 +37,10 @@ defmodule Database do
       # Its lease ran out and the bucket didn't answer, which this server's log says more of.
       :unreached ->
         unreachable(call)
+
+      # Its write may still reach the bucket, which this server's log says more of: it's never said to have failed.
+      :ambiguous ->
+        raise OneCore.Writes.taking_longer()
 
       {:raised, kind, reason, stacktrace} ->
         :erlang.raise(kind, reason, stacktrace)
@@ -196,6 +200,9 @@ defmodule Database do
 
       :unreached ->
         unreachable(call)
+
+      :ambiguous ->
+        raise OneCore.Writes.taking_longer()
 
       {:held_by, server} ->
         taken_over(call, lease, server)

@@ -38,7 +38,7 @@
 #            (`measured.surface.open` in core/ui/devices.json): each window is made before the pipelines it draws with
 #            could have been compiled, so it waited for none being compiled, and none of its page's start.
 #   writing  a write to Permissions' database in flight as the bucket goes away: its reads are answered from its copy
-#            while its lease holds, and refused at once after; the write is refused within its deadline, saying why;
+#            while its lease holds, and refused at once after; the write is answered within its deadline as taking longer;
 #            its process lives on, one started again answers at once, and all answer within seconds of the bucket's return.
 #            A take-over of its lease and its process stopping, with the bucket held, each wait on it only their deadline.
 #
@@ -564,8 +564,8 @@ PY
 
 # A write to Permissions' database in flight as the bucket goes away (held, as SIGSTOP holds it), asked on the server
 # as a scheduled job's is, with no idempotency key to claim in the bucket first: reads of that database are answered
-# from its copy while its lease holds, and refused at once after, never waiting on the write; the write is refused
-# within its deadline, saying its app couldn't be reached; the database's process is the same one after, and one
+# from its copy while its lease holds, and refused at once after, never waiting on the write; the write is answered
+# within its deadline as taking longer, never as failed, since it may yet land; the database's process is the same one after, and one
 # started again while the bucket's held answers at once too; and once the bucket's back, a read and a write are
 # answered within seconds. On 21 Nov every read waited behind the write until the bucket's client gave up, its
 # process then crashed, and one started again waited on the bucket as it started. Then, with the bucket held again,
@@ -628,7 +628,7 @@ writing() {
       {ms, how, why} = Task.await(writing, :infinity)
       IO.puts(\"        the write: #{how} in #{ms} ms: #{why}\")
       failed = failed ++ if(how != :refused or ms > 12_000, do: [\"the write wasn't refused within 12 s\"], else: [])
-      failed = failed ++ if(how == :refused and not (why =~ \"couldn't be reached\"), do: [\"the write didn't say its app couldn't be reached\"], else: [])
+      failed = failed ++ if(how == :refused and not (why =~ \"taking longer than usual\"), do: [\"the write didn't say it's taking longer\"], else: [])
       after_write = lease.()
       failed = failed ++ if(after_write != before, do: [\"the database's process ended (#{inspect(before)}, then #{inspect(after_write)})\"], else: [])
       if after_write, do: Process.exit(after_write, :kill)
