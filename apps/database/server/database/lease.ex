@@ -15,8 +15,13 @@ defmodule Database.Lease do
   opened the database writes nothing to it for a little longer. One that lost the lease without knowing has stopped
   answering from what it had before the database changes.
 
-  One transaction runs at a time, and the next begins after the last is in the bucket, so none sees what could
-  still be lost.
+  One transaction that writes runs at a time, and the next begins after the last is in the bucket, so none sees what
+  could still be lost. Its write is sent in a process of its own, and meanwhile a transaction that only reads is
+  answered from the copy as it was before that write (a second connection to it, in a read transaction begun before
+  the write was committed, as SQLite's write-ahead log keeps it), while the lease holds: a bucket that's slow to answer
+  a write, or gone, holds up none of the reads, as every call's hooks read Permissions' and Sign-in's databases. A
+  write the bucket hasn't answered within `@written_within` is refused, and its copy thrown away, since whether the
+  write got there only the log says.
 
   The server holding the lease also makes the calls of the app's scheduled jobs. When each job last ran is a
   row of the database, in `database_scheduled`: the time it was due at. A job that's due is called in a process
@@ -32,6 +37,10 @@ defmodule Database.Lease do
 
   It's a `:gen_statem`, in one of these states:
 
+  - `:looking`: it's reading the log, in a process of its own, as it does when it starts, and after it lost the
+    lease or a write it couldn't finish. A transaction waits for it, until the bucket hasn't answered its first read
+    for `@renew_within`; then it's `:unreached`, and a transaction is refused at once while it reads the log again
+    every `@renew_every`. So a database started again while the bucket is away doesn't hold up whoever asked for it.
   - `{:following, server}`: `server` holds the lease. A transaction is answered with who holds it, to be passed on
     to them. One they didn't run has this server read what was logged after the last entry it read, and take the
     lease if they handed it on, or if that's nothing and it's not the one out of reach (`Database.transaction/3`);
@@ -41,8 +50,10 @@ defmodule Database.Lease do
     Its copy is read-only meanwhile: a transaction that only reads is answered from it at once, and one that would
     write raises there, is rolled back, and waits until then to run again, with any that came after it that write.
   - `:holding`: each transaction's write is logged as it commits.
+  - `:writing`: a transaction's write is being logged. One that only reads is answered from the copy as it was
+    before it, and one that would write raises there, is rolled back, and waits for that write, as while settling.
 
-  It moves between them by reading the log (`look/1`): to `:settling` with the database opened if the log names
+  It moves between them by reading the log (`look/2`): to `:settling` with the database opened if the log names
   this server, after taking the lease if the log is empty, and otherwise to following the server it names. One that
   finds another server wrote the log's next entry has lost the lease, and reads the log again.
 
@@ -104,6 +115,11 @@ defmodule Database.Lease do
   # hasn't in this long isn't answering.
   @renew_within 2_000
 
+  # How long, in milliseconds, a transaction's write may take to reach the bucket before it's refused, and this many
+  # more for each kilobyte of it: the bucket answers a write well within a second, and every hook gives up at 10 s
+  # (`OneCore.Hooks`).
+  @written_within 8_000
+
   # What SQLite says of a write to a copy that's read-only (`pragma query_only`), as `Database.query/3` raises it.
   @read_only "attempt to write a readonly database"
 
@@ -114,14 +130,18 @@ defmodule Database.Lease do
   # scheduled jobs being called here: each one's `job` and the time it was due `at`, by its call's process, and
   # whether it's `marked` as run yet; `lost_to` the server that last took the lease from this one; `renewing` the look
   # at the log under way in the background, `unreached` why the last look couldn't read the bucket, `used` when by its
-  # monotonic clock it last ran a transaction, and `ticking` whether it looks again every `@renew_every`. A field's
-  # default is what's safe for a database that was open under a version of this module without it (`code_change/4`):
-  # never seen free, so it looks before it answers.
+  # monotonic clock it last ran a transaction, and `ticking` whether it looks again every `@renew_every`; `reader` the
+  # copy's second connection, which only reads, `writing` the write being logged (`write/4`), and `looking` the
+  # process reading the log (`looking/3`). A field's default is what's safe for a database that was open under a
+  # version of this module without it (`code_change/4`): never seen free, so it looks before it answers.
   defstruct [
     :artifact,
     :server,
     :folder,
     :db,
+    :reader,
+    :writing,
+    :looking,
     :proved,
     :settled,
     :failed,
@@ -172,12 +192,38 @@ defmodule Database.Lease do
     # So it hears that its server is stopping, and hands its lease on (`terminate/3`).
     Process.flag(:trap_exit, true)
     measures()
-    {:next_state, state, data, actions} = moved(look(%__MODULE__{artifact: artifact, server: server, folder: folder}))
+    {:next_state, state, data, actions} = looking(%__MODULE__{artifact: artifact, server: server, folder: folder})
     {:ok, state, data, actions}
   end
 
-  # Once settled, its copy takes writes, and the transactions that would have written while settling run again.
+  # What the process reading the log found, where it's `{state, looked}`, of which only what reading the log changes is
+  # kept. One that couldn't read it has calls refused, and reads it again in a while.
   @impl true
+  def handle_event(:info, {ref, found}, state, %{looking: %Task{ref: ref}} = data) when state in [:looking, :unreached] do
+    Process.demonitor(ref, [:flush])
+    data = %{data | looking: nil}
+
+    case found do
+      {:unreached, why} ->
+        Logger.warning("#{data.artifact.prefix}: couldn't read its log: #{why}")
+        {:next_state, :unreached, %{data | unreached: why}, {:state_timeout, @renew_every, :look}}
+
+      {state, looked} ->
+        kept = Map.take(looked, [:number, :db, :reader, :proved, :settled, :logged, :failed, :lost_to])
+        moved({state, Map.merge(%{data | unreached: nil}, kept)})
+    end
+  end
+
+  # The bucket answered its first read: calls wait for the rest.
+  def handle_event(:info, {:reached, pid}, :looking, %{looking: %Task{pid: pid}}),
+    do: {:keep_state_and_data, {:state_timeout, :cancel}}
+
+  def handle_event(:state_timeout, :unreached, :looking, data),
+    do: {:next_state, :unreached, %{data | unreached: "the bucket hasn't answered for #{@renew_within} ms"}}
+
+  def handle_event(:state_timeout, :look, :unreached, data), do: {:keep_state, look_in_task(data)}
+
+  # Once settled, its copy takes writes, and the transactions that would have written while settling run again.
   def handle_event(:state_timeout, :settled, :settling, data) do
     {:ok, _} = sqlite(data.db, "pragma query_only = off")
     {:next_state, :holding, data}
@@ -226,13 +272,20 @@ defmodule Database.Lease do
       _this ->
         moved(look(data), [{:reply, from, :ok}])
     end
+  rescue
+    unreachable in OneCore.Edge.Unreachable ->
+      Logger.warning("#{data.artifact.prefix}: couldn't read its log to take its lease over: #{Exception.message(unreachable)}")
+      {:keep_state_and_data, {:reply, from, :unreached}}
   end
 
   # Another holds it now, or this server does: the call is asked again, and goes there.
   def handle_event({:call, from}, {:take_over, _server, _why}, _state, _data),
     do: {:keep_state_and_data, {:reply, from, :ok}}
 
-  # Anything else is asked with what wraps the artifact of the call that asks.
+  # Anything else is asked with what wraps the artifact of the call that asks: once a write being logged is done.
+  def handle_event({:call, _from}, {codec, _ask}, :writing, %{artifact: %{codec: was}}) when codec != was,
+    do: {:keep_state_and_data, :postpone}
+
   def handle_event({:call, from}, {codec, _ask}, _state, %{artifact: %{codec: was}}) when codec != was,
     do: {:stop_and_reply, :normal, {:reply, from, :codec_changed}}
 
@@ -240,9 +293,17 @@ defmodule Database.Lease do
       when elem(ask, 0) in [:transaction, :schedule],
       do: {:keep_state_and_data, {:reply, from, {:held_by, server}}}
 
+  def handle_event({:call, _from}, {_codec, ask}, :looking, _data) when elem(ask, 0) in [:transaction, :schedule],
+    do: {:keep_state_and_data, :postpone}
+
+  def handle_event({:call, from}, {_codec, ask}, :unreached, data) when elem(ask, 0) in [:transaction, :schedule] do
+    Logger.warning("#{data.artifact.prefix}: refused a transaction, as it couldn't read its log: #{data.unreached}")
+    {:keep_state_and_data, {:reply, from, :unreached}}
+  end
+
   # A transaction on a database that isn't being looked at in the background starts that first.
   def handle_event({:call, _from} = type, {_codec, {:transaction, _, _, _}} = content, state, %{ticking: false} = data)
-      when state in [:settling, :holding] do
+      when state in [:settling, :holding, :writing] do
     {:keep_state, %{data | ticking: true}, [{{:timeout, :renew}, @renew_every, nil}, {:next_event, type, content}]}
   end
 
@@ -265,17 +326,48 @@ defmodule Database.Lease do
     Process.demonitor(ref, [:flush])
 
     case renewed(renewal, %{data | renewing: nil}) do
-      {:lost, data} when state in [:settling, :holding] -> lost(data, "as it found looking at the log")
+      {:lost, data} when state in [:settling, :holding, :writing] -> lost(data, "as it found looking at the log")
       {_ok_or_lost, data} -> {:keep_state, data}
       {:unreached, data, _why} -> {:keep_state, data}
     end
   end
 
+  # What logging a transaction's write found: it's in the bucket, and the transaction is answered; another server wrote
+  # the log's next entry first, so the lease is theirs; or the bucket couldn't be reached, so the transaction is
+  # refused and the copy, which holds it, thrown away, as whether it got there only the log says.
+  def handle_event(:info, {ref, wrote}, :writing, %{writing: %{task: %Task{ref: ref}} = writing} = data) do
+    Process.demonitor(ref, [:flush])
+    data = %{data | writing: nil}
+    cancel = {{:timeout, :written}, :cancel}
+
+    case wrote do
+      :ok ->
+        unpin(data.reader)
+        checkpoint(data.db)
+        logged = %{data | number: data.number + 1, logged: data.logged + writing.pages, pages: writing.size, proved: writing.began}
+        {data, actions} = done(writing.event, writing.ran, logged)
+        {:next_state, :holding, data, [cancel | actions]}
+
+      :exists ->
+        lost(data, "and the write it hadn't answered with it", [cancel | next(writing.event)])
+
+      {:unreached, why} ->
+        unwritten(writing.event, data, why, [cancel])
+    end
+  end
+
+  def handle_event({:timeout, :written}, nil, :writing, %{writing: writing} = data) do
+    {_event, data} = abandon(data)
+    unwritten(writing.event, data, "the bucket hasn't answered its write for #{System.monotonic_time(:millisecond) - elem(writing.began, 0)} ms")
+  end
+
+  def handle_event({:timeout, :written}, nil, _state, _data), do: :keep_state_and_data
+
   # A job's call ended. One that committed no transaction is marked as run now, unless the lease has gone: then the
   # server holding it makes the call.
   def handle_event(:info, {:DOWN, _monitor, :process, caller, _why} = down, state, data) do
     case pop_in(data.firing[caller]) do
-      {%{marked: false} = firing, data} when state in [:settling, :holding] ->
+      {%{marked: false} = firing, data} when state in [:settling, :holding, :writing] ->
         transact({:info, down}, state, data, &mark(&1, {firing.job, firing.at}))
 
       {_firing, data} ->
@@ -288,7 +380,7 @@ defmodule Database.Lease do
   # It looks at the log in the background while it's in use, and stops once it hasn't been for `@renewed_while`, when
   # what its last look found is too old to go by.
   def handle_event({:timeout, :renew}, nil, state, data) do
-    if state in [:settling, :holding] and System.monotonic_time(:millisecond) - data.used < @renewed_while,
+    if state in [:settling, :holding, :writing] and System.monotonic_time(:millisecond) - data.used < @renewed_while,
       do: {:keep_state, renew(data), {{:timeout, :renew}, @renew_every, nil}},
       else: {:keep_state, %{data | ticking: false, unreached: nil}}
   end
@@ -297,9 +389,10 @@ defmodule Database.Lease do
   # from it after, and then the log's next entry names nobody. One that has lost the lease meanwhile writes nothing.
   @impl true
   def terminate(why, state, data) do
+    {_event, data} = abandon(data)
     data = close(data)
 
-    if state in [:settling, :holding] and (why == :shutdown or match?({:shutdown, _}, why)) do
+    if state in [:settling, :holding, :writing] and (why == :shutdown or match?({:shutdown, _}, why)) do
       wrote = Log.write(data.artifact, data.number + 1, %{server: nil})
       Logger.info("#{data.artifact.prefix}: handing its lease on at #{data.number + 1}: #{wrote}")
     end
@@ -313,7 +406,8 @@ defmodule Database.Lease do
     # One started by a version before it handed its lease on hears its server stopping from now on (`init/1`).
     Process.flag(:trap_exit, true)
     data = struct(__MODULE__, Map.from_struct(data))
-    {:ok, state, if(match?({sqlite, _db} when sqlite != Sqlite, data.db), do: reopened(data, state), else: data)}
+    data = if match?({sqlite, _db} when sqlite != Sqlite, data.db), do: reopened(data, state), else: data
+    {:ok, state, if(data.db && is_nil(data.reader), do: %{data | reader: reader(file(data))}, else: data)}
   end
 
   # Opened before it's closed, so SQLite keeps its write-ahead log: the last connection to close empties it into the
@@ -322,14 +416,16 @@ defmodule Database.Lease do
     opened = connected(file(data))
     if state == :settling, do: {:ok, _} = sqlite(opened, "pragma query_only = on")
     sqlite.close(db)
-    %{data | db: opened}
+    with {sqlite, reader} <- data.reader, do: sqlite.close(reader)
+    %{data | db: opened, reader: reader(file(data))}
   end
 
   # Runs `work` with the database in a transaction, for `event`, which is answered once what it changed is in the
   # bucket (`done/3`). One that changed nothing, raised or not, is answered from the copy, while the copy is still the
-  # database. While settling the copy is read-only, so one that raised for writing, as SQLite says (`SQLITE_READONLY`),
-  # waits, with nothing it did kept, to run again once settled, which is the state it changes to next; one that raised
-  # for anything else is answered with that now. The rest of what `data` changed for it is left as it was, for then.
+  # database. While settling the copy is read-only, and while writing it's read by the connection that only reads, so
+  # one that raised for writing, as SQLite says (`SQLITE_READONLY`), waits, with nothing it did kept, to run again once
+  # settled or written, which is the state it changes to next; one that raised for anything else is answered with that
+  # now. The rest of what `data` changed for it is left as it was, for then.
   defp transact(event, state, data, work) do
     transacted(event, state, data, work)
   rescue
@@ -339,17 +435,19 @@ defmodule Database.Lease do
 
   # One that finds the lease run out while a look in the background hasn't come back is refused before it runs, a
   # write too, which would wait on the same bucket.
+  # One run while holding has the connection that only reads keep the copy as it was before it, in case it writes.
   defp transacted(event, state, data, work) do
     case if(data.renewing, do: proved(data), else: {:ok, data}) do
-      {:ok, data} -> committed(event, state, data, run(data.db, work))
+      {:ok, data} when state == :writing -> committed(event, state, data, run(data.reader, work))
+      {:ok, data} -> committed(event, state, data, run(data.db, work, state == :holding && data.reader))
       {:lost, data} -> lost(data, "so it didn't run a transaction", next(event))
       {:unreached, data, why} -> refused(event, data, why)
     end
   end
 
   defp committed(event, state, data, ran) do
-    case {Log.changed(file(data)), state, read_only?(ran)} do
-      {nil, :settling, true} ->
+    case {if(state == :holding, do: changed(data, ran)), state, read_only?(ran)} do
+      {nil, state, true} when state in [:settling, :writing] ->
         {:keep_state, data, :postpone}
 
       {nil, _state, _read_only} ->
@@ -360,11 +458,23 @@ defmodule Database.Lease do
         end
 
       {changed, :holding, _read_only} ->
-        case write(data, changed) do
-          {:ok, data} -> answered(event, ran, data)
-          :lost -> lost(data, "and the write it hadn't answered with it", next(event))
-        end
+        write(event, ran, data, changed)
     end
+  end
+
+  # What a transaction run while holding changed (`Log.changed/1`), or `nil`, once the connection that only reads has
+  # let go of the copy as it was before it. One that raised changed nothing, though SQLite may have put some of its
+  # pages in its write-ahead log before it rolled back, which is emptied.
+  defp changed(data, {:raised, _kind, _reason, _stacktrace}) do
+    unpin(data.reader)
+    checkpoint(data.db)
+    nil
+  end
+
+  defp changed(data, _ran) do
+    changed = Log.changed(file(data))
+    if is_nil(changed), do: unpin(data.reader)
+    changed
   end
 
   defp next({type, content}), do: [{:next_event, type, content}]
@@ -373,11 +483,17 @@ defmodule Database.Lease do
   # be reached (`Database.transaction/3`), and why goes to this server's log.
   defp refused(event, data, why) do
     Logger.warning("#{data.artifact.prefix}: refused a transaction, as its lease ran out and #{why}")
+    {:keep_state, data, reply(event, :unreached)}
+  end
 
-    case event do
-      {{:call, from}, _content} -> {:keep_state, data, {:reply, from, :unreached}}
-      {:info, _message} -> {:keep_state, data}
-    end
+  defp reply({{:call, from}, _content}, answer), do: [{:reply, from, answer}]
+  defp reply({:info, _message}, _answer), do: []
+
+  # A transaction whose write didn't reach the bucket is refused, saying only that its app couldn't be reached, and
+  # why goes to this server's log. Its copy holds that write, so it's thrown away, and the log read again.
+  defp unwritten(event, data, why, actions \\ []) do
+    Logger.warning("#{data.artifact.prefix}: refused a transaction, as its write didn't reach the bucket: #{why}")
+    looking(close(data), actions ++ reply(event, :unreached))
   end
 
   defp read_only?({:raised, :error, error, _stacktrace}) when is_exception(error), do: Exception.message(error) =~ @read_only
@@ -386,11 +502,12 @@ defmodule Database.Lease do
   # This server's own work on the database failed, not the app's (`run/2` answers that): its lease is handed on, and
   # a call is answered with what failed, to be asked of whoever takes the lease. Not reaching the bucket isn't this:
   # nothing could be handed on then, and nobody else would reach it either.
-  defp failed({{:call, from}, _content}, data, error, stacktrace),
-    do: {:next_state, {:following, nil}, hand_on_failed(data, error), {:reply, from, {:raised, :error, error, stacktrace}}}
-
-  defp failed({:info, _message}, data, error, _stacktrace),
-    do: {:next_state, {:following, nil}, hand_on_failed(data, error)}
+  # A write being logged is given up on with it.
+  defp failed(event, data, error, stacktrace) do
+    {writing, data} = abandon(data)
+    abandoned = if writing, do: reply(writing, :unreached), else: []
+    {:next_state, {:following, nil}, hand_on_failed(data, error), abandoned ++ reply(event, {:raised, :error, error, stacktrace})}
+  end
 
   # Its copy is thrown away, which may fail too where files can't be opened, and is made anew where it's opened next:
   # then the log's next entry names nobody, as a server stopping writes it.
@@ -451,15 +568,35 @@ defmodule Database.Lease do
   defp done({:info, {:DOWN, _monitor, :process, _caller, _why}}, ran, data), do: {snapshot(data, ran), []}
 
   # Another server wrote the log's next entry: the lease is theirs, and what this one committed to its copy since
-  # is thrown away with it. An event in `actions` is handled again where it is now, which for a call is with who holds
-  # it.
+  # is thrown away with it, a write being logged too. An event in `actions` is handled again where it is now, which for
+  # a call is with who holds it.
   defp lost(data, what, actions \\ []) do
     Logger.info("#{data.artifact.prefix}: lost its lease, #{what}")
+    {writing, data} = abandon(data)
+    looking(close(data), actions ++ if(writing, do: next(writing), else: []), true)
+  end
 
-    case look(close(data)) do
-      {{:following, holder}, data} -> moved({{:following, holder}, %{data | lost_to: holder}}, actions)
-      looked -> moved(looked, actions)
-    end
+  defp looking(data, actions \\ [], lost \\ false),
+    do: {:next_state, :looking, look_in_task(data, lost), [{:state_timeout, @renew_within, :unreached} | actions]}
+
+  # Reads the log in a process of its own (`look/2`), which says once the bucket has answered its first read. One that
+  # `lost` the lease notes who it lost it to.
+  defp look_in_task(data, lost \\ false) do
+    lease = self()
+
+    task =
+      Task.async(fn ->
+        try do
+          case look(data, fn -> send(lease, {:reached, self()}) end) do
+            {{:following, holder}, data} when lost -> {{:following, holder}, %{data | lost_to: holder}}
+            looked -> looked
+          end
+        catch
+          kind, reason -> {:unreached, Exception.format_banner(kind, reason)}
+        end
+      end)
+
+    %{data | looking: task}
   end
 
   # Where it is once it has read the log: settling waits out its time before it writes.
@@ -470,22 +607,33 @@ defmodule Database.Lease do
   defp settle(data), do: {:state_timeout, data.settled, :settled, abs: true}
 
   # Runs `work` with the database in a transaction: `{:ok, result}` once it's committed to the copy, or
-  # `{:raised, kind, reason, stacktrace}` if it raised, with nothing kept.
-  defp run(db, work) do
-    {:ok, _} = sqlite(db, "begin")
+  # `{:raised, kind, reason, stacktrace}` if it raised, with nothing kept. It's a savepoint, which is a transaction of
+  # its own on a connection that's in none, and on the one that only reads, which is in one while a write is being
+  # logged, a part of that. With `pinned`, that connection is put in one first, which keeps the copy as it was before.
+  defp run(db, work, pinned \\ nil) do
+    if pinned, do: pin(pinned)
+    {:ok, _} = sqlite(db, "savepoint run")
 
     try do
       result = work.(db)
-      with {:error, why} <- sqlite(db, "commit"), do: raise(why)
+      with {:error, why} <- sqlite(db, "release run"), do: raise(why)
       {:ok, result}
     catch
       kind, reason ->
-        raised = {:raised, kind, reason, __STACKTRACE__}
-        {:ok, _} = sqlite(db, "rollback")
-        checkpoint(db)
-        raised
+        {:ok, _} = sqlite(db, "rollback to run")
+        {:ok, _} = sqlite(db, "release run")
+        {:raised, kind, reason, __STACKTRACE__}
     end
   end
+
+  # A read transaction begun on the connection that only reads keeps the copy as it is now for it, whatever's
+  # committed after, until it ends: SQLite's write-ahead log keeps each reader's snapshot.
+  defp pin(reader) do
+    {:ok, _} = sqlite(reader, "begin")
+    {:ok, _} = sqlite(reader, "select count(*) from sqlite_master")
+  end
+
+  defp unpin(reader), do: {:ok, _} = sqlite(reader, "commit")
 
   # The jobs and timers that are due at `now`: each one's name here, the time it was due at, and the job. A job is due
   # at each whole multiple of its `every` seconds, and the newest of those that passed is the one that's made up
@@ -545,10 +693,12 @@ defmodule Database.Lease do
   end
 
   # Reads the log: following the server it names, or settling with the database opened if it names this one. The
-  # entry after the last it read was free when it read it, which is after it began.
-  defp look(data) do
+  # entry after the last it read was free when it read it, which is after it began. `reached` is called once the
+  # bucket has answered its first read.
+  defp look(data, reached \\ fn -> :ok end) do
     began = clocks()
     snapshot = Log.snapshot(data.artifact)
+    reached.()
     entries = Log.since(data.artifact, snapshot)
     data = %{data | number: snapshot + length(entries)}
 
@@ -641,7 +791,14 @@ defmodule Database.Lease do
 
     db = connected(file(data))
     {:ok, _} = sqlite(db, "pragma query_only = on")
-    %{data | db: db, logged: logged, settled: began + wait}
+    %{data | db: db, reader: reader(file(data)), logged: logged, settled: began + wait}
+  end
+
+  # The copy's second connection, which only reads: what's answered while a write is being logged.
+  defp reader(file) do
+    reader = connected(file)
+    {:ok, _} = sqlite(reader, "pragma query_only = on")
+    reader
   end
 
   # The bucket is what keeps a write, so SQLite needn't wait for the disk. Its write-ahead log is emptied here
@@ -658,19 +815,35 @@ defmodule Database.Lease do
 
   defp sqlite({sqlite, db}, sql), do: sqlite.query(db, sql, [])
 
-  # Writes what the transaction changed, which SQLite's write-ahead log holds, as the log's next entry: `{:ok, data}`,
-  # or `:lost` if another server wrote that entry first.
-  defp write(data, {size, pages}) do
+  # Logs what the transaction `event` changed, which SQLite's write-ahead log holds, as the log's next entry, in a
+  # process of its own, which answers `:ok`, `:exists` where another server wrote that entry first, or `{:unreached,
+  # why}`; and the transaction is answered once it's there. One the bucket hasn't answered within `@written_within`
+  # is refused. What it proves of the lease is from when it began.
+  defp write(event, ran, data, {size, pages}) do
     began = clocks()
+    {artifact, number, entry} = {data.artifact, data.number + 1, %{server: data.server, size: size, pages: pages}}
 
-    case Log.write(data.artifact, data.number + 1, %{server: data.server, size: size, pages: pages}) do
-      :ok ->
-        checkpoint(data.db)
-        {:ok, %{data | number: data.number + 1, logged: data.logged + length(pages), pages: size, proved: began}}
+    task =
+      Task.async(fn ->
+        try do
+          Log.write(artifact, number, entry)
+        catch
+          kind, reason -> {:unreached, Exception.format_banner(kind, reason)}
+        end
+      end)
 
-      :exists ->
-        :lost
-    end
+    writing = %{task: task, event: event, ran: ran, began: began, size: size, pages: length(pages)}
+    within = @written_within + div(Enum.sum_by(pages, &byte_size(elem(&1, 1))), 1000)
+    {:next_state, :writing, %{data | writing: writing}, {{:timeout, :written}, within, nil}}
+  end
+
+  # The write being logged is given up on, and its transaction, `{event, data}`: whatever it sent may still get there,
+  # which only the log says.
+  defp abandon(%{writing: nil} = data), do: {nil, data}
+
+  defp abandon(%{writing: writing} = data) do
+    Task.shutdown(writing.task, :brutal_kill)
+    {writing.event, %{data | writing: nil}}
   end
 
   # A server that couldn't reach this one may have taken the lease by writing the log's next entry, and this one
@@ -730,6 +903,8 @@ defmodule Database.Lease do
   defp renewed({_began, _number, {:unreached, why}}, data), do: {:unreached, %{data | unreached: why}, why}
   defp renewed({_began, number, _entry}, %{number: now} = data) when number != now, do: {:ok, %{data | unreached: nil}}
   defp renewed({began, _number, nil}, data), do: {:ok, %{data | proved: began, unreached: nil}}
+  # This server's own write, being logged, which proves the lease once it's answered.
+  defp renewed({_began, _number, %{server: server}}, %{server: server, writing: %{}} = data), do: {:ok, %{data | unreached: nil}}
   defp renewed({_began, _number, _taken}, data), do: {:lost, %{data | unreached: nil}}
 
   defp proved?({monotonic, system}, {now_monotonic, now_system}),
@@ -740,11 +915,20 @@ defmodule Database.Lease do
   defp clocks, do: {System.monotonic_time(:millisecond), System.os_time(:millisecond)}
 
   # A snapshot is kept once the log since the last one holds as many pages as the database, and at least `@least`,
-  # after a transaction that didn't raise. The next transaction waits for it, so the write that brought it on may as
-  # well.
+  # after a transaction that didn't raise, in a process of its own: nothing waits for it, as the log is whole without
+  # it, and one that fails is only a longer log to read for whoever opens the database next.
   defp snapshot(%{logged: logged, pages: pages} = data, {:ok, _result}) when logged >= pages and logged >= @least do
-    Log.keep(data.artifact, data.number, file(data))
-    Logger.info("#{data.artifact.prefix}: kept snapshot #{data.number}")
+    {prefix, artifact, number, copy} = {data.artifact.prefix, data.artifact, data.number, File.read!(file(data))}
+
+    Task.start(fn ->
+      try do
+        Log.keep(artifact, number, copy)
+        Logger.info("#{prefix}: kept snapshot #{number}")
+      catch
+        kind, reason -> Logger.warning("#{prefix}: didn't keep snapshot #{number}: #{Exception.format_banner(kind, reason)}")
+      end
+    end)
+
     %{data | logged: 0}
   end
 
@@ -759,8 +943,9 @@ defmodule Database.Lease do
 
   defp close(%{db: {sqlite, db}} = data) do
     sqlite.close(db)
+    with {sqlite, reader} <- data.reader, do: sqlite.close(reader)
     File.rm_rf!(data.folder)
-    %{data | db: nil}
+    %{data | db: nil, reader: nil}
   end
 
   defp file(data), do: Path.join(data.folder, "copy.sqlite")

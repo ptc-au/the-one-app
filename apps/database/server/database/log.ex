@@ -65,11 +65,11 @@ defmodule Database.Log do
   end
 
   @doc """
-  Keeps the database `file` as the snapshot after the log's entry `number`, and removes the snapshots before the
-  one it follows. That one stays for a server that is about to read it.
+  Keeps `copy`, the database file's bytes, as the snapshot after the log's entry `number`, and removes the snapshots
+  before the one it follows. That one stays for a server that is about to read it.
   """
-  def keep(artifact, number, file) do
-    Artifact.write(artifact, name("snapshot", number), File.read!(file))
+  def keep(artifact, number, copy) do
+    Artifact.write(artifact, name("snapshot", number), copy)
     for old <- Enum.drop(Enum.reverse(Artifact.list(artifact, "snapshot/")), 2), do: Artifact.remove(artifact, old)
     :ok
   end

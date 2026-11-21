@@ -138,6 +138,10 @@ defmodule Database do
         :ok ->
           :ok
 
+        # The bucket didn't answer as it read the log, which this server's log says more of.
+        :unreached ->
+          unreachable(call)
+
         :connected ->
           Logger.warning("#{app}'s database: #{holder} took its lease from this server and answers the network's relay, but didn't answer this server within #{waited} ms, and no other server could be asked, so this server doesn't take it back")
           unreachable(call)
