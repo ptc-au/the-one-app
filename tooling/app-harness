@@ -37,6 +37,9 @@
 #   open    the app started as an update starts it, its windows to open again, on the Surface's costs
 #            (`measured.surface.open` in core/ui/devices.json): each window is made before the pipelines it draws with
 #            could have been compiled, so it waited for none being compiled, and none of its page's start.
+#   writing  a write to Permissions' database in flight as the bucket goes away: its reads are answered from its copy
+#            while its lease holds, and refused at once after; the write is refused within its deadline, saying why;
+#            its process lives on, one started again answers at once, and all answer within seconds of the bucket's return.
 #
 # The folder keeps the network, the app's build and its log (`app.log`), and a network running there is used again.
 # `--seed` picks the moments things happen at, the same each time for the same seed. `--phone` runs a phone's app
@@ -51,13 +54,13 @@
 set -euo pipefail
 shopt -s extglob
 root=$(cd "$(dirname "$0")/.." && pwd)
-usage="tooling/app-harness <folder> [--seed <n>] [--phone] [start|reopen|closed|unopened|reloaded|stale|cached|restart|updated|twice|blank|loading|keys|passkey|open]…"
+usage="tooling/app-harness <folder> [--seed <n>] [--phone] [start|reopen|closed|unopened|reloaded|stale|cached|restart|updated|twice|blank|loading|keys|passkey|open|writing]…"
 folder= seed=1 phone= checks=()
 while (($#)); do
   case $1 in
     --seed) seed=${2:?$usage} && shift ;;
     --phone) phone=390x844 ;;
-    start | reopen | closed | unopened | reloaded | stale | cached | restart | updated | twice | blank | loading | keys | passkey | open) checks+=("$1") ;;
+    start | reopen | closed | unopened | reloaded | stale | cached | restart | updated | twice | blank | loading | keys | passkey | open | writing) checks+=("$1") ;;
     -*) echo "$usage" >&2 && exit 1 ;;
     *) folder=$1 ;;
   esac
@@ -70,9 +73,9 @@ if [[ -n $phone ]]; then
     [[ $computers_only != *" $name "* ]] ||
       { echo "$name is a computer's check: a phone's app here can't be handed a \`one:\` link, or open windows again after an update" >&2 && exit 1; }
   done
-  ((${#checks[@]})) || checks=(start closed unopened reloaded cached restart updated twice blank)
+  ((${#checks[@]})) || checks=(start closed unopened reloaded cached restart updated twice blank writing)
 fi
-((${#checks[@]})) || checks=(start reopen closed unopened reloaded stale cached restart updated twice blank loading keys passkey open)
+((${#checks[@]})) || checks=(start reopen closed unopened reloaded stale cached restart updated twice blank loading keys passkey open writing)
 mkdir -p "$folder/app"
 folder=$(cd "$folder" && pwd)
 RANDOM=$seed
@@ -558,6 +561,85 @@ sys.exit(1 if failed else 0)
 PY
 }
 
+# A write to Permissions' database in flight as the bucket goes away (held, as SIGSTOP holds it), asked on the server
+# as a scheduled job's is, with no idempotency key to claim in the bucket first: reads of that database are answered
+# from its copy while its lease holds, and refused at once after, never waiting on the write; the write is refused
+# within its deadline, saying its app couldn't be reached; the database's process is the same one after, and one
+# started again while the bucket's held answers at once too; and once the bucket's back, a read and a write are
+# answered within seconds. On 21 Nov every read waited behind the write until the bucket's client gave up, its
+# process then crashed, and one started again waited on the bucket as it started.
+writing() {
+  held=$(bucket)
+  [[ -n $held ]] || { echo "        no bucket" && return 1; }
+  mise exec -C "$root" -- elixir --sname "harness-$$" --cookie "$(cat "$net/cookie")" \
+    --rpc-eval "server-$(printf %s "$net" | cksum | cut -d' ' -f1)@$(hostname -s)" "
+    now = fn -> System.monotonic_time(:millisecond) end
+    # Asked in a task of its own, so one that waits is given up on: {ms, :ok | :refused | :waiting, why}.
+    timed = fn tool, inputs, within ->
+      began = now.()
+      task = Task.async(fn -> OneCore.Apps.Calls.call(\"permissions\", tool, inputs, \"users/owner\") end)
+      case Task.yield(task, within) || Task.shutdown(task, :brutal_kill) do
+        {:ok, {:ok, _answer}} -> {now.() - began, :ok, nil}
+        {:ok, {:error, why}} -> {now.() - began, :refused, inspect(why)}
+        {:ok, other} -> {now.() - began, :refused, inspect(other)}
+        {:exit, why} -> {now.() - began, :refused, inspect(why)}
+        nil -> {now.() - began, :waiting, nil}
+      end
+    end
+    read = fn within -> timed.(\"groups\", %{}, within) end
+    write = fn within -> timed.(\"group\", %{\"name\" => \"writing #{System.os_time(:millisecond)}\"}, within) end
+    # The database's process, by the key it's kept under, as Database.Lease.of/1 has it.
+    lease = fn ->
+      Enum.find_value(Registry.select(OneCore.Apps.Processes, [{{:\"\$1\", :\"\$2\", :_}, [], [{{:\"\$1\", :\"\$2\"}}]}]), fn
+        {{_app, name, {_server, \"network/own/permissions/\"}}, pid} -> to_string(name) =~ \"Lease\" && pid
+        _ -> nil
+      end)
+    end
+    failed = []
+    {ms, :ok, _} = read.(10_000)
+    before = lease.()
+    IO.puts(\"        a read before the hold: #{ms} ms\")
+    System.cmd(\"kill\", [\"-STOP\", \"$held\"])
+    try do
+      writing = Task.async(fn -> write.(60_000) end)
+      Process.sleep(200)
+      reads = for _ <- 1..16 do
+        r = read.(5_000)
+        Process.sleep(max(500 - elem(r, 0), 0))
+        r
+      end
+      IO.puts(\"        reads with the write in flight, every 0.5 s: #{Enum.map_join(reads, \" \", fn {ms, how, _} -> \"#{ms}#{%{ok: \"\", refused: \"r\", waiting: \"w\"}[how]}\" end)} ms (r refused, w still waiting)\")
+      failed = failed ++ for {ms, how, _} <- reads, how == :waiting or ms > 1_000, do: \"a read waited #{ms} ms\"
+      failed = failed ++ if(elem(hd(reads), 1) != :ok, do: [\"the first read, with the lease held, wasn't answered from the copy: #{elem(hd(reads), 2)}\"], else: [])
+      {ms, how, why} = Task.await(writing, :infinity)
+      IO.puts(\"        the write: #{how} in #{ms} ms: #{why}\")
+      failed = failed ++ if(how != :refused or ms > 12_000, do: [\"the write wasn't refused within 12 s\"], else: [])
+      failed = failed ++ if(how == :refused and not (why =~ \"couldn't be reached\"), do: [\"the write didn't say its app couldn't be reached\"], else: [])
+      after_write = lease.()
+      failed = failed ++ if(after_write != before, do: [\"the database's process ended (#{inspect(before)}, then #{inspect(after_write)})\"], else: [])
+      if after_write, do: Process.exit(after_write, :kill)
+      {ms, how, _} = read.(5_000)
+      IO.puts(\"        a read as its process starts again, the bucket held: #{how} in #{ms} ms\")
+      failed = failed ++ if(how == :waiting or ms > 3_000, do: [\"a read as its process started again waited #{ms} ms\"], else: [])
+      System.cmd(\"kill\", [\"-CONT\", \"$held\"])
+      back = now.()
+      recovered = Stream.repeatedly(fn -> Process.sleep(100) && {read.(5_000), write.(15_000)} end)
+        |> Enum.find(fn {{_, r, _}, {_, w, _}} -> (r == :ok and w == :ok) or now.() - back > 30_000 end)
+      took = now.() - back
+      IO.puts(\"        once the bucket's back, a read and a write answered in #{took} ms\")
+      failed = failed ++ if(match?({{_, :ok, _}, {_, :ok, _}}, recovered) and took < 10_000, do: [], else: [\"not answered within 10 s of the bucket's return\"])
+      for why <- failed, do: IO.puts(\"        #{why}\")
+      IO.puts(if failed == [], do: \"answered\", else: \"failed\")
+    after
+      System.cmd(\"kill\", [\"-CONT\", \"$held\"])
+    end
+    " >"$folder/writing.out" 2>&1
+  held=
+  # What it says, without the server's log, which an rpc's processes print too.
+  grep -E '^        [a-z]' "$folder/writing.out"
+  [[ $(tail -1 "$folder/writing.out") == answered ]]
+}
+
 # The app started as an update starts it, with Telemetry and Settings to open again beside the launcher, each made as
 # the Surface makes one (its system's window and renderer, and the pipelines a kind of window draws with, which the
 # first window after a start waits for): each window is made before those pipelines could have been compiled. One
@@ -597,6 +679,7 @@ for name in "${checks[@]}"; do
     loading) check "loading: a window whose page can't be read is the app's background, then its loading state" loading ;;
     passkey) check "passkey: Add Passkey's link in a reused tab adds one, which the app lets unlock with no code" passkey ;;
     keys) check "keys: Sign In & Security's waiting row goes as the servers are handed the key" keys ;;
+    writing) check "writing: a database's write in flight as the bucket goes away holds up none of its reads" writing ;;
     open) check "open: on the Surface's costs, each window opened again is made before its pipelines could compile" opened ;;
   esac
 done
