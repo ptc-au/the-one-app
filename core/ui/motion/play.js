@@ -132,27 +132,54 @@ async function play(built, scene, name, motion, hz, folder) {
     const jump = values.findIndex((value, n) => n > 0 && Math.abs(value - values[n - 1]) >= turn - 0.5)
     if (!turn) failed.push("it has no wheel's turns to ease")
     else if (jump >= 0) failed.push(`it moved ${Math.abs(values[jump] - values[jump - 1]).toFixed(0)} pt at frame ${jump + 1} (${frames[jump].at} ms), as far as a turn of the wheel moves it, all at once`)
+    // A steady hand's notches (each as far, each as long after the one before) scroll at a steady speed, as a Mac's
+    // smooth scrolling does: where they send it all their way (no end slows it), over the second half of their turning,
+    // no refresh moves it more than 2 pt further than another (a point either way, on whole points), where a spring
+    // sent on at each notch pulsed (8, 7, 6, 7, 10, 10 pt a refresh at 120 Hz).
+    const notches = (events ?? []).filter((event) => event.kind === "wheel" && (event.dx || event.dy))
+    const apart = notches.slice(1).map((notch, n) => notch.ms - notches[n].ms)
+    const whole = Math.abs(values.at(-1) - values[0]) >= notches.reduce((sum, notch) => sum + Math.hypot(notch.dx ?? 0, notch.dy ?? 0), 0) - 0.5
+    const steady = whole && notches.length > 3 && notches.every((notch) => Math.hypot(notch.dx ?? 0, notch.dy ?? 0) === Math.hypot(notches[0].dx ?? 0, notches[0].dy ?? 0)) && apart.every((ms) => Math.abs(ms - apart[0]) < 1)
+    const [from, to] = steady ? [notches[0].ms + (notches.at(-1).ms - notches[0].ms) / 2, notches.at(-1).ms] : [0, -1]
+    const paced = values.map((value, n) => (n && frames[n - 1].at >= from + 1000 / hz && frames[n].at <= to + 1000 / hz ? Math.abs(value - values[n - 1]) : undefined)).filter((step) => step !== undefined)
+    if (paced.length > 1 && Math.max(...paced) - Math.min(...paced) > 2) failed.push(`its steady notches moved it ${Math.min(...paced).toFixed(0)} to ${Math.max(...paced).toFixed(0)} pt a refresh as they turned, not a steady speed`)
   }
   // From the frame it first moves (by more than half a point: a node put on whole pixels first isn't moving yet), no
   // refresh shows the frame before it again (within a twentieth of a point) while it's more than 2 pt short of where it
-  // comes to rest (its end, which it nears by less than a point a frame, on whole points): from the refresh after what
-  // moves it is done (a finger lifted, a wheel's last turn), which shows it, and with `eases` as the wheel turns, as a
-  // spin of it glides on. A frame held so is one a refresh missed: the loop's own clock paced slower than the display,
-  // as one at 60 Hz on a 120 Hz display misses every other, or a display link that stopped ticking with nothing
-  // standing in for it. A device others load (`frameMs`) takes several refreshes a frame.
+  // comes to rest (its end, which it nears by less than a point a frame, on whole points): while what moves it moved in
+  // the refresh before (a finger along its moves, a trace's wheel turning or its finger or pressed pointer
+  // moving), from the refresh after what moves it is done (a finger lifted, a wheel's last turn), and in the one that
+  // shows that where it moved in the refresh before, as a trackpad's page let go held there (16.8 pt a refresh, then
+  // none), and with `eases` as the wheel turns, as a spin of it glides on. A frame held so is one a refresh missed: the loop's own
+  // clock paced slower than the display, as one at 60 Hz on a 120 Hz display misses every other, a display link that
+  // stopped ticking with nothing standing in for it, or a move drawn a refresh late from then on. A device others load
+  // (`frameMs`) takes several refreshes a frame.
   const moved = values.findIndex((value) => Math.abs(value - values[0]) > 0.5)
-  // What turns as it goes is still turning where its box is at its highest or its widest, as it grows or shrinks.
+  const refresh = 1000 / hz
+  const pressed = (n) => events.slice(0, n).findLast((event) => event.kind === "down" || event.kind === "up")?.kind === "down"
+  const driven = (n) => events
+    ? events.some((event, at) => event.ms > frames[n - 1].at - refresh && event.ms <= frames[n].at - refresh && (event.kind === "wheel" ? Boolean(event.dx || event.dy) : event.kind === "touch" ? event.phase === "moved" : event.kind === "move" && pressed(at)))
+    : Math.abs(finger(stretches, frames[n].at - refresh, way) - finger(stretches, frames[n - 1].at - refresh, way)) > 1
+  // What turns as it goes is still turning where its box is at its highest or its widest, as it grows or shrinks; and
+  // what goes back the way it came, at the top of its arc, as a card let go past its end springs back.
   const resized = (n) => frames[n].rect && frames[n - 1].rect && Math.max(Math.abs(frames[n].rect.width - frames[n - 1].rect.width), Math.abs(frames[n].rect.height - frames[n - 1].rect.height)) >= 0.05
-  const held = moved < 0 || motion.frameMs ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + 1000 / hz + 0.5) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && Math.abs(value - values.at(-1)) > 2)
+  const turned = (n) => n > 1 && n + 1 < values.length && (values[n - 1] - values[n - 2]) * (values[n + 1] - values[n]) < 0
+  const held = moved < 0 || motion.frameMs ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && Math.abs(value - values.at(-1)) > 2)
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
-  // Once what moves it is done, each refresh moves it as far as the time between refreshes takes it: no step is longer
-  // than both beside it and the next shorter than both beside it, by more than 2 pt and a quarter of their mean, as a
-  // frame drawn for a refresh at the time it was drawn (a stopped link's late one, a busy frame) and the next on time
-  // are. Steps on whole points (a wheel's) go by a point either way; a curve's fastest step is one step longer, alone.
+  // Each refresh moves it as far as the time between refreshes takes it, once what moves it is done, and as it moves it
+  // where that's even (a finger along its moves, a wheel's notches as they turn): no step is longer than both beside it
+  // and the next shorter than both beside it, by more than 2 pt and a quarter of their mean, as a frame drawn for a
+  // refresh at the time it was drawn (a stopped link's late one, a busy frame) and the next on time are; and none goes
+  // the same way as both beside it and further than the longer by 2 pt and half of it, as a frame that draws two
+  // refreshes' worth does (a lift drawn with the finger's last move). Steps on whole points (a wheel's) go by a point
+  // either way; a curve's fastest step is one step longer, alone.
   const steps = values.map((value, n) => (n ? value - values[n - 1] : 0))
   const bend = (n) => steps[n + 1] - steps[n]
-  const uneven = moved < 0 || motion.frameMs ? -1 : steps.findIndex((step, n) => n > moved && frames[n - 1].at > end + 1000 / hz + 0.5 && n + 2 < steps.length && Math.sign(bend(n - 1)) === -Math.sign(bend(n)) && Math.sign(bend(n)) === -Math.sign(bend(n + 1)) && Math.abs(bend(n)) > Math.max(2, (Math.abs(step) + Math.abs(steps[n + 1])) / 8))
-  if (uneven >= 0) failed.push(`it moved unevenly at frames ${uneven + 1} and ${uneven + 2} (${frames[uneven].at} ms): ${steps.slice(uneven - 1, uneven + 3).map((step) => Math.abs(step).toFixed(0)).join(", ")} pt a refresh`)
+  const even = !events || motion.eases
+  const after = (n) => even || frames[n - 1].at > end + refresh + 0.5
+  const spike = (n) => Math.sign(steps[n - 1]) === Math.sign(steps[n]) && Math.sign(steps[n]) === Math.sign(steps[n + 1]) && Math.abs(steps[n]) - Math.max(Math.abs(steps[n - 1]), Math.abs(steps[n + 1])) > Math.max(2, Math.max(Math.abs(steps[n - 1]), Math.abs(steps[n + 1])) / 2)
+  const uneven = moved < 0 || motion.frameMs ? -1 : steps.findIndex((step, n) => n > moved + 1 && after(n) && n + 2 < steps.length && ((Math.sign(bend(n - 1)) === -Math.sign(bend(n)) && Math.sign(bend(n)) === -Math.sign(bend(n + 1)) && Math.abs(bend(n)) > Math.max(2, (Math.abs(step) + Math.abs(steps[n + 1])) / 8)) || spike(n)))
+  if (uneven >= 0) failed.push(`it moved unevenly at frames ${uneven + 1} and ${uneven + 2} (${frames[uneven].at} ms): ${steps.slice(uneven - 1, uneven + 3).map((step) => Math.abs(step).toFixed(1)).join(", ")} pt a refresh`)
   // What `once` names is never in sight twice in a frame, read or not, as a large title and its bar's are cross-faded.
   const twice = motion.once ? frames.findIndex((frame) => frame.count > 1) : -1
   if (twice >= 0) failed.push(`${frames[twice].count} of ${JSON.stringify(motion.once)} drawn at once at frame ${twice + 1} (${frames[twice].at} ms)`)
