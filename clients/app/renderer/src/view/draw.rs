@@ -218,7 +218,9 @@ impl Screen {
             }
         }
         // What says it's about to move (`will-change`) is one as it holds still too: drawn ahead, it only moves then.
-        let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| !touched.contains(id)).copied().collect();
+        // A text is none: it's drawn where it is each frame, as one in a layer is (`Painter::paint_node`).
+        let text = |id: &Id| self.tree.nodes.get(id).is_some_and(|node| matches!(node.kind, Kind::Text | Kind::RawText));
+        let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| !touched.contains(id) && !text(id)).copied().collect();
         self.layers.retain(|id, _| layered.contains(id));
         // It's drawn ahead in a frame where nothing moves, as a browser draws in idle time, not in one that's busy.
         let still = moving.is_empty();
@@ -567,7 +569,7 @@ fn message(words: &str, appearance: Appearance, size: Size<Pixels>, scale: f32, 
     let paragraph = text.paragraph(words, &body.style, &[], Some(width), None);
     let top = (window.size.height - paragraph.size().height) / 2.0;
     let muted = colour_token("secondary-label", conditions);
-    let _ = text.paint(&paragraph, point(px(16.0), px(top)), width, 0.5, &|_| muted, scale, mask, TransformationMatrix::unit(), atlas, scene);
+    let _ = text.paint(&paragraph, point(px(16.0), px(top)), width, 0.5, &|_| muted, scale, 1.0, mask, TransformationMatrix::unit(), atlas, scene);
 }
 
 /// Paints a window whose page isn't there yet, `opened` ago, as iOS's launch screen is: the app's background, and once
@@ -611,7 +613,7 @@ pub(crate) fn paint_loading(opened: Duration, quiet: Duration, fades: Duration, 
     let colour = colour_token("label", conditions);
     let colour = Hsla { a: colour.a * opacity, ..colour };
     let left = (size.width.0 - paragraph.size().width) / 2.0;
-    let _ = text.paint(&paragraph, point(px(left), px(top + icon + gap)), paragraph.size().width, 0.0, &|_| colour, scale, mask, TransformationMatrix::unit(), atlas, scene);
+    let _ = text.paint(&paragraph, point(px(left), px(top + icon + gap)), paragraph.size().width, 0.0, &|_| colour, scale, 1.0, mask, TransformationMatrix::unit(), atlas, scene);
     scene.finish();
 }
 

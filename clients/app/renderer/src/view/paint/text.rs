@@ -128,10 +128,10 @@ impl Painter<'_> {
             }
         }
         let scaled_mask = ContentMask { bounds: mask.scale_to(self.scale) };
-        // Glyphs grown with their box are rasterized at that size, so they stay sharp.
+        // Glyphs grown with their box are rasterized at that size (`TextSystem::paint`), so they stay sharp.
         let origin = point(px(content.origin.x / grown), px(content.origin.y / grown));
         let color = |index: usize| ranges.iter().find(|(start, end, _)| (*start..*end).contains(&index)).map_or(text.color, |(_, _, run)| run.color).opacity(opacity);
-        if let Err(error) = self.text.paint(paragraph, origin, width, text.align, &color, self.scale * grown, scaled_mask, self.turn.scaled(self.scale), self.atlas, self.scene) {
+        if let Err(error) = self.text.paint(paragraph, origin, width, text.align, &color, self.scale, grown, scaled_mask, self.turn.scaled(self.scale), self.atlas, self.scene) {
             log::warn!("text didn't draw: {error:#}");
         }
         for (start, end, run) in &ranges {

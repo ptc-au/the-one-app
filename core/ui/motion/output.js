@@ -156,6 +156,35 @@ export function strayInk(png, points, box) {
   return along < 0.6 || across < 0.35 || off > 1 ? `it's drawn at ${rect(box)} but its glyphs fill ${rect(ink)}` : undefined
 }
 
+/// How sharp a text's glyphs are drawn in `box` of a picture (`png`, of a window `points` wide): the steepest tenth of the
+/// steps in light between pixels beside each other across its edges, against all the light there is between its ink and
+/// what's behind it. A glyph drawn where it is has its edges a pixel or two across, about 0.9; a picture of it grown or
+/// moved by a fraction of a pixel spreads them, about 0.5 to 0.6 at 1.6 times.
+export function sharpness(png, points, box) {
+  const { data, width, height } = PNG.sync.read(Buffer.from(png, "base64"))
+  const scale = width / points
+  const [left, right, top, bottom] = [box.x, box.x + box.width, box.y, box.y + box.height].map((point) => Math.round(point * scale))
+  const [x0, x1, y0, y1] = [Math.max(left, 0), Math.min(right, width), Math.max(top, 0), Math.min(bottom, height)]
+  const light = (x, y) => {
+    const at = (y * width + x) * 4
+    return 0.299 * data[at] + 0.587 * data[at + 1] + 0.114 * data[at + 2]
+  }
+  let [least, most] = [Infinity, -Infinity]
+  const steps = []
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const here = light(x, y)
+      ;[least, most] = [Math.min(least, here), Math.max(most, here)]
+      if (x + 1 < x1) steps.push(Math.abs(light(x + 1, y) - here))
+      if (y + 1 < y1) steps.push(Math.abs(light(x, y + 1) - here))
+    }
+  const contrast = most - least
+  const edges = steps.filter((step) => step > contrast * 0.1).sort((a, b) => b - a)
+  if (contrast < 16 || !edges.length) return undefined
+  const steepest = edges.slice(0, Math.max(1, Math.floor(edges.length / 10)))
+  return steepest.reduce((sum, step) => sum + step, 0) / steepest.length / contrast
+}
+
 /// How much of two pictures differs, from 0 to 1, where they're the same size, with where in `diff`.
 export function differs(one, other, diff) {
   const [a, b] = [one, other].map((file) => PNG.sync.read(readFileSync(file)))

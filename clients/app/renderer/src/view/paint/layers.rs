@@ -184,15 +184,18 @@ impl Painter<'_> {
         }
         let Some(leaf) = self.layout.taffy.get_node_context(taffy_node) else { return };
         let (id, text, mut look, lines) = (leaf.id, leaf.text, leaf.look.clone(), leaf.line_clamp);
+        let words = matches!(self.tree.nodes[&id].kind, Kind::Text | Kind::RawText);
         if self.recording == Some(id) {
             // Its layer is drawn as it rests, and moved, grown and faded as it's drawn from it.
             (look.translate, look.scale, look.rest_scale, look.opacity) = ((Offset::Px(0.0), Offset::Px(0.0)), 1.0, 1.0, 1.0);
         } else if self.recording.is_some() && self.layered.contains(&id) && self.turn != TransformationMatrix::unit() {
             // Turned in the layer being drawn, it's drawn in it as usual, which is drawn again each frame.
             self.animating = true;
-        } else if self.recording.is_some() && self.layered.contains(&id) {
-            // A layer of its own in the one being drawn: drawn into it each frame, where that's moved it.
-            // In the order it was drawn, as its image draws its batches (`recording`).
+        } else if self.recording.is_some() && (self.layered.contains(&id) || (words && self.turn == TransformationMatrix::unit())) {
+            // A layer of its own in the one being drawn: drawn into it each frame, where that's moved it. So is a text,
+            // its glyphs drawn where they are, at the size they are, as sharp moving as at rest, as SwiftUI draws a
+            // text moved and grown: a picture of them grown or moved by a fraction of a pixel is softer, and snapped
+            // sharp as it landed. In the order it was drawn, as its image draws its batches (`recording`).
             let mut scene = std::mem::take(&mut *self.scene);
             scene.sort();
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));

@@ -7,7 +7,7 @@ import { build, pageFolder } from "./pages.js"
 import { device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./harness.js"
 import { finger, ios, moves, selector, single, travel } from "./gesture.js"
-import { apart, arrives, contactSheet, curve, cut, differs, filmstrip, lull, rect, strayInk } from "./output.js"
+import { apart, arrives, contactSheet, curve, cut, differs, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
 
 
 /// How the display's link ticks at `hz`, as a real one: a Mac's starts three refreshes after it's asked for frames,
@@ -291,6 +291,16 @@ async function play(built, scene, name, motion, hz, folder) {
     const stray = frames.flatMap((frame, n) => (frame.rect && frame.png ? [{ n, why: strayInk(frame.png, scene.size[0], frame.rect) }] : [])).find((one) => one.why)
     if (!frames.some((frame) => frame.rect)) failed.push("what it follows is never drawn")
     else if (stray) failed.push(`at frame ${stray.n + 1} (${frames[stray.n].at} ms) ${stray.why}`)
+  }
+  // The words of what `follow` names are drawn as sharp in every frame as where they come to rest (within 15%), as
+  // SwiftUI draws a text moved and grown: its glyphs drawn where they are, at the size they are, never a picture of
+  // them grown or moved by a fraction of a pixel, softer, that snaps sharp as it lands.
+  if (motion.sharp) {
+    const drawn = frames.flatMap((frame, n) => (frame.rect && frame.png ? [{ n, sharp: sharpness(frame.png, scene.size[0], frame.rect) }] : [])).filter((one) => one.sharp !== undefined)
+    const rest = drawn.at(-1)
+    const soft = rest && drawn.find((one) => one.sharp < rest.sharp * 0.85)
+    if (!rest) failed.push("what it follows is never drawn")
+    else if (soft) failed.push(`its words are drawn soft at frame ${soft.n + 1} (${frames[soft.n].at} ms), ${soft.sharp.toFixed(2)} sharp where they're ${rest.sharp.toFixed(2)} at rest`)
   }
   // No frame waits for pipelines to compile, as the first to draw glass did while its blur's were compiled as it drew
   // (half a second on the Surface): the harness's compile as long as the Surface's (`run`), and a frame's drawing by

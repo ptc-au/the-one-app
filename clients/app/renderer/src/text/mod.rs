@@ -526,8 +526,8 @@ impl TextSystem {
     }
 
     /// Paints `paragraph` with its top left at `origin`, each line placed along `width` by `align` (0 start, 0.5
-    /// centre, 1 end), as the shaders draw glyphs: from the atlas, each at the nearest of a few positions between
-    /// device pixels, rasterized at the window's scale, then turned as `transformation` says.
+    /// centre, 1 end), grown `grown` times, as the shaders draw glyphs: from the atlas, each at the nearest of a few
+    /// positions between device pixels, rasterized at the window's scale, then turned as `transformation` says.
     #[allow(clippy::too_many_arguments)]
     pub fn paint(
         &mut self,
@@ -537,11 +537,15 @@ impl TextSystem {
         align: f32,
         color: &dyn Fn(usize) -> Hsla,
         scale_factor: f32,
+        grown: f32,
         content_mask: ContentMask<ScaledPixels>,
         transformation: TransformationMatrix,
         atlas: &Atlas,
         scene: &mut Scene,
     ) -> Result<()> {
+        // Grown, its glyphs are rasterized at the nearest 32nd of the size, each placed where it is: one growing
+        // draws as sharp as at rest, and each glyph is kept at a few dozen sizes, not one more each frame it grows.
+        let (scale_factor, raster_scale) = (scale_factor * grown, scale_factor * (grown * 32.0).round().max(1.0) / 32.0);
         for (at, line) in paragraph.lines.iter().enumerate() {
             // The line's baseline, with half its leading above, as CSS sets a line box.
             let leading = paragraph.line_height - (line.ascent + line.descent);
@@ -549,7 +553,7 @@ impl TextSystem {
             let left = origin.x.0 + (width - line.width).max(0.0) * align;
             for (font_id, size, glyph) in &line.glyphs {
                 let point = Point { x: Pixels(left + glyph.position.x.0), y: Pixels(baseline + glyph.position.y.0) };
-                self.paint_glyph(point, *font_id, *size, glyph, color(glyph.index), scale_factor, content_mask, transformation, atlas, scene)?;
+                self.paint_glyph(point, *font_id, *size, glyph, color(glyph.index), scale_factor, raster_scale, content_mask, transformation, atlas, scene)?;
             }
         }
         Ok(())
@@ -565,6 +569,7 @@ impl TextSystem {
         glyph: &ShapedGlyph,
         color: Hsla,
         scale_factor: f32,
+        raster_scale: f32,
         content_mask: ContentMask<ScaledPixels>,
         transformation: TransformationMatrix,
         atlas: &Atlas,
@@ -583,7 +588,7 @@ impl TextSystem {
             glyph_id: glyph.id,
             font_size: font_size.to_bits(),
             subpixel_variant,
-            scale_factor: scale_factor.to_bits(),
+            scale_factor: raster_scale.to_bits(),
             is_emoji: glyph.is_emoji,
         };
         let raster_bounds = match self.raster_bounds.get(&params) {
