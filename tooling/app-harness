@@ -40,6 +40,7 @@
 #   writing  a write to Permissions' database in flight as the bucket goes away: its reads are answered from its copy
 #            while its lease holds, and refused at once after; the write is refused within its deadline, saying why;
 #            its process lives on, one started again answers at once, and all answer within seconds of the bucket's return.
+#            A take-over of its lease and its process stopping, with the bucket held, each wait on it only their deadline.
 #
 # The folder keeps the network, the app's build and its log (`app.log`), and a network running there is used again.
 # `--seed` picks the moments things happen at, the same each time for the same seed. `--phone` runs a phone's app
@@ -567,7 +568,10 @@ PY
 # within its deadline, saying its app couldn't be reached; the database's process is the same one after, and one
 # started again while the bucket's held answers at once too; and once the bucket's back, a read and a write are
 # answered within seconds. On 21 Nov every read waited behind the write until the bucket's client gave up, its
-# process then crashed, and one started again waited on the bucket as it started.
+# process then crashed, and one started again waited on the bucket as it started. Then, with the bucket held again,
+# its lease is taken over from a server that's gone, and its process is stopped, as a server stopping stops it: on
+# 22 Nov the take-over read the log in the database's process, which held every call until the bucket's client gave
+# up, and the process stopping waited on the bucket to hand its lease on until it was killed.
 writing() {
   held=$(bucket)
   [[ -n $held ]] || { echo "        no bucket" && return 1; }
@@ -595,6 +599,16 @@ writing() {
         _ -> nil
       end)
     end
+    # The bucket let go: a read and a write are answered within `within`.
+    back = fn within ->
+      System.cmd(\"kill\", [\"-CONT\", \"$held\"])
+      back = now.()
+      recovered = Stream.repeatedly(fn -> Process.sleep(100) && {read.(5_000), write.(15_000)} end)
+        |> Enum.find(fn {{_, r, _}, {_, w, _}} -> (r == :ok and w == :ok) or now.() - back > 30_000 end)
+      took = now.() - back
+      IO.puts(\"        once the bucket's back, a read and a write answered in #{took} ms\")
+      if(match?({{_, :ok, _}, {_, :ok, _}}, recovered) and took < within, do: [], else: [\"not answered within #{div(within, 1000)} s of the bucket's return\"])
+    end
     failed = []
     {ms, :ok, _} = read.(10_000)
     before = lease.()
@@ -621,13 +635,39 @@ writing() {
       {ms, how, _} = read.(5_000)
       IO.puts(\"        a read as its process starts again, the bucket held: #{how} in #{ms} ms\")
       failed = failed ++ if(how == :waiting or ms > 3_000, do: [\"a read as its process started again waited #{ms} ms\"], else: [])
-      System.cmd(\"kill\", [\"-CONT\", \"$held\"])
-      back = now.()
-      recovered = Stream.repeatedly(fn -> Process.sleep(100) && {read.(5_000), write.(15_000)} end)
-        |> Enum.find(fn {{_, r, _}, {_, w, _}} -> (r == :ok and w == :ok) or now.() - back > 30_000 end)
-      took = now.() - back
-      IO.puts(\"        once the bucket's back, a read and a write answered in #{took} ms\")
-      failed = failed ++ if(match?({{_, :ok, _}, {_, :ok, _}}, recovered) and took < 10_000, do: [], else: [\"not answered within 10 s of the bucket's return\"])
+      failed = failed ++ back.(10_000)
+      # A take-over with the bucket held: the log's next entry names a server that's gone, as one that took the lease
+      # from this one writes it, which this server finds as it looks in the background, and follows. With the bucket
+      # held, a read finds that server doesn't answer and takes the lease over, which reads the log, and reads follow
+      # it every 0.5 s. None waits on the bucket: each is refused, saying its app couldn't be reached, once the
+      # gone server hasn't answered it and the log hasn't been read in its time.
+      {_, %{data: kept}} = :sys.get_state(lease.(), 5_000)
+      gone = Base.encode16(elem(:crypto.generate_key(:eddsa, :ed25519), 0), case: :lower)
+      # As Database.Log.write/3 writes it.
+      entry = \"log/\" <> String.pad_leading(\"#{kept.number + 1}\", 16, \"0\")
+      :ok = OneCore.Artifact.write(kept.artifact, entry, :erlang.term_to_binary(%{server: gone}, [:compressed]))
+      # What this server reads of a server it knows, as it knew the one that's gone, is read before the bucket holds.
+      for read <- [&OneCore.Servers.name/1, &OneCore.Servers.protocol/1, &OneCore.Servers.members/1, &OneCore.Servers.presence/1],
+        do: read.(gone)
+      followed = Enum.find_value(1..50, fn _ -> Process.sleep(100) && match?({{:following, ^gone}, _}, :sys.get_state(lease.(), 5_000)) end)
+      failed = failed ++ if(followed, do: [], else: [\"the database didn't follow the server its log names\"])
+      taking = lease.()
+      System.cmd(\"kill\", [\"-STOP\", \"$held\"])
+      reads = Enum.map(for(at <- 0..11, do: Task.async(fn -> Process.sleep(at * 500) && read.(40_000) end)), &Task.await(&1, :infinity))
+      IO.puts(\"        a take-over and reads every 0.5 s, the bucket held: #{Enum.map_join(reads, \" \", fn {ms, how, _} -> \"#{ms}#{%{ok: \"\", refused: \"r\", waiting: \"w\"}[how]}\" end)} ms\")
+      failed = failed ++ for {ms, how, _} <- reads, how == :waiting or ms > 7_000, do: \"a read in a take-over waited #{ms} ms\"
+      failed = failed ++ for {_, :refused, why} <- reads, not (why =~ \"couldn't be reached\"), do: \"a read in a take-over said #{why}\"
+      failed = failed ++ if(lease.() != taking, do: [\"the database's process ended in the take-over\"], else: [])
+      failed = failed ++ back.(15_000)
+      # A server stopping with the bucket held stops within its deadline for handing its lease on, not once the bucket's
+      # client gives up, and the database answers once the bucket's back.
+      System.cmd(\"kill\", [\"-STOP\", \"$held\"])
+      began = now.()
+      stopped = OneCore.Apps.Process.stop(lease.(), :shutdown)
+      took = now.() - began
+      IO.puts(\"        its process stopped, the bucket held, in #{took} ms: #{inspect(stopped)}\")
+      failed = failed ++ if(took > 3_000, do: [\"stopping waited #{took} ms on the bucket\"], else: [])
+      failed = failed ++ back.(10_000)
       for why <- failed, do: IO.puts(\"        #{why}\")
       IO.puts(if failed == [], do: \"answered\", else: \"failed\")
     after
