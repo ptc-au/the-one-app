@@ -81,6 +81,9 @@ free_port() { bun -e 'const server = Bun.serve({ port: 0, fetch: () => new Respo
 random() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
 
 (cd "$root/core/edge" && bun install --frozen-lockfile)
+# Each app's edge function's packages too, in its own folder, which `bun edge.js dev` copies with them: the ones
+# `tooling/copy-build` copied from a worktree beside this one may be another commit's.
+for edge in "$root"/apps/*/edge/; do (cd "$edge" && bun install --frozen-lockfile); done
 # The bucket's credentials are made up for this network, and only the presigner is given them, with the secret a
 # network's first server shows. They're kept in the folder with its ports, so started again it's at the same
 # address, which a server installed with `one serve on` still reaches.
