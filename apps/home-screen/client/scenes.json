@@ -367,6 +367,41 @@
       "settings_sections": {
         "sections": []
       }
+    },
+    "checks": {
+      "On a computer, each page is exactly a phone's, side by side": [
+        {
+          "resize": [
+            1280,
+            800
+          ]
+        },
+        {
+          "wait": 400
+        },
+        {
+          "expect": {
+            "widest": {
+              "of": {
+                "role": "group",
+                "name": "Page 1"
+              },
+              "most": 390
+            }
+          }
+        },
+        {
+          "expect": {
+            "widest": {
+              "of": {
+                "role": "group",
+                "name": "Page 2"
+              },
+              "most": 390
+            }
+          }
+        }
+      ]
     }
   },
   "Home, swiped": {

@@ -104,9 +104,10 @@ export interface Page {
 }
 
 /// A page of `room`, laid out at a phone's size: under the top row and clear of what the device keeps at its edges;
-/// in a launcher, with the padding Raycast's grid has, its rows a phone's tallest.
+/// on a wide window exactly a phone's, as wide as one, less only where the window hasn't room for that (DESIGN.md,
+/// Desktop and tablet); in a launcher, with the padding Raycast's grid has, its rows a phone's tallest.
 export function page(room: Room): Page {
-  const width = room.wide ? Math.min((room.width - 2 * room.side - (room.fit - 1) * room.gap) / room.fit, 560 * room.scale) / room.scale : room.width
+  const width = room.wide ? Math.min((room.width - 2 * room.side - (room.fit - 1) * room.gap) / room.fit, PHONE * room.scale) / room.scale : room.width
   const height = room.height / room.scale
   const [top, left, right, bottom] = room.launcher ? [4 / room.scale, 12 / room.scale, 12 / room.scale, 4 / room.scale] : [room.safe.top + TOP_ROW + 8, 20 + room.safe.left, 20 + room.safe.right, 0]
   return grid(width, height, top, left, right, bottom, room.launcher)
