@@ -295,7 +295,16 @@ impl Subscription {
     /// answered waits for a server.
     async fn read(self: &Arc<Self>, method: &str, params: Value) -> Result<Value> {
         let key = json!([method, params]).to_string();
-        if let Some(query) = self.responses.lock().expect("no view panics").get(&key) {
+        // What the view was answered is shown again at once, and asked again behind it unless it's being asked: a view
+        // outlives its window, so one opened again, or a phone's back from behind another app, would show forever what
+        // it was answered before (21 Nov: Sign In & Security reopened without the passkey just made).
+        if let Some(query) = self.responses.lock().expect("no view panics").get_mut(&key) {
+            if query.fetching.is_none() {
+                let (tx, rx) = watch::channel(false);
+                query.fetching = Some((query.invalidated, rx));
+                let (shown, key, method, params, generation) = (self.clone(), key.clone(), method.to_owned(), params.clone(), query.invalidated);
+                tokio::spawn(async move { shown.fetch(key, method, params, generation, Some(tx)).await });
+            }
             return Ok(query.response.clone());
         }
         let (response, revalidate) = match self.client.cached(method, &params) {
