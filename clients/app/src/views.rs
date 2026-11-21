@@ -57,13 +57,18 @@ impl Views {
         shown.entry(view.to_owned()).or_insert_with(new).clone()
     }
 
-    /// Says whether the window `label` is on screen.
+    /// Says whether the window `label` is on screen. A phone's app is suspended while none is, so it hears nothing a
+    /// server says then and takes it that something changed (`missed`): on 21 Nov an iPhone's Sign In & Security still
+    /// said servers were waiting for a key its passkey had just handed them, in Safari, as the app was away.
     pub(crate) fn shown(&self, label: &str, on_screen: bool) {
         let mut shown = self.on_screen.lock().expect("no view panics");
         if on_screen {
             shown.insert(label.to_owned());
         } else {
             shown.remove(label);
+            if cfg!(mobile) && shown.is_empty() {
+                self.missed.store(true, Ordering::Relaxed);
+            }
         }
     }
 
