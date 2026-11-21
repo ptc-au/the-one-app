@@ -47,6 +47,8 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
   /// they aren't: where they're drawn is where they are less it. `held` is it as it's said, which `look` reads in the
   /// same turn, where the signal, which draws, says it once that turn is done.
   const [dragged, setDragged] = createSignal<number>()
+  /// Let go, they're springing to where they go till the host says they've come to rest there (`onDragTransitionEnd`).
+  const [settling, setSettling] = createSignal(false)
   let held = 0
   const drag = (offset: number | undefined) => {
     held = offset ?? 0
@@ -134,6 +136,7 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
     // UIScrollView's rubber band.
     dragElastic: 0.55,
     onDragStart: () => drag(0),
+    onDragTransitionEnd: () => setSettling(false),
     onDrag: ({ offset }: Pick<Dragged, "offset">) => {
       drag(offset.x)
       look()
@@ -141,6 +144,7 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
     onDragEnd: ({ offset, velocity, canceled }: Dragged) => {
       const left = held
       drag(undefined)
+      setSettling(true)
       if (canceled) return look()
       const owner = home.getSnapshot().context.at.owner
       const from = Math.round(sideways(owner).value / pitch())
@@ -327,7 +331,7 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
       slide(home.getSnapshot().context.at, true)
     }
   }
-  return { height, pitch, downY, xOf, opacityOf, underCarry, sectionsX, dragged, card, cardLeft, pageAt, pageUnder, swiping, swipes, along, wheel, release }
+  return { height, pitch, downY, xOf, opacityOf, underCarry, sectionsX, dragged, settling, card, cardLeft, pageAt, pageUnder, swiping, swipes, along, wheel, release }
 }
 
 export type Paging = ReturnType<typeof createPaging>
