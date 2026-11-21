@@ -77,8 +77,8 @@ const look = styles({
     transition: tokens.motion.quick,
   },
   flatPressable: { backgroundColor: { hover: tokens.colour.selection, pressed: tokens.colour.quaternaryLabel, focused: tokens.colour.selection } },
-  // The row open beside its list is filled already, so the keyboard on it is the focus ring.
-  openFocused: { boxShadow: { focused: tokens.shadow.focus } },
+  // The row open beside its list is filled already (`current`), so under the pointer and with the keyboard it adds no fill to it, and the keyboard on it is the focus ring.
+  openFocused: { backgroundColor: { hover: tokens.colour.transparent, focused: tokens.colour.transparent }, boxShadow: { focused: tokens.shadow.focus } },
   after: { paddingStart: 0 },
   // The words have the row's whole width, which an action then wraps under, as a phone's list gives them it.
   full: { flexBasis: "100%" },

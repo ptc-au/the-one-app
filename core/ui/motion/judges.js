@@ -246,7 +246,7 @@ export function requests(steps, folder, answers = {}) {
             return wide.length ? `${named(widest.of)} is ${wide.map((node) => Math.round(node.rect.width)).join(" and ")} pt wide, over ${widest.most}` : undefined
           },
         })
-      // What's named stands off what's around it: the most contrast (WCAG's ratio) between the colour 3 pt outside its
+      // What's named stands off what's around it by at least `least`:1 and at most `most`:1: the most contrast (WCAG's ratio) between the colour 3 pt outside its
       // start, at its middle, and any along its first 4 pt in, where a control's ring or a card's edge and fill are.
       if (contrast) {
         let found, points, missing
@@ -265,7 +265,8 @@ export function requests(steps, folder, answers = {}) {
               const inside = luminance(x, y)
               most = Math.max(most, ratio(inside, outside))
             }
-            return most < contrast.least && `${named(contrast.of)} stands off what's around it at ${most.toFixed(2)}:1, under ${contrast.least}:1`
+            if (most < (contrast.least ?? 1)) return `${named(contrast.of)} stands off what's around it at ${most.toFixed(2)}:1, under ${contrast.least}:1`
+            if (most > (contrast.most ?? Infinity)) return `${named(contrast.of)} stands off what's around it at ${most.toFixed(2)}:1, over ${contrast.most}:1`
           },
         })
       }
