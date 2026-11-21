@@ -25,7 +25,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { FACES, moves, pageFolder, scenesOf, selector } from "./motion.js"
-import { modelled } from "./motion/tiers.js"
+import { modelled, SHADED } from "./motion/tiers.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 const args = process.argv.slice(2)
@@ -38,10 +38,11 @@ const name = option("--name") ?? host
 const out = resolve(option("--out") ?? join(here("../../"), "target", "calibrate"))
 if (!host || !harness) throw new Error("Say where: --ssh <host> --harness <the harness built for it>")
 
-/// The work a frame did, as the GPU's fit takes it: millions of pixels of each kind, its draw calls, megabytes uploaded;
-/// and as its drawing's fit takes it: its render passes and draw calls.
-export const FEATURES = ["quads", "shadows", "sprites", "backdrops", "rasters", "copied", "draws", "uploaded"]
-export const features = (frame) => [...["quads", "shadows", "sprites", "backdrops", "rasters", "copied"].map((kind) => frame.work[kind] / 1e6), frame.draws, frame.work.uploaded / 1e6]
+/// The work a frame did, as the GPU's fit takes it: millions of pixels of each kind (`SHADED`, those blurred behind
+/// backdrops among them), its draw calls, megabytes uploaded and blurs taken; and as its drawing's fit takes it: its
+/// render passes and draw calls.
+export const FEATURES = [...SHADED, "draws", "uploaded", "blurs"]
+export const features = (frame) => [...SHADED.map((kind) => (frame.work[kind] ?? 0) / 1e6), frame.draws, frame.work.uploaded / 1e6, frame.work.blurs ?? 0]
 const DRAWING = ["passes", "draws"]
 const drawing = (frame) => [frame.passes ?? 0, frame.draws]
 

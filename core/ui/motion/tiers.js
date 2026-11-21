@@ -12,15 +12,17 @@ if (ssh && !device) throw new Error(`No tier in devices.json is measured on ${ss
 const shipped = flag("--release")
 
 
-/// The kinds of pixels a frame's GPU shades (`work`), as calibrate.js fits their costs.
-export const SHADED = ["quads", "shadows", "sprites", "backdrops", "rasters", "copied"]
+/// The kinds of pixels a frame's GPU shades (`work`), as calibrate.js fits their costs: what's behind backdrops blurred
+/// afresh among them (`blurred`), which a blur kept from the frames before costs none of.
+export const SHADED = ["quads", "shadows", "sprites", "backdrops", "rasters", "copied", "blurred"]
 
 /// What a device's `measured` costs (devices.json's, as calibrate.js fits them) say a frame takes there, in ms: its
-/// GPU's shading of its work (`work`'s pixels, `pixels` times as many) and uploads, its draw calls on the GPU, and its
+/// GPU's shading of its work (`work`'s pixels, `pixels` times as many), uploads and blurs taken (each its passes'
+/// setting up, whatever its pixels), its draw calls on the GPU, and its
 /// thread's drawing it for the GPU (making and submitting its passes' command lists and draw calls), where measured.
 export function modelled(measured, frame, pixels = 1) {
   const { costs, constant } = measured.gpu
-  const shaded = SHADED.reduce((sum, kind) => sum + (frame.work[kind] / 1e6) * pixels * costs[kind], 0) + (frame.work.uploaded / 1e6) * pixels * costs.uploaded + constant
+  const shaded = SHADED.reduce((sum, kind) => sum + ((frame.work[kind] ?? 0) / 1e6) * pixels * (costs[kind] ?? 0), 0) + (frame.work.uploaded / 1e6) * pixels * costs.uploaded + (frame.work.blurs ?? 0) * (costs.blurs ?? 0) + constant
   const draw = measured.draw && measured.draw.constant + (frame.passes ?? 0) * measured.draw.costs.passes + frame.draws * measured.draw.costs.draws
   return { shaded, calls: frame.draws * costs.draws, draw }
 }

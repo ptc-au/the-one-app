@@ -82,12 +82,15 @@
           "rasters": 0,
           "copied": 0,
           "draws": 0,
-          "uploaded": 0
+          "uploaded": 0,
+          "blurred": 0.51,
+          "blurs": 0.12
         },
         "constant": 0,
         "error": 0.22,
         "frames": 1164,
-        "scenes": 96
+        "scenes": 96,
+        "blur": "blurred and blurs: fitted on 21 Nov over 696 of its frames' blur passes alone (their GPU timestamps against the pixels blurred and blurs taken, mean error 0.2 ms), not yet in a whole fit with the rest"
       },
       "paint_ms": 0.49,
       "open": {
