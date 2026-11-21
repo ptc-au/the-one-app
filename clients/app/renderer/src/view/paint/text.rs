@@ -7,7 +7,7 @@ impl Painter<'_> {
     /// behind it, what an input method composes underlined, and the caret, as it blinks; scrolled to keep the caret
     /// in view as it moves. Where it's drawn is kept for the pointer (`Drawn`). → how far several lines can scroll.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn paint_input(&mut self, id: Id, node: &Node, content: Bounds<f32>, padding: Bounds<f32>, width: f32, grown: f32, text: Text, opacity: f32, mask: Bounds<f32>) -> Option<f32> {
+    pub(in crate::view) fn paint_input(&mut self, id: Id, node: &Node, content: Bounds<f32>, padding: Bounds<f32>, width: f32, grown: f32, text: Text, opacity: f32, mask: ContentMask<f32>) -> Option<f32> {
         let field = self.fields.get(&id);
         let shown = field.map(Field::display).unwrap_or_default();
         let multiline = node.is("multiline");
@@ -58,7 +58,7 @@ impl Painter<'_> {
         }
         let origin = point(content.origin.x, top - scroll.y * grown);
         // Several lines scrolled run on into its padding, as a `<textarea>`'s do; one line stops at its content.
-        let clip = if multiline { padding } else { content }.intersect(&mask);
+        let clip = mask.intersect(&ContentMask::from(if multiline { padding } else { content }));
         // A point along line `line`, `x` from where its paragraph starts, in the window.
         let at = |line: usize, x: f32| point(origin.x + (x - scroll.x) * grown, origin.y + line as f32 * line_height * grown);
         let drawn = Drawn { paragraph, empty, origin, offsets, grown, scroll, seen };
@@ -103,7 +103,7 @@ impl Painter<'_> {
     /// A paragraph's words, set in `text`, or as `runs` say where it's given them: what's behind each run first, then
     /// its glyphs, then each underline, along each line at its baseline's foot.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn paint_text(&mut self, paragraph: &Paragraph, runs: &[TextRun], content: Bounds<f32>, width: f32, grown: f32, text: Text, opacity: f32, mask: Bounds<f32>) {
+    pub(in crate::view) fn paint_text(&mut self, paragraph: &Paragraph, runs: &[TextRun], content: Bounds<f32>, width: f32, grown: f32, text: Text, opacity: f32, mask: ContentMask<f32>) {
         let own = [TextRun { len: usize::MAX, style: text.style, color: text.color, background_color: None, underline: text.underline }];
         let runs = if runs.is_empty() { &own[..] } else { runs };
         let mut at = 0usize;
@@ -127,7 +127,7 @@ impl Painter<'_> {
                 self.quad(bounds, mask, behind, Edges::default(), Hsla::default(), Corners::default(), false, opacity);
             }
         }
-        let scaled_mask = ContentMask { bounds: mask.scale_to(self.scale) };
+        let scaled_mask = mask.scale_to(self.scale);
         // Glyphs grown with their box are rasterized at that size (`TextSystem::paint`), so they stay sharp.
         let origin = point(px(content.origin.x / grown), px(content.origin.y / grown));
         let color = |index: usize| ranges.iter().find(|(start, end, _)| (*start..*end).contains(&index)).map_or(text.color, |(_, _, run)| run.color).opacity(opacity);
@@ -150,7 +150,7 @@ impl Painter<'_> {
     /// stretch of its words, after what it's in, so a press, hover and cursor find the innermost; each reached by Tab
     /// where the DOM's would be, a span with its `tabindex`; and each where an agent or a screen reader finds it.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn place_spans(&mut self, id: Id, spans: &[Span], paragraph: &Paragraph, content: Bounds<f32>, width: f32, grown: f32, align: f32, mask: Bounds<f32>, pointer: bool, opacity: f32) {
+    pub(in crate::view) fn place_spans(&mut self, id: Id, spans: &[Span], paragraph: &Paragraph, content: Bounds<f32>, width: f32, grown: f32, align: f32, mask: ContentMask<f32>, pointer: bool, opacity: f32) {
         let tree = self.tree;
         let line_height = paragraph.line_height;
         let mut pointers: HashMap<Id, bool> = HashMap::from([(id, pointer)]);
@@ -184,7 +184,7 @@ impl Painter<'_> {
             }
             for rect in rects {
                 let focus = if tabindex.is_some() { Clicked::Takes } else { Clicked::Passes };
-                let placed = Placed { parent: Some(parent), shown: rect.intersect(&mask), opacity, pointer, cursor: span.cursor, pressable, input: false, focus, scroll: None, touch_action: None };
+                let placed = Placed { parent: Some(parent), shown: rect.intersect(&mask.bounds), opacity, pointer, cursor: span.cursor, pressable, input: false, focus, scroll: None, touch_action: None };
                 self.placed.push((span.id, placed));
             }
         }

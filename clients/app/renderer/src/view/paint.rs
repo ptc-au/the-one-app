@@ -163,7 +163,7 @@ pub(super) struct Stacked {
     pub(super) taffy_node: NodeId,
     pub(super) offset: Point<f32>,
     pub(super) transform: Transform,
-    pub(super) mask: Bounds<f32>,
+    pub(super) mask: ContentMask<f32>,
     pub(super) opacity: f32,
     pub(super) parent: Option<Id>,
     pub(super) pointer: bool,
@@ -177,7 +177,7 @@ pub(super) struct Sublayer {
     pub(super) taffy_node: NodeId,
     pub(super) offset: Point<f32>,
     pub(super) transform: Transform,
-    pub(super) mask: Bounds<f32>,
+    pub(super) mask: ContentMask<f32>,
     pub(super) opacity: f32,
     pub(super) parent: Option<Id>,
     pub(super) pointer: bool,
@@ -360,10 +360,12 @@ pub(super) struct Painter<'a> {
 }
 
 pub(super) trait Scale {
-    fn scale_to(&self, factor: f32) -> Bounds<ScaledPixels>;
-    fn snap_to(&self, factor: f32) -> Bounds<ScaledPixels>;
+    type Scaled;
+    fn scale_to(&self, factor: f32) -> Self::Scaled;
+    fn snap_to(&self, factor: f32) -> Self::Scaled;
 }
 impl Scale for Bounds<f32> {
+    type Scaled = Bounds<ScaledPixels>;
     fn scale_to(&self, factor: f32) -> Bounds<ScaledPixels> {
         Bounds {
             origin: Point { x: ScaledPixels(self.origin.x * factor), y: ScaledPixels(self.origin.y * factor) },
@@ -382,6 +384,16 @@ impl Scale for Bounds<f32> {
         };
         let ((left, right), (top, bottom)) = (edges(self.origin.x, self.size.width), edges(self.origin.y, self.size.height));
         Bounds { origin: Point { x: ScaledPixels(left), y: ScaledPixels(top) }, size: Size { width: ScaledPixels(right - left), height: ScaledPixels(bottom - top) } }
+    }
+}
+impl Scale for ContentMask<f32> {
+    type Scaled = ContentMask<ScaledPixels>;
+    fn scale_to(&self, factor: f32) -> ContentMask<ScaledPixels> {
+        ContentMask { bounds: self.bounds.scale_to(factor), corner_radii: self.map(|length| ScaledPixels(length * factor)).corner_radii }
+    }
+
+    fn snap_to(&self, factor: f32) -> ContentMask<ScaledPixels> {
+        ContentMask { bounds: self.bounds.snap_to(factor), corner_radii: self.map(|length| ScaledPixels(length * factor)).corner_radii }
     }
 }
 

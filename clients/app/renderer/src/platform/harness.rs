@@ -573,16 +573,18 @@ fn composed(window: &Window, drawn: Vec<Option<(u32, u32, Vec<u8>)>>) -> Option<
     Some((width, height, rgba))
 }
 
-/// Where `part`, drawn `width` by `height` (`rgba`), has ink in a corner its rounding cuts away whole: the square at
-/// each, `radius` × (1 − 1/√2) across, less a pixel for its edge's smoothing, where a square box under it shows. (A
-/// layer moving in it can reach a pixel or two past its rounding elsewhere, as content masks are rectangles.)
+/// Where `part`, drawn `width` by `height` (`rgba`), has ink in a corner its rounding cuts away: anywhere more than a
+/// pixel outside its arc, where a square box under it shows.
 #[cfg(feature = "fake")]
 fn cornered(part: &Part, width: u32, height: u32, rgba: &[u8]) -> Option<(u32, u32)> {
-    let cut = ((part.radius * part.native.scale() * (1.0 - std::f32::consts::FRAC_1_SQRT_2)).floor() as u32).saturating_sub(1);
-    let ends = |length: u32| (0..cut.min(length)).chain(length.saturating_sub(cut).max(cut)..length);
+    let radius = part.radius * part.native.scale();
+    let across = radius.ceil() as u32;
+    let ends = |length: u32| (0..across.min(length)).chain(length.saturating_sub(across).max(across)..length);
+    // How far a pixel's middle is from its corner's arc's centre, along one side.
+    let from = |at: u32, length: u32| (radius - (at as f32 + 0.5).min(length as f32 - at as f32 - 0.5)).max(0.0);
     ends(height)
         .flat_map(|y| ends(width).map(move |x| (x, y)))
-        .find(|&(x, y)| rgba[((y * width + x) * 4 + 3) as usize] > 24)
+        .find(|&(x, y)| from(x, width).hypot(from(y, height)) - radius > 1.0 && rgba[((y * width + x) * 4 + 3) as usize] > 24)
 }
 
 /// The system's glass a panel is shown over, a flat grey of its Colour Mode here.

@@ -19,7 +19,7 @@ impl Painter<'_> {
         let name = self.text.paragraph(&title.name, &style, &[], None, Some(1));
         let at = Bounds { origin: point(x, middle - name.size().height / 2.0), size: name.size() };
         let text = Text { style, color: colour_token("label", conditions), align: 0.0, wrap: false, underline: false, selectable: false };
-        self.paint_text(&name, &[], at, name.size().width.ceil(), 1.0, text, 1.0, window);
+        self.paint_text(&name, &[], at, name.size().width.ceil(), 1.0, text, 1.0, ContentMask::from(window));
         x + name.size().width.ceil()
     }
 
@@ -34,16 +34,16 @@ impl Painter<'_> {
         let closing = windows && hovered && kind == super::super::WindowButton::Close;
         let fill = if closing { colour("destructive") } else if hovered { colour("quaternary-label") } else if windows { Hsla::default() } else { colour("quinary-label") };
         if windows {
-            self.quad(bounds, window, fill, Edges::default(), Hsla::default(), Corners::default(), false, 1.0);
+            self.quad(bounds, ContentMask::from(window), fill, Edges::default(), Hsla::default(), Corners::default(), false, 1.0);
         } else {
-            self.quad(bounds, window, fill, Edges::default(), Hsla::default(), Corners::all(bounds.size.width / 2.0), false, 1.0);
+            self.quad(bounds, ContentMask::from(window), fill, Edges::default(), Hsla::default(), Corners::all(bounds.size.width / 2.0), false, 1.0);
         }
         let (middle, ink) = (point(bounds.origin.x + bounds.size.width / 2.0, bounds.origin.y + bounds.size.height / 2.0), if closing { colour("on-accent") } else { colour("label") });
         let (size, thick, rise) = if windows { (10.0, 1.0, 0.0) } else { (8.0, 1.5, 3.0) };
         let line = |width: f32, height: f32, y: f32| Bounds { origin: point(middle.x - width / 2.0, middle.y + y - height / 2.0), size: Size { width, height } };
         match kind {
-            super::super::WindowButton::Minimize => self.quad(line(size, thick, rise), window, ink, Edges::default(), Hsla::default(), Corners::default(), false, 1.0),
-            super::super::WindowButton::Maximize => self.quad(line(size, size, 0.0), window, Hsla::default(), Edges { top: thick, right: thick, bottom: thick, left: thick }, ink, Corners::all(if windows { 0.0 } else { 1.0 }), false, 1.0),
+            super::super::WindowButton::Minimize => self.quad(line(size, thick, rise), ContentMask::from(window), ink, Edges::default(), Hsla::default(), Corners::default(), false, 1.0),
+            super::super::WindowButton::Maximize => self.quad(line(size, size, 0.0), ContentMask::from(window), Hsla::default(), Edges { top: thick, right: thick, bottom: thick, left: thick }, ink, Corners::all(if windows { 0.0 } else { 1.0 }), false, 1.0),
             // A cross of two diagonals, a row of small squares each: a line turned by `turn` that thin isn't drawn whole.
             super::super::WindowButton::Close => {
                 let half = if windows { 5.0 } else { 4.0 };
@@ -52,7 +52,7 @@ impl Painter<'_> {
                     let along = -half + step as f32 * 0.5;
                     for across in [along, -along] {
                         let square = Bounds { origin: point(middle.x + along - dot / 2.0, middle.y + across - dot / 2.0), size: Size { width: dot, height: dot } };
-                        self.quad(square, window, ink, Edges::default(), Hsla::default(), Corners::default(), false, 1.0);
+                        self.quad(square, ContentMask::from(window), ink, Edges::default(), Hsla::default(), Corners::default(), false, 1.0);
                     }
                 }
             }
@@ -73,20 +73,20 @@ impl Painter<'_> {
         let action_width = action.as_ref().map_or(0.0, |action| gap + pad + action.size().width.ceil() + pad - 4.0);
         let width = pad + words.size().width.ceil() + action_width + if action.is_some() { 4.0 } else { pad };
         let pill = Bounds { origin: point((window.size.width - width) / 2.0, top + 8.0), size: Size { width, height } };
-        self.quad(pill, window, colour("label"), Edges::default(), Hsla::default(), Corners::all(height / 2.0), false, 1.0);
+        self.quad(pill, ContentMask::from(window), colour("label"), Edges::default(), Hsla::default(), Corners::all(height / 2.0), false, 1.0);
         let middle = pill.origin.y + height / 2.0;
         let words_at = |paragraph: &Paragraph, x: f32| Bounds { origin: point(x, middle - paragraph.size().height / 2.0), size: paragraph.size() };
         let text = Text { style: words_style, color: colour("background"), align: 0.0, wrap: false, underline: false, selectable: false };
-        self.paint_text(&words, &[], words_at(&words, pill.origin.x + pad), words.size().width.ceil(), 1.0, text, 1.0, window);
+        self.paint_text(&words, &[], words_at(&words, pill.origin.x + pad), words.size().width.ceil(), 1.0, text, 1.0, ContentMask::from(window));
         let action = action?;
         let x = pill.origin.x + pad + words.size().width.ceil() + gap;
         let bounds = Bounds { origin: point(x, pill.origin.y + 4.0), size: Size { width: pad + action.size().width.ceil() + pad, height: height - 8.0 } };
         if hovered {
             let mut highlight = colour("background");
             highlight.a *= 0.2;
-            self.quad(bounds, window, highlight, Edges::default(), Hsla::default(), Corners::all(bounds.size.height / 2.0), false, 1.0);
+            self.quad(bounds, ContentMask::from(window), highlight, Edges::default(), Hsla::default(), Corners::all(bounds.size.height / 2.0), false, 1.0);
         }
-        self.paint_text(&action, &[], words_at(&action, x + pad), action.size().width.ceil(), 1.0, Text { style: action_style, ..text }, 1.0, window);
+        self.paint_text(&action, &[], words_at(&action, x + pad), action.size().width.ceil(), 1.0, Text { style: action_style, ..text }, 1.0, ContentMask::from(window));
         Some(bounds)
     }
 }

@@ -97,7 +97,7 @@ impl Renderer {
                     let recording = these[at];
                     let px = crate::geometry::ScaledPixels;
                     let slot = Bounds { origin: crate::geometry::Point { x: px(x as f32), y: px(y as f32) }, size: crate::geometry::Size { width: px(recording.size[0] as f32), height: px(recording.size[1] as f32) } };
-                    drawn.splice(&recording.scene, 1.0, [x as f32 - recording.origin[0], y as f32 - recording.origin[1]], 1.0, slot);
+                    drawn.splice(&recording.scene, 1.0, [x as f32 - recording.origin[0], y as f32 - recording.origin[1]], 1.0, slot.into());
                     self.rasters.insert(recording.id, (sheet.clone(), slot));
                 }
                 drawn.sort();

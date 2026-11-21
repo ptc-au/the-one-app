@@ -26,7 +26,7 @@ impl Screen {
             order: 0,
             border_style: Default::default(),
             bounds: canvas.scale_to(scale),
-            content_mask: ContentMask { bounds: canvas.scale_to(scale) },
+            content_mask: ContentMask::from(canvas.scale_to(scale)),
             background: Background::from(Hsla { a: background.a * opacity, ..background }),
             border_color: Hsla::default(),
             corner_radii: Corners::default(),
@@ -295,13 +295,13 @@ impl Screen {
         let (body, background) = Text::root(conditions);
         // A panel has no background of its own: what its page draws is over the system's glass, or the host's fill.
         match self.panel {
-            None => painter.quad(window, window, background.unwrap_or_default(), Edges::default(), Hsla::default(), Corners::default(), false, 1.0),
+            None => painter.quad(window, ContentMask::from(window), background.unwrap_or_default(), Edges::default(), Hsla::default(), Corners::default(), false, 1.0),
             Some(panel) if panel.whole => {
                 if let Some(glass) = painter.glass.as_mut() {
                     glass.push(crate::platform::Glass { bounds: window, radius: panel.corner, opacity: 1.0 });
                 }
                 if let Some(fill) = painter.fill {
-                    painter.quad(window, window, fill, Edges::default(), Hsla::default(), Corners::all(panel.corner), false, 1.0);
+                    painter.quad(window, ContentMask::from(window), fill, Edges::default(), Hsla::default(), Corners::all(panel.corner), false, 1.0);
                 }
             }
             Some(_) => {}
@@ -331,7 +331,7 @@ impl Screen {
             Err(error) => log::error!("its layout failed: {error}"),
             Ok(()) => {
                 painter.laid_out();
-                painter.paint(root, point(0.0, 0.0), Transform::NONE, window, 1.0, None, true)
+                painter.paint(root, point(0.0, 0.0), Transform::NONE, ContentMask::from(window), 1.0, None, true)
             }
         }
         // The window's title, over its page.
@@ -381,7 +381,7 @@ impl Screen {
         // The rail's line, over everything: dark over a light page and light over a dark one, as iOS's home
         // indicator is, the page's own label colour.
         if let Some(line) = line {
-            painter.quad(line, window, colour_token("label", conditions), Edges::default(), Hsla::default(), Corners::all(line.size.width / 2.0), false, 1.0);
+            painter.quad(line, ContentMask::from(window), colour_token("label", conditions), Edges::default(), Hsla::default(), Corners::all(line.size.width / 2.0), false, 1.0);
         }
         self.chrome.glass = painter.glass.take().unwrap_or_default();
         self.chrome.drag_regions = std::mem::take(&mut painter.drag_regions);
@@ -553,7 +553,7 @@ fn message(words: &str, appearance: Appearance, size: Size<Pixels>, scale: f32, 
     let conditions = Conditions { dark: appearance == Appearance::Dark, ..Conditions::default() };
     let (body, background) = Text::root(conditions);
     let window = Bounds { origin: point(0.0, 0.0), size: Size { width: size.width.0, height: size.height.0 } };
-    let mask = ContentMask { bounds: window.scale_to(scale) };
+    let mask = ContentMask::from(window.scale_to(scale));
     scene.insert_primitive(Quad {
         order: 0,
         border_style: Default::default(),
@@ -591,7 +591,7 @@ pub(crate) fn paint_loading(opened: Duration, quiet: Duration, fades: Duration, 
     let (_, label) = chrome_type(conditions);
     let paragraph = text.paragraph("Loading", &label, &[], None, None);
     let top = (size.height.0 - icon - gap - paragraph.size().height) / 2.0;
-    let mask = ContentMask { bounds: Bounds { origin: point(0.0, 0.0), size: Size { width: size.width.0, height: size.height.0 } }.scale_to(scale) };
+    let mask = ContentMask::from(Bounds { origin: point(0.0, 0.0), size: Size { width: size.width.0, height: size.height.0 } }.scale_to(scale));
     let spinner = Bounds { origin: point((size.width.0 - icon) / 2.0, top), size: Size { width: icon, height: icon } };
     let device = Size { width: (icon * scale).round() as u32, height: (icon * scale).round() as u32 };
     let grey = colour_token("secondary-label", conditions);

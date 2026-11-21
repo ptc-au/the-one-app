@@ -1,5 +1,5 @@
 import { createSignal, For } from "solid-js"
-import { Pressable, type Scenes, type Styles, styles, Text, tokens, View } from "ui"
+import { Button, Image, Pressable, ScrollView, type Scenes, type Styles, styles, Text, tokens, View } from "ui"
 import { brand } from "./brand.ts"
 
 const look = styles({
@@ -27,7 +27,52 @@ const look = styles({
   stacking: { zIndex: 0 },
   later: { position: "relative" },
   plain: { flexShrink: 0 },
+  rounded: { width: 120, height: 120, overflow: "hidden", borderRadius: tokens.radius.large },
+  inner: { width: "100%", height: "100%", overflow: "hidden", borderRadius: tokens.radius.small },
+  fill: { width: "100%", height: "100%" },
+  page: { width: 120, height: "100%", flexShrink: 0 },
+  pages: { flexDirection: "row", width: "100%", height: "100%" },
+  slid: (translateX: number) => ({ width: "100%", height: "100%", backgroundColor: tokens.colour.orange, translateX, transitionProperty: ["translateX"], transition: tokens.motion.smooth }),
+  words: { width: "100%", height: "100%", font: tokens.type.title, color: "#ffffff", backgroundColor: tokens.colour.green },
 })
+
+/// A square of one colour, as a photo reaching its box's every corner is.
+const square = (fill: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${fill}"/></svg>`)}`
+
+/// Boxes rounded, with `overflow: hidden`, each with what's in it reaching into its corners, which its rounding cuts as
+/// CSS's does: a picture, a card that slides, words, a box rounded less inside it, and pages.
+const Rounded = () => {
+  const [slid, slide] = createSignal(false)
+  return (
+    <View style={look.stack}>
+      <Button onPress={() => slide(!slid())}>Slide</Button>
+      <View style={look.cases}>
+        <View aria-label="Picture" style={look.rounded}>
+          <Image src={square("#3e63dd")} alt="" style={look.fill} />
+        </View>
+        <View aria-label="Card" style={look.rounded}>
+          <View style={look.slid(slid() ? 60 : 0)} />
+        </View>
+        <View aria-label="Words" style={look.rounded}>
+          <Text style={look.words}>Words that fill a rounded box</Text>
+        </View>
+        <View aria-label="Nested" style={look.rounded}>
+          <View style={look.inner}>
+            <Image src={square("#e5484d")} alt="" style={look.fill} />
+          </View>
+        </View>
+        <View aria-label="Pages" style={look.rounded}>
+          <ScrollView style={look.pages}>
+            <Image src={square("#30a46c")} alt="" style={look.page} />
+            <Image src={square("#f5a524")} alt="" style={look.page} />
+          </ScrollView>
+        </View>
+      </View>
+    </View>
+  )
+}
+
+const cases = ["Picture", "Card", "Words", "Nested", "Pages"]
 
 /** Two boxes, the first (A) moved over the second (B), which follows it, in a box of its own or not, each with its
  * styles, as CSS paints them (CSS 2.1, Appendix E): what's positioned or says its `zIndex` after its stacking
@@ -116,5 +161,12 @@ export default {
         ] as const
       ).map(([check, top]) => [check, [{ role: "button", name: top }, { expect: { text: `Pressed ${top}` } }]]),
     ),
+  },
+  "Styling/Rounded corners clip": {
+    render: () => <Rounded />,
+    checks: {
+      "Nothing in a rounded box shows past its corners": cases.map((name) => ({ expect: { rounded: { of: name, radius: 18 } } })),
+      "Nor as its card slides": [{ role: "button", name: "Slide" }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }],
+    },
   },
 } satisfies Scenes

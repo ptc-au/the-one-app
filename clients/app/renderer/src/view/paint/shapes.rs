@@ -5,13 +5,13 @@ use super::*;
 impl Painter<'_> {
     /// A quad, its bounds and mask in the window.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn quad(&mut self, bounds: Bounds<f32>, mask: Bounds<f32>, background: Hsla, borders: Edges<f32>, border_color: Hsla, radii: Corners<f32>, dashed: bool, opacity: f32) {
+    pub(in crate::view) fn quad(&mut self, bounds: Bounds<f32>, mask: ContentMask<f32>, background: Hsla, borders: Edges<f32>, border_color: Hsla, radii: Corners<f32>, dashed: bool, opacity: f32) {
         let scale = self.scale;
         self.scene.insert_primitive(Quad {
             order: 0,
             border_style: if dashed { BorderStyle::Dashed } else { BorderStyle::Solid },
             bounds: bounds.snap_to(scale),
-            content_mask: ContentMask { bounds: mask.snap_to(scale) },
+            content_mask: mask.snap_to(scale),
             background: Background::from(background.opacity(opacity)),
             border_color: border_color.opacity(opacity),
             corner_radii: Corners {
@@ -34,7 +34,7 @@ impl Painter<'_> {
     /// scrolls: nothing for a box that's see-through with no border, and a square one's border alone as its edges, not
     /// its whole box.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn fill(&mut self, bounds: Bounds<f32>, mask: Bounds<f32>, background: Hsla, borders: Edges<f32>, border_color: Hsla, radii: Corners<f32>, dashed: bool, opacity: f32) {
+    pub(in crate::view) fn fill(&mut self, bounds: Bounds<f32>, mask: ContentMask<f32>, background: Hsla, borders: Edges<f32>, border_color: Hsla, radii: Corners<f32>, dashed: bool, opacity: f32) {
         let bordered = borders != Edges::default() && border_color.a > 0.0;
         if background.a > 0.0 || (bordered && (dashed || radii != Corners::default())) {
             return self.quad(bounds, mask, background, borders, border_color, radii, dashed, opacity);
@@ -60,7 +60,7 @@ impl Painter<'_> {
     /// under the box; or an inset one inside it, where the box moved and shrunk by its spread doesn't cover it. Either
     /// shows only near the box's edge, so it's drawn only outside the box's middle, in up to four bands, as a
     /// nine-slice shadow is: a long list's card's edge costs its edges, not its whole box.
-    pub(in crate::view) fn shadow(&mut self, shadow: &crate::tokens::Shadow, bounds: Bounds<f32>, radii: Corners<f32>, grown: f32, mask: Bounds<f32>, opacity: f32) {
+    pub(in crate::view) fn shadow(&mut self, shadow: &crate::tokens::Shadow, bounds: Bounds<f32>, radii: Corners<f32>, grown: f32, mask: ContentMask<f32>, opacity: f32) {
         let spread = if shadow.inset { -shadow.spread } else { shadow.spread } * grown;
         let shadow_bounds = Bounds {
             origin: point(bounds.origin.x + shadow.x * grown - spread, bounds.origin.y + shadow.y * grown - spread),
@@ -78,7 +78,7 @@ impl Painter<'_> {
             blur_radius: ScaledPixels(shadow.blur * grown * scale / 2.0),
             bounds: shadow_bounds.scale_to(scale),
             corner_radii: corners(radii, spread),
-            content_mask: ContentMask { bounds: mask.scale_to(scale) },
+            content_mask: mask.scale_to(scale),
             color: Hsla::from(shadow.colour).opacity(opacity),
             transformation: self.turn.scaled(scale),
             inset: u32::from(shadow.inset),
@@ -98,9 +98,9 @@ impl Painter<'_> {
         let far = 1.0e6;
         let band = |x0: f32, y0: f32, x1: f32, y1: f32| Bounds { origin: point(x0, y0), size: Size { width: x1 - x0, height: y1 - y0 } };
         for around in [band(-far, -far, far, top), band(-far, bottom, far, far), band(-far, top, left, bottom), band(right, top, far, bottom)] {
-            let cut = around.intersect(&mask);
-            if cut.size.width > 0.0 && cut.size.height > 0.0 {
-                self.scene.insert_primitive(Shadow { content_mask: ContentMask { bounds: cut.scale_to(scale) }, ..drawn.clone() });
+            let cut = mask.intersect(&ContentMask::from(around));
+            if cut.bounds.size.width > 0.0 && cut.bounds.size.height > 0.0 {
+                self.scene.insert_primitive(Shadow { content_mask: cut.scale_to(scale), ..drawn.clone() });
             }
         }
     }

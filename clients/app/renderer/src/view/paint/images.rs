@@ -8,13 +8,13 @@ impl Painter<'_> {
         let device = Size { width: (bounds.size.width * self.scale).round() as u32, height: (bounds.size.height * self.scale).round() as u32 };
         if let Some((_, tile)) = self.pictures.get(self.atlas, src, device) {
             let window = self.window;
-            self.sprite(tile, bounds, Corners::all(radius), 1.0, window);
+            self.sprite(tile, bounds, Corners::all(radius), 1.0, ContentMask::from(window));
         }
     }
 
     /// A picture's sprite, `width`×`height` device pixels, at `bounds` in the window.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn sprite(&mut self, tile: AtlasTile, bounds: Bounds<f32>, radii: Corners<f32>, opacity: f32, mask: Bounds<f32>) {
+    pub(in crate::view) fn sprite(&mut self, tile: AtlasTile, bounds: Bounds<f32>, radii: Corners<f32>, opacity: f32, mask: ContentMask<f32>) {
         let scale = self.scale;
         // Its tile's clear pixel all round (`pictures::tiled`), drawn as wide as one of its pixels is here, outside
         // `bounds`.
@@ -27,7 +27,7 @@ impl Painter<'_> {
             grayscale: 0,
             opacity,
             bounds: bounds.scale_to(scale),
-            content_mask: ContentMask { bounds: mask.scale_to(scale) },
+            content_mask: mask.scale_to(scale),
             corner_radii: Corners {
                 top_left: ScaledPixels(radii.top_left * scale),
                 top_right: ScaledPixels(radii.top_right * scale),
@@ -45,7 +45,7 @@ impl Painter<'_> {
     /// (a category's icons as it opened, 4.4 ms of a mid laptop's WebGPU frame). One that's broken (not found, or that
     /// failed to decode every time it was tried) fills its box in a quiet grey, as a browser marks a broken image, never
     /// nothing.
-    pub(in crate::view) fn paint_image(&mut self, node: &Node, content: Bounds<f32>, transform: Transform, radii: Corners<f32>, opacity: f32, mask: Bounds<f32>) {
+    pub(in crate::view) fn paint_image(&mut self, node: &Node, content: Bounds<f32>, transform: Transform, radii: Corners<f32>, opacity: f32, mask: ContentMask<f32>) {
         let Some(src) = node.str("src") else { return };
         if opacity <= 0.0 {
             let fetched = self.fetched;
@@ -91,7 +91,7 @@ impl Painter<'_> {
     }
 
     /// A video's latest frame, as big as fits in `content`, in the middle, as a `<video>` draws it.
-    pub(in crate::view) fn paint_video(&mut self, id: Id, content: Bounds<f32>, radii: Corners<f32>, opacity: f32, mask: Bounds<f32>) {
+    pub(in crate::view) fn paint_video(&mut self, id: Id, content: Bounds<f32>, radii: Corners<f32>, opacity: f32, mask: ContentMask<f32>) {
         #[cfg(target_arch = "wasm32")]
         let device = Size { width: (content.size.width * self.scale).round() as u32, height: (content.size.height * self.scale).round() as u32 };
         #[cfg(target_arch = "wasm32")]
@@ -106,7 +106,7 @@ impl Painter<'_> {
 
     /// A path, SVG's: its `d` in its `viewBox`, stretched to its box, filled and stroked as its style says, drawn by
     /// resvg at the window's scale.
-    pub(in crate::view) fn paint_path(&mut self, node: &Node, content: Bounds<f32>, look: &Look, current: Hsla, opacity: f32, mask: Bounds<f32>) {
+    pub(in crate::view) fn paint_path(&mut self, node: &Node, content: Bounds<f32>, look: &Look, current: Hsla, opacity: f32, mask: ContentMask<f32>) {
         let Some(d) = node.str("d") else { return };
         let view_box = node.str("viewBox").unwrap_or("0 0 24 24");
         let device = pictures::fitting(Size { width: (content.size.width * self.scale).round() as u32, height: (content.size.height * self.scale).round() as u32 }, self.atlas);

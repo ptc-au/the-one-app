@@ -8,7 +8,7 @@ impl Painter<'_> {
     /// inspector, as Core Animation moves a layer and Flutter a RepaintBoundary's picture. Nothing in it is laid out,
     /// shaped or painted again, and its words move exactly with their boxes.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn paint_layer(&mut self, taffy_node: NodeId, id: Id, offset: Point<f32>, transform: Transform, look: &Look, mask: Bounds<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
+    pub(in crate::view) fn paint_layer(&mut self, taffy_node: NodeId, id: Id, offset: Point<f32>, transform: Transform, look: &Look, mask: ContentMask<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
         let Ok(laid) = self.layout.taffy.layout(taffy_node).copied() else { return };
         let laid_out = Bounds { origin: point(offset.x + laid.location.x, offset.y + laid.location.y), size: Size { width: laid.size.width, height: laid.size.height } };
         let key = LayerKey { laid_out, device: self.scale };
@@ -50,23 +50,23 @@ impl Painter<'_> {
                 Part::Scene(scene, None) => self.scene.splice(&scene, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Sublayer(sublayer) => {
                     let transform = Transform { offset: point(sublayer.transform.offset.x * grown + by.x, sublayer.transform.offset.y * grown + by.y), scale: sublayer.transform.scale * grown, rest: sublayer.transform.rest };
-                    self.paint(sublayer.taffy_node, sublayer.offset, transform, moved(sublayer.mask).intersect(&mask), sublayer.opacity * opacity, sublayer.parent, sublayer.pointer);
+                    self.paint(sublayer.taffy_node, sublayer.offset, transform, ContentMask { bounds: moved(sublayer.mask.bounds), corner_radii: sublayer.mask.map(|length| length * grown).corner_radii }.intersect(&mask), sublayer.opacity * opacity, sublayer.parent, sublayer.pointer);
                 }
             }
         }
         let layer = &self.layers[&id];
-        self.placed.extend(layer.placed.iter().map(|(id, placed)| (*id, Placed { shown: moved(placed.shown).intersect(&mask), opacity: placed.opacity * opacity, ..placed.clone() })));
+        self.placed.extend(layer.placed.iter().map(|(id, placed)| (*id, Placed { shown: moved(placed.shown).intersect(&mask.bounds), opacity: placed.opacity * opacity, ..placed.clone() })));
         self.rects.extend(layer.rects.iter().map(|(id, rect)| {
             let drawn = moved(Bounds { origin: point(rect.x, rect.y), size: Size { width: rect.width, height: rect.height } });
             (*id, Rect { x: drawn.origin.x, y: drawn.origin.y, width: drawn.size.width, height: drawn.size.height })
         }));
         self.tab_order.extend(&layer.tab_order);
         self.intersections.extend(&layer.intersections);
-        self.drag_regions.extend(layer.drag_regions.iter().map(|(id, bounds)| (*id, moved(*bounds).intersect(&mask))));
-        self.kept_regions.extend(layer.kept_regions.iter().map(|bounds| moved(*bounds).intersect(&mask)));
+        self.drag_regions.extend(layer.drag_regions.iter().map(|(id, bounds)| (*id, moved(*bounds).intersect(&mask.bounds))));
+        self.kept_regions.extend(layer.kept_regions.iter().map(|bounds| moved(*bounds).intersect(&mask.bounds)));
         // A layer fading has no glass of the system's, which can't fade (`paint`).
         if let Some(glass) = self.glass.as_mut().filter(|_| opacity >= 1.0) {
-            glass.extend(layer.glass.iter().map(|pane| crate::platform::Glass { bounds: moved(pane.bounds).intersect(&mask), radius: pane.radius * grown, opacity: pane.opacity * opacity }));
+            glass.extend(layer.glass.iter().map(|pane| crate::platform::Glass { bounds: moved(pane.bounds).intersect(&mask.bounds), radius: pane.radius * grown, opacity: pane.opacity * opacity }));
         }
         self.wanted.extend(layer.wanted.iter().cloned());
         self.framed.extend(layer.framed.iter().map(|(id, bounds)| (*id, moved(*bounds))));
@@ -98,7 +98,7 @@ impl Painter<'_> {
         );
         self.recording = Some(id);
         let everywhere = Bounds { origin: point(-1.0e6, -1.0e6), size: Size { width: 2.0e6, height: 2.0e6 } };
-        self.paint(taffy_node, offset, transform, everywhere, 1.0, parent, pointer);
+        self.paint(taffy_node, offset, transform, ContentMask::from(everywhere), 1.0, parent, pointer);
         self.recording = None;
         std::mem::swap(&mut *self.scene, &mut scene);
         let (placed, rects, tab_order, intersections, drag_regions, kept_regions, glass, wanted, modal, framed, animating, parts) = outside;
@@ -142,7 +142,7 @@ impl Painter<'_> {
     /// what it's in is, clipped to `mask` (in the window), `opacity` as opaque as it shows, taking the pointer if
     /// `pointer`.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn paint(&mut self, taffy_node: NodeId, offset: Point<f32>, transform: Transform, mask: Bounds<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
+    pub(in crate::view) fn paint(&mut self, taffy_node: NodeId, offset: Point<f32>, transform: Transform, mask: ContentMask<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
         let turn = self.turn;
         self.paint_node(taffy_node, offset, transform, mask, opacity, parent, pointer);
         self.turn = turn;
@@ -176,7 +176,7 @@ impl Painter<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn paint_node(&mut self, taffy_node: NodeId, offset: Point<f32>, transform: Transform, mask: Bounds<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
+    pub(in crate::view) fn paint_node(&mut self, taffy_node: NodeId, offset: Point<f32>, transform: Transform, mask: ContentMask<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
         let Ok(laid) = self.layout.taffy.layout(taffy_node).copied() else { return };
         // What isn't displayed isn't drawn, and nothing in it is.
         if self.layout.taffy.style(taffy_node).is_ok_and(|style| style.display == taffy::style::Display::None) {
@@ -228,7 +228,7 @@ impl Painter<'_> {
             origin: point(laid_out.origin.x + laid.border.left + laid.padding.left, laid_out.origin.y + laid.border.top + laid.padding.top),
             size: Size { width: laid.content_box_width(), height: laid.content_box_height() },
         });
-        let shown = self.turned(bounds).intersect(&mask);
+        let shown = self.turned(bounds).intersect(&mask.bounds);
         let root = id == 0;
         // What's inert takes no pointer, nor does what's in it.
         let pointer = !node.is("inert") && !tree.leaving(id) && look.pointer_events.unwrap_or(pointer);
@@ -258,12 +258,12 @@ impl Painter<'_> {
                 self.shadow(shadow, bounds, radii, transform.scale, mask, opacity);
             }
             match look.app_region {
-                Some(true) => self.drag_regions.push((id, bounds.intersect(&mask))),
-                Some(false) => self.kept_regions.push(bounds.intersect(&mask)),
+                Some(true) => self.drag_regions.push((id, bounds.intersect(&mask.bounds))),
+                Some(false) => self.kept_regions.push(bounds.intersect(&mask.bounds)),
                 None => {}
             }
             if let Some(glass) = self.glass.as_mut().filter(|_| system) {
-                glass.push(crate::platform::Glass { bounds: bounds.intersect(&mask), radius: radii.top_left, opacity });
+                glass.push(crate::platform::Glass { bounds: bounds.intersect(&mask.bounds), radius: radii.top_left, opacity });
                 if let Some(fill) = self.fill {
                     self.quad(bounds, mask, fill, Edges::default(), Hsla::default(), radii, false, opacity);
                 }
@@ -275,7 +275,7 @@ impl Painter<'_> {
                     blur: ScaledPixels(blur * transform.scale * self.scale),
                     saturation: saturate,
                     bounds: bounds.scale_to(self.scale),
-                    content_mask: ContentMask { bounds: mask.scale_to(self.scale) },
+                    content_mask: mask.scale_to(self.scale),
                     corner_radii: Corners {
                         top_left: ScaledPixels(radii.top_left * self.scale),
                         top_right: ScaledPixels(radii.top_right * self.scale),
@@ -347,7 +347,7 @@ impl Painter<'_> {
                 // Words that don't show aren't drawn: their lines start at its content's left and run on to the right.
                 let size = paragraph.size();
                 let covers = Bounds { origin: content.origin, size: Size { width: size.width.max(width) * transform.scale, height: size.height * transform.scale } };
-                if self.turned(covers).intersects(&mask) {
+                if self.turned(covers).intersects(&mask.bounds) {
                     self.paint_text(&paragraph, &runs, content, width, transform.scale, text, opacity, mask);
                 }
                 if !spans.is_empty() {
@@ -373,7 +373,7 @@ impl Painter<'_> {
             Kind::Frame => {
                 self.framed.push((id, content));
                 if let Some(child) = self.frames.get(&id) {
-                    self.scene.splice(&child.scene, 1.0, [content.origin.x * self.scale, content.origin.y * self.scale], 1.0, shown.intersect(&content).scale_to(self.scale));
+                    self.scene.splice(&child.scene, 1.0, [content.origin.x * self.scale, content.origin.y * self.scale], 1.0, mask.intersect(&ContentMask::from(shown.intersect(&content))).scale_to(self.scale));
                 }
             }
             Kind::Box | Kind::Scroll | Kind::List => {
@@ -386,7 +386,17 @@ impl Painter<'_> {
                         origin: point(laid_out.origin.x + laid.border.left, laid_out.origin.y + laid.border.top),
                         size: Size { width: laid.size.width - laid.border.left - laid.border.right, height: laid.size.height - laid.border.top - laid.border.bottom },
                     });
-                    child_mask = self.turned(padding_box).intersect(&mask);
+                    // To its padding box, its corners rounded inside its border, as CSS clips; turned, to the box
+                    // around it.
+                    let inside = |radius: f32, across: f32, down: f32| if self.turn == TransformationMatrix::unit() { (radius - across.max(down)).max(0.0) } else { 0.0 };
+                    let borders = scaled(look.borders);
+                    let corner_radii = Corners {
+                        top_left: inside(radii.top_left, borders.left, borders.top),
+                        top_right: inside(radii.top_right, borders.right, borders.top),
+                        bottom_right: inside(radii.bottom_right, borders.right, borders.bottom),
+                        bottom_left: inside(radii.bottom_left, borders.left, borders.bottom),
+                    };
+                    child_mask = mask.intersect(&ContentMask { bounds: self.turned(padding_box), corner_radii });
                     near = self.turned(padding_box);
                     if look.scrolls {
                         near = self.grown(near);
@@ -398,7 +408,7 @@ impl Painter<'_> {
                         child_offset = point(child_offset.x - now.x - stretched.x, child_offset.y - now.y - stretched.y);
                         let along = node.kind == Kind::Scroll && most.x > 0.0 && most.y == 0.0;
                         placed.scroll = Some((most.y, most.x, along));
-                        placed.shown = child_mask;
+                        placed.shown = child_mask.bounds;
                     }
                 }
                 self.placed.push((id, placed));
@@ -431,7 +441,7 @@ impl Painter<'_> {
                         taffy_node: child,
                         offset: if leaf.fixed { point(0.0, 0.0) } else { child_offset },
                         transform: if leaf.fixed { Transform::NONE } else { transform },
-                        mask: if leaf.fixed { self.window } else { child_mask },
+                        mask: if leaf.fixed { ContentMask::from(self.window) } else { child_mask },
                         opacity: if leaf.fixed { 1.0 } else { opacity },
                         parent: Some(id),
                         pointer,

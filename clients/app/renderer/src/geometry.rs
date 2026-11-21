@@ -320,11 +320,98 @@ impl Edges<Pixels> {
     }
 }
 
-/// What a primitive is clipped to.
+/// What a primitive is clipped to: a box, its corners rounded by `corner_radii`, as `overflow: hidden` clips what's in
+/// a rounded box to its rounded inside.
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 #[repr(C)]
 pub struct ContentMask<T> {
     pub bounds: Bounds<T>,
+    pub corner_radii: Corners<T>,
+}
+
+impl<T: Default> From<Bounds<T>> for ContentMask<T> {
+    fn from(bounds: Bounds<T>) -> Self {
+        ContentMask { bounds, corner_radii: Corners::default() }
+    }
+}
+
+impl ContentMask<f32> {
+    /// What both clip to, as one mask: their boxes' overlap, each of its corners rounded as whichever of them cuts it
+    /// most. Where their corners meet, as a rounded box's and what scrolls in it do, that's exact; where one's corner
+    /// is only a little inside the other's rounding, it's rounded as little as keeps it inside the other's arc.
+    pub fn intersect(&self, other: &ContentMask<f32>) -> ContentMask<f32> {
+        let bounds = self.bounds.intersect(&other.bounds);
+        let corner = |at: usize| self.cut(&bounds, at).max(other.cut(&bounds, at));
+        ContentMask { bounds, corner_radii: Corners { top_left: corner(0), top_right: corner(1), bottom_right: corner(2), bottom_left: corner(3) } }
+    }
+
+    /// How round corner `at` (the top left first, clockwise) of `inside`, a box inside this mask, must be to keep it
+    /// inside this mask's rounding there.
+    fn cut(&self, inside: &Bounds<f32>, at: usize) -> f32 {
+        let radii = &self.corner_radii;
+        let radius = [radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left][at];
+        if radius <= 0.0 {
+            return 0.0;
+        }
+        // Where its corner is, in from this mask's corner, across and down as if both were top left.
+        let (mask, inside_end) = (self.bounds.bottom_right(), inside.bottom_right());
+        let across = if at == 1 || at == 2 { mask.x - inside_end.x } else { inside.origin.x - self.bounds.origin.x }.max(0.0);
+        let down = if at >= 2 { mask.y - inside_end.y } else { inside.origin.y - self.bounds.origin.y }.max(0.0);
+        let kept = |x: f32, y: f32| x >= radius || y >= radius || (radius - x).hypot(radius - y) <= radius + 0.01;
+        // Its corner is clear of the rounding (past it along an edge, or inside its arc), and so is the rest of it.
+        if kept(across, down) {
+            return 0.0;
+        }
+        // Rounded `round`, its arc is inside this mask's: it's convex, as this mask is, so its arc's points tell.
+        let keeps = |round: f32| {
+            (0..=8).all(|step| {
+                let angle = step as f32 * std::f32::consts::FRAC_PI_2 / 8.0;
+                kept(across + round * (1.0 - angle.cos()), down + round * (1.0 - angle.sin()))
+            })
+        };
+        let most = (inside.size.width.min(inside.size.height) / 2.0).max(0.0);
+        if !keeps(most) {
+            return most;
+        }
+        let (mut low, mut high) = (0.0, most);
+        for _ in 0..12 {
+            let middle = (low + high) / 2.0;
+            if keeps(middle) {
+                high = middle;
+            } else {
+                low = middle;
+            }
+        }
+        high
+    }
+}
+
+impl ContentMask<ScaledPixels> {
+    pub fn intersect(&self, other: &ContentMask<ScaledPixels>) -> ContentMask<ScaledPixels> {
+        let raw = |mask: &ContentMask<ScaledPixels>| mask.map(|length| length.0);
+        raw(self).intersect(&raw(other)).map(ScaledPixels)
+    }
+
+    /// Its box less its corners' rounding all round: what it surely leaves whole.
+    pub fn inner(&self) -> Bounds<ScaledPixels> {
+        let radii = &self.corner_radii;
+        let inset = radii.top_left.0.max(radii.top_right.0).max(radii.bottom_right.0).max(radii.bottom_left.0);
+        let Bounds { origin, size } = self.bounds;
+        Bounds {
+            origin: Point { x: ScaledPixels(origin.x.0 + inset), y: ScaledPixels(origin.y.0 + inset) },
+            size: Size { width: ScaledPixels((size.width.0 - 2.0 * inset).max(0.0)), height: ScaledPixels((size.height.0 - 2.0 * inset).max(0.0)) },
+        }
+    }
+}
+
+impl<T: Copy> ContentMask<T> {
+    pub fn map<U>(&self, f: impl Fn(T) -> U) -> ContentMask<U> {
+        let radii = &self.corner_radii;
+        ContentMask {
+            bounds: Bounds { origin: self.bounds.origin.map(&f), size: self.bounds.size.map(&f) },
+            corner_radii: Corners { top_left: f(radii.top_left), top_right: f(radii.top_right), bottom_right: f(radii.bottom_right), bottom_left: f(radii.bottom_left) },
+        }
+    }
 }
 
 /// A colour in sRGB, each channel 0 to 1.

@@ -73,7 +73,7 @@ export function requests(steps, folder, answers = {}) {
     else if (step.trace) out.push({ request: { op: "trace", events: JSON.parse(readFileSync(join(folder, step.trace), "utf8")) } })
     else if (!step.expect) out.push({ request: pressed(step) })
     else {
-      const { shown, gone, focused, text, states, drawn, blur, keyboard, margins, tall, whole, unbroken, monospace, unclipped, apart, bleeds, aligned, centred, widest, contrast, inked, located, textMenu, handles, magnifier, dimmed, js, asked } = step.expect
+      const { shown, gone, focused, text, states, drawn, blur, keyboard, margins, tall, whole, unbroken, monospace, unclipped, apart, bleeds, aligned, centred, widest, contrast, inked, located, textMenu, handles, magnifier, dimmed, js, asked, rounded } = step.expect
       // Whether `settle` says it's settled, waiting a moment, as a check after it reads the page: never while an answer
       // it waits on is on its way (Playwright's network idle).
       if (step.expect.settled !== undefined) out.push({ request: { op: "settle", deadline: 300 }, judge: (answer) => answer?.result?.settled !== step.expect.settled && (step.expect.settled ? `it hadn't settled: ${JSON.stringify(answer?.result?.pending)}` : "it said it had settled, with what it waits for on its way") })
@@ -299,6 +299,36 @@ export function requests(steps, folder, answers = {}) {
             if (wide < inked.width) wrong.push(`its mark is ${wide.toFixed(0)} pt across, under ${inked.width}`)
             if (most < inked.contrast) wrong.push(`its mark stands off its background at ${most.toFixed(2)}:1, under ${inked.contrast}:1`)
             return wrong.length ? `${named(inked.of)}: ${wrong.join(", ")}` : undefined
+          },
+        })
+      }
+      // What's named, rounded `radius` points and clipping what's in it (`overflow: hidden`), shows nothing past its
+      // rounding, as CSS clips it: each corner, more than a pixel outside its arc, is the colour 2 points outside its box.
+      if (rounded) {
+        let found, points, missing
+        out.push({ request: { op: "window" }, judge: (answer) => void (points = answer?.result?.width) })
+        out.push({ request: { op: "query", ...selector(rounded.of) }, judge: (answer) => void (({ node: { rect: found } = {}, why: missing } = single(answer, rounded.of))) })
+        out.push({
+          request: { op: "snap" },
+          judge: (answer) => {
+            if (missing) return missing
+            if (!found) return `${named(rounded.of)} isn't drawn`
+            const { data, width } = PNG.sync.read(Buffer.from(answer.result.png, "base64"))
+            const scale = width / points
+            const colour = (column, row) => [0, 1, 2].map((c) => data[(row * width + column) * 4 + c])
+            const [r, across] = [rounded.radius, Math.ceil(rounded.radius * scale)]
+            const [left, top, right, bottom] = [found.x, found.y, found.x + found.width, found.y + found.height]
+            for (const [x, y, sx, sy] of [[left, top, 1, 1], [right, top, -1, 1], [right, bottom, -1, -1], [left, bottom, 1, -1]]) {
+              const outside = colour(Math.round((x - sx * 2) * scale), Math.round((y - sy * 2) * scale))
+              const [cx, cy] = [x + sx * r, y + sy * r]
+              for (let i = 0; i < across; i++)
+                for (let j = 0; j < across; j++) {
+                  const [column, row] = [sx > 0 ? Math.round(x * scale) + i : Math.round(x * scale) - 1 - i, sy > 0 ? Math.round(y * scale) + j : Math.round(y * scale) - 1 - j]
+                  if ((Math.hypot((column + 0.5) / scale - cx, (row + 0.5) / scale - cy) - r) * scale <= 1.5) continue
+                  const there = colour(column, row)
+                  if (there.some((c, at) => Math.abs(c - outside[at]) > 24)) return `${named(rounded.of)} shows rgb(${there}) past its ${r} pt rounding, at ${column}, ${row} px, where what's around it is rgb(${outside})`
+                }
+            }
           },
         })
       }

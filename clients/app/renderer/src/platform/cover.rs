@@ -54,9 +54,9 @@ pub(super) fn whole(size: Size<DevicePixels>) -> crate::geometry::Bounds<crate::
 /// page's is as its page painted it, which it paints on from.
 pub(super) fn covered(page: &crate::render::scene::Scene, cover: Option<&crate::render::scene::Scene>, opacity: f32, size: Size<DevicePixels>) -> crate::render::scene::Scene {
     let mut shown = crate::render::scene::Scene::default();
-    shown.splice(page, 1.0, [0.0, 0.0], 1.0, whole(size));
+    shown.splice(page, 1.0, [0.0, 0.0], 1.0, whole(size).into());
     if let Some(cover) = cover {
-        shown.splice(cover, 1.0, [0.0, 0.0], opacity, whole(size));
+        shown.splice(cover, 1.0, [0.0, 0.0], opacity, whole(size).into());
     }
     shown.finish();
     shown

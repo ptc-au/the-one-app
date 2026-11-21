@@ -92,13 +92,13 @@ impl Scene {
     /// Draws raster `id`'s image (`Renderer::picture`) over `bounds`, `opacity` as opaque, over what's drawn there.
     pub fn picture(&mut self, id: u32, bounds: Bounds<ScaledPixels>, opacity: f32) {
         let transformation = TransformationMatrix::unit();
-        self.insert_primitive(Raster { order: 0, raster: id, opacity, pad: 0, bounds, content_mask: ContentMask { bounds }, transformation, slot: Bounds::default() });
+        self.insert_primitive(Raster { order: 0, raster: id, opacity, pad: 0, bounds, content_mask: ContentMask::from(bounds), transformation, slot: Bounds::default() });
     }
 
     /// Draws `recording` in this scene as an image of it, drawn once, grown `scale` times and moved `by` (`p ↦
     /// p·scale + by`), `opacity` as opaque, and cut to `mask`, as a compositor draws a layer: as `splice` draws it,
     /// and as cheaply as one picture however much is in it.
-    pub(crate) fn raster(&mut self, recording: &Recording, scale: f32, by: [f32; 2], opacity: f32, mask: Bounds<ScaledPixels>) {
+    pub(crate) fn raster(&mut self, recording: &Recording, scale: f32, by: [f32; 2], opacity: f32, mask: ContentMask<ScaledPixels>) {
         let px = |length: f32| ScaledPixels(length * scale);
         let origin = crate::geometry::Point { x: ScaledPixels(recording.origin[0] * scale + by[0]), y: ScaledPixels(recording.origin[1] * scale + by[1]) };
         let bounds = Bounds::new(origin, crate::geometry::Size { width: px(recording.size[0] as f32), height: px(recording.size[1] as f32) });
@@ -110,7 +110,7 @@ impl Scene {
                 opacity,
                 pad: 0,
                 bounds,
-                content_mask: ContentMask { bounds: mask },
+                content_mask: mask,
                 transformation: TransformationMatrix::unit(),
                 slot: Bounds::default(),
             });
@@ -147,14 +147,14 @@ impl Scene {
     /// Draws what `other` holds in this scene, in the order it was drawn there, grown `scale` times and moved `by`
     /// (`p ↦ p·scale + by`), `opacity` as opaque, and cut to `mask`: as a frame's page is drawn in its box, and as a
     /// layer kept from an earlier frame (`view::Layer`) is drawn where it's moved, grown or faded to now.
-    pub fn splice(&mut self, other: &Scene, scale: f32, by: [f32; 2], opacity: f32, mask: Bounds<ScaledPixels>) {
+    pub fn splice(&mut self, other: &Scene, scale: f32, by: [f32; 2], opacity: f32, mask: ContentMask<ScaledPixels>) {
         let px = |length: ScaledPixels| ScaledPixels(length.0 * scale);
         let moved = |bounds: &Bounds<ScaledPixels>| {
             let origin = crate::geometry::Point { x: ScaledPixels(bounds.origin.x.0 * scale + by[0]), y: ScaledPixels(bounds.origin.y.0 * scale + by[1]) };
             Bounds::new(origin, crate::geometry::Size { width: px(bounds.size.width), height: px(bounds.size.height) })
         };
-        let masked = |content: &ContentMask<ScaledPixels>| ContentMask { bounds: moved(&content.bounds).intersect(&mask) };
         let corners = |radii: &Corners<ScaledPixels>| Corners { top_left: px(radii.top_left), top_right: px(radii.top_right), bottom_right: px(radii.bottom_right), bottom_left: px(radii.bottom_left) };
+        let masked = |content: &ContentMask<ScaledPixels>| ContentMask { bounds: moved(&content.bounds), corner_radii: corners(&content.corner_radii) }.intersect(&mask);
         let faded = |colour: Hsla| Hsla { a: colour.a * opacity, ..colour };
         // What was turned about a point there is turned about where that point is here: p ↦ A·p + (scale·t + by − A·by).
         let turned = |matrix: &TransformationMatrix| {
@@ -321,7 +321,7 @@ impl Scene {
                 let inset = corner.max(border);
                 let Bounds { origin, size } = quad.bounds;
                 let inside = Bounds { origin: crate::geometry::Point { x: px(origin.x.0 + inset), y: px(origin.y.0 + inset) }, size: crate::geometry::Size { width: px(size.width.0 - 2.0 * inset), height: px(size.height.0 - 2.0 * inset) } };
-                (quad.order, inside.intersect(&quad.content_mask.bounds))
+                (quad.order, inside.intersect(&quad.content_mask.inner()))
             })
             .filter(|(_, covered)| !covered.is_empty())
             .collect();
@@ -331,7 +331,8 @@ impl Scene {
         let area = |bounds: &Bounds<ScaledPixels>| bounds.size.width.0 * bounds.size.height.0;
         let mut kept = Vec::with_capacity(self.quads.len());
         for quad in std::mem::take(&mut self.quads) {
-            let mut pieces = vec![quad.content_mask.bounds.intersect(&quad.bounds)];
+            let whole = quad.content_mask.bounds.intersect(&quad.bounds);
+            let mut pieces = vec![whole];
             if quad.transformation == TransformationMatrix::unit() {
                 for (_, covered) in opaque.iter().filter(|(order, _)| *order > quad.order) {
                     pieces = pieces
@@ -358,7 +359,9 @@ impl Scene {
                         .collect();
                 }
             }
-            kept.extend(pieces.into_iter().map(|shown| Quad { content_mask: ContentMask { bounds: shown }, ..quad.clone() }));
+            // Drawn whole, it keeps its mask, rounded corners and all; a band of it is cut to that band too.
+            let mask = |shown: Bounds<ScaledPixels>| if shown == whole { quad.content_mask } else { quad.content_mask.intersect(&ContentMask::from(shown)) };
+            kept.extend(pieces.into_iter().map(|shown| Quad { content_mask: mask(shown), ..quad.clone() }));
         }
         self.quads = kept;
     }

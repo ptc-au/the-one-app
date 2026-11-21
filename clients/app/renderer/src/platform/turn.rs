@@ -441,7 +441,7 @@ impl Windows {
                             made.picture(snapshot::RASTER, whole(device), 1.0);
                         }
                         (None, Ok(screen)) => screen.paint_canvas(room, scale, 1.0, &mut made),
-                        (None, Err(_)) => made.splice(&window.scene, 1.0, [0.0, 0.0], 1.0, whole(device)),
+                        (None, Err(_)) => made.splice(&window.scene, 1.0, [0.0, 0.0], 1.0, whole(device).into()),
                     }
                     made.finish();
                     *cover = Some(made);
