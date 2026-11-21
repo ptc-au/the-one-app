@@ -644,8 +644,12 @@ pub(crate) struct Shadow {
 }
 
 impl Shadow {
-    /// Its box grown by its blur's reach, three deviations, as its shader draws it.
+    /// What its shader draws (`shadow_bounds`): inside the box it's of (`outer`) where it's inset, else its box grown by
+    /// its blur's reach, three deviations. An inset one's box is the hole it casts round, which `outer` is drawn beyond.
     fn reach(&self) -> Bounds<ScaledPixels> {
+        if self.inset != 0 {
+            return self.outer;
+        }
         let reach = 3.0 * self.blur_radius.0;
         let Bounds { origin, size } = self.bounds;
         Bounds {
