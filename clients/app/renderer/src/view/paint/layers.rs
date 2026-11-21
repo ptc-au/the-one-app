@@ -50,7 +50,12 @@ impl Painter<'_> {
                 Part::Scene(scene, None) => self.scene.splice(&scene, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Sublayer(sublayer) => {
                     let transform = Transform { offset: point(sublayer.transform.offset.x * grown + by.x, sublayer.transform.offset.y * grown + by.y), scale: sublayer.transform.scale * grown, rest: sublayer.transform.rest };
+                    // Turned about a point in the layer, it's turned about where that point is now, as
+                    // `Scene::splice` turns what it moves: p ↦ A·p + (grown·t + by − A·by).
+                    let ([[a, b], [c, d]], [x, y]) = (sublayer.turn.rotation_scale, sublayer.turn.translation);
+                    let turn = std::mem::replace(&mut self.turn, TransformationMatrix { rotation_scale: sublayer.turn.rotation_scale, translation: [x * grown + by.x - (a * by.x + b * by.y), y * grown + by.y - (c * by.x + d * by.y)] });
                     self.paint(sublayer.taffy_node, sublayer.offset, transform, ContentMask { bounds: moved(sublayer.mask.bounds), corner_radii: sublayer.mask.map(|length| length * grown).corner_radii }.intersect(&mask), sublayer.opacity * opacity, sublayer.parent, sublayer.pointer);
+                    self.turn = turn;
                 }
             }
         }
@@ -191,15 +196,16 @@ impl Painter<'_> {
         } else if self.recording.is_some() && self.layered.contains(&id) && self.turn != TransformationMatrix::unit() {
             // Turned in the layer being drawn, it's drawn in it as usual, which is drawn again each frame.
             self.animating = true;
-        } else if self.recording.is_some() && (self.layered.contains(&id) || (words && self.turn == TransformationMatrix::unit())) {
+        } else if self.recording.is_some() && (self.layered.contains(&id) || words) {
             // A layer of its own in the one being drawn: drawn into it each frame, where that's moved it. So is a text,
-            // its glyphs drawn where they are, at the size they are, as sharp moving as at rest, as SwiftUI draws a
-            // text moved and grown: a picture of them grown or moved by a fraction of a pixel is softer, and snapped
-            // sharp as it landed. In the order it was drawn, as its image draws its batches (`recording`).
+            // turned with what it's in or not, its glyphs drawn where they are, at the size they are, as sharp moving as
+            // at rest, as SwiftUI draws a text moved and grown: a picture of them grown or moved by a fraction of a
+            // pixel is softer, and snapped sharp as it landed. In the order it was drawn, as its image draws its
+            // batches (`recording`).
             let mut scene = std::mem::take(&mut *self.scene);
             scene.sort();
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));
-            self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, parent, pointer }));
+            self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, parent, pointer, turn: self.turn }));
             return;
         } else if self.layered.contains(&id) && self.unsettled != Some(id) && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
             return self.paint_layer(taffy_node, id, offset, transform, &look, mask, opacity, parent, pointer);

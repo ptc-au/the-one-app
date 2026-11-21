@@ -181,6 +181,8 @@ pub(super) struct Sublayer {
     pub(super) opacity: f32,
     pub(super) parent: Option<Id>,
     pub(super) pointer: bool,
+    /// How what it's in turns it, in the layer as it rests.
+    pub(super) turn: TransformationMatrix,
 }
 
 /// The tree as Taffy lays it out, kept from frame to frame, as GPUI's and Flutter's are: a frame styles again only what
