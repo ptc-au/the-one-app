@@ -134,7 +134,7 @@ impl Windows {
             let width = native.size().width.0.max(1.0);
             let dt = at.saturating_duration_since(slide.stepped).as_secs_f32();
             slide.stepped = at;
-            let (across, velocity, still) = rail::spring(slide.across / width, slide.velocity / width, slide.target / width, dt);
+            let (across, velocity, still) = rail::spring(slide.across / width, slide.velocity / width, slide.target / width, dt, width);
             (slide.across, slide.velocity) = (across * width, velocity * width);
             native.slide(slide.across);
             window.dirty = true;

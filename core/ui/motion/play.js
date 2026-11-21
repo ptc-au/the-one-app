@@ -205,6 +205,13 @@ async function play(built, scene, name, motion, hz, folder) {
   const spike = (n) => Math.sign(steps[n - 1]) === Math.sign(steps[n]) && Math.sign(steps[n]) === Math.sign(steps[n + 1]) && Math.abs(steps[n]) - Math.max(Math.abs(steps[n - 1]), Math.abs(steps[n + 1])) > Math.max(2, Math.max(Math.abs(steps[n - 1]), Math.abs(steps[n + 1])) / 2)
   const uneven = moved < 0 || motion.frameMs ? -1 : steps.findIndex((step, n) => n > moved + 1 && after(n) && n + 2 < steps.length && ((Math.sign(bend(n - 1)) === -Math.sign(bend(n)) && Math.sign(bend(n)) === -Math.sign(bend(n + 1)) && Math.abs(bend(n)) > Math.max(2, (Math.abs(step) + Math.abs(steps[n + 1])) / 8)) || spike(n)))
   if (uneven >= 0) failed.push(`it moved unevenly at frames ${uneven + 1} and ${uneven + 2} (${frames[uneven].at} ms): ${steps.slice(uneven - 1, uneven + 3).map((step) => Math.abs(step).toFixed(1)).join(", ")} pt a refresh`)
+  // It settles into where it rests: its last step there is no more than twice the one before, where it's over a
+  // twentieth of a point (frames say where it is to a hundredth), as a spring put at rest once it's near does, never
+  // cut short a step several times the last it moved (a card let go went 0.02, then 0.09 pt).
+  const moving = steps.flatMap((step, n) => (Math.abs(step) > 1e-6 ? [n] : []))
+  const [last, into] = moving.slice(-2)
+  if (!motion.frameMs && !motion.reducedMotion && into !== undefined && last !== undefined && Math.abs(steps[into]) > 0.05 && Math.abs(steps[into]) > 2 * Math.abs(steps[last]))
+    failed.push(`it jumped ${Math.abs(steps[into]).toFixed(2)} pt into where it rests at frame ${into + 1} (${frames[into].at} ms), after ${Math.abs(steps[last]).toFixed(2)} pt`)
   // What `once` names is never in sight twice in a frame, read or not, as a large title and its bar's are cross-faded.
   const twice = motion.once ? frames.findIndex((frame) => frame.count > 1) : -1
   if (twice >= 0) failed.push(`${frames[twice].count} of ${JSON.stringify(motion.once)} drawn at once at frame ${twice + 1} (${frames[twice].at} ms)`)

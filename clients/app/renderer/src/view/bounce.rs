@@ -192,7 +192,7 @@ impl Screen {
                 continue;
             }
             let (stretch, velocity) = BACK.at(f64::from(coast.stretch), f64::from(coast.velocity), seconds);
-            if Spring::arrived(stretch, velocity, 0.5) {
+            if Spring::arrived(stretch, velocity, crate::motion::NEAR) {
                 self.coasts.remove(&id);
             } else {
                 (coast.stretch, coast.velocity) = (stretch as f32, velocity as f32);

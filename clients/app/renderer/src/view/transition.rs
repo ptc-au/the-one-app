@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::geometry::{Bounds, Hsla, Point, Rgba, Size};
-use crate::motion::Spring;
+use crate::motion::{NEAR, Spring};
 use crate::style::{Computed, Offset};
 use crate::tokens::{Radius, Shadow};
 use crate::tree::Id;
@@ -222,10 +222,10 @@ fn alike(a: &Value, b: &Value) -> bool {
 }
 
 /// Of a value this close to where it's going, and moving no faster than ten times this a second, a spring has arrived:
-/// a thousandth of a scale or an opacity, a tenth of a pixel.
+/// a thousandth of a scale or an opacity, `NEAR` in points.
 fn near(value: &Value) -> f64 {
     match value {
-        Value::Px(_) => 0.1,
+        Value::Px(_) => NEAR,
         Value::Percent(_) => 0.01,
         _ => 0.001,
     }
@@ -343,7 +343,7 @@ impl Flip {
     }
 
     fn done(&self, now: f64) -> bool {
-        self.state(now).iter().all(|(off, velocity)| Spring::arrived(*off, *velocity, 0.1))
+        self.state(now).iter().all(|(off, velocity)| Spring::arrived(*off, *velocity, NEAR))
     }
 }
 
@@ -381,7 +381,7 @@ impl Dragged {
     }
 
     fn done(&self, now: f64) -> bool {
-        !self.held && !self.coasting && self.spring.is_some() && self.state(now).iter().all(|(off, velocity)| Spring::arrived(*off, *velocity, 0.1))
+        !self.held && !self.coasting && self.spring.is_some() && self.state(now).iter().all(|(off, velocity)| Spring::arrived(*off, *velocity, NEAR))
     }
 }
 

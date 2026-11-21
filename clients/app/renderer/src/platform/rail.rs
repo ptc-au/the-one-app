@@ -172,17 +172,18 @@ impl Pull {
         let dt = at.saturating_duration_since(self.stepped).as_secs_f32();
         self.stepped = at;
         let still;
-        (self.p, self.velocity, still) = spring(self.p, self.velocity, target, dt);
+        (self.p, self.velocity, still) = spring(self.p, self.velocity, target, dt, size.width.max(size.height));
         (moved(self.p, size, icon, reduced, self.straight), still.then_some(target))
     }
 }
 
 /// Steps the rail's spring at `p`, going `velocity` a second, `dt` seconds on toward `target`, as the page's moves
-/// have it (move-machine.js's `spring`): → where it is, how fast it goes, and whether it's still there. A step late, as when
-/// the app was in the background, is taken as a frame's, so nothing jumps.
-pub fn spring(p: f32, velocity: f32, target: f32, dt: f32) -> (f32, f32, bool) {
+/// have it (move-machine.js's `spring`), where all the way (1) moves the window up to `length` points: → where it is, how
+/// fast it goes, and whether it's still there (`motion::NEAR`). A step late, as when the app was in the background, is
+/// taken as a frame's, so nothing jumps.
+pub fn spring(p: f32, velocity: f32, target: f32, dt: f32, length: f32) -> (f32, f32, bool) {
     let (off, velocity) = SPRING.at(f64::from(p - target), f64::from(velocity), f64::from(dt.min(1.0 / 30.0)));
-    if Spring::arrived(off, velocity, 0.001) { (target, 0.0, true) } else { (target + off as f32, velocity as f32, false) }
+    if Spring::arrived(off, velocity, crate::motion::NEAR / f64::from(length.max(1.0))) { (target, 0.0, true) } else { (target + off as f32, velocity as f32, false) }
 }
 
 /// The window at `p` of its way home, on a window `size` big, into `icon` where it opened from one, as the page's

@@ -47,11 +47,18 @@ impl Spring {
     }
 
     /// Whether something `off` from where it's going, at `velocity`, has arrived: within `near`, and moving no faster
-    /// than ten times that a second.
+    /// than ten times that a second. What moves on the screen is near within `NEAR`.
     pub fn arrived(off: f64, velocity: f64, near: f64) -> bool {
         off.abs() < near && velocity.abs() < near * 10.0
     }
 }
+
+/// How near where it's going, in points, what a spring moves on the screen has arrived and is put there: a hundredth of
+/// a point, a thirtieth of a pixel at 3x, where text is drawn in quarters of one (`text::SUBPIXEL_VARIANTS`), so putting
+/// it there moves it less than its last steps did. Within a tenth, its last step was several times the ones before it,
+/// over a quarter pixel, and redrew its text a quarter pixel along: a card let go went 34.11, 34.09, then 34.00 pt,
+/// changing 13,399 pixels by up to 21 levels where each step before changed 2,800 by 5.
+pub const NEAR: f64 = 0.01;
 
 /// How much of its speed a fling keeps each millisecond: UIScrollView's normal deceleration rate.
 const DECELERATION: f64 = 0.998;
