@@ -195,7 +195,7 @@ impl Screen {
     /// `pointercancel`, and nothing is pressed or being selected.
     pub fn pointer_cancel(&mut self, at: Point<f32>) {
         if !self.swiping() {
-            self.drag_up(at, true);
+            self.drag_up(at, true, None);
         }
         if let Some(captured) = self.captured.take() {
             let chain = self.chain_from(captured);

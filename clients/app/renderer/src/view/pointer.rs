@@ -310,7 +310,7 @@ impl Screen {
             None => self.under(at),
         };
         if !self.swiping() {
-            self.drag_up(at, false);
+            self.drag_up(at, false, None);
         }
         self.pointer_event(&target, "pointerup", at, button, None);
         self.select_up();

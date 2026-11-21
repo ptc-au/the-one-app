@@ -34,13 +34,13 @@ pub(super) struct Drag {
     velocity: Velocity,
 }
 
-/// A trackpad's fingers dragging what drags: where they'd be as a finger (`at`), while they're on it, or, once they've
-/// lifted, that what the system scrolls on with is theirs (`lifted`).
+/// A trackpad's fingers dragging what drags: where they'd be as a finger, and when they last moved (ms on the screen's
+/// clock), while they're on it, or, once they've lifted, that what the system scrolls on with is theirs (`lifted`).
 #[derive(Default)]
 pub(super) enum Trackpad {
     #[default]
     None,
-    On(Point<f32>),
+    On(Point<f32>, f64),
     Lifted,
 }
 
@@ -58,7 +58,7 @@ impl Screen {
     /// Whether a trackpad's fingers hold what's dragged: then it's theirs, and the pointer, which doesn't move as they
     /// swipe, neither moves it nor lets it go, as AppKit keeps a swipe's scroll apart from the mouse's moves.
     pub(super) fn swiping(&self) -> bool {
-        matches!(self.trackpad, Trackpad::On(_))
+        matches!(self.trackpad, Trackpad::On(..))
     }
 
     /// Whether the innermost node at `at` that drags, drags the way a finger moved `by`.
@@ -129,22 +129,26 @@ impl Screen {
                 if self.drag.is_none() {
                     return false;
                 }
-                self.trackpad = Trackpad::On(at);
+                self.trackpad = Trackpad::On(at, self.input_time());
                 true
             }
-            (Some("changed"), Trackpad::On(was)) => {
+            (Some("changed"), Trackpad::On(was, moved)) => {
                 let finger = point(was.x - delta.x, was.y - delta.y);
                 self.drag_moved(finger);
                 // Gone the other way, they're not its: what scrolls that way, or the page, has them.
                 if self.drag.is_none() {
                     return false;
                 }
-                self.trackpad = Trackpad::On(finger);
+                self.trackpad = Trackpad::On(finger, if delta.x != 0.0 || delta.y != 0.0 { self.input_time() } else { moved });
                 true
             }
-            (Some(lifted @ ("ended" | "cancelled")), Trackpad::On(was)) => {
+            // A Mac says its fingers lifted a refresh after they last moved, moving no more (`ended`): they're let go as
+            // they last moved, at the speed they had then, springing on from then, as a finger's lift is taken. Let go as
+            // it was said, what they drag stood still for that refresh, then sped on to catch up (a launcher's page
+            // swiped at 120 Hz: 16.8 pt a refresh, then 0, then 20).
+            (Some(lifted @ ("ended" | "cancelled")), Trackpad::On(was, moved)) => {
                 let finger = point(was.x - delta.x, was.y - delta.y);
-                self.drag_up(finger, lifted == "cancelled");
+                self.drag_up(finger, lifted == "cancelled", Some(moved));
                 self.trackpad = Trackpad::Lifted;
                 true
             }
@@ -233,10 +237,11 @@ impl Screen {
     }
 
     /// The press came up at `at`, or the system took it (`cancelled`): a node dragged is let go, springing on at the
-    /// speed it had, its page told how far it went and how fast.
-    pub(super) fn drag_up(&mut self, at: Point<f32>, cancelled: bool) {
+    /// speed it had, its page told how far it went and how fast; as it lifted where the system says so late
+    /// (`lifted`, a trackpad's), otherwise now.
+    pub(super) fn drag_up(&mut self, at: Point<f32>, cancelled: bool, lifted: Option<f64>) {
         let Some(mut drag) = self.drag.take().filter(|drag| drag.began) else { return };
-        let (time, now) = (self.input_time(), self.js.clock().now());
+        let (time, now) = lifted.map_or_else(|| (self.input_time(), self.js.clock().now()), |lifted| (lifted, lifted));
         drag.velocity.add(at, time);
         let going = if cancelled { point(0.0, 0.0) } else { drag.velocity.get(time) };
         let velocity = point(if drag.along { going.x } else { 0.0 }, if drag.down { going.y } else { 0.0 });
