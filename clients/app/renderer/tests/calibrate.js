@@ -1,6 +1,6 @@
 // Measures what a frame's work costs a real device, to calibrate the device tiers motion.js judges by (devices.json):
 // `bun calibrate.js --ssh <host> --harness <its build of the harness> [--window <its build of the window example>]
-// [--name <device>] [--out <dir>]` in core/ui, after `bun build.js`, with a harness built for that host (`cargo xwin
+// [--name <device>] [--out <dir>]` in clients/app/renderer/tests, after `bun build.js` in core/ui, with a harness built for that host (`cargo xwin
 // build --release -p renderer --example screenshot --features fake --target x86_64-pc-windows-msvc` for a Windows one,
 // which draws on its own GPU over ssh with Direct3D 12, and `--example window` for `--window`).
 //
@@ -35,7 +35,7 @@ const harness = option("--harness") && resolve(option("--harness"))
 const windowed = option("--window") && resolve(option("--window"))
 const name = option("--name") ?? host
 // Its own worktree's, never a folder every agent on the machine shares, where one ran with another's UI build.
-const out = resolve(option("--out") ?? join(here("../../"), "target", "calibrate"))
+const out = resolve(option("--out") ?? join(here("../../../../"), "target", "calibrate"))
 if (!host || !harness) throw new Error("Say where: --ssh <host> --harness <the harness built for it>")
 
 /// The work a frame did, as the GPU's fit takes it: millions of pixels of each kind (`SHADED`, those blurred behind
@@ -78,7 +78,7 @@ const batch = join(out, "batch")
 rmSync(out, { recursive: true, force: true })
 mkdirSync(batch, { recursive: true })
 const built = join(out, "build")
-const make = Bun.spawnSync(["bun", here("dist/build/app.js"), gallery, built])
+const make = Bun.spawnSync(["bun", here("../../../../core/ui/dist/build/app.js"), gallery, built])
 if (make.exitCode !== 0) throw new Error(`The gallery didn't build: ${make.stderr}`)
 const scenes = await scenesOf(gallery, built, join(out, "listing"), true)
 const lines = []
@@ -95,7 +95,7 @@ scenes.forEach((scene, n) => {
   writeFileSync(join(folder, "requests.jsonl"), requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n"))
   lines.push(`${mac ? "./" : ""}${exe} ${n}${sep}page ${n}${sep}end.png ${n}${sep}end.json --ui ui --answers ${n}${sep}answers.json --size ${scene.size[0]}x${scene.size[1]} --scale 2 ${scene.touch ? "--touch " : ""}--requests ${n}${sep}requests.jsonl > ${n}${sep}answers.jsonl 2> ${n}${sep}said.txt`)
 })
-cpSync(here("dist/client"), join(batch, "ui"), { recursive: true, dereference: true })
+cpSync(here("../../../../core/ui/dist/client"), join(batch, "ui"), { recursive: true, dereference: true })
 cpSync(harness, join(batch, exe))
 for (const face of FACES) cpSync(face, join(batch, basename(face)))
 const script = mac ? "run.sh" : "run.cmd"
@@ -120,7 +120,7 @@ console.log(`${scenes.length} scenes drawn on ${name} in ${Math.round((performan
 
 // The apps' motions that keep a tier, played there as motion.js plays them (and with `--window`, in a real window), each
 // motion's frames kept in a folder of its own: `<app>/<scene>/<motion>/60hz/frames.json` (and `presented.json`).
-const apps = readdirSync(here("../../apps")).map((app) => here(`../../apps/${app}`)).filter((app) => existsSync(join(app, "client/scenes.json")) && readFileSync(join(app, "client/scenes.json"), "utf8").includes('"keeps"'))
+const apps = readdirSync(here("../../../../apps")).map((app) => here(`../../../../apps/${app}`)).filter((app) => existsSync(join(app, "client/scenes.json")) && readFileSync(join(app, "client/scenes.json"), "utf8").includes('"keeps"'))
 const playThere = (folder, ...more) => {
   const played = Bun.spawnSync(["bun", here("motion.js"), ...apps, "--keeps", "--hz", "60", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
   if (!existsSync(join(out, folder))) throw new Error(`motion.js played nothing there: ${played.stderr.toString().trim()}`)

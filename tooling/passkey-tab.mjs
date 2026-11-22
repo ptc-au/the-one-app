@@ -1,7 +1,7 @@
 // The sign-in page in one browser tab, as an iPhone's Safari reuses one: `bun tooling/passkey-tab.mjs <first> <then>`
 // opens <first> (Unlock with Passkey's link), then <then> (Add Passkey's) in the same tab, presses Create a passkey with
 // Chrome's virtual passkey, which has PRF, and prints what the page says then. The app harness's `passkey` check.
-import { chromium } from "../core/ui/node_modules/playwright-core/index.mjs"
+import { chromium } from "../clients/app/renderer/tests/node_modules/playwright-core/index.mjs"
 
 const [first, then] = process.argv.slice(2)
 // WebGPU drawn on the CPU, as scenes.js draws the web.

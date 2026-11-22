@@ -21,7 +21,7 @@
 // every tile it didn't draw, so what's drawn again sits beside other tiles, and each motion played twice must draw the same
 // frames (within `SAME` levels) packed either way.
 //
-// A folder is the gallery (core/ui/gallery, its scenes in `*.scenes.tsx`) or an app's (apps/<app>, in
+// A folder is the gallery (clients/app/renderer/tests/gallery, its scenes in `*.scenes.tsx`) or an app's (apps/<app>, in
 // `client/scenes.json`), as `scenes.js` takes them; with none, the gallery and every app with a motion. A motion is
 // `{ from, gesture, follow }` (the `Motion` type in src/types/ui.d.ts): the press goes down on what `from` names, moves
 // as `gesture` says, and what `follow` names is watched move, with what scrolls under the press. Each is played at
@@ -71,7 +71,7 @@
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs"
 import { join } from "node:path"
 import { checks } from "./motion/checks.js"
-import { checking, firstSeed, flag, folders, generating, harness, here, out, root, setHarness, ssh } from "./motion/options.js"
+import { checking, firstSeed, flag, folders, generating, harness, here, out, root, setHarness, ssh, ui } from "./motion/options.js"
 import { generated } from "./motion/generated.js"
 import { copied, stale } from "./motion/pages.js"
 import { round } from "./motion/play.js"
@@ -118,12 +118,12 @@ if (import.meta.main) {
       const touched = [...changed]
       changed.clear()
       const started = performance.now()
-      const library = touched.some((file) => file.startsWith(here("src")))
-      if (library) Bun.spawnSync(["bun", "build.js"], { cwd: here(".") })
+      const library = touched.some((file) => file.startsWith(ui("src")))
+      if (library) Bun.spawnSync(["bun", "build.js"], { cwd: ui(".") })
       const targets = library ? watched : watched.filter((target) => touched.some((file) => file.startsWith(target)))
       console.log((await round(targets)).join("\n"), `\nin ${Math.round(performance.now() - started)} ms`)
     }
-    for (const folder of [here("src"), ...watched.map((target) => (target.endsWith("core/ui/gallery") ? target : join(target, "client")))])
+    for (const folder of [ui("src"), ...watched.map((target) => (target.endsWith("renderer/tests/gallery") ? target : join(target, "client")))])
       watch(folder, { recursive: true }, (_, file) => {
         if (!file || file.includes("node_modules") || file.includes("dist/")) return
         changed.add(join(folder, file))

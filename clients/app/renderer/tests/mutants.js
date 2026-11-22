@@ -2,7 +2,7 @@
 // Mutation testing for the harness: puts back each bug we've had (a mutant, as cargo-mutants and Stryker call one),
 // one at a time, runs the checks that could show it, and says which caught it, by which check, and which it missed:
 //
-//     tooling/mutants [<mutant>…] [--light | --dark] [--out <dir>] [--jobs <n>] [--list]
+//     bun mutants.js [<mutant>…] [--light | --dark] [--out <dir>] [--jobs <n>] [--list]
 //
 // Each mutant is planted where its bug was (`renderer::mutants`, `ONE_MUTANT=<name>`, in the harness's builds alone:
 // the headless harness's and the web gate's frame) and plays only the scenes, motions and checks
@@ -19,10 +19,10 @@
 // is the fix's, the mutant shows it stays caught.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { jobs as harnesses, pLimit } from "../core/ui/motion/options.js"
+import { jobs as harnesses, pLimit } from "./motion/options.js"
 
-const root = resolve(import.meta.dir, "..")
-const ui = join(root, "core/ui")
+const root = resolve(import.meta.dir, "../../../..")
+const here = import.meta.dir
 const args = process.argv.slice(2)
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 const out = resolve(option("--out") ?? join(root, "target/mutants"))
@@ -37,25 +37,25 @@ const scenes = (folder, scene) => ({ tool: "scenes", folder, scene })
 
 /// Every mutant: the bug it puts back, what plays it, and the appearances it can show in (both unless said).
 const MUTANTS = {
-  "damage-short": { bug: "a damage rectangle 1 px short", plays: [motion("core/ui/gallery", "Card dragged along")] },
-  "dropped-refresh": { bug: "a dropped refresh while moving", plays: [motion("core/ui/gallery", "Card dragged along")] },
-  "double-frame": { bug: "a frame drawn twice in one refresh", plays: [motion("core/ui/gallery", "Card dragged along")] },
-  "paint-order": { bug: "the wrong paint order for positioned elements", plays: [checks("core/ui/gallery", "Styling/Painting order")] },
-  "dark-token": { bug: "dark mode not applied to one token (the text's, `label`)", plays: [checks("core/ui/gallery", "Text/Type styles")], only: "dark" },
-  "rounded-clip": { bug: "rounded clip off", plays: [checks("core/ui/gallery", "Styling/Rounded corners clip")] },
-  "text-stretched": { bug: "text drawn from a stretched picture", plays: [motion("core/ui/gallery", "Text/Flying")] },
-  "late-tap": { bug: "a tap delivered a frame late", plays: [checks("core/ui/gallery", "Buttons/Pressed")] },
-  "stale-rect": { bug: "a stale inspector rect", plays: [motion("core/ui/gallery", "Text/Flying")] },
+  "damage-short": { bug: "a damage rectangle 1 px short", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "dropped-refresh": { bug: "a dropped refresh while moving", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "double-frame": { bug: "a frame drawn twice in one refresh", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "paint-order": { bug: "the wrong paint order for positioned elements", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Painting order")] },
+  "dark-token": { bug: "dark mode not applied to one token (the text's, `label`)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Type styles")], only: "dark" },
+  "rounded-clip": { bug: "rounded clip off", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Rounded corners clip")] },
+  "text-stretched": { bug: "text drawn from a stretched picture", plays: [motion("clients/app/renderer/tests/gallery", "Text/Flying")] },
+  "late-tap": { bug: "a tap delivered a frame late", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
+  "stale-rect": { bug: "a stale inspector rect", plays: [motion("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "wrong-node": { bug: "a selector matching the wrong node", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
-  "web-clock": { bug: "the web clock running during the gate", plays: [web("core/ui/gallery", "Text/Type styles")] },
-  "web-blank": { bug: "a blank web canvas", plays: [web("core/ui/gallery", "Text/Type styles")] },
-  "spring-rest": { bug: "spring rest at 0.1 pt", plays: [motion("core/ui/gallery", "Card dragged along")] },
+  "web-clock": { bug: "the web clock running during the gate", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
+  "web-blank": { bug: "a blank web canvas", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
+  "spring-rest": { bug: "spring rest at 0.1 pt", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "safe-area": { bug: "safe area ignored in a frame", plays: [scenes("apps/vault", "in its own frame")] },
   // From the reports and look-issues.
-  "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [motion("core/ui/gallery", "Card dragged along")] },
-  "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [motion("core/ui/gallery", "Card dragged along")] },
-  "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("core/ui/gallery", "Styling/Hit areas")] },
-  "hit-scroll": { bug: "what's in a scroll taking a press where it'd be unscrolled", plays: [checks("core/ui/gallery", "Styling/Hit areas")] },
+  "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
+  "hit-scroll": { bug: "what's in a scroll taking a press where it'd be unscrolled", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   // Planted hangs (22 Nov, a Surface's Intel driver hung on our frames): the app recovers on a new device, or stops
   // saying why, never freezes, and the harness fails.
   "gpu-hang": { bug: "a fence that never signals: the GPU hung on a frame, which the system never says", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
@@ -69,7 +69,7 @@ if (args.includes("--list")) {
 }
 const asked = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--jobs"].includes(args[at - 1]))
 const unknown = asked.filter((name) => !MUTANTS[name])
-if (unknown.length) throw new Error(`no mutant ${unknown.join(", ")}: \`tooling/mutants --list\` lists them`)
+if (unknown.length) throw new Error(`no mutant ${unknown.join(", ")}: \`bun mutants.js --list\` lists them`)
 const chosen = asked.length ? asked : Object.keys(MUTANTS)
 const appearances = args.includes("--light") ? ["light"] : args.includes("--dark") ? ["dark"] : ["light", "dark"]
 
@@ -81,9 +81,9 @@ function said(play) {
 /// The command a play runs, in light or dark, its output in `folder`.
 function command(play, dark, folder) {
   const theme = ["--release", ...(dark ? ["--dark"] : [])]
-  if (play.tool === "motion") return { cwd: ui, argv: ["bun", "motion.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
-  if (play.tool === "checks") return { cwd: ui, argv: ["bun", "motion.js", "--checks", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
-  return { cwd: ui, argv: ["bun", "scenes.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...(play.tool === "web" ? ["--web"] : []), ...theme] }
+  if (play.tool === "motion") return { cwd: here, argv: ["bun", "motion.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
+  if (play.tool === "checks") return { cwd: here, argv: ["bun", "motion.js", "--checks", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
+  return { cwd: here, argv: ["bun", "scenes.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...(play.tool === "web" ? ["--web"] : []), ...theme] }
 }
 
 /// The lines of what a play said that failed it: a motion's `FAILS` (under the motion it's of), a check's `✗` and
@@ -121,7 +121,7 @@ async function run(play, mutant, dark) {
 const started = performance.now()
 const minutes = () => `${((performance.now() - started) / 60000).toFixed(1)} min`
 for (const [what, argv, cwd] of [
-  ["core/ui", ["bun", "build.js"], ui],
+  ["core/ui", ["bun", "build.js"], join(root, "core/ui")],
   ["the headless harness", ["nice", "-n", "10", "cargo", "build", "-p", "renderer", "--example", "screenshot", "--features", "fake", "--release", "-j", "4"], root],
 ]) {
   const built = Bun.spawnSync(argv, { cwd, stdout: "pipe", stderr: "pipe" })

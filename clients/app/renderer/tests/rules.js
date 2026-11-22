@@ -19,7 +19,7 @@ const MARK = 3
 const LARGE_LINE = 33
 
 /// The radius tokens' lengths in px, from the CSS the build makes of them.
-const radii = Object.fromEntries([...readFileSync(new URL("src/tokens.css", import.meta.url), "utf8").matchAll(/--(radius-[\w-]+):\s*([\d.]+)px/g)].map(([, id, px]) => [id, Number(px)]))
+const radii = Object.fromEntries([...readFileSync(new URL("../../../../core/ui/src/tokens.css", import.meta.url), "utf8").matchAll(/--(radius-[\w-]+):\s*([\d.]+)px/g)].map(([, id, px]) => [id, Number(px)]))
 const length = (value) => (typeof value === "number" ? value : typeof value === "string" ? parseFloat(value) : value?.token ? radii[value.token] : undefined)
 
 /// A picture of the window, read once: its colour at a device pixel, and how many of them a point is.

@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
-import { messages } from "../src/words.ts"
+import { messages } from "../../../../../core/ui/src/words.ts"
 import { dark, only, out, seeds } from "./options.js"
 import { build, pageFolder } from "./pages.js"
 import { run, panelled, scenesOf } from "./harness.js"
@@ -159,7 +159,7 @@ function illegible(query, over, snap, points, folder) {
 export async function checks(targets) {
   const played = await Promise.all(
     targets.map(async (target) => {
-      const name = target.endsWith("core/ui/gallery") ? "gallery" : target.split("/").at(-1)
+      const name = target.endsWith("renderer/tests/gallery") ? "gallery" : target.split("/").at(-1)
       const built = join(out, name, ".build")
       const unbuilt = await build(target, built)
       if (unbuilt) return [{ said: [`${name}: ${unbuilt}`], failed: 1, passed: 0 }]
@@ -169,7 +169,7 @@ export async function checks(targets) {
       return Promise.all(
         scenes.map(async (scene) => {
           // A trace a check plays is beside its scenes: the gallery's, or an app's client.
-          scene.from = target.endsWith("core/ui/gallery") ? target : join(target, "client")
+          scene.from = target.endsWith("renderer/tests/gallery") ? target : join(target, "client")
           const own = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
           const [results, tab, { fresh, moved }] = await Promise.all([scene.checks ? check(built, scene, own) : [], scene.touch ? undefined : walk(built, scene, join(own, "tab")), agrees(built, scene, join(own, "fresh"))])
           if (!scene.touch) results.push({ name: "Tab shows where the keyboard is", seed: 0, failed: tab })

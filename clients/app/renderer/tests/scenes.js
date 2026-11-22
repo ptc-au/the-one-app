@@ -1,10 +1,10 @@
 // Draws every scene on a native host, and with `--web` on the web too, and compares them: `bun scenes.js [<folder>…] [--scene <words>]
 // [--out <dir>] [--against <dir>] [--dark] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --harness <its build of the
-// harness>]` in core/ui, after `bun build.js` (and, for the native half, `cargo build -p renderer
+// harness>]` in clients/app/renderer/tests, after `bun build.js` in core/ui (and, for the native half, `cargo build -p renderer
 // --example screenshot --features fake`, `--release` too for `--release`, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
 // `--out`: what a change did to how things look, drawn before it (on main) and after.
 //
-// A folder is the gallery (core/ui/gallery, its scenes the components': `*.scenes.tsx`) or an app's (apps/<app>,
+// A folder is the gallery (clients/app/renderer/tests/gallery, its scenes the components': `*.scenes.tsx`) or an app's (apps/<app>,
 // its scenes its screens', in `client/scenes.json`); with none, the gallery and every app that has scenes. An app's
 // scenes are what each screen shows, by name, and what it's given to show it, as the tools' answers a client would
 // give (record.js's answers): `{ "Inbox": { "answers": { "notifications_inbox": { … } } } }`, with any of `page` (its
@@ -49,10 +49,10 @@ import { fileURLToPath } from "node:url"
 import { chromium } from "playwright-core"
 import { PNG } from "pngjs"
 import pixelmatch from "pixelmatch"
-import { outline } from "./src/drawing-primitives/outline.ts"
-import { messages } from "./src/words.ts"
+import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
+import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
-import { lint } from "./lint-tokens.js"
+import { lint } from "../../../../core/ui/lint-tokens.js"
 import { build, capped, COMPONENTS, copied, env, glass, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, slot, stale, stopped, usedFolder } from "./motion.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
@@ -61,7 +61,7 @@ const failing = (line) => {
   process.exitCode = 1
   return line.replace(/^\s*/, (indent) => `${indent}✗ `)
 }
-const root = here("../../")
+const root = here("../../../../")
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)

@@ -4,9 +4,11 @@ import { availableParallelism } from "node:os"
 import { join, resolve } from "node:path"
 import pLimit from "p-limit"
 
-/// `path` in core/ui, where motion.js is, whichever file of motion/ asks.
+/// `path` in the renderer's tests, where motion.js is, whichever file of motion/ asks.
 export const here = (path) => fileURLToPath(new URL(`../${path}`, import.meta.url))
-export const root = here("../../")
+export const root = here("../../../../")
+/// `path` in the UI library (core/ui), which the tests draw.
+export const ui = (path) => join(root, "core/ui", path)
 const args = process.argv.slice(2)
 export const flag = (name) => args.includes(name)
 export const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)

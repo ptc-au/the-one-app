@@ -15,16 +15,12 @@
     "@solidjs/vite-plugin": "3.0.0",
     "@solidjs/web": "2.0.0",
     "culori": "4.0.2",
-    "p-limit": "7.3.3",
     "solid-js": "2.0.0",
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "xstate": "5.33.3"
   },
   "devDependencies": {
-    "@phosphor-icons/core": "2.1.1",
-    "pixelmatch": "7.1.0",
-    "playwright-core": "1.58.2",
-    "pngjs": "7.0.0"
+    "@phosphor-icons/core": "2.1.1"
   }
 }

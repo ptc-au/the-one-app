@@ -6,9 +6,9 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { outline } from "./src/drawing-primitives/outline.ts"
+import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 
-const dist = fileURLToPath(new URL("dist/client/", import.meta.url))
+const dist = fileURLToPath(new URL("../../../../core/ui/dist/client/", import.meta.url))
 // What a page imports of the UI library, from where it's built, as a host serves it at `/ui/client/`.
 Bun.plugin({
   name: "ui",

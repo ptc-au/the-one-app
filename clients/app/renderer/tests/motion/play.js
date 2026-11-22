@@ -472,7 +472,7 @@ export async function round(targets) {
     if (unbuilt) return { said: [`${name}: ${unbuilt}`], results: [] }
     const scenes = (await scenesOf(target, built, join(out, name, ".scenes"))).filter((scene) => !only || scene.name.toLowerCase().includes(only))
     // A trace a motion plays is beside its scenes.
-    for (const scene of scenes) scene.from = target.endsWith("core/ui/gallery") ? target : join(target, "client")
+    for (const scene of scenes) scene.from = target.endsWith("renderer/tests/gallery") ? target : join(target, "client")
     // Each motion at each rate on a harness of its own.
     const jobs = scenes.flatMap((scene) => Object.entries(scene.motions).filter(([, played]) => !keeping || played.keeps).flatMap(([motion, played]) => rates.map((hz) => ({ scene, motion, played, hz }))))
     const folderOf = ({ scene, motion, hz, again }) => join(out, name, scene.name.replace(/[^\w.-]+/g, "-"), motion.replace(/[^\w.-]+/g, "-"), `${hz}hz${again ? "-again" : ""}`)
