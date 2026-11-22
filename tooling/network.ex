@@ -87,11 +87,19 @@ defmodule Mix.Tasks.Network do
   end
 
   # Deploys each of this repo's apps for the network from its folder, as `one deploy --files-from` sends it,
-  # installing none: each is the network's to install.
+  # installing none: each is the network's to install. They're deployed side by side, as people deploy apps to a
+  # network, since one at a time took 21 s of a network's start.
   defp publish do
-    for folder <- Enum.sort(Path.wildcard(Path.join(@root, "apps/*"))),
-        name = Path.basename(folder),
-        {:ok, paths} <- [Folder.files(folder)] do
+    Path.join(@root, "apps/*")
+    |> Path.wildcard()
+    |> Task.async_stream(&publish/1, max_concurrency: System.schedulers_online(), timeout: :infinity, ordered: false)
+    |> Stream.run()
+  end
+
+  defp publish(folder) do
+    name = Path.basename(folder)
+
+    with {:ok, paths} <- Folder.files(folder) do
       files = Map.new(paths, &{&1, File.read!(Path.join(folder, &1))})
 
       case Deploy.deploy("network", name, files, nil, true, fn _version -> false end) do
