@@ -188,8 +188,9 @@ async function play(built, scene, name, motion, hz, folder) {
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
   // No refresh draws nothing while something on the window is on its way somewhere (the harness's `held`), whatever
   // it follows: a refresh so is one the loop missed, the frame before shown twice, then a jump. A device others load
-  // (`frameMs`) takes several refreshes a frame.
-  const missed = motion.frameMs ? -1 : frames.findIndex((frame) => frame.held)
+  // (`frameMs`) takes several refreshes a frame. Before the motion's first frame there's no frame before: a press that
+  // came as its refresh's frame was drawn is drawn at the next, as a display link's frame begins at its tick.
+  const missed = motion.frameMs ? -1 : frames.findIndex((frame, n) => frame.held && frames.slice(0, n).some((before) => before.drawn))
   if (missed >= 0) failed.push(`the refresh at frame ${missed} (${frames[missed].at} ms) drew nothing as it moved`)
   // Each refresh moves it as far as the time between refreshes takes it, once what moves it is done, and as it moves it
   // where that's even (a finger along its moves, a wheel's notches as they turn): no step is longer than both beside it
