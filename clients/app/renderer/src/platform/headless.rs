@@ -222,11 +222,20 @@ impl Windows {
     /// The screen as its compositor shows it: each window on it what it last presented, over those under it, grown and
     /// moved about its middle, as opaque and with corners as round as it's moved to, what's under it dimmed by its
     /// `dim` (`rail::Moved`), as an iPhone's Core Animation draws its card, and slid across as a swipe back slides it
-    /// (`NativeWindow::slide`): its width, height and pixels.
+    /// (`NativeWindow::slide`): its width, height and pixels. A window under the rest with nothing presented to show (a
+    /// Home Screen whose images went while an app covered it) shows black, as a screen with nothing on it does.
     pub fn screen(&mut self) -> Option<(u32, u32, Vec<u8>)> {
         let stacked = self.stacked();
         let first = *stacked.first()?;
-        let (width, height, mut rgba) = self.presented(first)?;
+        let (width, height, mut rgba) = match self.presented(first) {
+            Some(presented) => presented,
+            None => {
+                let window = &self.windows[&first];
+                let (room, scale) = (window.room(), window.parts[0].native.scale());
+                let (width, height) = ((room.width.0 * scale).round() as u32, (room.height.0 * scale).round() as u32);
+                (width, height, [0, 0, 0, 255].repeat((width * height) as usize))
+            }
+        };
         for id in stacked.into_iter().skip(1) {
             let scale = self.windows[&id].parts[0].native.scale();
             let (moved, _) = self.windows[&id].parts[0].native.composed();

@@ -8,6 +8,7 @@ import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./headless.js"
 import { finger, ios, moves, projected, selector, single, travel } from "./gesture.js"
 import { wordsApart } from "../rules.js"
+import { requests } from "./judges.js"
 import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
 
 
@@ -49,7 +50,8 @@ async function play(built, scene, name, motion, hz, folder) {
   const at = pageFolder(built, scene.page, folder, scene.uses)
   const { moves: stretches, lift, trace } = moves(motion.gesture)
   const events = trace && JSON.parse(readFileSync(join(scene.from, trace), "utf8"))
-  const taps = scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...selector(tap) }, { op: "clock", step: 1000 }])
+  // The scene's taps, each settled, then what the motion does first (`before`), at its own times, as a person would.
+  const taps = [...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...selector(tap) }, { op: "clock", step: 1000 }]), ...requests(motion.before ?? [], scene.from, scene.answers).map(({ request }) => request)]
   if (present) {
     if (hz !== device.hz) return { said: `  ${hz} Hz: the device's display is ${device.hz} Hz` }
     // What a computer's window plays as a person would, at its times, its taps first, each settled: a wheel's notches and the pointer's moves, or a
@@ -141,8 +143,11 @@ async function play(built, scene, name, motion, hz, folder) {
   // presents nothing new, as a compositor with no damage presents none: on 22 Nov 77 motions drew and presented frames
   // the same as the one before, 797 of them, most at rest, where the frame at rest drew whole (23.7 ms on the Surface
   // for the long Vault) for nothing. One on its way may change too little to see (a spring's last hundredth of a
-  // point, a page fading out under another), which its renderer can't know without drawing it.
-  const same = frames.filter((frame, n) => n > 0 && frame.drawn && !frames[n - 1].arriving && frame.png === frames[n - 1].png)
+  // point, a page fading out under another), which its renderer can't know without drawing it; and so may what its page
+  // changed since the frame drawn before (its `mutations`, which a frame counts as it takes them, for the next to draw),
+  // as an icon handed back where it came to rest, the same to the pixel.
+  const changed = (n) => frames.slice(Math.max(0, frames.findLastIndex((frame, at) => at < n && frame.drawn)), n + 1).some((frame) => frame.mutations)
+  const same = frames.filter((frame, n) => n > 0 && frame.drawn && !frames[n - 1].arriving && !changed(n) && frame.png === frames[n - 1].png)
   if (same.length) failed.push(`${same.length} frames the same as the one before were drawn and presented, the first frame ${frames.indexOf(same[0])} (${same[0].at} ms), ${same[0].work?.damage ?? 0} pixels drawn again`)
   // What `follow` names, where it's a surface of its own, has what's in it painted once, as it's first drawn: moved,
   // faded, grown or scrolled, its picture is, as Core Animation moves a layer. Painted again a frame after it was drawn
@@ -200,8 +205,10 @@ async function play(built, scene, name, motion, hz, folder) {
   // then 0.1, -0.6). And flung toward where it rests hard enough that its momentum, slowing as UIScrollView's does,
   // gets it there, it goes no faster than the finger last moved it, within half a point a refresh, as a fling eases
   // in, where a page's spring sped a launcher's page swiped at 16.8 pt a refresh on to 34.
+  // What a tap sets off from rest (a folder opened) wasn't under the finger, and starts as its spring does from still.
   const letGo = events ? events.some((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase)) : lift
-  const liftAt = letGo && way !== "still" && !motion.reducedMotion && !motion.frameMs ? frames.findIndex((frame) => frame.at >= end) : -1
+  const carried = frames.some((frame, n) => frame.at < end && Math.abs(values[n] - values[0]) > 0.5)
+  const liftAt = letGo && carried && way !== "still" && !motion.reducedMotion && !motion.frameMs ? frames.findIndex((frame) => frame.at >= end) : -1
   if (liftAt > 2) {
     const step = (n) => (n > 0 && n < values.length ? values[n] - values[n - 1] : 0)
     const change = (n) => Math.abs(step(n + 1) - step(n))

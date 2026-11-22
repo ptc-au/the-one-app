@@ -166,7 +166,7 @@ async function headlessRun(at, folder, scene, requests, seed) {
   // that one's device pixels a point, where it's drawn at one here; on a device, as that decodes them.
   const slowest = devices.tiers.find((tier) => tier.name === (scene.touch ? "low-end Android" : "Intel UHD laptop at 4K"))
   const slower = hostScore && !ssh ? ["--slower", String((hostScore / slowest.cpu) * slowest.scale ** 2)] : []
-  const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", join(folder, "requests.jsonl"), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower]
+  const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", join(folder, "requests.jsonl"), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower, ...Object.entries(scene.opens ?? {}).flatMap(([app, by]) => ["--open", `${app}=${join(at, by, "client")}`])]
   if (ssh) {
     const { stdout, stderr, failed } = await runThere(at, folder, args, lines)
     return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: stderr.trim(), failed }
@@ -201,9 +201,9 @@ export async function scenesOf(target, built, folder, all = false) {
     return Object.entries(scenes)
       .map(([name, scene]) => ({ name, ...whole(scene) }))
       .filter((scene) => all || (checking ? scene.checks : scene.motions))
-      .map(({ name, page, component, uses = [], answers = {}, taps = [], size = [390, 844], touch, timeZone = "UTC", safeArea, errors, latency, motions, checks, seeds }) => {
+      .map(({ name, page, component, uses = [], opens, answers = {}, taps = [], size = [390, 844], touch, timeZone = "UTC", safeArea, errors, latency, motions, checks, seeds }) => {
         const [at, link] = (page ?? (component ? `${COMPONENTS}/${component}.html` : "client/index.html")).split("#")
-        return phone({ name, page: at, link, uses, answers, taps, size, touch, timeZone, safeArea, errors, latency, motions, checks, seeds })
+        return phone({ name, page: at, link, uses: [...uses, ...Object.values(opens ?? {})], opens, answers, taps, size, touch, timeZone, safeArea, errors, latency, motions, checks, seeds })
       })
   }
   // The gallery lists its own, drawn at `#scenes`.

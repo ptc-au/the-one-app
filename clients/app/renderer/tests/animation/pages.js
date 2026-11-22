@@ -104,7 +104,7 @@ export async function build(target, built) {
     servedAsIs(target, built)
     if (made.exitCode !== 0) return `didn't build\n${made.stderr.trim()}`
   }
-  for (const app of new Set(Object.values(scenes).flatMap((scene) => scene.uses ?? []))) {
+  for (const app of new Set(Object.values(scenes).flatMap((scene) => [...(scene.uses ?? []), ...Object.values(scene.opens ?? {})]))) {
     const unbuilt = await usedApp(app, built)
     if (unbuilt) return unbuilt
   }
