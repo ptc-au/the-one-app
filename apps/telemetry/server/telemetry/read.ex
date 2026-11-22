@@ -287,7 +287,7 @@ defmodule Telemetry.Read do
   @doc """
   A kind of error, by its message: its first line, as Elixir's banner says it whether or not it starts `** `, up to
   where its stack starts, an S3 error's XML as its `Code`, and what changes from one to the next, numbers, ids and
-  processes, taken out, as `Telemetry.Alerts` takes them out. So one cause is one kind however many servers, builds and requests it was on.
+  processes, taken out: what `Telemetry.Alerts` tells of when it's new. So one cause is one kind however many servers, builds and requests it was on.
   """
   def kind(message) do
     message

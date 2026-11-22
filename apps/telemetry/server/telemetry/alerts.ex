@@ -8,7 +8,7 @@ defmodule Telemetry.Alerts do
   | --- | --- | --- |
   | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`), heard in the last 10 min | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and no loop has been heard of for 10 min |
   | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater no longer says so, once an update or the edge's deploy under way has ended |
-  | `error` | A kind of error logged that wasn't in the last 14 days: its first line, numbers and ids aside. A fault, a crash or a client's exception, not a tool refusing (a `RuntimeError`) | None arrives for 10 min, or it stops being new an hour after it first arrived |
+  | `error` | A kind of error that wasn't in the last 14 days, as `errors` lists them: a span that failed, and an error logged outside one, by its first line, numbers and ids aside. A fault, a crash, a call that failed or a client's exception, not a call refused for what it was given or who asked (`one.outcome` `refused`, whose span isn't an error) | None arrives for 10 min, or it stops being new an hour after it first arrived |
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
   | `unanswered` | An app didn't answer, in 2 or more of the last 5 minutes: a hook it didn't answer in time (`one.hook.timeouts`), or its database's server kept a call waiting without running it (`one.database.lease.wait`, `not_answered`) | 5 min without |
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
@@ -79,7 +79,9 @@ defmodule Telemetry.Alerts do
     # Each app's window's last open on each device, and its steps (`one.client.native.open`).
     "create table opens (device text not null, view text not null, name text, at integer not null, took integer not null, steps text, primary key (device, view)) without rowid",
     # What Encryption last said of who holds each encrypted artifact's keys (`one.encryption.access`).
-    "create table access (artifact text primary key, at integer not null, outcome text not null, problem text) without rowid"
+    "create table access (artifact text primary key, at integer not null, outcome text not null, problem text) without rowid",
+    # Spans' errors are kinds too: the next look reads the last 14 days again for every kind there was.
+    "delete from looked"
   ]
 
   @kinds %{
@@ -234,6 +236,18 @@ defmodule Telemetry.Alerts do
     end
   end
 
+  # What the network's updater says is the `update` alert's, read of it as it is (`OneCore.Servers.network/0`).
+  defp span(%{"name" => name}) when name in ["network update", "edge update"], do: []
+
+  # A span that failed: a call's, whose log lines are under it, a client's request that reached no server, a page's or
+  # the edge's. A call passed on is the server's that ran it, and a client's request that reached a server
+  # (`one.reached`, `direct` or `relay`) that server's, which refused it or failed, whichever export arrives first.
+  defp span(%{"status" => %{"code" => "error", "message" => message}, "attributes" => a} = span) when is_binary(message) do
+    if a["one.forwarded"] == true or a["one.reached"] not in [nil, "none"],
+      do: [],
+      else: [{:error, Read.kind(message), place(span), first_line(message)}]
+  end
+
   defp span(_span), do: []
 
   defp log(%{"eventName" => "one.server.stop", "severity" => "ERROR", "attributes" => %{"one.server" => server} = a} = log),
@@ -251,12 +265,9 @@ defmodule Telemetry.Alerts do
   # What a server's own program says of it is its alert's, not a new kind of error.
   defp log(%{"eventName" => "one.server." <> _}), do: []
 
-  # A tool refuses by raising its message, a `RuntimeError` (`OneCore.App`), which is the caller's to read, not a
-  # fault: anything else raised is.
-  defp log(%{"body" => "** (RuntimeError) " <> _}), do: []
-
-  defp log(%{"severity" => "ERROR", "body" => body} = log) when is_binary(body),
-    do: [{:error, kind(body), place(log), first_line(body)}]
+  # What's logged during a call is its span's, which is the error where it failed.
+  defp log(%{"severity" => "ERROR", "body" => body, "spanId" => nil} = log) when is_binary(body),
+    do: [{:error, Read.kind(body), place(log), first_line(body)}]
 
   defp log(_log), do: []
 
@@ -276,19 +287,10 @@ defmodule Telemetry.Alerts do
 
   defp metric(_point), do: []
 
-  # Where an error was, as a person reads it: what logged it, if it said, on the server or client it was on.
-  defp place(log) do
-    on = Read.from(log) || log["server"]
-    if log["eventName"], do: "#{log["eventName"]}, on #{on}", else: "On #{on}"
-  end
-
-  # A kind of error: its first line, with what changes from one to the next, numbers and ids, taken out.
-  defp kind(message) do
-    message
-    |> first_line()
-    |> String.replace(~r/[0-9a-f]{8,}/i, "…")
-    |> String.replace(~r/\d+/, "#")
-    |> String.slice(0, 300)
+  # Where an error was, as a person reads it: the span, or what logged it if it said, on the server or client it was on.
+  defp place(record) do
+    on = Read.from(record) || record["server"]
+    if what = record["name"] || record["eventName"], do: "#{what}, on #{on}", else: "On #{on}"
   end
 
   # Keeps what the rules need of `signals`. Its first look keeps only the kinds of error there were, as seen, and
