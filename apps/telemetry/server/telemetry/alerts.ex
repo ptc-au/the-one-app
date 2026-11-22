@@ -786,5 +786,5 @@ defmodule Telemetry.Alerts do
 
   defp ms(ns), do: div(ns, 1_000_000)
   defp minute(ns), do: div(ms(ns), @minute) * @minute
-  defp first_line(text), do: text |> String.split("\n", parts: 2) |> hd()
+  defp first_line(text), do: Read.first_line(text)
 end

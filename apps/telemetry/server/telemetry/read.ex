@@ -399,8 +399,21 @@ defmodule Telemetry.Read do
   defp refused?(span), do: span["attributes"]["one.outcome"] == "refused"
   defp took(span), do: Float.round((span["end"] - span["start"]) / 1_000_000, 3)
   defp whose(span, shown), do: if(shown.(span["attributes"]["one.for"]), do: span["attributes"]["one.for"])
-  defp first_line(nil), do: ""
-  defp first_line(text), do: text |> String.split("\n", parts: 2) |> hd()
+
+  @doc """
+  The first line of an error's message. Where that's the plain "Something went wrong." a person's screen shows of a
+  fault (`OneCore.Apps.held/2`), it's followed by the cause it wraps, whose first line is the rest of the kind.
+  """
+  def first_line(nil), do: ""
+
+  def first_line(text) do
+    case text |> String.split("\n", trim: true, parts: 3) do
+      ["Something went wrong." = plain, cause | _] -> plain <> " " <> cause
+      [line | _] -> line
+      [] -> ""
+    end
+  end
+
   defp ms(ns), do: div(ns, 1_000_000)
   defp day(ns), do: ns |> div(1_000_000_000) |> DateTime.from_unix!() |> DateTime.to_date() |> Date.to_iso8601()
 end
