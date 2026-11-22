@@ -33,6 +33,13 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
     // Every node of each frame, where `nodes` asks, as core/ui's rules read each frame (what's drawn over what).
     let every_node = request.inputs.get("nodes").and_then(Value::as_bool) == Some(true);
     let checks_moved = request.inputs.get("moved").and_then(Value::as_bool) == Some(true);
+    // Where each frame's picture, its own (`own`) and its nodes are written as it's drawn (`frames`: `<n>.png`,
+    // `<n>-own.png` and `<n>-nodes.json`, from 000), where the reply would have held them all: a page of 650 nodes held
+    // 7.5 MB a frame, and a long motion at 120 Hz ran out of memory.
+    let written = request.inputs.get("frames").and_then(Value::as_str).map(std::path::PathBuf::from);
+    if let Some(folder) = &written {
+        std::fs::create_dir_all(folder)?;
+    }
     let query = |input: &str| match request.inputs.get(input) {
         Some(Value::Object(selector)) => {
             let mut query = json!({"op": "query"});
@@ -230,6 +237,17 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
             let unlike = unlike_moved(windows, id, &[MOVED[frames.len() % MOVED.len()]])?;
             if !unlike.is_empty() {
                 frame["unlike_moved"] = json!(unlike);
+            }
+        }
+        if let Some(folder) = &written {
+            let named = |suffix: &str| folder.join(format!("{:03}{suffix}", frames.len()));
+            for (field, suffix) in [("png", ".png"), ("own", "-own.png")] {
+                if let Some(png) = frame.as_object_mut().and_then(|frame| frame.remove(field)) {
+                    std::fs::write(named(suffix), data_encoding::BASE64.decode(png.as_str().unwrap_or_default().as_bytes())?)?;
+                }
+            }
+            if let Some(nodes) = frame.as_object_mut().and_then(|frame| frame.remove("nodes")) {
+                std::fs::write(named("-nodes.json"), nodes.to_string())?;
             }
         }
         frames.push(frame);

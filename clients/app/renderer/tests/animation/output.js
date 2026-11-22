@@ -14,15 +14,27 @@ const CUT = 0.6
 /// How much each of `frames` differs from the one before it (the sum of each pixel's difference, 0 for the first), and
 /// how much the last differs from the first.
 function changes(frames) {
-  const pictures = frames.map((frame) => (frame.png ? PNG.sync.read(Buffer.from(frame.png, "base64")) : undefined))
   const differ = (a, b) => {
     if (!a || !b || a.width !== b.width || a.height !== b.height) return 0
     let sum = 0
     for (let at = 0; at < a.data.length; at++) if (at % 4 < 3) sum += Math.abs(a.data[at] - b.data[at])
     return sum
   }
-  return { steps: pictures.map((now, n) => (n ? differ(pictures[n - 1], now) : 0)), whole: differ(pictures[0], pictures.at(-1)) }
+  // A frame at a time, the one before kept: a long motion's every frame read at once took gigabytes.
+  const first = picture(frames[0])
+  let before = first
+  const steps = frames.map((frame, n) => {
+    if (!n) return 0
+    const now = picture(frame)
+    const step = differ(before, now)
+    before = now
+    return step
+  })
+  return { steps, whole: differ(first, before) }
 }
+
+/// A frame's picture, where it has one.
+const picture = (frame) => (frame.png ? PNG.sync.read(Buffer.from(frame.png, "base64")) : undefined)
 
 /// The frame of `frames` that cuts: the one that changes more than `CUT` of all that changes from the first of them to
 /// the last (the sum of each pixel's difference), if any does: its number, its time and its share.
@@ -64,8 +76,7 @@ const EMPTIER = 0.5
 /// last in shows an empty window between (a launcher's page let go with less motion, frame 63). The ground is what most
 /// of the last frame is.
 export function dips(frames) {
-  const pictures = frames.map((frame) => PNG.sync.read(Buffer.from(frame.png, "base64")))
-  const last = pictures.at(-1).data
+  const last = picture(frames.at(-1)).data
   const counts = new Map()
   for (let at = 0; at < last.length; at += 4) {
     const colour = (last[at] << 16) | (last[at + 1] << 8) | last[at + 2]
@@ -73,7 +84,9 @@ export function dips(frames) {
   }
   const ground = [...counts].reduce((most, one) => (one[1] > most[1] ? one : most))[0]
   const [r, g, b] = [ground >> 16, (ground >> 8) & 255, ground & 255]
-  const ink = pictures.map(({ data }) => {
+  // A frame at a time, as `changes` reads them.
+  const ink = frames.map((frame) => {
+    const { data } = picture(frame)
     let drawn = 0
     for (let at = 0; at < data.length; at += 4) if (Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b)) > INK) drawn++
     return drawn

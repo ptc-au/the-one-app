@@ -11,6 +11,28 @@ import { wordsApart } from "../rules.js"
 import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
 
 
+/// `replay` with each frame's picture, its own and its nodes written in `folder`'s `frames` as it's drawn, where the
+/// headless renderer runs here: its reply held them all, which ran a long motion out of memory (L90).
+const written = (replay, folder) => (ssh ? replay : { ...replay, frames: join(folder, "frames") })
+
+/// A replay's `frames`, each with its picture (`png`), its own (`own`) and its nodes read from `folder`'s `frames` as
+/// they're asked for, never all held at once: those a device's reply held (`--ssh`) are written there first.
+function onDisk(frames, folder) {
+  mkdirSync(join(folder, "frames"), { recursive: true })
+  return frames.map((frame, n) => {
+    const file = (suffix) => join(folder, "frames", `${String(n).padStart(3, "0")}${suffix}`)
+    const parts = [["png", ".png", (bytes) => bytes.toString("base64")], ["own", "-own.png", (bytes) => bytes.toString("base64")], ["nodes", "-nodes.json", (bytes) => JSON.parse(bytes)]]
+    for (const [key, suffix, read] of parts) {
+      if (key in frame) {
+        writeFileSync(file(suffix), key === "nodes" ? JSON.stringify(frame[key]) : Buffer.from(frame[key], "base64"))
+        delete frame[key]
+      }
+      if (existsSync(file(suffix))) Object.defineProperty(frame, key, { get: () => read(readFileSync(file(suffix))), enumerable: false })
+    }
+    return frame
+  })
+}
+
 /// How the display's link ticks at `hz`, as a real one: a Mac's starts three refreshes after it's asked for frames,
 /// a ProMotion display's (120 Hz, a Mac's or an iPhone's) stops for four once it's ticked eight, as if idle, and
 /// Windows' compositor clock says each refresh up to half a ms late, as its thread wakes (a Surface's, 22 Nov). The
@@ -66,28 +88,27 @@ async function play(built, scene, name, motion, hz, folder) {
   // Where what it opens should first be drawn: what `opensFrom` names, before the press.
   const origin = motion.opensFrom && { op: "query", ...selector(motion.opensFrom) }
   const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.named ? { named: { ...selector(motion.named), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), ...(ssh ? {} : { whole: true, nodes: true }), link: link(hz) }
-  const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), replay])
+  rmSync(join(folder, "frames"), { recursive: true, force: true })
+  const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), written(replay, folder)])
   const answer = ran.answers.at(-1)
   if (ran.failed || !answer?.result) {
     process.exitCode = 1
     return { said: `  ${hz} Hz FAILS: ${answer?.error ?? ran.said.split("\n").at(-1)}` }
   }
-  const { frames, budget_ms: budget, over, leaving } = answer.result
+  const { budget_ms: budget, over, leaving } = answer.result
+  const frames = onDisk(answer.result.frames, folder)
   // Whether its frames wait for its page's JS: a wheel's notches and the pointer moving don't, as a window scrolls them
   // at once, as a browser's compositor does (`Windows::waits`); a press, a key or a finger does.
   const waits = !events?.every((event) => ["wheel", "move"].includes(event.kind))
   const [way, values] = travel(frames)
-  const kept = frames.map(({ png, width, height, unlike_whole, nodes, ...frame }) => ({ ...frame, ...(unlike_whole ? { unlike_whole: unlike_whole.map(({ whole, presented, ...unlike }) => unlike) } : {}) }))
+  const light = frames.map(({ width, height, unlike_whole, ...frame }) => ({ ...frame, ...(unlike_whole ? { unlike_whole: unlike_whole.map(({ whole, presented, ...unlike }) => unlike) } : {}) }))
   const beforeAt = against && join(against, relative(out, folder))
   const before = beforeAt && existsSync(join(beforeAt, "frames.json")) ? JSON.parse(readFileSync(join(beforeAt, "frames.json"), "utf8")) : undefined
   const beforeTravel = before && { frames: before.frames, values: travel(before.frames)[1] }
-  writeFileSync(join(folder, "frames.json"), JSON.stringify({ hz, budget, way, frames: kept }))
+  writeFileSync(join(folder, "frames.json"), JSON.stringify({ hz, budget, way, frames: light }))
   const apple = ios(frames, way, values, stretches)
   writeFileSync(join(folder, "curve.svg"), curve(frames, way, values, stretches, budget, beforeTravel, apple))
   filmstrip(frames, join(folder, "filmstrip.png"))
-  rmSync(join(folder, "frames"), { recursive: true, force: true })
-  mkdirSync(join(folder, "frames"))
-  frames.forEach((frame, n) => writeFileSync(join(folder, "frames", `${String(n).padStart(3, "0")}.png`), Buffer.from(frame.png, "base64")))
   const worst = Math.max(...frames.map((frame) => frame.paint_ms))
   const script = Math.max(...frames.map((frame) => frame.script_ms ?? 0))
   const rest = frames.at(-1).at
@@ -142,8 +163,9 @@ async function play(built, scene, name, motion, hz, folder) {
   if (motion.reducedMotion) {
     const whole = join(folder, "full")
     mkdirSync(whole, { recursive: true })
-    const full = await run(at, whole, { ...scene, reducedMotion: false, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), replay])
-    const there = full.answers.at(-1)?.result?.frames
+    rmSync(join(whole, "frames"), { recursive: true, force: true })
+    const full = await run(at, whole, { ...scene, reducedMotion: false, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), written(replay, whole)])
+    const there = full.answers.at(-1)?.result?.frames && onDisk(full.answers.at(-1).result.frames, whole)
     const short = there?.length ? arrives(frames, there) : `the full-motion run drew nothing: ${full.said.split("\n").at(-1)}`
     if (short) failed.push(short)
   }
