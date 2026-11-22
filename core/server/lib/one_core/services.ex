@@ -130,12 +130,30 @@ defmodule OneCore.Services do
           {:error, call({:stopped, {app, service}})}
 
         function = Calls.exported(module, function, length(arguments) + 1) ->
-          {:ok, apply(module, function, [instance | arguments])}
+          try do
+            {:ok, apply(module, function, [instance | arguments])}
+          catch
+            :exit, {:timeout, {GenServer, :call, [^instance | _]}} -> {:error, stuck(app, service, instance)}
+          end
 
         true ->
           {:error, "#{service} has no function #{function} that takes its process and #{length(arguments)} more"}
       end
     end)
+  end
+
+  # A service that didn't answer its call in time: where it's stuck is told to Telemetry, which a call that timed out
+  # didn't say (the Surface's meter on 22 Nov 2026, 326 timeouts naming only its process), and the caller is told it
+  # didn't answer, where it crashed.
+  defp stuck(app, service, instance) do
+    where =
+      case Process.info(instance, :current_stacktrace) do
+        {:current_stacktrace, stack} -> Exception.format_stacktrace(stack)
+        nil -> "  (it has ended since)"
+      end
+
+    Logger.warning("#{app}'s service #{service} didn't answer a call in time. It's at:\n#{where}")
+    "#{service} didn't answer in time"
   end
 
   @doc "The folder on this machine that is a service's own."
