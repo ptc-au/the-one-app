@@ -16,6 +16,7 @@ defmodule Telemetry.Alerts do
   | `backup` | A destination's last backup is older than its schedule and a day, or its last backup failed, as Backups last said (`one.backup`, which it says each hour and as each backup ends) | Backups says it's backed up, or that the destination is gone |
   | `behind` | A server or a desktop client has said for over an hour, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), and something of it arrived in the last day | It says it's on the latest, or nothing of it arrives for a day |
   | `memory` | A device's app held more than its budget in a state (`background`, `launcher`, `windows`) the last time it measured it there (`one.client.memory.over`, which the app says as it measures over budget, beside `one.client.memory` each time) | It measures that state within its budget there, or nothing of it arrives for a day |
+  | `frames` | A device's share of long frames (shown twice or more, `one.client.native.frames.long` of `one.client.native.frames`, which a client says of each motion) passed 5% of at least 600 frames over the last hour of real use: those it drew while its system wasn't busy (`one.system.busy`) | The share is back under 5%, or under 600 frames: the hour moves on |
   | `access` | A server that acts for someone lacks the keys of something encrypted for them, or one that doesn't act for them has them, as Encryption last said (`one.encryption.access`, which it says every 10 minutes) | Encryption says every server that should hold its keys does, and no other |
 
   Each alert is a row of Telemetry's database, one per kind and key (the server, the build, the error's kind, the
@@ -92,7 +93,9 @@ defmodule Telemetry.Alerts do
     # Each kind of error on each device or server it's on: the next look reads the last 14 days again for them.
     "drop table seen",
     "create table seen (kind text not null, device text not null, place text, message text, first integer, last integer, new integer, primary key (kind, device)) without rowid",
-    "delete from looked"
+    "delete from looked",
+    # Each device's frames and long frames in each minute it drew some (`one.client.native.frames`).
+    "create table frames (device text not null, minute integer not null, name text, frames integer not null default 0, long integer not null default 0, primary key (device, minute)) without rowid"
   ]
 
   @kinds %{
@@ -106,7 +109,8 @@ defmodule Telemetry.Alerts do
     "open" => "An app's window took over 300 ms to show its page the last time it opened on a device",
     "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can",
     "behind" => "A server or a desktop client has been on an older build than the latest for over an hour",
-    "memory" => "A device's app held more memory than its budget the last time it measured it"
+    "memory" => "A device's app held more memory than its budget the last time it measured it",
+    "frames" => "Over 5% of the frames a device drew in the last hour were long"
   }
 
   # How long a deploy has to show in a window, from when it began, in milliseconds.
@@ -114,9 +118,13 @@ defmodule Telemetry.Alerts do
   # How long an app's window has to show its page, from being asked to open, in milliseconds: a cached app's should
   # feel instant.
   @open_budget 300
+  # What a device's frames in the last hour may have long, as a percentage, of at least this many: ten seconds of
+  # motion at 60 Hz.
+  @long_share 5
+  @long_least 600
 
   # How long each kind's alert stays after its symptom was last seen before it's resolved, in milliseconds.
-  @cool %{"server" => 0, "update" => 10 * 60_000, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0, "memory" => 0}
+  @cool %{"server" => 0, "update" => 10 * 60_000, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0, "memory" => 0, "frames" => 0}
 
   @doc "Each kind of alert, with what fires it."
   def kinds, do: @kinds
@@ -331,6 +339,16 @@ defmodule Telemetry.Alerts do
        when part in ["", ".gpu", ".graphics", ".heap"] and count > 0,
        do: [{:memory, device, state, String.trim_leading(part, "."), ms(point["start"]), Float.round(point["sum"] / count, 1)}]
 
+  # A client's frames and its long ones, as it said them of each motion, unless its system was busy then.
+  defp metric(%{"name" => "one.client.native.frames" <> part, "attributes" => %{"one.device" => device} = a} = point)
+       when part in ["", ".long"] do
+    count = round(point["sum"])
+
+    if a["one.system.busy"] == true,
+      do: [],
+      else: [{:frames, device, Read.from(point), minute(point["time"]), if(part == "", do: count, else: 0), if(part == "", do: 0, else: count)}]
+  end
+
   defp metric(_point), do: []
 
   # The device or server an error was on: a client's, as its request proved it is, a server's machine, or the edge.
@@ -484,6 +502,18 @@ defmodule Telemetry.Alerts do
       )
     end
 
+    for {:frames, device, name, minute, frames, long} <- signals do
+      query(
+        db,
+        """
+        insert into frames (device, minute, name, frames, long) values (?, ?, ?, ?, ?)
+        on conflict (device, minute) do update set name = coalesce(excluded.name, name), frames = frames + excluded.frames,
+          long = long + excluded.long
+        """,
+        [device, minute, name, frames, long]
+      )
+    end
+
     for {:open, device, view, from, at, took, steps} <- signals do
       query(
         db,
@@ -502,6 +532,7 @@ defmodule Telemetry.Alerts do
     query(db, "delete from opens where at < ?", [now - @day])
     query(db, "delete from builds where at < ?", [now - @day])
     query(db, "delete from memory where at < ?", [now - @day])
+    query(db, "delete from frames where minute < ?", [now - 60 * @minute])
     query(db, "delete from seen where last < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from servers where max(coalesce(failed, 0), coalesce(started, 0), coalesce(looping, 0)) < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from alerts where ended < ?", [now - 7 * 86_400_000])
@@ -667,7 +698,25 @@ defmodule Telemetry.Alerts do
          }}
       end
 
-    Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access, behind, memory], &Map.merge/2)
+    frames =
+      for row <-
+            query(
+              db,
+              """
+              select device, max(name) as name, sum(frames) as frames, sum(long) as long from frames where minute > ?
+              group by device having sum(frames) >= ? and sum(long) * 100 >= sum(frames) * ?
+              """,
+              [now - 60 * @minute, @long_least, @long_share]
+            ),
+          into: %{} do
+        {{"frames", row["device"]},
+         %{
+           title: "#{row["name"] || "An app"} drops frames",
+           text: "#{row["long"]} of the #{row["frames"]} frames it drew in the last hour were long, shown twice or more: #{Float.round(row["long"] * 100 / row["frames"], 1)}%, over #{@long_share}%."
+         }}
+      end
+
+    Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access, behind, memory, frames], &Map.merge/2)
   end
 
   # What the network's updater says went wrong: each server behind, which went back from the build or didn't take it
