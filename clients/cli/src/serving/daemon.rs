@@ -103,9 +103,15 @@ pub(super) async fn serve(client: &Arc<Client>, here: &Here, reports: &Reports) 
     let mut said = listen(&mut server, log)?;
 
     let mut last = VecDeque::with_capacity(LAST);
-    let started = within("start and say it's running at the network's edge", async {
+    // Its time to start runs from when it last said it's waiting for the network, which it can't start without.
+    let started = async {
         let (mut running, mut reported) = (false, false);
-        while let Some(heard) = said.recv().await {
+        let mut deadline = Instant::now() + START;
+        loop {
+            let Ok(heard) = tokio::time::timeout_at(deadline.into(), said.recv()).await else {
+                bail!("it didn't start and say it's running at the network's edge within {} s", START.as_secs())
+            };
+            let Some(heard) = heard else { bail!("it stopped before it was running") };
             if last.len() == LAST {
                 last.pop_front();
             }
@@ -113,14 +119,14 @@ pub(super) async fn serve(client: &Arc<Client>, here: &Here, reports: &Reports) 
             match heard.said {
                 Some(Said::Running { .. }) => running = true,
                 Some(Said::Reported { build }) if build == pair.build => reported = true,
+                Some(Said::Waiting { .. }) => deadline = Instant::now() + START,
                 _ => {}
             }
             if running && reported {
                 return Ok(());
             }
         }
-        bail!("it stopped before it was running")
-    });
+    };
     if let Err(why) = started.await {
         let _ = server.kill().await;
         let why = format!("{why:#}. Its last lines: {}", Vec::from(last).join(" | "));

@@ -103,6 +103,7 @@ defmodule OneCore.Application do
   rescue
     unreachable in OneCore.Edge.Unreachable ->
       Logger.warning("Waiting to reach the network's edge, to start: #{Exception.message(unreachable)}")
+      Release.waiting(Exception.message(unreachable))
       Process.sleep(wait)
       joined?(key, owner, min(wait * 2, @lookup_max))
   end

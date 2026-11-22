@@ -95,6 +95,9 @@ defmodule OneCore.Release do
 
   # Says `message`, the terms of one of the `client` crate's `Said` as JSON has them, to the program keeping this
   # server running, or to the program checking this build: a line of JSON.
+  @doc "Says this server is waiting to start, for `why`, so the program keeping it running waits on it."
+  def waiting(why), do: say(%{"waiting" => %{"why" => why}})
+
   defp say(message) do
     {:ok, line} = Iroh.said(JSON.encode!(message))
     IO.puts(line)

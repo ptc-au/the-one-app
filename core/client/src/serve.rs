@@ -88,6 +88,9 @@ pub enum Told {
 pub enum Said {
     /// It has started, and answers by this key.
     Running { key: String },
+    /// It's waiting to start, for `why` (the network's edge, which it can't reach yet), so a start isn't over while it
+    /// does: the program keeping it running gives it its time to start again.
+    Waiting { why: String },
     /// Its network's updater told it to prepare the latest builds: download and check them, and say how it takes them.
     Prepare,
     /// Its network's updater told it to take the builds it has checked.
