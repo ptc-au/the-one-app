@@ -11,37 +11,42 @@ impl Painter<'_> {
     pub(in crate::view) fn paint_layer(&mut self, taffy_node: NodeId, id: Id, offset: Point<f32>, transform: Transform, look: &Look, mask: ContentMask<f32>, opacity: f32) {
         let Ok(laid) = self.layout.taffy.layout(taffy_node).copied() else { return };
         let laid_out = Bounds { origin: point(offset.x + laid.location.x, offset.y + laid.location.y), size: Size { width: laid.size.width, height: laid.size.height } };
-        let key = LayerKey { laid_out, device: self.scale };
-        match self.layers.get(&id) {
-            Some(layer) if layer.key == key && layer.recorded => {}
-            // Where it rests is changing (what it's in is growing): it's drawn as usual until it holds still a frame,
-            // rather than drawn into a layer each frame.
-            Some(layer) if layer.key != key => {
-                self.layers.insert(id, Layer::unsettled(key));
-                self.unsettled = Some(id);
-                self.paint_node(taffy_node, offset, transform, mask, opacity);
-                self.unsettled = None;
-                return;
-            }
-            // What's only about to move is drawn ahead only in a frame where nothing does, as usual till then.
-            _ if !self.still && !self.moving.contains(&id) => {
-                self.unsettled = Some(id);
-                self.paint_node(taffy_node, offset, transform, mask, opacity);
-                self.unsettled = None;
-                return;
-            }
-            _ => {
-                let layer = self.record(taffy_node, id, offset, transform, key);
-                self.layers.insert(id, layer);
-            }
+        let key = LayerKey { size: laid_out.size, device: self.scale };
+        // What's in it is painted only as it's first drawn, as it changes size, or each frame as it moves by itself;
+        // otherwise it's drawn from what it painted. While something it's in is on its way somewhere, what that does to
+        // it (grows it, or moves it by a fraction of a device pixel) is done to its picture, as a compositor does a
+        // layer's; under any other than it was painted under, it's painted again, as a picture grown, or moved by a
+        // fraction of a pixel, is softer than what it's of. Laid out elsewhere by whole device pixels (a scroll), only
+        // its picture moves.
+        let whole = |by: f32| (by * self.scale - (by * self.scale).round()).abs() < 1e-3;
+        let carried = std::iter::successors(self.tree.parent(id), |at| self.tree.parent(*at)).any(|at| self.moving.contains(&at));
+        let surfaced = match self.layers.get(&id) {
+            Some(layer) if layer.key != key => Surfaced::Relaid,
+            Some(layer) if !carried && (layer.scale != transform.scale || ![transform.offset.x - layer.at.x, transform.offset.y - layer.at.y, laid_out.origin.x - layer.laid_out.x, laid_out.origin.y - layer.laid_out.y].into_iter().all(whole)) => Surfaced::Relaid,
+            Some(layer) if layer.kept => Surfaced::Kept,
+            Some(_) => Surfaced::Animating,
+            None => Surfaced::Painted,
+        };
+        if surfaced != Surfaced::Kept {
+            let layer = self.record(taffy_node, id, offset, transform, key, laid_out.origin);
+            self.layers.insert(id, layer);
         }
+        let bytes = self.layers[&id].bytes();
+        self.surfaces.bytes += bytes;
+        self.surfaces.drawn.insert(id, surfaced);
         // Its own move and growth around its middle, as `paint_node` draws it, in the window, from where it was drawn
         // (`Layer::at`, grown by `Layer::scale`): p ↦ p·grown + by.
         let centre = point(laid_out.origin.x + laid_out.size.width / 2.0, laid_out.origin.y + laid_out.size.height / 2.0);
         let translate = point(look.translate.0.of(laid_out.size.width), look.translate.1.of(laid_out.size.height));
         let (at, k, own) = (transform.offset, transform.scale, look.scale);
-        let (was, grown) = (self.layers[&id].at, k * own / self.layers[&id].scale);
-        let by = point(at.x + k * (centre.x + translate.x - own * centre.x) - grown * was.x, at.y + k * (centre.y + translate.y - own * centre.y) - grown * was.y);
+        let layer = &self.layers[&id];
+        let (was, grown) = (layer.at, k * own / layer.scale);
+        // Laid out elsewhere since it was drawn, by `moved`, what's in it is moved as far, grown as it's grown.
+        let moved = point(laid_out.origin.x - layer.laid_out.x, laid_out.origin.y - layer.laid_out.y);
+        let by = point(
+            at.x + k * (centre.x + translate.x - own * centre.x + own * moved.x) - grown * was.x,
+            at.y + k * (centre.y + translate.y - own * centre.y + own * moved.y) - grown * was.y,
+        );
         let opacity = opacity * look.opacity;
         // Cross-dissolving to where it rests, with less motion, it's drawn where it was too, fading out as it fades in
         // here, as UIKit's cross-dissolve draws a snapshot of a view where it was, rather than taken out and brought
@@ -54,19 +59,26 @@ impl Painter<'_> {
             None => opacity,
         };
         self.draw_layer(id, by, grown, opacity, mask);
-        if !self.layers[&id].kept {
-            self.layers.remove(&id);
-        }
+    }
+
+    /// Whether another surface fits in the window's: fewer than `SURFACES` so far this frame, whose pictures take less
+    /// than `SURFACE_WINDOWS` windows' worth of the GPU's memory.
+    fn room(&self) -> bool {
+        let window = 4.0 * self.window.size.width * self.window.size.height * self.scale * self.scale;
+        self.surfaces.drawn.len() < SURFACES && (self.surfaces.bytes as f32) < SURFACE_WINDOWS * window
     }
 
     /// Draws node `id`'s layer moved by `by` and grown by `grown` (p ↦ p·grown + by), `opacity` as opaque, cut to `mask`.
     fn draw_layer(&mut self, id: Id, by: Point<f32>, grown: f32, opacity: f32, mask: ContentMask<f32>) {
+        let scale = self.scale;
+        let whole = |at: f32| (at * scale - (at * scale).round()).abs() < 1e-3;
         let moved = |bounds: Bounds<f32>| Bounds { origin: point(bounds.origin.x * grown + by.x, bounds.origin.y * grown + by.y), size: Size { width: bounds.size.width * grown, height: bounds.size.height * grown } };
         for part in self.layers[&id].parts.clone() {
             match part {
-                // Where it was drawn, as it was, it's drawn as what it drew, the same to the pixel as drawn without a
-                // layer, so coming to rest there draws nothing again.
-                Part::Scene(scene, Some(_)) if grown == 1.0 && by == point(0.0, 0.0) && opacity == 1.0 => self.scene.splice(&scene, 1.0, [0.0, 0.0], opacity, mask.scale_to(self.scale)),
+                // Where it was drawn, or moved from there by whole device pixels, as it was, it's drawn as what it
+                // drew, moved, the same to the pixel as drawn without a layer, so coming to rest there draws nothing
+                // again.
+                Part::Scene(scene, Some(_)) if grown == 1.0 && opacity == 1.0 && whole(by.x) && whole(by.y) => self.scene.splice(&scene, 1.0, [(by.x * self.scale).round(), (by.y * self.scale).round()], opacity, mask.scale_to(self.scale)),
                 Part::Scene(_, Some(recording)) => self.scene.raster(&recording, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Scene(scene, None) => self.scene.splice(&scene, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Sublayer(sublayer) => {
@@ -84,7 +96,7 @@ impl Painter<'_> {
 
     /// What node `id` draws as it rests, everywhere, not cut to what it's in: its own scene, and what's in it that's a
     /// layer of its own.
-    pub(in crate::view) fn record(&mut self, taffy_node: NodeId, id: Id, offset: Point<f32>, transform: Transform, key: LayerKey) -> Layer {
+    pub(in crate::view) fn record(&mut self, taffy_node: NodeId, id: Id, offset: Point<f32>, transform: Transform, key: LayerKey, laid_out: Point<f32>) -> Layer {
         let mut scene = Scene::default();
         std::mem::swap(&mut *self.scene, &mut scene);
         let (animating, parts) = (std::mem::take(&mut self.animating), std::mem::take(&mut self.parts));
@@ -106,7 +118,7 @@ impl Painter<'_> {
             }
         }
         self.animating |= animating;
-        Layer { key, at: transform.offset, scale: transform.scale, recorded: true, kept, parts: drawn }
+        Layer { key, laid_out, at: transform.offset, scale: transform.scale, kept, parts: drawn }
     }
 
     /// Paints `node` with its parent's top left at `offset` in its layout, drawn through `transform` and turned as
@@ -159,7 +171,9 @@ impl Painter<'_> {
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));
             self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, turn: self.turn }));
             return;
-        } else if (self.layered.contains(&id) || dissolving.is_some()) && !starting && self.unsettled != Some(id) && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
+        } else if (self.layered.contains(&id) && self.room() || dissolving.is_some()) && !starting && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
+            // Cross-dissolving, it's drawn from its picture in two places, which drawn in what it's in it couldn't be:
+            // it's a surface whatever the window's others take.
             return self.paint_layer(taffy_node, id, offset, transform, &look, mask, opacity);
         }
         let tree = self.tree;

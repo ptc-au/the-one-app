@@ -242,8 +242,10 @@ pub struct Screen {
     again: bool,
     /// What's on its way from one value to another as a style changed.
     transitions: transition::Transitions,
-    /// What's in each node that's only moving, growing or fading, as it was drawn as that started (`Layer`).
+    /// What's in each node that's only moving, growing or fading, as it was drawn as that started (`Layer`), and the
+    /// surfaces the frame painted last drew from.
     layers: HashMap<Id, Layer>,
+    surfaces: Surfaces,
     /// The tree as Taffy lays it out, kept from frame to frame (`Retained`), the states its styles were last resolved
     /// in, and the frame it's on.
     layout: Retained,
@@ -312,7 +314,8 @@ pub struct Screen {
 /// What its frames cost since it was last asked (`Screen::cost`), as a browser's performance panel says a frame's: the
 /// mutations its JS made that it applied, how long its JS thread spent running, how long laying its tree out and
 /// painting it all took, each its thread's time on a CPU (`platform::on_cpu`), so a busy machine doesn't read as slow
-/// work, and how many times it painted. Frames that changed nothing cost their JS all the same.
+/// work, how many times it painted, and how many surfaces it painted what's in afresh (`Surfaced`, all but those drawn
+/// from what they painted before). Frames that changed nothing cost their JS all the same.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct Cost {
     mutations: u64,
@@ -320,6 +323,7 @@ pub(crate) struct Cost {
     layout: Duration,
     paint: Duration,
     painted: u32,
+    surfaces_painted: u32,
 }
 
 impl Screen {
@@ -389,6 +393,7 @@ impl Screen {
             captured: None,
             placed: Vec::new(),
             layers: HashMap::new(),
+            surfaces: Surfaces::default(),
             animating: false,
             hz: 60.0,
             again: false,

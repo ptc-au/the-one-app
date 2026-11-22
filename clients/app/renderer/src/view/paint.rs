@@ -90,36 +90,75 @@ impl Transform {
 }
 
 /// A node's subtree as it was drawn at rest, kept while the node only moves, grows or fades, so each frame moves it
-/// rather than drawing it again (`Painter::paint_layer`). Where what's in it is, for the pointer and the rest, isn't
-/// its: that's placed from the layout each frame (`Placer`).
+/// rather than drawing it again (`Painter::paint_layer`): a surface of its own. Where what's in it is, for the pointer
+/// and the rest, isn't its: that's placed from the layout each frame (`Placer`).
 pub(super) struct Layer {
     pub(super) key: LayerKey,
+    /// Where it was laid out in the window as it was drawn: laid out elsewhere since (what it's in scrolled, or grew
+    /// beside it), it's moved there.
+    pub(super) laid_out: Point<f32>,
     /// Where what it's in had moved it as it was drawn: it's drawn where that's moved it since, as it is.
     pub(super) at: Point<f32>,
-    /// It's been drawn, rather than only noted where it rests, as that was changing.
-    pub(super) recorded: bool,
     /// How much what it's in had grown it as it was drawn.
     pub(super) scale: f32,
-    /// It's kept for the next frame: what's in it doesn't move by itself.
+    /// What's in it doesn't move by itself, so it's drawn from what it drew: otherwise it's drawn again each frame.
     pub(super) kept: bool,
     /// What it draws, in order: its scenes, and between them what's in it that's a layer of its own (`Sublayer`).
     pub(super) parts: Vec<Part>,
 }
 
 impl Layer {
-    /// One noted where it rests, not drawn, as that's changing.
-    pub(super) fn unsettled(key: LayerKey) -> Layer {
-        Layer { key, at: point(0.0, 0.0), scale: 1.0, recorded: false, kept: true, parts: Vec::new() }
+    /// The bytes of the GPU's memory its pictures take (`Recording`), four a device pixel.
+    pub(super) fn bytes(&self) -> u64 {
+        self.parts.iter().filter_map(|part| if let Part::Scene(_, Some(recording)) = part { Some(4 * u64::from(recording.size[0]) * u64::from(recording.size[1])) } else { None }).sum()
     }
 }
 
-/// What a layer was drawn for: where its node rests and the window's scale. Any other, and it's drawn again; what it's
-/// in moving, growing or fading it (a card it's in sliding as it grows) only moves, grows and fades it, as a compositor
-/// does a sublayer.
+/// What a layer was drawn for: its node's size and the window's scale. Any other, and it's drawn again; laid out
+/// elsewhere by whole device pixels (a list it's in scrolled), and what it's in moving, growing or fading it while it's
+/// on its way (a card it's in sliding as it grows), only move, grow and fade it, as a compositor does a sublayer
+/// (`Painter::paint_layer`).
 #[derive(PartialEq)]
 pub(super) struct LayerKey {
-    pub(super) laid_out: Bounds<f32>,
+    pub(super) size: Size<f32>,
     pub(super) device: f32,
+}
+
+/// The most surfaces a window draws from (`Layer`), and the most of the GPU's memory their pictures take, in windows of
+/// its size: what's declared one past either, in painting order, is drawn in what it's in, as it is with no surface,
+/// the same but dearer, as a compositor's layers past its budget are drawn into their parent's.
+pub(super) const SURFACES: usize = 64;
+pub(super) const SURFACE_WINDOWS: f32 = 4.0;
+
+/// The surfaces a frame draws from so far, in painting order: each, and whether what's in it was painted this frame
+/// (`Surfaced`), and the bytes their pictures take.
+#[derive(Default)]
+pub(super) struct Surfaces {
+    pub(super) drawn: HashMap<Id, Surfaced>,
+    pub(super) bytes: u64,
+}
+
+/// How a surface was drawn in a frame: painted as it was first drawn or as what's in it changed (`Painted`), as it
+/// was laid out or placed again (another size, a fraction of a device pixel elsewhere, grown by what it's in once that
+/// rests) or the window's scale changed (`Relaid`), each frame, as what's in it moves by itself (`Animating`), or from
+/// what it painted before, moved, grown and faded (`Kept`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) enum Surfaced {
+    Painted,
+    Relaid,
+    Animating,
+    Kept,
+}
+
+impl Surfaced {
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Surfaced::Painted => "painted",
+            Surfaced::Relaid => "relaid",
+            Surfaced::Animating => "animating",
+            Surfaced::Kept => "kept",
+        }
+    }
 }
 
 /// Part of what a layer draws: a scene of it, drawn as an image of it (`Recording`, as a compositor draws a layer,
@@ -262,15 +301,13 @@ pub(super) struct Painter<'a> {
     /// What's drawn from a layer kept from an earlier frame (`Layer`), and the node whose is being drawn now.
     pub(super) layers: &'a mut HashMap<Id, Layer>,
     pub(super) layered: &'a HashSet<Id>,
-    /// Nothing moves this frame, so what's about to (`will-change`) is drawn into its layer ahead.
-    pub(super) still: bool,
+    /// What's drawn from a surface so far this frame, against the most it may (`SURFACES`).
+    pub(super) surfaces: Surfaces,
     /// The window isn't shown (a panel put away, an app in the background): what moves is where it's going at once.
     pub(super) unseen: bool,
     pub(super) recording: Option<Id>,
     /// The parts of the layer being drawn so far, before its scene now.
     pub(super) parts: Vec<Part>,
-    /// A layered node drawn as usual, as where it rests is changing.
-    pub(super) unsettled: Option<Id>,
     pub(super) tree: &'a Tree,
     pub(super) layout: &'a mut Retained,
     /// What's styled again this frame (`Screen::paint`): what changed, what's moving, what's in or around either

@@ -88,6 +88,11 @@ impl Screen {
         self.shown.as_ref().map_or(&self.rects, |(rects, ..)| rects).get(&id).copied()
     }
 
+    /// How the frame painted last drew node `id`'s surface, where it's one (`Surfaced`).
+    pub fn surfaced(&self, id: crate::tree::Id) -> Option<&'static str> {
+        self.surfaces.drawn.get(&id).map(|surfaced| surfaced.name())
+    }
+
     /// A press goes down at `at`, at `time` (ms on its clock): a finger's as a phone's host hands it each touch
     /// (`touch`), or the pointer's.
     pub(super) fn finger_down(&mut self, at: Point<f32>, time: f64) -> Finger {

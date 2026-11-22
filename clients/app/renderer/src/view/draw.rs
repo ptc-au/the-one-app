@@ -201,10 +201,15 @@ impl Screen {
             return None;
         }
         // What's kept of what only moves, grows or fades is drawn again where what it draws from changed: anything
-        // fetched, decoded, scrolled or in another frame's page, or the window's conditions.
+        // fetched, decoded or in another frame's page, or the window's conditions; and what a box in it scrolled.
         let scrolled = self.seen.as_ref().is_some_and(|was| (&was.scrolled, &was.stretched) != (&seen.scrolled, &seen.stretched));
-        if self.seen.as_ref().is_none_or(|was| (was.size, was.conditions, &was.scrolled, &was.stretched, was.fetched, was.decoded, &was.frames) != (seen.size, seen.conditions, &seen.scrolled, &seen.stretched, seen.fetched, seen.decoded, &seen.frames)) {
+        if self.seen.as_ref().is_none_or(|was| (was.size, was.conditions, was.fetched, was.decoded, &was.frames) != (seen.size, seen.conditions, seen.fetched, seen.decoded, &seen.frames)) {
             self.layers.clear();
+        } else if let Some(was) = self.seen.as_ref().filter(|_| scrolled) {
+            let all = was.scrolled.keys().chain(seen.scrolled.keys()).chain(was.stretched.keys()).chain(seen.stretched.keys());
+            let boxes: HashSet<Id> = all.filter(|id| (was.scrolled.get(id), was.stretched.get(id)) != (seen.scrolled.get(id), seen.stretched.get(id))).copied().collect();
+            let layers = std::mem::take(&mut self.layers);
+            self.layers = layers.into_iter().filter(|(id, _)| !boxes.iter().any(|scrolled| self.within(*scrolled, *id))).collect();
         }
         self.seen = Some(seen);
         // What's styled again: what changed, what's moving, each input (its words are its field's), and what's
@@ -254,16 +259,14 @@ impl Screen {
         let dissolving: HashSet<Id> = whole.iter().filter(|id| self.transitions.dissolving(**id, now).is_some()).copied().collect();
         let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| (!touched.contains(id) || dissolving.contains(id)) && !text(id)).copied().collect();
         self.layers.retain(|id, _| layered.contains(id) && !(dissolving.contains(id) && touched.contains(id)));
-        // It's drawn ahead in a frame where nothing moves, as a browser draws in idle time, not in one that's busy.
-        let still = moving.is_empty();
         self.frame += 1;
-        Some(Plan { conditions, window, scale, now, caret, everything, changed, moving, below, layered, still, scrolled })
+        Some(Plan { conditions, window, scale, now, caret, everything, changed, moving, below, layered, scrolled })
     }
 
     /// Styles, lays out and paints the tree into `scene`, as `plan` says, and the window's own title and notice
     /// over it. → what the painter found as it drew.
     fn draw(&mut self, plan: &Plan, text: &mut TextSystem, atlas: &Atlas, scene: &mut Scene) -> Drawing {
-        let Plan { conditions, window, scale, now, caret, everything, ref changed, ref moving, ref below, ref layered, still, .. } = *plan;
+        let Plan { conditions, window, scale, now, caret, everything, ref changed, ref moving, ref below, ref layered, .. } = *plan;
         let line = self.line();
         let stretched = self.stretched();
         let handles = self.handles_on();
@@ -308,11 +311,10 @@ impl Screen {
             videos: &mut self.videos,
             layers: &mut self.layers,
             layered,
-            still,
+            surfaces: Surfaces::default(),
             unseen: !self.visible,
             recording: None,
             parts: Vec::new(),
-            unsettled: None,
         };
         // The window, as a page's body: its root's background and text, scrolling what's taller than it.
         let (body, background) = Text::root(conditions);
@@ -356,6 +358,10 @@ impl Screen {
             Ok(()) => {
                 painter.laid_out();
                 painter.paint(root, point(0.0, 0.0), Transform::NONE, ContentMask::from(window), 1.0);
+                // A surface not drawn from goes: what it was of no longer is one, or is drawn in what it's in.
+                painter.layers.retain(|id, _| painter.surfaces.drawn.contains_key(id));
+                self.surfaces = std::mem::take(&mut painter.surfaces);
+                self.cost.surfaces_painted += self.surfaces.drawn.values().filter(|surfaced| **surfaced != Surfaced::Kept).count() as u32;
                 let placer = Placer {
                     tree: painter.tree,
                     layout: painter.layout,
@@ -500,8 +506,6 @@ impl Screen {
             }
         }
         self.animating = animating || moving || self.coasting();
-        // What's about to move and wasn't drawn ahead, as something was moving, is in a frame of its own once it stops.
-        self.again |= !plan.still && self.layout.will_change.iter().any(|id| plan.layered.contains(id) && !self.layers.get(id).is_some_and(|layer| layer.recorded));
         intersections
     }
 
@@ -670,7 +674,7 @@ pub(crate) fn paint_loading(opened: Duration, quiet: Duration, fades: Duration, 
 
 /// What a frame draws, as `Screen::plan` worked it out: the conditions, the window and its scale, the time on the
 /// page's clock and whether the caret shows; whether everything is styled again, or what changed, is moving or is in
-/// or around either; what's drawn from its layer; and whether nothing moves, so what's about to is drawn ahead.
+/// or around either; and what's drawn from its layer.
 struct Plan {
     conditions: Conditions,
     window: Bounds<f32>,
@@ -682,7 +686,6 @@ struct Plan {
     moving: HashSet<Id>,
     below: HashSet<Id>,
     layered: HashSet<Id>,
-    still: bool,
     /// Something scrolled since the frame before.
     scrolled: bool,
 }
