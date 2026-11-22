@@ -282,8 +282,6 @@ impl Screen {
             scale,
             conditions,
             states: &self.states,
-            placed: Vec::new(),
-            tab_order: Vec::new(),
             scrolled: &mut self.scrolled,
             stretched,
             fields: &self.editing.fields,
@@ -295,24 +293,17 @@ impl Screen {
             pictures: &mut self.pictures,
             fetched: &self.fetched,
             wanted: Vec::new(),
-            rects: Rects::new(),
             time: now,
             since: self.changed.take().unwrap_or(now).min(now),
             transitions: &mut self.transitions,
             animating: false,
-            intersections: Vec::new(),
-            near: Bounds { origin: point(-window.size.width / 2.0, -window.size.height / 2.0), size: Size { width: window.size.width * 2.0, height: window.size.height * 2.0 } },
             window,
-            modal: None,
             turn: TransformationMatrix::unit(),
             stacked: Default::default(),
             path: Vec::new(),
-            glass: self.panel.map(|_| Vec::new()),
+            glass: self.panel.is_some(),
             fill: self.panel.filter(|panel| panel.fill).map(|_| colour_token("card", conditions)),
-            drag_regions: Vec::new(),
-            kept_regions: Vec::new(),
             frames: &self.frames,
-            framed: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
             videos: &mut self.videos,
             layers: &mut self.layers,
@@ -329,9 +320,6 @@ impl Screen {
         match self.panel {
             None => painter.quad(window, ContentMask::from(window), background.unwrap_or_default(), Edges::default(), Hsla::default(), Corners::default(), false, 1.0),
             Some(panel) if panel.whole => {
-                if let Some(glass) = painter.glass.as_mut() {
-                    glass.push(crate::platform::Glass { bounds: window, radius: panel.corner, opacity: 1.0 });
-                }
                 if let Some(fill) = painter.fill {
                     painter.quad(window, ContentMask::from(window), fill, Edges::default(), Hsla::default(), Corners::all(panel.corner), false, 1.0);
                 }
@@ -359,13 +347,37 @@ impl Screen {
             self.again |= painter.layout.measure_lists(painter.tree);
         }
         self.cost.layout += crate::platform::on_cpu().saturating_sub(laying_out);
-        match measured {
-            Err(error) => log::error!("its layout failed: {error}"),
+        // Painted, then placed for the pointer, Tab and the window from the layout as painted (`Placer`).
+        let placing = match measured {
+            Err(error) => {
+                log::error!("its layout failed: {error}");
+                Placing::default()
+            }
             Ok(()) => {
                 painter.laid_out();
-                painter.paint(root, point(0.0, 0.0), Transform::NONE, ContentMask::from(window), 1.0, None, true)
+                painter.paint(root, point(0.0, 0.0), Transform::NONE, ContentMask::from(window), 1.0);
+                let placer = Placer {
+                    tree: painter.tree,
+                    layout: painter.layout,
+                    text: painter.text,
+                    transitions: painter.transitions,
+                    time: now,
+                    scrolled: painter.scrolled,
+                    stretched: &painter.stretched,
+                    drawn: painter.drawn,
+                    layered,
+                    window,
+                    scale,
+                    panel: self.panel,
+                    out: Placing::default(),
+                    near: Bounds { origin: point(-window.size.width / 2.0, -window.size.height / 2.0), size: Size { width: window.size.width * 2.0, height: window.size.height * 2.0 } },
+                    turn: TransformationMatrix::unit(),
+                    stacked: Default::default(),
+                    path: Vec::new(),
+                };
+                placer.place(root)
             }
-        }
+        };
         // The window's title, over its page.
         let hovering = |bounds: &Bounds<f32>| self.pointer.is_some_and(|at| bounds.contains(&at));
         let edge = self.full_screen.then_some(EDGE);
@@ -415,19 +427,9 @@ impl Screen {
         if let Some(line) = line {
             painter.quad(line, ContentMask::from(window), colour_token("label", conditions), Edges::default(), Hsla::default(), Corners::all(line.size.width / 2.0), false, 1.0);
         }
-        self.chrome.glass = painter.glass.take().unwrap_or_default();
-        self.chrome.drag_regions = std::mem::take(&mut painter.drag_regions);
-        self.chrome.kept_regions = std::mem::take(&mut painter.kept_regions);
-        Drawing {
-            placed: painter.placed,
-            tab_order: painter.tab_order,
-            rects: painter.rects,
-            animating: painter.animating,
-            modal: painter.modal,
-            wanted: painter.wanted,
-            intersections: painter.intersections,
-            framed: painter.framed,
-        }
+        let Placing { placed, rects, tab_order, intersections, drag_regions, kept_regions, glass, modal, framed } = placing;
+        (self.chrome.glass, self.chrome.drag_regions, self.chrome.kept_regions) = (glass, drag_regions, kept_regions);
+        Drawing { placed, tab_order, rects, animating: painter.animating, modal, wanted: painter.wanted, intersections, framed }
     }
 
     /// Keeps what the frame drew, for the pointer, the keyboard, the inspector and the window: where each frame's page

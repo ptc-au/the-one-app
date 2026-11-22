@@ -51,6 +51,8 @@ const MUTANTS = {
   "safe-area": { bug: "safe area ignored in a frame", plays: [scenes("apps/vault", "in its own frame")] },
   // From the reports and look-issues.
   "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [motion("core/ui/gallery", "Card dragged along")] },
+  "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("core/ui/gallery", "Styling/Hit areas")] },
+  "hit-scroll": { bug: "what's in a scroll taking a press where it'd be unscrolled", plays: [checks("core/ui/gallery", "Styling/Hit areas")] },
   "picture-retry": { bug: "a picture that failed to decode left blank, never tried again (f0db8c31f)", plays: [checks("apps/home-screen", "App Library, by a finger")] },
 }
 

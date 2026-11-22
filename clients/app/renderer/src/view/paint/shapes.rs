@@ -108,24 +108,8 @@ impl Painter<'_> {
         }
     }
 
-    /// `bounds` grown by half the window's size on each side, as near it as an `IntersectionObserver`'s margin of 50%.
-    pub(in crate::view) fn grown(&self, bounds: Bounds<f32>) -> Bounds<f32> {
-        let (x, y) = (self.window.size.width / 2.0, self.window.size.height / 2.0);
-        Bounds { origin: point(bounds.origin.x - x, bounds.origin.y - y), size: Size { width: bounds.size.width + 2.0 * x, height: bounds.size.height + 2.0 * y } }
-    }
-
-    /// The box `bounds` covers in the window once it's turned as what's painted now is: itself, where nothing's turned.
+    /// The box `bounds` covers in the window once it's turned as what's painted now is (`turned`).
     pub(in crate::view) fn turned(&self, bounds: Bounds<f32>) -> Bounds<f32> {
-        if self.turn == TransformationMatrix::unit() {
-            return bounds;
-        }
-        let (left, top, right, bottom) = (bounds.origin.x, bounds.origin.y, bounds.origin.x + bounds.size.width, bounds.origin.y + bounds.size.height);
-        let corners = [[left, top], [right, top], [left, bottom], [right, bottom]].map(|corner| self.turn.apply(corner));
-        let (mut low, mut high) = (corners[0], corners[0]);
-        for [x, y] in corners {
-            low = [low[0].min(x), low[1].min(y)];
-            high = [high[0].max(x), high[1].max(y)];
-        }
-        Bounds { origin: point(low[0], low[1]), size: Size { width: high[0] - low[0], height: high[1] - low[1] } }
+        turned(self.turn, bounds)
     }
 }

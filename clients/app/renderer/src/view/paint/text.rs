@@ -5,9 +5,9 @@ use super::*;
 impl Painter<'_> {
     /// An input: its text, or its placeholder while it's empty, clipped to its box; with the keyboard, what's selected
     /// behind it, what an input method composes underlined, and the caret, as it blinks; scrolled to keep the caret
-    /// in view as it moves. Where it's drawn is kept for the pointer (`Drawn`). → how far several lines can scroll.
+    /// in view as it moves. Where it's drawn is kept for the pointer (`Drawn`).
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn paint_input(&mut self, id: Id, node: &Node, content: Bounds<f32>, padding: Bounds<f32>, width: f32, grown: f32, text: Text, opacity: f32, mask: ContentMask<f32>) -> Option<f32> {
+    pub(in crate::view) fn paint_input(&mut self, id: Id, node: &Node, content: Bounds<f32>, padding: Bounds<f32>, width: f32, grown: f32, text: Text, opacity: f32, mask: ContentMask<f32>) {
         let field = self.fields.get(&id);
         let shown = field.map(Field::display).unwrap_or_default();
         let multiline = node.is("multiline");
@@ -40,7 +40,6 @@ impl Painter<'_> {
         let mut scroll = self.drawn.get(&id).map_or(point(0.0, 0.0), |drawn| drawn.scroll);
         let seen = (focused, field.map_or(0, Field::caret), field.is_some_and(Field::upstream), shown.len());
         let moved = self.drawn.get(&id).is_none_or(|drawn| drawn.seen != seen);
-        let mut most = None;
         if !multiline {
             scroll.x = if focused && !empty { scroll.x.max(caret_x - width + 1.0).min(caret_x) } else { 0.0 };
             scroll.x = scroll.x.clamp(0.0, (paragraph.size().width + 1.0 - width).max(0.0));
@@ -54,7 +53,6 @@ impl Painter<'_> {
             let can = (paragraph.size().height - height).max(0.0);
             scroll.y = scroll.y.clamp(0.0, can);
             self.scrolled.insert(id, point(0.0, scroll.y));
-            most = Some(can);
         }
         let origin = point(content.origin.x, top - scroll.y * grown);
         // Several lines scrolled run on into its padding, as a `<textarea>`'s do; one line stops at its content.
@@ -97,7 +95,6 @@ impl Painter<'_> {
             }
         }
         self.drawn.insert(id, drawn);
-        most
     }
 
     /// A paragraph's words, set in `text`, or as `runs` say where it's given them: what's behind each run first, then
@@ -142,50 +139,6 @@ impl Painter<'_> {
                 let y = content.origin.y + (line as f32 + 1.0) * line_height * grown - line_height * grown * 0.18;
                 let bounds = Bounds { origin: point(left(line) + x0 * grown, y), size: Size { width: (x1 - x0) * grown, height: grown.max(1.0) } };
                 self.quad(bounds, mask, run.color, Edges::default(), Hsla::default(), Corners::default(), false, opacity);
-            }
-        }
-    }
-
-    /// The texts and raw texts inside text `id` where their words are drawn: each text placed for the pointer over each
-    /// stretch of its words, after what it's in, so a press, hover and cursor find the innermost; each reached by Tab
-    /// where the DOM's would be, a span with its `tabindex`; and each where an agent or a screen reader finds it.
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::view) fn place_spans(&mut self, id: Id, spans: &[Span], paragraph: &Paragraph, content: Bounds<f32>, width: f32, grown: f32, align: f32, mask: ContentMask<f32>, pointer: bool, opacity: f32) {
-        let tree = self.tree;
-        let line_height = paragraph.line_height;
-        let mut pointers: HashMap<Id, bool> = HashMap::from([(id, pointer)]);
-        for span in spans {
-            let Some(node) = tree.nodes.get(&span.id) else { continue };
-            let parent = tree.parent(span.id).unwrap_or(id);
-            let pointer = pointers.get(&parent).copied().unwrap_or(pointer) && span.pointer.unwrap_or(true) && !node.is("inert");
-            pointers.insert(span.id, pointer);
-            let mut drawn: Option<Bounds<f32>> = None;
-            let rects: Vec<Bounds<f32>> = paragraph
-                .inked(span.start, span.end)
-                .into_iter()
-                .map(|(line, x0, x1)| {
-                    let left = content.origin.x + paragraph.lines.get(line).map_or(0.0, |drawn| (width - drawn.width).max(0.0) * align) * grown;
-                    self.turned(Bounds { origin: point(left + x0 * grown, content.origin.y + line as f32 * line_height * grown), size: Size { width: (x1 - x0) * grown, height: line_height * grown } })
-                })
-                .collect();
-            for rect in &rects {
-                drawn = Some(drawn.map_or(*rect, |all| all.union(rect)));
-            }
-            if let Some(all) = drawn {
-                self.rects.insert(span.id, Rect { x: all.origin.x, y: all.origin.y, width: all.size.width, height: all.size.height });
-            }
-            if node.kind != Kind::Text {
-                continue;
-            }
-            let pressable = node.listens("click") && !node.is("disabled") && !node.is("aria-disabled");
-            let tabindex = node.prop("tabindex").and_then(|index| index.as_i64().or_else(|| index.as_str()?.parse().ok()));
-            if pressable && tabindex.is_some_and(|index| index >= 0) {
-                self.tab_order.push(span.id);
-            }
-            for rect in rects {
-                let focus = if tabindex.is_some() { Clicked::Takes } else { Clicked::Passes };
-                let placed = Placed { parent: Some(parent), shown: rect.intersect(&mask.bounds), opacity, pointer, cursor: span.cursor, pressable, input: false, focus, scroll: None, touch_action: None };
-                self.placed.push((span.id, placed));
             }
         }
     }

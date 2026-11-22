@@ -21,6 +21,7 @@ use crate::text::{Paragraph, TextRun, TextSystem};
 use crate::tokens::{Conditions, Radius};
 use crate::tree::{Id, Kind, Node, Tree};
 use paint::*;
+use place::*;
 pub(crate) use paint::{Decoded, Picture};
 
 mod bounce;
@@ -33,6 +34,7 @@ mod list;
 #[cfg(not(target_arch = "wasm32"))]
 mod videos;
 mod paint;
+mod place;
 mod pictures;
 #[cfg(feature = "fake")]
 pub use pictures::{cut_short, decoding_takes};

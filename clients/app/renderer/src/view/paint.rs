@@ -90,7 +90,8 @@ impl Transform {
 }
 
 /// A node's subtree as it was drawn at rest, kept while the node only moves, grows or fades, so each frame moves it
-/// rather than drawing it again (`Painter::paint_layer`): its scene, and where it put what's in it.
+/// rather than drawing it again (`Painter::paint_layer`). Where what's in it is, for the pointer and the rest, isn't
+/// its: that's placed from the layout each frame (`Placer`).
 pub(super) struct Layer {
     pub(super) key: LayerKey,
     /// Where what it's in had moved it as it was drawn: it's drawn where that's moved it since, as it is.
@@ -103,39 +104,12 @@ pub(super) struct Layer {
     pub(super) kept: bool,
     /// What it draws, in order: its scenes, and between them what's in it that's a layer of its own (`Sublayer`).
     pub(super) parts: Vec<Part>,
-    pub(super) placed: Vec<(Id, Placed)>,
-    pub(super) rects: Vec<(Id, Rect)>,
-    pub(super) tab_order: Vec<Id>,
-    pub(super) intersections: Vec<(Id, bool)>,
-    pub(super) drag_regions: Vec<(Id, Bounds<f32>)>,
-    pub(super) kept_regions: Vec<Bounds<f32>>,
-    pub(super) glass: Vec<crate::platform::Glass>,
-    pub(super) wanted: Vec<String>,
-    pub(super) modal: Option<Id>,
-    pub(super) framed: Vec<(Id, Bounds<f32>)>,
 }
 
 impl Layer {
     /// One noted where it rests, not drawn, as that's changing.
     pub(super) fn unsettled(key: LayerKey) -> Layer {
-        Layer {
-            key,
-            at: point(0.0, 0.0),
-            scale: 1.0,
-            recorded: false,
-            kept: true,
-            parts: Vec::new(),
-            placed: Vec::new(),
-            rects: Vec::new(),
-            tab_order: Vec::new(),
-            intersections: Vec::new(),
-            drag_regions: Vec::new(),
-            kept_regions: Vec::new(),
-            glass: Vec::new(),
-            wanted: Vec::new(),
-            modal: None,
-            framed: Vec::new(),
-        }
+        Layer { key, at: point(0.0, 0.0), scale: 1.0, recorded: false, kept: true, parts: Vec::new() }
     }
 }
 
@@ -157,17 +131,13 @@ pub(super) enum Part {
 }
 
 /// What's positioned, or says its `zIndex`, in a stacking context, kept to be drawn after what's in its flow, as CSS
-/// draws it (`Painter::stacked`): where it'd have been drawn, as `paint` takes it, and how what it's in was turned and
-/// what was near.
+/// draws it (`Painter::stacked`): where it'd have been drawn, as `paint` takes it, and how what it's in was turned.
 pub(super) struct Stacked {
     pub(super) taffy_node: NodeId,
     pub(super) offset: Point<f32>,
     pub(super) transform: Transform,
     pub(super) mask: ContentMask<f32>,
     pub(super) opacity: f32,
-    pub(super) parent: Option<Id>,
-    pub(super) pointer: bool,
-    pub(super) near: Bounds<f32>,
     pub(super) turn: TransformationMatrix,
 }
 
@@ -179,13 +149,8 @@ pub(super) struct Sublayer {
     pub(super) transform: Transform,
     pub(super) mask: ContentMask<f32>,
     pub(super) opacity: f32,
-    pub(super) parent: Option<Id>,
-    pub(super) pointer: bool,
     /// How what it's in turns it, in the layer as it rests.
     pub(super) turn: TransformationMatrix,
-    /// How many of the layer's own placed nodes (`Layer::placed`) were drawn before it: they're under it, and the rest
-    /// over it, for the pointer as for the eye.
-    pub(super) after: usize,
 }
 
 /// The tree as Taffy lays it out, kept from frame to frame, as GPUI's and Flutter's are: a frame styles again only what
@@ -228,6 +193,22 @@ impl Default for Retained {
 impl Retained {
     pub(super) fn leaf(&self, node: NodeId) -> &Leaf {
         self.taffy.get_node_context(node).expect("every node has its leaf")
+    }
+
+    /// Text `node`'s words wrapped to its content box, and the width they're wrapped to (`None`, as wide as they are):
+    /// as they were last wrapped, where that was to the same width (`Leaf::paragraph`).
+    pub(super) fn paragraph(&self, node: NodeId, text: &mut TextSystem) -> (Option<f32>, Arc<Paragraph>) {
+        let leaf = self.leaf(node);
+        let width = self.taffy.layout(node).map_or(1.0, |laid| laid.content_box_width().max(1.0));
+        let wrap = leaf.text.wrap.then_some(width);
+        if let Some(kept) = leaf.paragraph.as_ref().filter(|(wrapped, _)| *wrapped == wrap) {
+            return kept.clone();
+        }
+        let (words, runs) = match &leaf.measure {
+            Some(Measure::Text { words, runs, .. }) => (words.as_str(), runs.as_slice()),
+            _ => ("", &[][..]),
+        };
+        (wrap, Arc::new(text.paragraph(words, &leaf.text.style, runs, wrap, leaf.line_clamp)))
     }
 
     /// `id` was taken out of what it was in: unless it was built elsewhere in `frame`, it and what's in it go.
@@ -306,8 +287,6 @@ pub(super) struct Painter<'a> {
     pub(super) scale: f32,
     pub(super) conditions: Conditions,
     pub(super) states: &'a States,
-    pub(super) placed: Vec<(Id, Placed)>,
-    pub(super) tab_order: Vec<Id>,
     pub(super) scrolled: &'a mut HashMap<Id, Point<f32>>,
     /// How far past its end each scroll is stretched, which moves its content as far again (`Screen::stretched`).
     pub(super) stretched: HashMap<Id, Point<f32>>,
@@ -324,7 +303,6 @@ pub(super) struct Painter<'a> {
     /// Pictures by address, fetched, and those this frame wanted that weren't yet.
     pub(super) fetched: &'a HashMap<String, Option<String>>,
     pub(super) wanted: Vec<String>,
-    pub(super) rects: Rects,
     /// The time on the screen's clock, in milliseconds, for what moves by itself (`animationName`) and what's on its
     /// way somewhere (`transitions`), and whether anything did.
     pub(super) time: f64,
@@ -332,15 +310,8 @@ pub(super) struct Painter<'a> {
     pub(super) since: f64,
     pub(super) transitions: &'a mut transition::Transitions,
     pub(super) animating: bool,
-    /// Whether each node listening for `intersection` is near the window: within half the window's size of what shows
-    /// of it, as an `IntersectionObserver` with a `rootMargin` and `scrollMargin` of 50% says; and where what's painted
-    /// now is near the window, what clips it cut to it and what scrolls it grown as the window is.
-    pub(super) intersections: Vec<(Id, bool)>,
-    pub(super) near: Bounds<f32>,
     /// The window, where what's fixed is placed.
     pub(super) window: Bounds<f32>,
-    /// The topmost `aria-modal` dialog drawn, which holds the keyboard.
-    pub(super) modal: Option<Id>,
     /// How what's painted now is turned, in the window: the `rotate`s of what it's in.
     pub(super) turn: TransformationMatrix,
     /// What's positioned or says its `zIndex` in the stacking context being painted, by its `zIndex` (`auto`'s 0) and
@@ -348,20 +319,16 @@ pub(super) struct Painter<'a> {
     /// paints it; and where what's painted now is in the tree, by each node's place among its parent's children.
     pub(super) stacked: std::collections::BTreeMap<(i32, Vec<u32>), Stacked>,
     pub(super) path: Vec<u32>,
-    /// A panel's: where its page asks for the system's own material, each a window of its own over the system's glass
-    /// (`Glass`), rather than blurring what the page drew; and what the host fills them with where the system has no
-    /// glass (Linux).
-    pub(super) glass: Option<Vec<crate::platform::Glass>>,
+    /// A panel's: where its page asks for the system's own material, it's a window of its own over the system's glass
+    /// (`Glass`, `Placing::glass`), rather than blurring what the page drew; and what the host fills it with where the
+    /// system has no glass (Linux).
+    pub(super) glass: bool,
     pub(super) fill: Option<Hsla>,
-    /// Each frame's page, as it last drew itself, and where each frame was drawn now, in the window.
+    /// Each frame's page, as it last drew itself.
     pub(super) frames: &'a HashMap<Id, frames::Child>,
     /// Each video's connection natively, whose latest frame it draws (`paint_video`).
     #[cfg(not(target_arch = "wasm32"))]
     pub(super) videos: &'a mut HashMap<Id, crate::video::Video>,
-    pub(super) framed: Vec<(Id, Bounds<f32>)>,
-    /// Where what's drawn says a press moves the window, and where what's in that says it doesn't (`appRegion`).
-    pub(super) drag_regions: Vec<(Id, Bounds<f32>)>,
-    pub(super) kept_regions: Vec<Bounds<f32>>,
 }
 
 pub(super) trait Scale {
