@@ -28,7 +28,8 @@ const holds = createMemo(() => call("encryption_key").then((text): boolean => JS
 interface Held {
   owner: string
   wrapped: string | null
-  access: { missing: { key: string; name: string | null }[] }[]
+  /** Left out by a server whose Encryption is older than the page, as one that's behind is (`encryption_key`'s `access` came 20 Nov). */
+  access?: { missing: { key: string; name: string | null }[] }[]
 }
 
 /// The servers waiting for a key a passkey of this person's hands them: their own, and those of the network and the
@@ -39,7 +40,7 @@ const waitingFor = createMemo(async () => {
   const scopes = ["network", ...groups.filter((group) => group.owners.includes(me.owner)).map((group) => group.group)]
   const theirs = await Promise.all(scopes.map((subject) => call("encryption_key", {}, { subject }).then((text): Held => JSON.parse(text), () => null)))
   return [me, ...theirs.filter((held): held is Held => !!held?.wrapped)]
-    .map((held) => ({ scope: held.owner === me.owner ? undefined : held.owner, servers: [...new Set(held.access.flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))] }))
+    .map((held) => ({ scope: held.owner === me.owner ? undefined : held.owner, servers: [...new Set((held.access ?? []).flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))] }))
     .filter((waiting) => waiting.servers.length)
 })
 const again = () => [mine, holds, waitingFor].forEach(refresh)
