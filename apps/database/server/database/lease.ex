@@ -66,7 +66,11 @@ defmodule Database.Lease do
   server's, and every call passed to it would fail the same way while it kept the lease.
 
   A server that stops as it's asked to hands its leases on: it writes the log's next entry naming nobody, once it
-  answers nothing more from its copy, and whoever asks next takes it and writes at once, with nothing to wait out.
+  answers nothing more from its copy, and whoever asks next takes it and writes at once, with nothing to wait out. It
+  does so as soon as it says it's stopping, not once its process stops: a server stopping answers what it took
+  already, for up to 15 s (`OneCore.Application.prep_stop/1`), and takes nothing new, so every other server's call
+  waited on a lease it held meanwhile, and Permissions' and Sign-in's hooks gave up at 10 s, as servers restarted for
+  an update (21 Nov). What it's still running is passed to whoever takes the lease.
 
   A lease belongs to whichever server the others reach, whatever its machine, as a lease in Chubby or etcd lasts only
   while its holder answers: a holder frozen, asleep, or behind a firewall that keeps the others out, though it still
@@ -195,8 +199,9 @@ defmodule Database.Lease do
   # `folder` is where this server keeps its copy, which is nobody else's.
   @impl true
   def init({artifact, server, folder}) do
-    # So it hears that its server is stopping, and hands its lease on (`terminate/3`).
+    # So it hears that its server is stopping, and hands its lease on (`terminate/3`), from when it says so.
     Process.flag(:trap_exit, true)
+    Registry.register(OneCore.Waiting, :status, nil)
     measures()
     {:next_state, state, data, actions} = looking(%__MODULE__{artifact: artifact, server: server, folder: folder})
     {:ok, state, data, actions}
@@ -339,6 +344,15 @@ defmodule Database.Lease do
     end
   end
 
+  # Its server says it's stopping: the lease is handed on now, once a write being logged is done.
+  def handle_event(:info, :status, :writing, _data), do: {:keep_state_and_data, :postpone}
+
+  def handle_event(:info, :status, state, data) when state in [:settling, :holding] do
+    if OneCore.Release.status()["server_daemon_status"] == "stopping",
+      do: {:next_state, {:following, nil}, hand_on(close(data))},
+      else: :keep_state_and_data
+  end
+
   def handle_event(:info, _message, _state, _data), do: :keep_state_and_data
 
   # It looks at the log in the background while it's in use, and stops once it hasn't been for `@renewed_while`, when
@@ -349,27 +363,30 @@ defmodule Database.Lease do
       else: {:keep_state, %{data | ticking: false, unreached: nil}}
   end
 
-  # A server stopping as it was asked to hands on the lease it holds: its copy is closed first, so it answers nothing
-  # from it after, and then the log's next entry names nobody, unless the bucket hasn't answered that within
-  # `@handed_within`, when nobody could take the lease anyway. One that has lost the lease meanwhile writes nothing.
+  # A server stopping as it was asked to hands on the lease it holds, if it hasn't as it said it was stopping.
   @impl true
   def terminate(why, state, data) do
     {_event, data} = abandon(data)
     data = close(data)
+    if state in [:settling, :holding, :writing] and (why == :shutdown or match?({:shutdown, _}, why)), do: hand_on(data)
+  end
 
-    if state in [:settling, :holding, :writing] and (why == :shutdown or match?({:shutdown, _}, why)) do
-      {artifact, number} = {data.artifact, data.number + 1}
-      handing = Task.async(fn -> Log.write(artifact, number, %{server: nil}) end)
+  # Hands on the lease, its copy closed first, so it answers nothing from it after: the log's next entry names nobody,
+  # unless the bucket hasn't answered that within `@handed_within`, when nobody could take the lease anyway. One that has
+  # lost the lease meanwhile writes nothing.
+  defp hand_on(data) do
+    {artifact, number} = {data.artifact, data.number + 1}
+    handing = Task.async(fn -> Log.write(artifact, number, %{server: nil}) end)
 
-      wrote =
-        case Task.yield(handing, @handed_within) || Task.shutdown(handing, :brutal_kill) do
-          {:ok, wrote} -> wrote
-          {:exit, why} -> Exception.format_exit(why)
-          nil -> "the bucket hasn't answered for #{@handed_within} ms"
-        end
+    wrote =
+      case Task.yield(handing, @handed_within) || Task.shutdown(handing, :brutal_kill) do
+        {:ok, wrote} -> wrote
+        {:exit, why} -> Exception.format_exit(why)
+        nil -> "the bucket hasn't answered for #{@handed_within} ms"
+      end
 
-      Logger.info("#{data.artifact.prefix}: handing its lease on at #{number}: #{wrote}")
-    end
+    Logger.info("#{data.artifact.prefix}: handing its lease on at #{number}: #{wrote}")
+    data
   end
 
   # A database open under an earlier version of this module carries on open under this one, in the state it was in,
@@ -379,6 +396,8 @@ defmodule Database.Lease do
   def code_change(_vsn, state, data, _extra) do
     # One started by a version before it handed its lease on hears its server stopping from now on (`init/1`).
     Process.flag(:trap_exit, true)
+    Registry.unregister(OneCore.Waiting, :status)
+    Registry.register(OneCore.Waiting, :status, nil)
     data = struct(__MODULE__, Map.from_struct(data))
     data = if match?({sqlite, _db} when sqlite != Sqlite, data.db), do: reopened(data, state), else: data
     {:ok, state, if(data.db && is_nil(data.reader), do: %{data | reader: reader(file(data))}, else: data)}
