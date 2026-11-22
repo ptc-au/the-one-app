@@ -29,9 +29,6 @@ pub struct Scene {
     /// What scrolls in it (`Scrolled`), each where it clips what's in it and how far it's scrolled, by which a frame
     /// moves the pixels it kept of one that scrolled (`damage::scrolled`).
     pub(crate) scrolls: Vec<Scrolled>,
-    /// Of each quad, where occlusion drew it only in bands (`occlude`): the mask it had whole, and whether it's its
-    /// first band, as damage compares it whole, so a card scrolling over a still background doesn't change it.
-    pub(crate) bands: Vec<Option<(ContentMask<ScaledPixels>, bool)>>,
 }
 
 /// A box whose content scrolls: its node, what it clips its content to, and how far its content is moved up and to
@@ -64,7 +61,6 @@ impl Scene {
         self.rasters.clear();
         self.recordings.clear();
         self.scrolls.clear();
-        self.bands.clear();
     }
 
     pub(crate) fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
@@ -321,12 +317,10 @@ impl Scene {
         self.rasters.sort_by_key(|raster| raster.order);
     }
 
-    /// What an opaque quad drawn later covers isn't drawn, as a compositor's occlusion culling leaves it out: a quad
-    /// wholly under one goes, and one mostly under it (a window's background under a card) is drawn only in the bands
-    /// around it. A GPU's fill rate is what a scrolled page spends, and a long list drew its window and its card both,
-    /// whole, every frame. Nothing goes where something blurs what's behind it (a backdrop), which reads what's under.
+    /// A quad wholly under an opaque one drawn later isn't drawn, as a compositor's occlusion culling leaves it out: a
+    /// GPU's fill rate is what a scrolled page spends. Nothing goes where something blurs what's behind it (a
+    /// backdrop), which reads what's under.
     fn occlude(&mut self) {
-        self.bands.clear();
         if !self.backdrops.is_empty() {
             return;
         }
@@ -351,51 +345,14 @@ impl Scene {
         if opaque.is_empty() {
             return;
         }
-        let area = |bounds: &Bounds<ScaledPixels>| bounds.size.width.0 * bounds.size.height.0;
-        let mut kept = Vec::with_capacity(self.quads.len());
-        let mut bands = Vec::with_capacity(self.quads.len());
-        for quad in std::mem::take(&mut self.quads) {
-            let whole = quad.content_mask.bounds.intersect(&quad.bounds);
-            let mut pieces = vec![whole];
-            // Cut by each that covers it, again until none cuts it: one covering little of it whole (a sidebar on its
-            // window) may cover all of a band another cut it to.
-            let mut cutting = quad.transformation == TransformationMatrix::unit();
-            while cutting {
-                cutting = false;
-                for (_, covered) in opaque.iter().filter(|(order, _)| *order > quad.order) {
-                    pieces = pieces
-                        .into_iter()
-                        .flat_map(|shown| {
-                            let under = shown.intersect(covered);
-                            // Wholly shown, or little of it under: drawn as it is.
-                            if under.is_empty() || area(&under) < area(&shown) / 4.0 {
-                                return vec![shown];
-                            }
-                            cutting = true;
-                            let (left, top) = (shown.origin, shown.bottom_right());
-                            let (low, high) = (under.origin, under.bottom_right());
-                            let band = |x0: f32, y0: f32, x1: f32, y1: f32| Bounds::from_corners(crate::geometry::Point { x: px(x0), y: px(y0) }, crate::geometry::Point { x: px(x1), y: px(y1) });
-                            [
-                                band(left.x.0, left.y.0, top.x.0, low.y.0),
-                                band(left.x.0, high.y.0, top.x.0, top.y.0),
-                                band(left.x.0, low.y.0, low.x.0, high.y.0),
-                                band(high.x.0, low.y.0, top.x.0, high.y.0),
-                            ]
-                            .into_iter()
-                            .filter(|band| !band.is_empty())
-                            .collect()
-                        })
-                        .collect();
-                }
-            }
-            // Drawn whole, it keeps its mask, rounded corners and all; a band of it is cut to that band too.
-            let mask = |shown: Bounds<ScaledPixels>| if shown == whole { quad.content_mask } else { quad.content_mask.intersect(&ContentMask::from(shown)) };
-            let cut = pieces != [whole];
-            bands.extend((0..pieces.len()).map(|at| cut.then_some((quad.content_mask, at == 0))));
-            kept.extend(pieces.into_iter().map(|shown| Quad { content_mask: mask(shown), ..quad.clone() }));
-        }
-        self.quads = kept;
-        self.bands = bands;
+        self.quads.retain(|quad| {
+            let shown = quad.content_mask.bounds.intersect(&quad.bounds);
+            let under = |covered: &Bounds<ScaledPixels>| {
+                let (shown_end, covered_end) = (shown.bottom_right(), covered.bottom_right());
+                covered.origin.x.0 <= shown.origin.x.0 && covered.origin.y.0 <= shown.origin.y.0 && shown_end.x.0 <= covered_end.x.0 && shown_end.y.0 <= covered_end.y.0
+            };
+            quad.transformation != TransformationMatrix::unit() || !opaque.iter().any(|(order, covered)| *order > quad.order && under(covered))
+        });
     }
 
     pub(crate) fn batches(&self) -> impl Iterator<Item = PrimitiveBatch<'_>> {
