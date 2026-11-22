@@ -1,0 +1,45 @@
+{
+  "Syncing": {
+    "component": "repos",
+    "answers": {
+      "github-sync_repos": {
+        "app": "the-ptc-app-github-sync",
+        "team": "ptc-au/ptc-app",
+        "repos": [
+          {
+            "github": "ptc-au/the-one-app",
+            "repo": "network/made/git-repos/the-one-app",
+            "synced": 1767225540000,
+            "error": null
+          },
+          {
+            "github": "ptc-au/the-ptc-app",
+            "repo": "network/made/git-repos/the-ptc-app",
+            "synced": 1767221940000,
+            "error": "GitHub answered GET /orgs/ptc-au/installation with 404: Not Found"
+          }
+        ]
+      }
+    },
+    "size": [
+      720,
+      480
+    ],
+    "touch": false
+  },
+  "Not connected": {
+    "component": "repos",
+    "answers": {
+      "github-sync_repos": {
+        "app": null,
+        "team": null,
+        "repos": []
+      }
+    },
+    "size": [
+      720,
+      480
+    ],
+    "touch": false
+  }
+}
