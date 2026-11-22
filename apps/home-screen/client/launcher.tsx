@@ -328,13 +328,14 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
   // Where the App Library is drawn along: the screenful after the shown owner's last.
   const libraryAt = () => props.layout.homes(shown()).length * pitch()
   // The strip slides by its spring as it goes along, but not as another owner comes to be shown in its place, whose
-  // pages are lined up where they go already.
+  // pages are lined up where they go already. With less motion it doesn't slide, and a drag let go cross-dissolves for
+  // as long as its spring says.
   let was = untrack(shown)
   const slides = () => {
     const now = shown()
     const same = now === was
     was = now
-    return same && !reducedMotion()
+    return same
   }
   return (
     <>

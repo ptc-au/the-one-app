@@ -386,6 +386,33 @@ struct Dragged {
     answered: bool,
     axes: [Axis; 2],
     spring: Option<Spring>,
+    /// With less motion, let go where its page then moved where it rests: it's cross-dissolved there from where it was
+    /// drawn, as UIKit's `transitionCrossDissolve` and SwiftUI's `.opacity` transition replace a slide.
+    dissolve: Option<Dissolve>,
+}
+
+/// A dragged node cross-dissolving to where it rests: where it was drawn from there, in pixels along and down, from when
+/// (ms on the screen's clock), over how long, eased how.
+#[derive(Clone, Copy)]
+struct Dissolve {
+    from: Point<f32>,
+    start: f64,
+    duration: f32,
+    easing: [f32; 4],
+}
+
+impl Dissolve {
+    /// How far through it is at `now`, from 0, as it starts, to 1, eased.
+    fn part(&self, now: f64) -> f32 {
+        if now <= self.start {
+            return 0.0;
+        }
+        ease(self.easing, if self.duration > 0.0 { ((now - self.start) / f64::from(self.duration)).min(1.0) as f32 } else { 1.0 })
+    }
+
+    fn done(&self, now: f64) -> bool {
+        now - self.start >= f64::from(self.duration)
+    }
 }
 
 /// A dragged node's way along or down: how far it was from where its style puts it (`rest`, in pixels, as last
@@ -410,7 +437,11 @@ impl Dragged {
     }
 
     fn done(&self, now: f64) -> bool {
-        !self.held && !self.coasting && self.spring.is_some() && self.state(now).iter().all(|(off, velocity)| Spring::arrived(*off, *velocity, NEAR))
+        !self.held
+            && !self.coasting
+            && self.spring.is_some()
+            && self.state(now).iter().all(|(off, velocity)| Spring::arrived(*off, *velocity, NEAR))
+            && self.dissolve.is_none_or(|dissolve| dissolve.done(now))
     }
 }
 
@@ -550,9 +581,9 @@ impl Transitions {
 
     /// Node `id` is dragged `offset` pixels, along and down, from where its style puts it, held there.
     pub fn hold(&mut self, id: Id, offset: Point<f32>) {
-        let dragged = self.dragged.entry(id).or_insert(Dragged { held: true, coasting: false, answered: false, axes: [Axis::default(); 2], spring: None });
+        let dragged = self.dragged.entry(id).or_insert(Dragged { held: true, coasting: false, answered: false, axes: [Axis::default(); 2], spring: None, dissolve: None });
         (dragged.held, dragged.coasting, dragged.answered) = (true, false, false);
-        dragged.spring = None;
+        (dragged.spring, dragged.dissolve) = (None, None);
         for (axis, by) in dragged.axes.iter_mut().zip([offset.x, offset.y]) {
             axis.off = f64::from(by);
             axis.velocity = 0.0;
@@ -613,11 +644,17 @@ impl Transitions {
             }
         }
         let state = dragged.state(now);
-        for (((axis, rest), (off, velocity)), styled) in dragged.axes.iter_mut().zip(rests).zip(state).zip(styled) {
+        let mut from = [0.0; 2];
+        for ((((axis, rest), (off, velocity)), styled), from) in dragged.axes.iter_mut().zip(rests).zip(state).zip(styled).zip(&mut from) {
             if let Some(was) = axis.rest.or(styled).filter(|was| *was != rest && !dragged.held) {
+                *from = (off + f64::from(was - rest)) as f32;
                 (axis.off, axis.velocity, axis.start) = if reduced { (0.0, 0.0, now) } else { (off + f64::from(was - rest), velocity, now) };
             }
             axis.rest = Some(rest);
+        }
+        if reduced && from != [0.0; 2] {
+            let (duration, easing) = computed.transition.as_ref().map_or((0.0, [0.0, 0.0, 1.0, 1.0]), |transition| (transition.duration, transition.easing));
+            dragged.dissolve = Some(Dissolve { from: Point { x: from[0], y: from[1] }, start: now, duration, easing });
         }
         // Arrived, it's where its style puts it, as `Moving::at` has it.
         let [(x, _), (y, _)] = if dragged.done(now) { [(0.0, 0.0); 2] } else { dragged.state(now) };
@@ -673,6 +710,13 @@ impl Transitions {
             ids.remove(id);
         }
         ids
+    }
+
+    /// Node `id` cross-dissolving to where it rests at `now`, where it does (`Dissolve`): where it was drawn from there,
+    /// in pixels along and down, which fades out as it fades in where it rests, and how far it's faded in.
+    pub fn dissolving(&self, id: Id, now: f64) -> Option<(Point<f32>, f32)> {
+        let dissolve = self.dragged.get(&id)?.dissolve.filter(|dissolve| !dissolve.done(now))?;
+        Some((dissolve.from, dissolve.part(now)))
     }
 
     /// Ends a frame: forgets what's arrived. → whether anything's still moving.

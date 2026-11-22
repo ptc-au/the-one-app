@@ -229,8 +229,11 @@ impl Screen {
         // What says it's about to move (`will-change`) is one as it holds still too: drawn ahead, it only moves then.
         // A text is none: it's drawn where it is each frame, as one in a layer is (`Painter::paint_node`).
         let text = |id: &Id| self.tree.nodes.get(id).is_some_and(|node| matches!(node.kind, Kind::Text | Kind::RawText));
-        let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| !touched.contains(id) && !text(id)).copied().collect();
-        self.layers.retain(|id, _| layered.contains(id));
+        // What cross-dissolves with less motion is drawn from its layer, where it was and where it rests, even as
+        // what's in it changes, which draws its layer again, as a snapshot is taken then (`Transitions::dissolving`).
+        let dissolving: HashSet<Id> = whole.iter().filter(|id| self.transitions.dissolving(**id, now).is_some()).copied().collect();
+        let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| (!touched.contains(id) || dissolving.contains(id)) && !text(id)).copied().collect();
+        self.layers.retain(|id, _| layered.contains(id) && !(dissolving.contains(id) && touched.contains(id)));
         // It's drawn ahead in a frame where nothing moves, as a browser draws in idle time, not in one that's busy.
         let still = moving.is_empty();
         self.frame += 1;

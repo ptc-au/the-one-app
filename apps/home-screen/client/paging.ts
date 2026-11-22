@@ -142,7 +142,6 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
       look()
     },
     onDragEnd: ({ offset, velocity, canceled }: Dragged) => {
-      const left = held
       drag(undefined)
       setSettling(true)
       if (canceled) return look()
@@ -150,13 +149,8 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
       const from = Math.round(sideways(owner).value / pitch())
       const screen = settle(from, from - offset.x / pitch(), -velocity.x, stops(owner), pitch())
       quietFor(350)
-      const moving = sideways(owner)
-      // Less motion: the pages stay where the hand left them, and fade out, go to the page and fade in (`glide`), where
-      // the host's spring would have slid them.
-      if (untrack(reducedMotion)) {
-        jump(moving, moving.value - left)
-        glide(moving, screen * pitch())
-      } else jump(moving, screen * pitch())
+      // The host springs them there from where the hand left them, or with less motion cross-dissolves them there.
+      jump(sideways(owner), screen * pitch())
       home.send({ type: "settled", at: { owner, screen } })
     },
   }

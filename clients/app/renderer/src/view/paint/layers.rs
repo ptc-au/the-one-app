@@ -44,6 +44,50 @@ impl Painter<'_> {
         let by = point(at.x + k * (centre.x + translate.x - own * centre.x) - grown * was.x, at.y + k * (centre.y + translate.y - own * centre.y) - grown * was.y);
         let moved = |bounds: Bounds<f32>| Bounds { origin: point(bounds.origin.x * grown + by.x, bounds.origin.y * grown + by.y), size: Size { width: bounds.size.width * grown, height: bounds.size.height * grown } };
         let opacity = opacity * look.opacity;
+        // Cross-dissolving to where it rests, with less motion, it's drawn where it was too, fading out as it fades in
+        // here, as UIKit's cross-dissolve draws a snapshot of a view where it was, rather than taken out and brought
+        // back, which left the window empty between. What's drawn there takes no pointer, keyboard or place.
+        let opacity = match self.transitions.dissolving(id, self.time) {
+            Some((from, part)) => {
+                let kept = (self.placed.len(), self.tab_order.len(), self.intersections.len(), self.drag_regions.len(), self.kept_regions.len(), self.framed.len(), self.rects.clone());
+                self.draw_layer(id, point(by.x + from.x * k, by.y + from.y * k), grown, opacity * (1.0 - part), mask);
+                let (placed, tab_order, intersections, drag_regions, kept_regions, framed, rects) = kept;
+                self.placed.truncate(placed);
+                self.tab_order.truncate(tab_order);
+                self.intersections.truncate(intersections);
+                self.drag_regions.truncate(drag_regions);
+                self.kept_regions.truncate(kept_regions);
+                self.framed.truncate(framed);
+                self.rects = rects;
+                opacity * part
+            }
+            None => opacity,
+        };
+        self.draw_layer(id, by, grown, opacity, mask);
+        let layer = &self.layers[&id];
+        self.rects.extend(layer.rects.iter().map(|(id, rect)| {
+            let drawn = moved(Bounds { origin: point(rect.x, rect.y), size: Size { width: rect.width, height: rect.height } });
+            (*id, Rect { x: drawn.origin.x, y: drawn.origin.y, width: drawn.size.width, height: drawn.size.height })
+        }));
+        self.tab_order.extend(&layer.tab_order);
+        self.intersections.extend(&layer.intersections);
+        self.drag_regions.extend(layer.drag_regions.iter().map(|(id, bounds)| (*id, moved(*bounds).intersect(&mask.bounds))));
+        self.kept_regions.extend(layer.kept_regions.iter().map(|bounds| moved(*bounds).intersect(&mask.bounds)));
+        // A layer fading has no glass of the system's, which can't fade (`paint`).
+        if let Some(glass) = self.glass.as_mut().filter(|_| opacity >= 1.0) {
+            glass.extend(layer.glass.iter().map(|pane| crate::platform::Glass { bounds: moved(pane.bounds).intersect(&mask.bounds), radius: pane.radius * grown, opacity: pane.opacity * opacity }));
+        }
+        self.wanted.extend(layer.wanted.iter().cloned());
+        self.framed.extend(layer.framed.iter().map(|(id, bounds)| (*id, moved(*bounds))));
+        self.modal = layer.modal.or(self.modal);
+        if !layer.kept {
+            self.layers.remove(&id);
+        }
+    }
+
+    /// Draws node `id`'s layer moved by `by` and grown by `grown` (p ↦ p·grown + by), `opacity` as opaque, cut to `mask`.
+    fn draw_layer(&mut self, id: Id, by: Point<f32>, grown: f32, opacity: f32, mask: ContentMask<f32>) {
+        let moved = |bounds: Bounds<f32>| Bounds { origin: point(bounds.origin.x * grown + by.x, bounds.origin.y * grown + by.y), size: Size { width: bounds.size.width * grown, height: bounds.size.height * grown } };
         // What it placed, moved, in the order it was drawn among what's drawn into it each frame: what's on top takes
         // the pointer. Put after them, a text drawn into it each frame was under the box it's in, which took the
         // pointer from it, so it was hovered in a frame drawn afresh and not in one drawn from the layer, and that
@@ -77,25 +121,6 @@ impl Painter<'_> {
             }
         }
         placed(self, done..self.layers[&id].placed.len());
-        let layer = &self.layers[&id];
-        self.rects.extend(layer.rects.iter().map(|(id, rect)| {
-            let drawn = moved(Bounds { origin: point(rect.x, rect.y), size: Size { width: rect.width, height: rect.height } });
-            (*id, Rect { x: drawn.origin.x, y: drawn.origin.y, width: drawn.size.width, height: drawn.size.height })
-        }));
-        self.tab_order.extend(&layer.tab_order);
-        self.intersections.extend(&layer.intersections);
-        self.drag_regions.extend(layer.drag_regions.iter().map(|(id, bounds)| (*id, moved(*bounds).intersect(&mask.bounds))));
-        self.kept_regions.extend(layer.kept_regions.iter().map(|bounds| moved(*bounds).intersect(&mask.bounds)));
-        // A layer fading has no glass of the system's, which can't fade (`paint`).
-        if let Some(glass) = self.glass.as_mut().filter(|_| opacity >= 1.0) {
-            glass.extend(layer.glass.iter().map(|pane| crate::platform::Glass { bounds: moved(pane.bounds).intersect(&mask.bounds), radius: pane.radius * grown, opacity: pane.opacity * opacity }));
-        }
-        self.wanted.extend(layer.wanted.iter().cloned());
-        self.framed.extend(layer.framed.iter().map(|(id, bounds)| (*id, moved(*bounds))));
-        self.modal = layer.modal.or(self.modal);
-        if !layer.kept {
-            self.layers.remove(&id);
-        }
     }
 
     /// What node `id` draws as it rests, everywhere, not cut to what it's in: its own scene, and what it says of where
@@ -207,6 +232,14 @@ impl Painter<'_> {
         let Some(leaf) = self.layout.taffy.get_node_context(taffy_node) else { return };
         let (id, text, mut look, lines) = (leaf.id, leaf.text, leaf.look.clone(), leaf.line_clamp);
         let words = matches!(self.tree.nodes[&id].kind, Kind::Text | Kind::RawText);
+        // Starting to cross-dissolve, where it rests changed in this frame: it's drawn where it was, as it is, and from
+        // the next, from its layer there and where it rests (`paint_layer`).
+        let dissolving = self.transitions.dissolving(id, self.time).filter(|_| self.recording.is_none());
+        let starting = dissolving.is_some_and(|(_, part)| part == 0.0);
+        let transform = match dissolving {
+            Some((from, _)) if starting => Transform { offset: point(transform.offset.x + from.x * transform.scale, transform.offset.y + from.y * transform.scale), ..transform },
+            _ => transform,
+        };
         if self.recording == Some(id) {
             // Its layer is drawn as it rests, and moved, grown and faded as it's drawn from it.
             (look.translate, look.scale, look.rest_scale, look.opacity) = ((Offset::Px(0.0), Offset::Px(0.0)), 1.0, 1.0, 1.0);
@@ -224,7 +257,7 @@ impl Painter<'_> {
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));
             self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, parent, pointer, turn: self.turn, after: self.placed.len() }));
             return;
-        } else if self.layered.contains(&id) && self.unsettled != Some(id) && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
+        } else if (self.layered.contains(&id) || dissolving.is_some()) && !starting && self.unsettled != Some(id) && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
             return self.paint_layer(taffy_node, id, offset, transform, &look, mask, opacity, parent, pointer);
         }
         let tree = self.tree;

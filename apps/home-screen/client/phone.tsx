@@ -29,13 +29,14 @@ export function Phone(props: { owners: Owner[]; layout: Screens; paging: Paging 
   // up or down to them.
   const lined = (owner: number) => (owner === shown() ? 0 : across() - Math.min(xOf(owner)[0](), homeWidth(owner) - room().width))
   // The strip slides by its spring as it goes along, but not as another owner comes to be shown in its place, whose
-  // pages are lined up where they go already, nor for whoever asked for less motion.
+  // pages are lined up where they go already. With less motion it doesn't slide, and a drag let go cross-dissolves for
+  // as long as its spring says.
   let was = untrack(shown)
   const slides = () => {
     const now = shown()
     const same = now === was
     was = now
-    return same && !reducedMotion()
+    return same
   }
   return (
     <>
