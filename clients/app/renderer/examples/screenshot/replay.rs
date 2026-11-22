@@ -29,6 +29,8 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
     let snaps = renderer::inspect::snaps(request);
     // Each frame against the same drawn whole (`Windows::whole`), as one drawn only where it changed must be.
     let checks_whole = request.inputs.get("whole").and_then(Value::as_bool) == Some(true);
+    // Every node of each frame, where `nodes` asks, as core/ui's rules read each frame (what's drawn over what).
+    let every_node = request.inputs.get("nodes").and_then(Value::as_bool) == Some(true);
     let query = |input: &str| match request.inputs.get(input) {
         Some(Value::Object(selector)) => {
             let mut query = json!({"op": "query"});
@@ -170,6 +172,18 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         if let Some(query) = &apart {
             let nodes = seen(windows, query);
             frame["apart"] = json!(nodes.iter().filter_map(|node| windows.with(id, |screen| screen.shown_rect(node["node"].as_u64()?)).flatten()).map(|rect| rect.json()).collect::<Vec<_>>());
+        }
+        // Every node, as `query` has it, at the rect the frame on the screen drew it at, however it's moved, grown or
+        // turned; one not drawn has none.
+        if every_node {
+            let mut nodes = ask(windows, id, json!({"op": "query"})).and_then(|found| found["result"]["nodes"].as_array().cloned()).unwrap_or_default();
+            for node in &mut nodes {
+                match node["node"].as_u64().and_then(|at| windows.with(id, |screen| screen.shown_rect(at)).flatten()) {
+                    Some(rect) => node["rect"] = rect.json(),
+                    None => _ = node.as_object_mut().map(|node| node.remove("rect")),
+                }
+            }
+            frame["nodes"] = json!(nodes);
         }
         if let Some(scrolled) = windows.with(id, |screen| screen.scrolled_under(renderer::geometry::point(x, y))).flatten() {
             frame["scroll"] = json!({"x": scrolled.x, "y": scrolled.y});

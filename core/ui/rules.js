@@ -142,10 +142,10 @@ export function marks(nodes, file, [width]) {
   )
 }
 
-/// No two texts in sight are drawn over each other, and no control over part of another, as a chevron over a tile's
-/// edge or a large title over a bar's is. What scrolls under a bar while it's scrolled is meant to, as UIKit's content
-/// does. → what's wrong, a line each.
-export function apart(nodes) {
+/// No two words in sight are drawn over each other, at rest or in any frame of a motion (motion/play.js), as a large
+/// title over a bar's (L24) or a folder's names twice over (L37) were: what scrolls under a bar while it's scrolled is
+/// meant to, and a cross-fade's two are each less than opaque. → what's wrong, a line each.
+export function wordsApart(nodes) {
   return pages(nodes).flatMap(({ here, byId, above, scrolled, covered }) => {
     const related = (a, b) => above(a).includes(b) || above(b).includes(a)
     const texts = here.filter((node) => node.kind === "text" && node.name?.trim() && node.opacity >= 0.99 && node.seen > 0 && node.rect && !covered(node))
@@ -158,7 +158,17 @@ export function apart(nodes) {
     for (const [n, a] of texts.entries())
       for (const b of texts.slice(n + 1))
         if (!related(a, b) && !(scrolled(a) !== scrolled(b)) && inked(a).some((one) => inked(b).some((other) => overlap(one, other)))) wrong.push(`${said(a)} (${box(a.rect)}) and ${said(b)} (${box(b.rect)}) are drawn over each other`)
+    return wrong
+  })
+}
+
+/// No control is drawn over part of another, as a chevron over a tile's edge is, at rest. (In motion, what flies over
+/// what is a motion's own `apart`.) → what's wrong, a line each.
+export function controlsApart(nodes) {
+  return pages(nodes).flatMap(({ here, above, scrolled, covered }) => {
+    const related = (a, b) => above(a).includes(b) || above(b).includes(a)
     const controls = here.filter((node) => node.actions?.includes("click") && node.opacity >= 0.99 && node.seen >= 0.99 && node.rect && !covered(node))
+    const wrong = []
     for (const [n, a] of controls.entries())
       for (const b of controls.slice(n + 1))
         if (!related(a, b) && !scrolled(a) && !scrolled(b) && overlap(a.rect, b.rect) && !inside(a.rect, b.rect) && !inside(b.rect, a.rect)) wrong.push(`${said(a)} (${box(a.rect)}) is drawn over part of ${said(b)} (${box(b.rect)})`)
@@ -307,5 +317,5 @@ const EXCEPT = {
 /// Every rule, by its name, as scenes.js says what fails: each a line. The nodes are kept beside the picture
 /// (`native-nodes.json`), so a rule can be tried again on a run's scenes without drawing them.
 export function rules(nodes, file, size, scene) {
-  return Object.entries({ contrast: contrast(nodes, file, size), marks: marks(nodes, file, size), apart: apart(nodes), "row ends": rowEnds(nodes), centred: centred(nodes), unbroken: unbroken(nodes), "room to show it": roomy(nodes), corners: corners(nodes, file, size) }).filter(([rule]) => !EXCEPT[scene]?.[rule] && !EXCEPT[scene.split(" · ")[0]]?.[rule]).flatMap(([rule, lines]) => lines.map((line) => `${rule}: ${line}`))
+  return Object.entries({ contrast: contrast(nodes, file, size), marks: marks(nodes, file, size), apart: [...wordsApart(nodes), ...controlsApart(nodes)], "row ends": rowEnds(nodes), centred: centred(nodes), unbroken: unbroken(nodes), "room to show it": roomy(nodes), corners: corners(nodes, file, size) }).filter(([rule]) => !EXCEPT[scene]?.[rule] && !EXCEPT[scene.split(" · ")[0]]?.[rule]).flatMap(([rule, lines]) => lines.map((line) => `${rule}: ${line}`))
 }

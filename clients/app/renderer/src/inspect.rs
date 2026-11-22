@@ -42,7 +42,7 @@
 //! - `replay` (a selector, or a point, where a press goes down; `moves`, each `{dx, dy, ms}`, a stretch with neither
 //!   holding still; `lift`, true unless given; `hz`, the display's frames a second, 60 unless given; `input_hz`, its
 //!   moves a second, `hz` unless given; `after`, ms to keep drawing past its end, 2000 unless given, stopping once
-//!   nothing moves; `track`, a selector of the one node to follow (it fails, saying why, where nothing ever matches, or several do); `count`, a selector of nodes to count; `shows` and `holds`, ones whose nodes are counted the same way; `apart`, one whose nodes' rects are listed; `snap`: true for
+//!   nothing moves; `track`, a selector of the one node to follow (it fails, saying why, where nothing ever matches, or several do); `count`, a selector of nodes to count; `shows` and `holds`, ones whose nodes are counted the same way; `apart`, one whose nodes' rects are listed; `nodes`: true for every node of each frame, as `query` has them, each at the rect it's drawn at (the headless harness's); `snap`: true for
 //!   each frame's picture) → `{hz, budget_ms, over, frames, time, paused}`: the press played as `drag` plays it, each
 //!   move at its own time, and every frame of the display drawn as the window draws one, each with what `profile`'s
 //!   says, `at` (ms since it went down), where `track` was drawn (`x`, `y`), how many nodes `count` matches a person
