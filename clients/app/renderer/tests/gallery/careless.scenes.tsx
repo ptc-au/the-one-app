@@ -9,10 +9,10 @@ import { Badge, Icon, Image, ScrollView, styles, Text, tokens, View, type Scenes
 // tuned (a stress scene, which is no model of how to write one).
 
 const look = styles({
-  // Grown to fill the window, and never kept to it (no `minHeight: 0`), which the author of a page like this never
-  // thought of: it is as tall as its cards, as CSS's `min-height: auto` has a flex item, so the window scrolls it, as a
-  // browser scrolls the document, its header and bar with it.
   page: { flexGrow: 1 },
+  // The page kept to its window. A page without it is as tall as what it holds, as CSS's `min-height: auto` has a flex item
+  // (a scroll box too is as tall as its content, there, till its parent says otherwise): a browser scrolls the document.
+  bounded: { minHeight: 0 },
   // Under the glass header, and above the glass bar, as a careless page clears them, by guessing.
   content: { paddingTop: 150, paddingBottom: 120, paddingInline: tokens.grid[4], gap: tokens.grid[4] },
   // On everything, as `willChange` is by someone who read once that it makes things fast.
@@ -111,13 +111,14 @@ const Card = (props: { at: number }) => {
   )
 }
 
-// What a motion follows: the first card's title, which scrolls with the list.
+// What the motions follow and what must stay drawn: the first card's title, which scrolls with the list, and the
+// header's words, which are over the glass the whole time.
 const follow = { role: "text", name: "Sam, message 1" }
 const header = "Twenty messages, three of them new, over the glass that the cards scroll under"
 
-const Careless = () => (
-  <View style={look.page}>
-    <ScrollView style={look.page}>
+const Careless = (props: { bounded: boolean }) => (
+  <View style={[look.page, props.bounded && look.bounded]}>
+    <ScrollView style={[look.page, props.bounded && look.bounded]}>
       <View style={look.content}>
         <View style={[look.card, look.layer, look.huge]}>
           <Text style={look.title}>Inbox</Text>
@@ -138,13 +139,38 @@ const Careless = () => (
   </View>
 )
 
-// A finger flings it, pressed in the margin beside the cards, where no scroll box of theirs is under the finger to take
-// it; its badges fade and its icons turn throughout.
+// A finger flings it, drags it past a nested box, pulls it down from its top; a wheel turns it, by notches as a mouse's
+// do and as a trackpad's fingers; its badges fade and its icons turn throughout.
 export default {
+  "Careless/On a phone": {
+    touch: true,
+    layout: "fullscreen",
+    render: () => <Careless bounded />,
+    motions: {
+      // Pressed in the margin beside the cards, where no scroll box of theirs is under the finger to take it.
+      Flung: { from: { x: 378, y: 600 }, gesture: { fling: [0, -300] }, follow, holds: header },
+      "Dragged and held": { from: { x: 378, y: 600 }, gesture: { moves: [{ dy: -300, ms: 100 }, { ms: 100 }], lift: true }, follow, holds: header },
+      // On the first of the scroll boxes in a card, which takes the finger until it's at its end, and then the page does.
+      "Flung from a box in a card": { from: { x: 195, y: 800 }, gesture: { fling: [0, -300] } },
+      "Pulled past its top": { from: { x: 378, y: 400 }, gesture: { swipe: [0, 240], speed: 1600 }, follow, holds: header },
+    },
+  },
+  // Its page not kept to its window, which the author of a page like this never thought of: it is as tall as its cards, as it is in
+  // a browser, where the document scrolls, the header and the bar with it.
   "Careless/On a phone, its page not kept to its window": {
     touch: true,
     layout: "fullscreen",
-    render: () => <Careless />,
+    render: () => <Careless bounded={false} />,
     motions: { Flung: { from: { x: 378, y: 600 }, gesture: { fling: [0, -300] }, follow } },
+  },
+  "Careless/On a computer": {
+    touch: false,
+    layout: "fullscreen",
+    size: [900, 640],
+    render: () => <Careless bounded />,
+    motions: {
+      "Wheel notches": { gesture: { trace: "traces/careless-wheel-notches.json" }, follow, holds: header },
+      "Trackpad swipe and its momentum": { gesture: { trace: "traces/careless-trackpad.json" }, follow, holds: header },
+    },
   },
 } satisfies Scenes
