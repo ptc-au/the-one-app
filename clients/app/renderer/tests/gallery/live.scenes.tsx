@@ -8,7 +8,7 @@ const picture = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAACO1
 /** A screen with no live video, as a browser without WebRTC or a screen without a stream has: its pictures. */
 const pictures = async ({ action }: ScreenInputs) => {
   if (action === "stream") throw new Error("This screen has no live video")
-  return action === "headless" ? picture : { done: action }
+  return action === "screenshot" ? picture : { done: action }
 }
 
 /** A screen that answers nothing but its resizing. */
