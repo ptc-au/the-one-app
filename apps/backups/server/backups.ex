@@ -267,6 +267,7 @@ defmodule Backups do
       },
       %{
         name: "check",
+        task_support: :optional,
         description:
           "Reads the newest backup at a destination, or at each, back whole, and compares every object with what was sent",
         inputs: %{type: "object", properties: %{destination: destination}},
@@ -294,6 +295,7 @@ defmodule Backups do
       },
       %{
         name: "restore",
+        task_support: :optional,
         description:
           "Brings back what a backup holds under `blobs` that's gone from the network, such as one person's or one app's data, or a file. It changes nothing that's there",
         inputs: %{
