@@ -62,7 +62,7 @@ import { round } from "./motion/play.js"
 import { cpuName, hostScore } from "./motion/tiers.js"
 
 // What scenes.js and calibrate.js import from here.
-export { capped, env, FACES, glass, stopped } from "./motion/options.js"
+export { capped, env, FACES, glass, lavapipe, stopped } from "./motion/options.js"
 export { moves, selector } from "./motion/gesture.js"
 export { monospaced } from "./motion/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./motion/harness.js"

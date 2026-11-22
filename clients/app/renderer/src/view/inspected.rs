@@ -575,8 +575,26 @@ impl Screen {
     fn pending(&self) -> Vec<Value> {
         // Put away or in the background, it's given no frames: what moves a frame at a time, or by the renderer, can't end
         // by itself till it's shown, when it's where its time has taken it.
-        let (moving, animating) = if self.visible { (self.transitions.len(), self.js.framing() || self.coasting()) } else { (0, false) };
-        let mut pending = inspect::pending(&self.unanswered, &self.js.timers(), moving, animating, self.changed.is_some(), self.js.busy());
+        let page_frames = self.js.framing() && !self.js.frames_on_clock();
+        let (moving, animating) = if self.visible { (self.transitions.len(), (self.js.framing() && !page_frames) || self.coasting()) } else { (0, false) };
+        // A timer that isn't on the clock (a browser's) runs while it's paused: it's pending till it has.
+        let real = !self.js.on_clock();
+        let timers: Vec<Value> = self
+            .js
+            .timers()
+            .into_iter()
+            .map(|mut timer| {
+                if real {
+                    timer["real"] = json!(true);
+                }
+                timer
+            })
+            .collect();
+        let mut pending = inspect::pending(&self.unanswered, &timers, moving, animating, self.changed.is_some(), self.js.busy());
+        // Frames its page asks for that the browser gives it, as it shows them, whatever its paused clock says.
+        if self.visible && page_frames {
+            pending.push(json!({"kind": "frames"}));
+        }
         // A page busy with something else (`Thread::seed`) runs what's held for it once it's free, as a timer does.
         if let Some(free) = self.js.holding() {
             pending.push(json!({"kind": "busy", "in": free}));

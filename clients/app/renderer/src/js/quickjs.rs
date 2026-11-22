@@ -771,6 +771,16 @@ impl Thread {
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
+
+    /// Whether its page's timers run on its clock, as they do here: paused, none is due until it's moved.
+    pub fn on_clock(&self) -> bool {
+        true
+    }
+
+    /// Whether the frames its page asks for come as its clock is moved, as they do here.
+    pub fn frames_on_clock(&self) -> bool {
+        true
+    }
 }
 
 impl Drop for Thread {

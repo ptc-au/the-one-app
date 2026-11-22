@@ -46,6 +46,7 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     console_log();
     SCALE.set(scale);
     CLOCK.set(Some(if paused { Clock::stopped() } else { Clock::real() }));
+    super::thread::stepped(paused);
     LINK.set(link);
     let media = |query: &str| web_sys::window().and_then(|window| window.match_media(query).ok().flatten()).is_some_and(|list| list.matches());
     HOST.set(Some(Host { canvas, calls, dark: media("(prefers-color-scheme: dark)"), reduced_motion: media("(prefers-reduced-motion: reduce)") }));

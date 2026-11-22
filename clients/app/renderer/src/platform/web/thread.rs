@@ -213,6 +213,27 @@ impl Thread {
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
+
+    /// Whether its page's timers run on its clock: the frame's own page, opened paused for a harness (renderer.js's
+    /// `timed`, `stepped`), which steps them with the clock. A frame's page's are the browser's.
+    pub fn on_clock(&self) -> bool {
+        self.frame.is_none() && STEPPED.get()
+    }
+
+    /// Its page's frames are the browser's, which come as it shows them, whatever its clock says.
+    pub fn frames_on_clock(&self) -> bool {
+        false
+    }
+}
+
+thread_local! {
+    /// The frame was opened paused, so its own page's timers are on its clock (`Thread::on_clock`).
+    static STEPPED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The frame was opened paused (`open`).
+pub(super) fn stepped(paused: bool) {
+    STEPPED.set(paused);
 }
 
 /// A frame's page that went: its frame goes, and its client forgets it.

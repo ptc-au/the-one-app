@@ -74,7 +74,11 @@
     // Its timers, as a native host's JS thread keeps them, and the frames it asks the browser for, as a frame's page asks
     // its screen (`framing`), which a harness's `settle` waits for as it does natively: on a fast GPU a picture was taken
     // before a row added had opened up, two frames on. The renderer's own timer and frames are the browser's.
-    const browser = timed((timers) => renderer.timers(undefined, timers))
+    // A harness opens the frame paused (`paused`), and then the page's timers are on the renderer's clock too: they run as
+    // the harness steps it (`inspector.clock`), where the browser's ran on real time, which a loaded machine moved
+    // seconds of a page's states (a live screen out of reach, or still loading) either side of a picture.
+    const stepped = new URLSearchParams(location.search).has("paused")
+    const browser = timed((timers) => renderer.timers(undefined, timers), stepped)
     /** @type {Set<number>} */
     const asked = new Set()
     Object.assign(globalThis, {
@@ -146,7 +150,7 @@
     // drawn, `clock` to pause its page's clock (and with it what moves by itself and a caret's blink) or resume it, and
     // `whole` to have its frame drawn again whole, beside the one drawn on what it kept.
     const inspect = (/** @type {object} */ request) => renderer.inspect(JSON.stringify({ v: 1, id: 0, ...request }))
-    Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), clock: (/** @type {object} */ request) => inspect({ op: "clock", ...request }), whole: () => renderer.whole() } })
+    Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), clock: stepped ? stepping(inspect, browser) : (/** @type {object} */ request) => inspect({ op: "clock", ...request }), whole: () => renderer.whole() } })
     addEventListener("message", ({ source, data }) => source === parent && !answered(data) && renderer.message(data))
     // The canvas as the DOM says it is, in device pixels, and how many to a CSS pixel (the display's and the zoom),
     // and what happens on it.
@@ -419,8 +423,9 @@ async function frame(page, pageHtml, framed) {
  * one is a state that comes in seconds (a toast going, a retry), which a scene waits for itself (`wait`), as the
  * browser's clock, unlike a native harness's, can't be stepped. → the browser's own timers and frames.
  * @param {(timers: number[]) => void} told
+ * @param {boolean} stepped the page's timers are on the renderer's clock, which a harness steps (`stepping`), told to none
  */
-function timed(told) {
+function timed(told, stepped = false) {
   const browser = {
     setTimeout: setTimeout.bind(globalThis),
     clearTimeout: clearTimeout.bind(globalThis),
@@ -430,6 +435,43 @@ function timed(told) {
   /** @type {Map<number, number>} */
   const timers = new Map()
   const tell = () => told([...timers.values()])
+  if (stepped) {
+    /** @type {Map<number, { at: number, callback: unknown, args: unknown[], every?: number }>} */
+    const waiting = new Map()
+    let [now, handles] = [0, 0]
+    Object.assign(globalThis, {
+      setTimeout: (/** @type {unknown} */ callback, /** @type {unknown} */ delay, /** @type {unknown[]} */ ...args) => (waiting.set(++handles, { at: now + Math.max(0, Number(delay) || 0), callback, args }), handles),
+      clearTimeout: (/** @type {number} */ handle) => void waiting.delete(handle),
+      setInterval: (/** @type {unknown} */ callback, /** @type {unknown} */ delay, /** @type {unknown[]} */ ...args) => {
+        const every = Math.max(1, Number(delay) || 0)
+        return waiting.set(++handles, { at: now + every, callback, args, every }), handles
+      },
+      clearInterval: (/** @type {number} */ handle) => void waiting.delete(handle),
+    })
+    return {
+      ...browser,
+      /** In how many ms the next timer is due. */
+      next: () => Math.min(Infinity, ...[...waiting.values()].map((timer) => timer.at - now)),
+      /** The page's clock moves on `ms`, each timer due running at its own time, and `settled` before the next, so what it
+       * asked of its client is answered, as it is natively, where the client's answer came by a real round trip. */
+      move: async (/** @type {number} */ ms, /** @type {() => Promise<unknown>} */ settled) => {
+        now += ms
+        for (;;) {
+          const due = [...waiting].filter(([, timer]) => timer.at <= now).sort((a, b) => a[1].at - b[1].at)[0]
+          if (!due) return
+          if (due[1].every) due[1].at += due[1].every
+          else waiting.delete(due[0])
+          try {
+            if (typeof due[1].callback === "function") due[1].callback(...due[1].args)
+          } catch (error) {
+            reportError(error)
+          }
+          await new Promise((done) => browser.setTimeout(done, 0))
+          await settled()
+        }
+      },
+    }
+  }
   Object.assign(globalThis, {
     setTimeout: (/** @type {unknown} */ callback, /** @type {unknown} */ delay, /** @type {unknown[]} */ ...args) => {
       const ms = Math.max(0, Number(delay) || 0)
@@ -450,6 +492,27 @@ function timed(told) {
     clearTimeout: (/** @type {number} */ handle) => (timers.delete(handle) && tell(), browser.clearTimeout(handle)),
   })
   return browser
+}
+
+/**
+ * The inspector's `clock` for a page whose timers are on the renderer's clock (`timed`): a step moves the renderer's
+ * clock and the page's timers together, in pieces ending at each timer's time, so a timer runs with the renderer's frames
+ * where it was due.
+ * @param {(request: object) => Promise<any>} inspect
+ * @param {{ next?: () => number, move?: (ms: number, settled: () => Promise<unknown>) => Promise<void> }} page
+ */
+function stepping(inspect, page) {
+  return async (/** @type {{ step?: number }} */ request) => {
+    if (request.step === undefined || !page.next || !page.move) return inspect({ op: "clock", ...request })
+    let [left, answer] = [Math.max(0, request.step), undefined]
+    do {
+      const piece = Math.min(page.next(), left)
+      answer = await inspect({ op: "clock", ...request, step: piece })
+      await page.move(piece, () => inspect({ op: "settle", deadline: 120000 }))
+      left -= piece
+    } while (left > 0)
+    return answer
+  }
 }
 
 /**

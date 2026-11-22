@@ -53,7 +53,7 @@ import { outline } from "./src/drawing-primitives/outline.ts"
 import { messages } from "./src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "./lint-tokens.js"
-import { build, capped, COMPONENTS, copied, env, glass, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
+import { build, capped, COMPONENTS, copied, env, glass, lavapipe, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as motion.js's checks mark theirs.
@@ -319,11 +319,11 @@ async function web(browser, serve, key, scene, folder) {
   // And it stood still while they were taken, so what they show is of one time.
   const after = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({})))
   if (paused && after?.time !== paused.time) problems.push(failing(`its page's clock ran on from ${paused.time} to ${after?.time} ms while it was pictured, paused, so its pictures aren't of one time`))
-  if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: false }))
   // What its screen reader reads: each text and name in sight (the native query's), and all of them, as the native tree's
   // are checked for words that aren't a person's.
   const { words, names } = drawn
-    ? await frame.evaluate((edge) => {
+    ? await frame.evaluate(
+      (edge) => {
         const nodes = [...document.querySelectorAll("#semantics *")]
         const inside = (/** @type {Element} */ node) => {
           const box = node.getBoundingClientRect()
@@ -334,9 +334,14 @@ async function web(browser, serve, key, scene, folder) {
         }
         const named = (/** @type {Element} */ node) => (node.localName === "span" ? node.textContent : node.getAttribute("aria-label")) ?? ""
         return { words: nodes.filter((node) => named(node) && inside(node)).map(named), names: nodes.map(named).filter(Boolean) }
-      }, EDGE)
+      },
+      EDGE,
+    )
     : { words: [], names: [] }
   if (drawn) writeFileSync(join(folder, "web-text.txt"), words.join("\n") + "\n")
+  // Its clock runs again once what's read of it is, where a wheel's ease needs it (`notched`): read with it running, a
+  // sheet that slid in as the clock moved on was where it was between two runs' reads.
+  if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: false }))
   // The texts a scene's checks say are code (`expect.monospace`) advance as one monospace face does in the web's inspector
   // too, as the native check has it: the web draws them in the same face, bundled with it, and not the browser's own.
   const code = [...new Set(Object.values(scene.checks ?? {}).flat().flatMap((step) => step?.expect?.monospace ?? []))]
@@ -686,10 +691,13 @@ const WEB_DIFFERS_MOST = 0.01
 /// Scenes whose web picture, or text, differs for a known reason that isn't a fault, by `<folder> · <scene>`, each with why.
 const WEB_DIFFERS = {}
 
-// Our renderer on the web, on WebGPU, which a machine with no GPU has only as SwiftShader's, and whose canvas is put on
-// the page only when the page is composited on the GPU too (ANGLE on SwiftShader), at a phone's two pixels a point.
-// One that hangs (SwiftShader's GPU process, under load) is started again, so it takes no other scene with it.
-const webgpuArgs = ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--enable-gpu", "--use-gl=angle", "--use-angle=swiftshader", "--use-webgpu-adapter=opengles", "--force-device-scale-factor=2"]
+// Our renderer on the web, on WebGPU, in Chrome on the machine's GPU through Vulkan (as the native harness draws), at a
+// phone's two pixels a point; with `--lavapipe`, on SwiftShader's, which draws every frame on the CPU, the second GPU whose
+// pictures must agree: its canvas is put on the page only when the page is composited on the GPU too (ANGLE on
+// SwiftShader). One that hangs is started again, so it takes no other scene with it.
+const webgpuArgs = lavapipe
+  ? ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--enable-gpu", "--use-gl=angle", "--use-angle=swiftshader", "--use-webgpu-adapter=opengles", "--force-device-scale-factor=2"]
+  : ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-gpu", "--use-angle=vulkan", "--enable-features=Vulkan", "--ignore-gpu-blocklist", "--force-device-scale-factor=2"]
 let webgpu = onTheWeb && (await chromium.launch({ args: webgpuArgs }))
 // The renderer's frame, built once for every scene drawn on the web (clients/web/renderer/build.js).
 const rendererFrame = join(out, "renderer")
