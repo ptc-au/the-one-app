@@ -82,6 +82,7 @@ export { built, env, FACES, glass, headless, jobs, lavapipe, pLimit, setHeadless
 export { stopped, work } from "./animation/workers.js"
 export { decoded, differs } from "./animation/output.js"
 export { machine } from "./animation/machine.js"
+export { cached } from "./animation/cache.js"
 export { moves, selector } from "./animation/gesture.js"
 export { monospaced } from "./animation/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animation/headless.js"

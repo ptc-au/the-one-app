@@ -52,7 +52,7 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, built, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
+import { build, built, cached, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -448,9 +448,12 @@ const { tools, kept } = (() => {
 /// The headless renderer run with `asked`, once a slot of `jobs` is free (animation.js's `--jobs`). → its exit
 /// status, stdout and stderr.
 const headlessRun = (asked) => slot(() => work(headless, asked, env))
+/// The same, drawn by any worktree on the machine before where all it's given was the same, its `outputs` kept for
+/// them (`cached`).
+const keptRun = (asked, outputs) => slot(() => cached(headless, asked, env, outputs, (args) => work(headless, args, env)))
 
 /// A scene drawn by a native host's headless renderer, or nothing where it hasn't been built or can't draw the page.
-async function native(built, scene, folder) {
+async function native(built, scene, folder, fresh = false) {
   if (hosted < needed) return { missing: `the native host's runtime version is ${hosted}, the UI library needs ${needed}: nothing to compare until it's ${needed}` }
   const at = pageFolder(built, scene.page, folder, scene.uses)
   const answers = { ...scene.answers, "ui/initialize": scene.answers["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
@@ -463,7 +466,7 @@ async function native(built, scene, folder) {
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   writeFileSync(join(folder, "requests.jsonl"), requests)
   const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...panel(scene)]
-  const run = await headlessRun(asked)
+  const run = await (fresh ? headlessRun(asked) : keptRun(asked, [join(folder, "native.png"), join(folder, "native.json")]))
   if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing"), error: true }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))
   // Its tree: each node's role, name and what it is (its states, by ARIA's names, beside them), and its words.
@@ -504,7 +507,7 @@ async function native(built, scene, folder) {
   const every = (list) => list.flatMap((node) => [...(node.name ? [node.name] : []), ...every(node.children ?? [])])
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
-  return { tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, blurring, answers: said, at, asked, requests }
+  return { kept: run.kept, tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, blurring, answers: said, at, asked, requests }
 }
 
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
@@ -813,7 +816,9 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
     // is only compared, and any difference between the two fails the scene.
     const again = join(folder, "again")
     mkdirSync(again, { recursive: true })
-    const [drawn, drawnAgain] = await Promise.all([native(built, scene, folder), native(built, scene, again)])
+    // One kept from before (`cached`) was drawn twice as it was kept, and isn't drawn again.
+    const drawn = await native(built, scene, folder)
+    const drawnAgain = drawn.kept ? undefined : await native(built, scene, again, true)
     const [onWeb = {}, onWebAgain] = await Promise.all((onTheWeb ? [folder, again] : []).map((where) => webDrawn(serve, `${name}/${scene.name}`, scene, where)))
     const said = [`${name} · ${scene.name}`]
     // The web's pictures are drawn by Chrome's GPU, whose blends and blurs round a level apart from one run to the next

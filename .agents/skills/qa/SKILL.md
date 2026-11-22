@@ -66,7 +66,9 @@ GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every one in
 runs headless renderers side by side, at most half the machine's pool (8 on the Linux machine), and says
 what it found in the same order whatever finished first; `--jobs <n>` sets how many. The pool is the machine's, shared by
 every pass any agent runs, as make's jobserver is (`animation/machine.js`: a core each, 16 there), so three agents' passes
-take turns rather than load it to 50. Each is a persistent worker
+take turns rather than load it to 50. A screenshot drawn from the same headless renderer, page, UI library, answers and
+requests as one any worktree drew before is taken from `~/.cache/the-one-app/screenshots` (`animation/cache.js`, 2 GB, the least
+recently used going), so main's "before" is drawn once for every agent, and a pass after a change draws only what it changed. Each is a persistent worker
 (`--persistent_worker`, Bazel's protocol) that keeps its GPU and draws one run after another, every run else its own;
 together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,

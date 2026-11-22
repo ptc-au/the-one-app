@@ -7,8 +7,10 @@ import { join } from "node:path"
 import { dlopen, FFIType } from "bun:ffi"
 import { TOGETHER } from "./workers.js"
 
+/// flock(2), which locks a file for as long as its process holds it.
 const { flock } = dlopen(process.platform === "darwin" ? "libc.dylib" : "libc.so.6", { flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 } }).symbols
-const [LOCK_EX, LOCK_NB, LOCK_UN] = [2, 4, 8]
+export { flock }
+export const [LOCK_EX, LOCK_NB, LOCK_UN] = [2, 4, 8]
 
 /// Where the slots are, a file each.
 const SLOTS = join(homedir(), ".cache/the-one-app/jobs")
