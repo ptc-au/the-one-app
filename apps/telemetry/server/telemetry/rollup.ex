@@ -41,7 +41,7 @@ defmodule Telemetry.Rollup do
   end
 
   def encode(rollup), do: :erlang.term_to_binary(rollup, compressed: 6)
-  def decode(data), do: :erlang.binary_to_term(data, [:safe])
+  def decode(data), do: data |> :erlang.binary_to_term([:safe]) |> Telemetry.Otlp.past()
 
   defp failed?(span), do: span["status"]["code"] == "error" or span["attributes"]["one.outcome"] == "refused"
 end
