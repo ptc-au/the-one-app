@@ -13,25 +13,10 @@ fn main() {
         println!("cargo::rustc-cfg=desktop");
     }
     #[cfg(feature = "window")]
-    if !phone {
-        name();
-    }
-    #[cfg(feature = "window")]
     ui();
     if target == "windows" {
         embed_manifest::embed_manifest_file("one.manifest").expect("the manifest is embedded");
     }
-}
-
-/// A computer's app's name (`NAME` in lib.rs), as `tauri.conf.json` has it.
-#[cfg(feature = "window")]
-fn name() {
-    let folder = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo says"));
-    println!("cargo::rerun-if-changed=tauri.conf.json");
-    let config: serde_json::Value = serde_json::from_slice(&std::fs::read(folder.join("tauri.conf.json")).expect("tauri.conf.json")).expect("it's JSON");
-    let name = config["productName"].as_str().expect("the app has a name");
-    let to = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("cargo says")).join("name.rs");
-    std::fs::write(to, format!("pub(crate) const NAME: &str = {name:?};\n")).expect("OUT_DIR takes it");
 }
 
 /// The UI library, as the client's own pages draw with it (`hosts::file`): built for this program from `core/ui` as it is

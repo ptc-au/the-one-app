@@ -265,7 +265,7 @@ impl crate::Shell for Computer {
 
     /// A tap on one opens its app, as a `one:` link to it does.
     fn listen(&self, client: Arc<::client::Client>) {
-        crate::spawn(notifications::listen(client, ::client::NAME, |app| crate::app().shell.emit("open", json!(app))));
+        crate::spawn(notifications::listen(client, ::client::identifier(), |app| crate::app().shell.emit("open", json!(app))));
     }
 
     /// Each window is native, and told the Colour Mode chosen as it's chosen (`chose`): the app has none of its own.
@@ -465,11 +465,11 @@ fn says_to_nowhere() -> bool {
 
 fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, started: std::time::Instant) -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
-    gtk::glib::set_prgname(Some(::client::NAME));
+    gtk::glib::set_prgname(Some(::client::identifier()));
     #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut event_loop = EventLoopBuilder::<Told>::with_user_event().build();
     #[cfg(target_os = "linux")]
-    gtk::gdk::set_program_class(::client::NAME);
+    gtk::gdk::set_program_class(::client::identifier());
     // On a Mac the launcher alone has no Dock icon and no Cmd-Tab entry, as Raycast's hasn't: the One App is an
     // accessory until an app's window opens in it (the renderer's `Display::open`), and again once the last one closes.
     #[cfg(target_os = "macos")]
@@ -648,12 +648,12 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
 /// GTK's on Linux, as rfd's GTK is another GTK's than the one tao runs.
 fn alert(said: &str) {
     #[cfg(any(target_os = "macos", windows))]
-    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title(crate::NAME).set_description(said).show();
+    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title(::client::app_name()).set_description(said).show();
     #[cfg(target_os = "linux")]
     {
         use gtk::prelude::*;
         let alert = gtk::MessageDialog::new(None::<&gtk::Window>, gtk::DialogFlags::MODAL, gtk::MessageType::Error, gtk::ButtonsType::Ok, said);
-        alert.set_title(crate::NAME);
+        alert.set_title(::client::app_name());
         alert.run();
         alert.close();
     }
@@ -809,7 +809,7 @@ fn links() -> anyhow::Result<()> {
         std::fs::create_dir_all(&entries)?;
         let entry = format!(
             "[Desktop Entry]\nType=Application\nName={}\nExec=\"{}\" %u\nMimeType=x-scheme-handler/one;\nNoDisplay=true\nTerminal=false\n",
-            crate::NAME,
+            ::client::app_name(),
             program.display()
         );
         let file = entries.join("one-handler.desktop");
@@ -827,7 +827,7 @@ fn links() -> anyhow::Result<()> {
             RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(key), &HSTRING::from(name), REG_SZ.0, Some(value.as_ptr().cast()), (value.len() * 2) as u32).ok()
         };
         let program = program.display().to_string();
-        set(r"Software\Classes\one", "", &format!("URL:{} protocol", ::client::NAME))?;
+        set(r"Software\Classes\one", "", &format!("URL:{} protocol", ::client::identifier()))?;
         set(r"Software\Classes\one", "URL Protocol", "")?;
         set(r"Software\Classes\one\DefaultIcon", "", &format!("{program},0"))?;
         set(r"Software\Classes\one\shell\open\command", "", &format!("\"{program}\" \"%1\""))?;
@@ -848,8 +848,8 @@ fn toasts() -> anyhow::Result<()> {
     if std::fs::read(&icon).ok().as_deref() != Some(drawn.as_slice()) {
         std::fs::write(&icon, drawn)?;
     }
-    let key = format!(r"Software\Classes\AppUserModelId\{}", ::client::NAME);
-    for (name, value) in [("DisplayName", crate::NAME.to_owned()), ("IconUri", icon.display().to_string())] {
+    let key = format!(r"Software\Classes\AppUserModelId\{}", ::client::identifier());
+    for (name, value) in [("DisplayName", ::client::app_name().to_owned()), ("IconUri", icon.display().to_string())] {
         let value: Vec<u16> = value.encode_utf16().chain([0]).collect();
         unsafe {
             RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(&key), &HSTRING::from(name), REG_SZ.0, Some(value.as_ptr().cast()), (value.len() * 2) as u32)
@@ -878,7 +878,7 @@ fn menu() -> muda::Menu {
     let menu = Menu::new();
     let settings = MenuItem::with_id("settings", "Settings…", true, Some(Accelerator::new(Modifiers::META, Code::Comma)));
     let app = Submenu::with_items(
-        crate::NAME,
+        ::client::app_name(),
         true,
         &[
             &PredefinedMenuItem::about(None, Some(about())),
@@ -954,10 +954,10 @@ fn ring() -> Option<tray_icon::TrayIcon> {
     let picture = include_bytes!("../../../icons/AppIcon@2x.png");
     let picture = resvg::tiny_skia::Pixmap::decode_png(picture).ok()?;
     let icon = Icon::from_rgba(picture.data().to_vec(), picture.width(), picture.height()).ok()?;
-    let open = MenuItem::with_id("open", format!("Open {}", crate::NAME), true, None);
+    let open = MenuItem::with_id("open", format!("Open {}", ::client::app_name()), true, None);
     // Settings…, the Settings app's window, as Raycast's menu has its own settings.
     let settings = MenuItem::with_id("settings", "Settings…", true, None);
-    let quit = MenuItem::with_id("quit", format!("Quit {}", crate::NAME), true, None);
+    let quit = MenuItem::with_id("quit", format!("Quit {}", ::client::app_name()), true, None);
     let menu = Menu::with_items(&[&open, &settings, &PredefinedMenuItem::separator(), &quit]).ok()?;
     #[cfg(windows)]
     TrayIconEvent::set_event_handler(Some(|event: TrayIconEvent| {
@@ -965,6 +965,6 @@ fn ring() -> Option<tray_icon::TrayIcon> {
             tell(Told::Toggle(std::time::Instant::now(), None));
         }
     }));
-    let ring = TrayIconBuilder::new().with_icon(icon).with_icon_as_template(cfg!(target_os = "macos")).with_menu(Box::new(menu)).with_menu_on_left_click(cfg!(target_os = "macos")).with_tooltip(crate::NAME).build();
+    let ring = TrayIconBuilder::new().with_icon(icon).with_icon_as_template(cfg!(target_os = "macos")).with_menu(Box::new(menu)).with_menu_on_left_click(cfg!(target_os = "macos")).with_tooltip(::client::app_name()).build();
     ring.map_err(|error| eprintln!("the menu bar has no ring: {error}")).ok()
 }

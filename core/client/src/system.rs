@@ -194,6 +194,15 @@ mod imp {
     }
 }
 
+/// The Info.plist of the app bundle the program `program` is in, through any link to it, as `~/.local/bin/one` is to
+/// the One App's.
+#[cfg(target_os = "macos")]
+pub fn bundle_info(program: &Path) -> Option<plist::Dictionary> {
+    let program = program.canonicalize().ok()?;
+    let contents = program.parent().filter(|folder| folder.ends_with("Contents/MacOS"))?.parent()?;
+    plist::Value::from_file(contents.join("Info.plist")).ok()?.into_dictionary()
+}
+
 /// launchd has no limit on how long a start takes, so `start_within` is its program's own to keep.
 #[cfg(target_os = "macos")]
 mod imp {
@@ -250,13 +259,8 @@ mod imp {
         written(&agent(name)?, plist.as_bytes())
     }
 
-    /// The identifier of the app bundle the program `program` is in, through any link to it, as `~/.local/bin/one`
-    /// is to the One App's.
     fn bundle_identifier(program: &Path) -> Option<String> {
-        let program = program.canonicalize().ok()?;
-        let contents = program.parent().filter(|folder| folder.ends_with("Contents/MacOS"))?.parent()?;
-        let info = plist::Value::from_file(contents.join("Info.plist")).ok()?;
-        Some(info.as_dictionary()?.get("CFBundleIdentifier")?.as_string()?.to_owned())
+        Some(super::bundle_info(program)?.get("CFBundleIdentifier")?.as_string()?.to_owned())
     }
 
     pub fn start(_program: &Program, name: &str, again: bool) -> Result<()> {

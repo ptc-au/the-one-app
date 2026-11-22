@@ -59,8 +59,6 @@ window = [
 [build-dependencies]
 # A phone's app is Tauri's, which its build script makes ready (a computer's builds it, and doesn't run it).
 tauri-build = { version = "2", features = [], optional = true }
-# A computer's app's name, which `tauri.conf.json` says (`build.rs`).
-serde_json.workspace = true
 # The manifest of `one` without its window on Windows (`build.rs`).
 embed-manifest = "1"
 

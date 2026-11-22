@@ -37,9 +37,6 @@ mod suspended;
 
 #[cfg(mobile)]
 pub(crate) mod page;
-// The app's name, as `tauri.conf.json` has it (`build.rs`).
-#[cfg(not(mobile))]
-include!(concat!(env!("OUT_DIR"), "/name.rs"));
 mod updater;
 
 mod app;

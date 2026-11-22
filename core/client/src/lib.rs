@@ -241,15 +241,39 @@ pub fn key(file: &Path) -> Result<SecretKey> {
 pub fn home() -> Result<PathBuf> {
     match env::var_os("ONE_HOME") {
         Some(home) => Ok(home.into()),
-        None => Ok(dirs::data_local_dir().context("this system has no folder for an app's data: set ONE_HOME")?.join(NAME)),
+        None => Ok(dirs::data_local_dir().context("this system has no folder for an app's data: set ONE_HOME")?.join(identifier())),
     }
 }
 
-/// What the app is to the system it's on: the name of its folder, and of the app among a phone's. It's the build's
-/// Tauri identifier (`build.rs`), so a network's own build keeps its own folder beside the One App's. The app
-/// before this one is `one` and `the One App` there, and this is neither. A debug build's has `.dev` after it
-/// (`build.rs`): a client of its own, never the installed one's.
-pub const NAME: &str = env!("ONE_IDENTIFIER");
+/// What the app is to the system it's on: the name of its folder, and of the app among a phone's. On a Mac it's the
+/// identifier of the bundle its program is in, as the system knows it, which a network's finishing sets
+/// (`tooling/mac-app`), so a network's own app keeps its own folder beside the One App's, and is never compiled
+/// in. Elsewhere, or out of a bundle, it's the build's Tauri identifier (`build.rs`). The app before this one is
+/// `one` and `the One App` there, and this is neither. A debug build's has `.dev` after it (`build.rs`): a client of
+/// its own, never the installed one's.
+pub fn identifier() -> &'static str {
+    &bundle().0
+}
+
+/// The app's name, as a person sees it: its Mac bundle's (`CFBundleName`), as for `identifier`, and otherwise
+/// `clients/app/tauri.conf.json`'s `productName` (`build.rs`).
+pub fn app_name() -> &'static str {
+    &bundle().1
+}
+
+fn bundle() -> &'static (String, String) {
+    static BUNDLE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+    BUNDLE.get_or_init(|| {
+        #[cfg(target_os = "macos")]
+        if let Some(info) = env::current_exe().ok().and_then(|program| system::bundle_info(&program)) {
+            let said = |key: &str| info.get(key).and_then(|value| value.as_string()).map(str::to_owned);
+            if let (Some(identifier), Some(name)) = (said("CFBundleIdentifier"), said("CFBundleName")) {
+                return (identifier, name);
+            }
+        }
+        (env!("ONE_IDENTIFIER").to_owned(), env!("ONE_APP_NAME").to_owned())
+    })
+}
 
 /// The `network` file an app made for one network has among its resources, if it has one: `{"address": "https://..."}`,
 /// which the network's finishing puts in the plain build, as white-label apps are made (`tooling/testflight`). An app

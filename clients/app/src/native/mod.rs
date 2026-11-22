@@ -31,9 +31,7 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use url::Url;
 
 #[cfg(not(mobile))]
-use crate::{NAME, computer};
-#[cfg(mobile)]
-use computer::NAME;
+use crate::computer;
 
 mod channel;
 mod inspector;
@@ -341,8 +339,8 @@ async fn shows(kind: &Kind, entrypoint: &str, subject: Option<&str>) -> anyhow::
     Ok(match kind {
         Kind::Sheet(_) => Some((Some(client_page(RECOVERY, "Recovery Key").await?), None)),
         Kind::Unopened(unopened) | Kind::Launcher(_, Some(Instead::Unopened(unopened))) => Some((Some(client_page(UNOPENED, &unopened.name).await?), None)),
-        Kind::Launcher(_, Some(Instead::SignIn)) => Some((Some(client_page(SIGN_IN, NAME).await?), None)),
-        Kind::Launcher(_, Some(Instead::Behind)) => Some((Some(client_page(UPDATE, NAME).await?), None)),
+        Kind::Launcher(_, Some(Instead::SignIn)) => Some((Some(client_page(SIGN_IN, ::client::app_name()).await?), None)),
+        Kind::Launcher(_, Some(Instead::Behind)) => Some((Some(client_page(UPDATE, ::client::app_name()).await?), None)),
         Kind::App(_) | Kind::Launcher(_, None) => listing(entrypoint, subject).await?.map(|resource| (None, Some(resource))),
     })
 }
@@ -362,8 +360,8 @@ fn options(kind: &Kind, entrypoint: &str, subject: Option<&str>, name: &str) -> 
         (false, None) => ((1024.0, 720.0), None),
     };
     WindowOptions {
-        title: if launcher { NAME.to_owned() } else { name.to_owned() },
-        app_id: ::client::NAME.to_owned(),
+        title: if launcher { ::client::app_name().to_owned() } else { name.to_owned() },
+        app_id: ::client::identifier().to_owned(),
         size: Size { width: Pixels(size.0), height: Pixels(size.1) },
         tag: json!({"entrypoint": entrypoint, "subject": subject}),
         panel: panel.map(|corner| corner as f32),
@@ -750,7 +748,6 @@ pub(crate) mod computer {
     }
     pub const SIZE: Size = Size { width: 0.0, height: 0.0 };
     pub const CORNER: f64 = 0.0;
-    pub const NAME: &str = "";
 
     /// Opens the launcher's page `entrypoint` as the root window, under every app's (`super::launcher_window`). → why
     /// not, if it didn't: its page says so, with Try Again.

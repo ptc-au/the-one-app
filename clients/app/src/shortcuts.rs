@@ -269,7 +269,7 @@ mod device {
     use super::Shortcut;
 
     pub fn keep(shortcuts: &[Shortcut]) -> anyhow::Result<()> {
-        let start = super::data_dir()?.join("Microsoft/Windows/Start Menu/Programs").join(crate::NAME);
+        let start = super::data_dir()?.join("Microsoft/Windows/Start Menu/Programs").join(::client::app_name());
         let icons = super::local_data_dir()?.join("shortcuts");
         super::renamed(&start)?;
         std::fs::create_dir_all(&start)?;
@@ -433,7 +433,7 @@ mod device {
     /// The folder this app's apps are in.
     pub fn folder() -> anyhow::Result<PathBuf> {
         let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("this user has no home folder"))?;
-        Ok(home.join("Applications").join(crate::NAME))
+        Ok(home.join("Applications").join(::client::app_name()))
     }
 
     /// This program signed on its own, ad hoc, which each app's bundle has a copy of: it's signed in the One App's
@@ -565,7 +565,7 @@ mod device {
             made.push(id);
         }
         // What's no longer listed goes, its icon with it.
-        let ours = format!("{}.", ::client::NAME);
+        let ours = format!("{}.", ::client::identifier());
         for kept in std::fs::read_dir(&entries)?.flatten() {
             let name = kept.file_name().to_string_lossy().into_owned();
             if let Some(id) = name.strip_suffix(".desktop").filter(|id| id.starts_with(&ours)) {
@@ -604,7 +604,7 @@ pub fn app_id(entrypoint: &str, subject: Option<&str>) -> String {
         id = format!("{id}.{part}");
     }
     let id: String = id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '-' }).collect();
-    format!("{}.{id}", ::client::NAME)
+    format!("{}.{id}", ::client::identifier())
 }
 
 /// An app's screen's name, as its shortcut has it, once this device has listed them.
@@ -623,5 +623,5 @@ fn data_dir() -> anyhow::Result<std::path::PathBuf> {
 /// This app's own data on this machine, as Tauri said it: its identifier's folder in the user's local data.
 #[cfg(any(windows, target_os = "linux"))]
 pub(crate) fn local_data_dir() -> anyhow::Result<std::path::PathBuf> {
-    Ok(dirs::data_local_dir().ok_or_else(|| anyhow::anyhow!("this user has no data folder"))?.join(::client::NAME))
+    Ok(dirs::data_local_dir().ok_or_else(|| anyhow::anyhow!("this user has no data folder"))?.join(::client::identifier()))
 }

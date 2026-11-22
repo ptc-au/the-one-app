@@ -29,10 +29,10 @@ pub(super) async fn fetched_program(one: &Value, program: &Path) -> Result<PathB
     Ok(new)
 }
 
-/// A Mac's app bundle but its program: its Info.plist, icon and seal, the same for every build, which each build of
+/// The One App's bundle but its program: its Info.plist, icon and seal, the same for every build, which each build of
 /// `one` is signed in (`tooling/release`), so an update replaces the program alone, as before it was signed. macOS
-/// runs a program signed in a bundle only as that bundle's program, and kills it anywhere else in it, or in a bundle
-/// that isn't the one it was signed in. A change to these files goes out in a build signed without them first.
+/// runs a program signed in a bundle only as a bundle's program, with an Info.plist, and kills it anywhere else in it.
+/// A change to these files goes out in a build signed without them first.
 #[cfg(target_os = "macos")]
 pub(super) const BUNDLE: &[(&str, &[u8])] = &[
     ("Info.plist", include_bytes!("../../../app/macos/Contents/Info.plist")),
@@ -42,7 +42,9 @@ pub(super) const BUNDLE: &[(&str, &[u8])] = &[
 
 /// The build the program `new` says it is (`build_of`), downloaded beside a Mac's: where that's in an app bundle,
 /// it's run as the program of a bundle of its own inside it (`Contents/Updates/<pid>.app`), and `BUNDLE` is put in
-/// place around both, so it starts there, and as the bundle's program once it's put in place.
+/// place around both, so it starts there, and as the bundle's program once it's put in place. A bundle that's another
+/// app's, as a network's finishing makes one (`tooling/mac-app`), keeps its own Info.plist, icon, `network` and
+/// seal, as white-label apps keep theirs, and takes the program alone, which runs there as it's signed in a bundle.
 #[cfg(target_os = "macos")]
 pub(super) async fn bundled(new: &Path) -> Result<Option<String>> {
     let Some(contents) = new.parent().filter(|folder| folder.ends_with("Contents/MacOS")).and_then(Path::parent) else {
@@ -50,7 +52,11 @@ pub(super) async fn bundled(new: &Path) -> Result<Option<String>> {
     };
     let updates = contents.join("Updates");
     let checking = updates.join(format!("{}.app/Contents", std::process::id()));
-    for folder in [contents, checking.as_path()] {
+    let identifier = |info: Option<plist::Value>| Some(info?.into_dictionary()?.get("CFBundleIdentifier")?.as_string()?.to_owned());
+    let ours = identifier(plist::from_bytes(BUNDLE[0].1).ok());
+    let another = identifier(plist::Value::from_file(contents.join("Info.plist")).ok()).is_some_and(|its| Some(its) != ours);
+    let folders = if another { vec![checking.as_path()] } else { vec![contents, checking.as_path()] };
+    for folder in folders {
         for (file, bytes) in BUNDLE {
             let path = folder.join(file);
             if fs::read(&path).is_ok_and(|was| was == *bytes) {

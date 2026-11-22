@@ -24,14 +24,14 @@ fn main() {
     });
     println!("cargo:rustc-env=ONE_BUILD={build}");
 
-    // What the app is to the system it's on is its Tauri identifier, `clients/app/tauri.conf.json`'s. It names the
-    // folder a client on a computer is kept in (`NAME`), so the CLI, built without Tauri, keeps what the app does.
+    // What the app is to the system it's on, out of a Mac's bundle, is its Tauri identifier, `clients/app/tauri.conf.json`'s,
+    // and its name that file's `productName` (`identifier` and `app_name`). The identifier names the folder a client on a
+    // computer is kept in, so the CLI, built without Tauri, keeps what the app does.
     println!("cargo:rerun-if-changed=../../clients/app/tauri.conf.json");
     let config = std::fs::read_to_string("../../clients/app/tauri.conf.json").expect("clients/app/tauri.conf.json is there");
-    let identifier = serde_json::from_str::<Value>(&config).expect("Tauri's config is JSON")["identifier"]
-        .as_str()
-        .expect("Tauri's config has an identifier")
-        .to_owned();
+    let config = serde_json::from_str::<Value>(&config).expect("Tauri's config is JSON");
+    let identifier = config["identifier"].as_str().expect("Tauri's config has an identifier").to_owned();
+    println!("cargo:rustc-env=ONE_APP_NAME={}", config["productName"].as_str().expect("Tauri's config has the app's name"));
     // A debug build is a different app to the system, as Chrome Canary and Electron's and Expo's development builds
     // are: its own folder, never the installed one's, so a build tried from a checkout can't open its person's own
     // client. `ONE_HOME` still says where it's kept instead.

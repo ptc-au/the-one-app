@@ -55,7 +55,7 @@ pub fn address(home: &std::path::Path) -> String {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     home.hash(&mut hasher);
-    let name = format!("{}-{:016x}", ::client::NAME, hasher.finish());
+    let name = format!("{}-{:016x}", ::client::identifier(), hasher.finish());
     #[cfg(unix)]
     {
         let folder = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, std::path::PathBuf::from);

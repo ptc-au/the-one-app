@@ -30,6 +30,10 @@ git_repos_client = { path = "../../apps/git-repos/client/native" }
 libc = "0.2"
 rlimit = "0.11"
 
+# Whose a Mac's app bundle is, by its Info.plist (`serving::builds`).
+[target.'cfg(target_os = "macos")'.dependencies]
+plist = "1"
+
 # How Windows keeps a server running (`serving`): the job object it's held in, its log, the pipe it says it's
 # running on, and its time zone's IANA name.
 [target.'cfg(windows)'.dependencies]

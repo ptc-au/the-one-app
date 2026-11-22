@@ -20,7 +20,7 @@ pub(crate) fn unopened(entrypoint: String, subject: Option<String>, link: String
         let Ok(native) = Native::get() else { return };
         let tag = json!({"entrypoint": entrypoint});
         native.run(move |windows| {
-            let options = WindowOptions { title: name.clone(), app_id: ::client::NAME.to_owned(), size: Size { width: Pixels(1024.0), height: Pixels(720.0) }, tag, panel: None, places: None, frame: None, root: false, icon: None, owner: None, snapshot: None, title_row: false };
+            let options = WindowOptions { title: name.clone(), app_id: ::client::identifier().to_owned(), size: Size { width: Pixels(1024.0), height: Pixels(720.0) }, tag, panel: None, places: None, frame: None, root: false, icon: None, owner: None, snapshot: None, title_row: false };
             if let Err(error) = windows.open(options, Err(said), |_| {}) {
                 eprintln!("{name}'s window didn't open: {error:#}");
             }

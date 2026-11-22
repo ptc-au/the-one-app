@@ -98,8 +98,8 @@ pub(super) async fn unopened_launcher(entrypoint: &str, why: String, crashed: bo
     if let Ok(native) = Native::get() {
         native.run(move |windows| {
             let options = WindowOptions {
-                title: NAME.to_owned(),
-                app_id: ::client::NAME.to_owned(),
+                title: ::client::app_name().to_owned(),
+                app_id: ::client::identifier().to_owned(),
                 size: Size { width: Pixels(computer::SIZE.width as f32), height: Pixels(computer::SIZE.height as f32) },
                 tag: json!({}),
                 panel: Some(computer::CORNER as f32),
