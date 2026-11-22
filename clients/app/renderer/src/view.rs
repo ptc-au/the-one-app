@@ -469,9 +469,11 @@ impl Screen {
         self.wake = Some(wake);
     }
 
-    /// Whether a picture it drew, or a frame's page did, is decoding, or is decoded and not yet drawn: a harness draws
-    /// again once it's waited for them (`idle`).
+    /// Whether a picture it drew, or a frame's page did, is decoded and not yet drawn, once the decodes running in the
+    /// background are done: a harness draws again then. Asked while one still ran, it was so or not by how quick its
+    /// thread was, and a frame was drawn a refresh later on some runs and not on others.
     pub fn decoding(&self) -> bool {
+        self.pictures.wait();
         self.pictures.decoding() || self.frames.values().any(|child| child.screen.decoding())
     }
 
