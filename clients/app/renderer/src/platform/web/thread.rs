@@ -25,6 +25,9 @@ pub(super) struct Channel {
     pub(super) ran: u64,
     pub(super) started: Option<Result<(), String>>,
     pub(super) framing: bool,
+    /// When each of its timers a picture waits for is due (`Date.now()`'s), as its frame's JS keeps them (renderer.js's
+    /// `timed`).
+    timers: Vec<f64>,
     wake: Option<std::rc::Rc<dyn Fn()>>,
     woken: bool,
     outbox: VecDeque<(&'static str, Value)>,
@@ -61,6 +64,23 @@ pub(super) fn deliver() {
             wake(frame);
         }
     }
+}
+
+/// The timers a picture waits for of the page in frame `node`, or of the frame's own page with none, as its JS keeps
+/// them (renderer.js's `timed`): when each is due (`Date.now()`'s). Its screen takes a turn, so a `settle` waiting for
+/// one that's run looks again.
+#[wasm_bindgen]
+pub fn timers(node: Option<f64>, timers: Vec<f64>) {
+    channel(node.map(|node| node as crate::tree::Id), |channel| channel.timers = timers);
+    soon();
+}
+
+/// Whether the frame's own page has asked the browser for a frame it hasn't had yet (renderer.js), as a frame's page
+/// asks its screen for one (`frame_posted`): what it moves a frame at a time is pending till it stops asking.
+#[wasm_bindgen]
+pub fn framing(asking: bool) {
+    channel(None, |channel| channel.framing = asking);
+    soon();
 }
 
 /// Wakes the screen to take what a page gave it and what it's run, once until it has (`Thread::take`).
@@ -184,8 +204,10 @@ impl Thread {
         None
     }
 
+    /// Each of its timers a picture waits for (renderer.js's `timed`): when it's due, in ms from now (`in`).
     pub fn timers(&self) -> Vec<Value> {
-        Vec::new()
+        let now = js_sys::Date::now();
+        channel(self.frame, |channel| channel.timers.iter().map(|at| serde_json::json!({"in": at - now})).collect())
     }
 
     pub fn clock(&self) -> &Clock {

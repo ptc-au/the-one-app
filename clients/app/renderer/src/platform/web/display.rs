@@ -174,9 +174,8 @@ impl Display {
                 FRAMED.set(Some(web_time::Instant::now()));
                 soon();
             });
-            if let Some(window) = web_sys::window() {
-                let _ = window.request_animation_frame(framed.unchecked_ref());
-            }
+            // The browser's own, which the frame's JS gives it, not the page's, which a `settle` waits for.
+            call("animationFrame", &framed);
         }
     }
 

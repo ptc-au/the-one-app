@@ -280,14 +280,27 @@ async function web(browser, serve, key, scene, folder) {
   // Its page's clock is paused for the pictures that follow, so they're of one time, as the native harness's are: on
   // the web's own clock a caret blinked between the frame drawn on what it kept and the one drawn whole (L77).
   const paused = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: true })))
-  if (drawn) await page.screenshot({ path: join(folder, "web.png") })
+  // Each picture is of what the browser shows once the frame drawn last is on it: on a GPU, Chrome composites the
+  // page's WebGPU canvas a frame or more after it was drawn, past the two frames `settled` waits, so the picture is
+  // taken again until two in a row are the same, as Playwright's `toHaveScreenshot` waits for. The clock is paused,
+  // so only a frame shown late can change it.
+  const picture = async (name) => {
+    let shown = await page.screenshot()
+    for (let tries = 0; tries < 10; tries++) {
+      const again = await page.screenshot()
+      if (again.equals(shown)) break
+      shown = again
+    }
+    writeFileSync(join(folder, name), shown)
+  }
+  if (drawn) await picture("web.png")
   // The frame drawn on what it kept from the frames before is the one drawn whole, within a level, as the native harness
   // checks each frame of each motion (`unlike_whole`), where nothing on it moves (a spinner turns between pictures).
-  if (drawn) await settled().then(() => page.screenshot({ path: join(folder, "web-again.png") }))
+  if (drawn) await settled().then(() => picture("web-again.png"))
   if (drawn && !levels(join(folder, "web.png"), join(folder, "web-again.png"))) {
     await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.whole())
     await settled()
-    await page.screenshot({ path: join(folder, "web-whole.png") })
+    await picture("web-whole.png")
     const unlike = levels(join(folder, "web.png"), join(folder, "web-whole.png"))
     if (unlike) {
       problems.push(failing(`its frame differs from the same drawn whole (web-whole.png) in ${unlike.differ} pixels, by up to ${unlike.most} levels`))

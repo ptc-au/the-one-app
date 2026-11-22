@@ -71,6 +71,28 @@
       },
       host: { post: (/** @type {object} */ message) => renderer.post(JSON.stringify(message)), component: styled(page, renderer.component) },
     })
+    // Its timers, as a native host's JS thread keeps them, and the frames it asks the browser for, as a frame's page asks
+    // its screen (`framing`), which a harness's `settle` waits for as it does natively: on a fast GPU a picture was taken
+    // before a row added had opened up, two frames on. The renderer's own timer and frames are the browser's.
+    const browser = timed((timers) => renderer.timers(undefined, timers))
+    /** @type {Set<number>} */
+    const asked = new Set()
+    Object.assign(globalThis, {
+      requestAnimationFrame: (/** @type {FrameRequestCallback} */ callback) => {
+        const id = browser.requestAnimationFrame((time) => {
+          asked.delete(id)
+          try {
+            callback(time)
+          } finally {
+            renderer.framing(asked.size > 0)
+          }
+        })
+        asked.add(id)
+        renderer.framing(true)
+        return id
+      },
+      cancelAnimationFrame: (/** @type {number} */ id) => (asked.delete(id), browser.cancelAnimationFrame(id), renderer.framing(asked.size > 0)),
+    })
     const { canvas, selection, reading } = await made()
     // Typing, through a real field (text-input.js), and what a screen reader reads (semantics.js).
     // What the pointer does on the field typed in is the canvas's, as it would be with no field over it.
@@ -100,6 +122,9 @@
     }
     await renderer.open(canvas, devicePixelRatio, base.href, decodeURIComponent(page.hash.slice(1)), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, {
       post: named ? alone(renderer) : (/** @type {object} */ message) => parent.postMessage(message, "*"),
+      timer: (/** @type {[() => void, number]} */ [fired, delay]) => browser.setTimeout(fired, delay),
+      untimer: (/** @type {number} */ handle) => browser.clearTimeout(handle),
+      animationFrame: (/** @type {FrameRequestCallback} */ framed) => browser.requestAnimationFrame(framed),
       cursor: (/** @type {string} */ cursor) => void (canvas.style.cursor = cursor),
       textInput: (/** @type {[string, unknown][]} */ calls) => calls.forEach(([method, args]) => typing.call(method, args)),
       semantics: spoken,
@@ -287,6 +312,7 @@ function frames(renderer, post) {
     else if (data?.one === "started") renderer.frame_started(node, data.error)
     else if (data?.one === "heard") renderer.frame_message(node, data.message)
     else if (data?.one === "styles") renderer.component(data.styles)
+    else if (data?.one === "timers") renderer.timers(node, data.timers)
   })
   return {
     frame: async (/** @type {[number, string, string | null]} */ [node, src, subject]) => {
@@ -355,6 +381,7 @@ async function frame(page, pageHtml, framed) {
     requestAnimationFrame: (/** @type {FrameRequestCallback} */ callback) => (asked.set(next, callback), soon(), next++),
     cancelAnimationFrame: (/** @type {number} */ number) => void asked.delete(number),
   })
+  timed((timers) => drawing.postMessage({ one: "timers", timers }, "*"))
   addEventListener("message", ({ source, data }) => {
     if (source === drawing && data?.one === "call") {
       try {
@@ -382,6 +409,47 @@ async function frame(page, pageHtml, framed) {
   } catch (error) {
     drawing.postMessage({ one: "started", error: String(/** @type {Error} */ (error)?.stack ?? error) }, "*")
   }
+}
+
+/**
+ * The page's timers that a picture waits for, as a native host's JS thread keeps them (`setTimeout`, and its clear):
+ * each when it's due (`Date.now()`'s, the same in every frame), told to `told` as they change and once each has run,
+ * which a harness's `settle` waits for (`Thread::timers`): on a fast GPU a picture was taken before a skeleton showed,
+ * a blink after it was made. Only those of a second or less, by which a page reveals or settles what it shows: a later
+ * one is a state that comes in seconds (a toast going, a retry), which a scene waits for itself (`wait`), as the
+ * browser's clock, unlike a native harness's, can't be stepped. → the browser's own timers and frames.
+ * @param {(timers: number[]) => void} told
+ */
+function timed(told) {
+  const browser = {
+    setTimeout: setTimeout.bind(globalThis),
+    clearTimeout: clearTimeout.bind(globalThis),
+    requestAnimationFrame: requestAnimationFrame.bind(globalThis),
+    cancelAnimationFrame: cancelAnimationFrame.bind(globalThis),
+  }
+  /** @type {Map<number, number>} */
+  const timers = new Map()
+  const tell = () => told([...timers.values()])
+  Object.assign(globalThis, {
+    setTimeout: (/** @type {unknown} */ callback, /** @type {unknown} */ delay, /** @type {unknown[]} */ ...args) => {
+      const ms = Math.max(0, Number(delay) || 0)
+      const handle = browser.setTimeout(() => {
+        timers.delete(handle)
+        try {
+          if (typeof callback === "function") callback(...args)
+        } finally {
+          tell()
+        }
+      }, ms)
+      if (ms <= 1000) {
+        timers.set(handle, Date.now() + ms)
+        tell()
+      }
+      return handle
+    },
+    clearTimeout: (/** @type {number} */ handle) => (timers.delete(handle) && tell(), browser.clearTimeout(handle)),
+  })
+  return browser
 }
 
 /**

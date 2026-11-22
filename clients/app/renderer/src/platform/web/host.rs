@@ -50,7 +50,7 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     let page = url::Url::parse(&page).map_err(|error| JsError::new(&format!("{error}")))?;
     screen.fetch = Some(Box::new(move |src: &str| fetch(&page, src, None)));
     // Another app's page, in a frame of its own of the frame's, which its client says where it is (renderer.js).
-    screen.make_frame = Some(Box::new(|node, src, subject| call_with("frame", &[JsValue::from(node as f64), src.into(), subject.map_or(JsValue::NULL, JsValue::from)])));
+    screen.make_frame = Some(Box::new(|node, src, subject| drop(call_with("frame", &[JsValue::from(node as f64), src.into(), subject.map_or(JsValue::NULL, JsValue::from)]))));
     screen.touch = touch;
     screen.text_size = text_size;
     screen.theme = match theme.as_deref() {
@@ -62,8 +62,8 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     let options = WindowOptions { title: String::new(), app_id: String::new(), size: Size::default(), tag: Value::Null, panel: None, places: None, frame: None, root: false, icon: None, owner: None, snapshot: None, title_row: false };
     // Its first frame is told, for how long it took, and a page this can't draw is drawn as its own page instead.
     let on_event = |event| match event {
-        Event::Drawn => call("drawn", &JsValue::UNDEFINED),
-        Event::Mismatched(why) | Event::Failed(why) => call("unopened", &why.into()),
+        Event::Drawn => drop(call("drawn", &JsValue::UNDEFINED)),
+        Event::Mismatched(why) | Event::Failed(why) => drop(call("unopened", &why.into())),
         _ => {}
     };
     windows.open(options, Ok(screen), on_event).map_err(|error| JsError::new(&format!("{error:#}")))?;

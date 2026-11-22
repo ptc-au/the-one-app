@@ -61,7 +61,7 @@ thread_local! {
     /// the page's zoom.
     static SCALE: Cell<f32> = const { Cell::new(1.0) };
     /// The timer set for when the windows next have something to do, and when that is.
-    static TIMER: Cell<Option<(i32, f64)>> = const { Cell::new(None) };
+    static TIMER: Cell<Option<(f64, f64)>> = const { Cell::new(None) };
     /// The page's frame, as `open` was given it: its canvas, how dark the device is and whether it asked for less
     /// motion, and what tells the frame's own JS what the screen says of itself (its cursor, its client's messages).
     static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
@@ -102,17 +102,18 @@ pub fn start() -> anyhow::Result<Native> {
     Ok(Native(Sender))
 }
 
-/// Calls the frame's own JS: `calls[name](argument)`, or with several, `calls[name]([...arguments])`.
-fn call_with(name: &str, arguments: &[JsValue]) {
-    call(name, &arguments.iter().collect::<js_sys::Array>());
+/// Calls the frame's own JS: `calls[name](argument)`, or with several, `calls[name]([...arguments])`. → what it returned.
+fn call_with(name: &str, arguments: &[JsValue]) -> JsValue {
+    call(name, &arguments.iter().collect::<js_sys::Array>())
 }
 
-/// Calls the frame's own JS: `calls[name](argument)`.
-fn call(name: &str, argument: &JsValue) {
+/// Calls the frame's own JS: `calls[name](argument)`. → what it returned.
+fn call(name: &str, argument: &JsValue) -> JsValue {
     HOST.with_borrow(|host| {
-        let Some(host) = host else { return };
-        if let Ok(function) = js_sys::Reflect::get(&host.calls, &name.into()).and_then(|function| function.dyn_into::<js_sys::Function>()) {
-            let _ = function.call1(&host.calls, argument);
+        let Some(host) = host else { return JsValue::UNDEFINED };
+        match js_sys::Reflect::get(&host.calls, &name.into()).and_then(|function| function.dyn_into::<js_sys::Function>()) {
+            Ok(function) => function.call1(&host.calls, argument).unwrap_or(JsValue::UNDEFINED),
+            Err(_) => JsValue::UNDEFINED,
         }
     })
 }
@@ -164,16 +165,16 @@ fn turn() {
     if let Some(due) = due {
         let at = js_sys::Date::now() + due.as_secs_f64() * 1000.0;
         if TIMER.get().is_none_or(|(_, set)| set > at + 1.0) {
-            let window = web_sys::window().expect("a frame has a window");
+            // The browser's own timer, which the frame's JS gives it, not the page's, which a `settle` waits for.
             if let Some((handle, _)) = TIMER.take() {
-                window.clear_timeout_with_handle(handle);
+                call("untimer", &JsValue::from(handle));
             }
             let fired = Closure::once_into_js(|| {
                 TIMER.set(None);
                 soon();
             });
-            let delay = (due.as_secs_f64() * 1000.0).ceil() as i32;
-            if let Ok(handle) = window.set_timeout_with_callback_and_timeout_and_arguments_0(fired.unchecked_ref(), delay) {
+            let delay = (due.as_secs_f64() * 1000.0).ceil();
+            if let Some(handle) = call_with("timer", &[fired, JsValue::from(delay)]).as_f64() {
                 TIMER.set(Some((handle, at)));
             }
         }
