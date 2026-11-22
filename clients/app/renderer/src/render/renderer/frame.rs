@@ -1,10 +1,7 @@
-use super::super::scene::{Raster, Recording, TransformationMatrix};
+use super::super::scene::{Raster, Tile, TransformationMatrix};
+use super::blur::Prints;
 use super::damage::{self, Rect};
 use super::*;
-
-/// What a pixel copied costs a GPU beside one drawn again: a third, as a copy moves it once where drawing shades and
-/// blends it (the Surface's fit: 0.45 ms a million copied, 1.6 drawn in boxes, 6.8 in glyphs).
-const COPIED: f64 = 0.3;
 
 /// What a target draws of a frame: the batches that reach its box of the scene, by where they are among the scene's,
 /// what it drew (`Drawn`), the blurs behind its backdrops, each thing it draws, in order, and where (`damage`), and its
@@ -14,7 +11,7 @@ struct Planned {
     batches: Vec<usize>,
     drawn: Drawn,
     blurs: Vec<Vec<Blur>>,
-    shown: damage::Shown,
+    shown: Prints,
     origin: [f32; 2],
 }
 
@@ -37,6 +34,18 @@ impl Clip {
             .collect();
         Self { rects, scene }
     }
+}
+
+/// A tile drawn into its cell of a page: its picture's scene, the globals that make its cell the viewport onto it
+/// (`origin`, its cell's top left in its scene), its batches' instances, its cell's top left in the page, and where in
+/// its cell it's drawn (all of it, or where it changed).
+struct Drawing {
+    scene: Arc<Scene>,
+    globals: (u64, u64),
+    origin: [f32; 2],
+    offsets: Vec<(u64, u64)>,
+    cell: [u32; 2],
+    rects: Vec<Rect>,
 }
 
 /// How a frame's backdrops' blurs are had: kept from the frames before (`blurred`, by batch and backdrop), else taken
@@ -67,38 +76,69 @@ impl Renderer {
         self.data.clear();
         let gamma = self.gamma;
         let gamma = self.push(bytemuck::bytes_of(&gamma));
-        // The frame's rasters' scenes that haven't an image yet, packed into a texture for each depth they're drawn at
-        // (what's an image in one is drawn into its own texture before it) and drawn there in one pass, their batches
-        // together, from their slots: where each took a pass and its own draws, and a draw of its own to draw it, a
-        // launcher's category opening, each of its apps' icon and name a layer, made 7 passes and 14 draws more.
-        let new: Vec<&Recording> = scene.recordings.iter().filter(|recording| !self.rasters.contains_key(&recording.id)).collect();
-        let mut depths: std::collections::HashMap<u32, usize> = Default::default();
-        for recording in &new {
-            let depth = recording.scene.rasters.iter().filter_map(|raster| depths.get(&raster.raster)).map(|depth| depth + 1).max().unwrap_or(0);
-            depths.insert(recording.id, depth);
+        // The frame's tiles that haven't been drawn, each whole into a cell of the renderer's (`Tiles`), the pixel
+        // round it too, those of a page at each depth they're drawn at (what's a tile in one is drawn before it)
+        // together, in one pass, their batches together: where each took a pass and its own draws, a launcher's
+        // category opening, each of its apps' icon and name a layer, made 7 passes and 14 draws more. Those it draws
+        // are kept from those it lets go of; what the atlas holds changed, none is what it was.
+        let (frame, generation) = (self.frames + 1, self.atlas.generation());
+        if self.tiles.generation != generation {
+            self.tiles.clear(generation);
         }
-        let largest = self.device.limits().max_texture_dimension_2d;
-        let mut rastering: Vec<(Scene, wgpu::TextureView, (u64, u64), Vec<(u64, u64)>)> = Vec::new();
-        for depth in 0..depths.values().max().map_or(0, |most| most + 1) {
-            let these: Vec<&Recording> = new.iter().filter(|recording| depths[&recording.id] == depth).copied().collect();
-            for (size, placed) in pack(&these.iter().map(|recording| recording.size).collect::<Vec<_>>(), largest) {
-                let texture = self.made((size[0], size[1]), LAYER);
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                let sheet = Arc::new(Sheet { group: self.texture(&view), texture });
-                let mut drawn = Scene::default();
-                for (at, [x, y]) in placed {
-                    let recording = these[at];
-                    let px = crate::geometry::ScaledPixels;
-                    let slot = Bounds { origin: crate::geometry::Point { x: px(x as f32), y: px(y as f32) }, size: crate::geometry::Size { width: px(recording.size[0] as f32), height: px(recording.size[1] as f32) } };
-                    drawn.splice(&recording.scene, 1.0, [x as f32 - recording.origin[0], y as f32 - recording.origin[1]], 1.0, slot.into());
-                    self.rasters.insert(recording.id, (sheet.clone(), slot));
-                }
-                drawn.sort();
-                let globals = GlobalParams { viewport_size: [size[0] as f32, size[1] as f32], origin: [0.0; 2] };
-                let globals = self.push(bytemuck::bytes_of(&globals));
-                let instances = drawn.batches().map(|batch| self.push_batch(&batch)).collect();
-                rastering.push((drawn, view, globals, instances));
+        let mut new: Vec<&Tile> = Vec::new();
+        for tile in &scene.tiles {
+            match self.tiles.cells.get_mut(&tile.id) {
+                Some(cell) => cell.drawn = frame,
+                None => new.push(tile),
             }
+        }
+        let mut depths: std::collections::HashMap<u64, usize> = Default::default();
+        for tile in &new {
+            let depth = tile.scene.rasters.iter().filter_map(|raster| depths.get(&raster.raster)).map(|depth| depth + 1).max().unwrap_or(0);
+            depths.insert(tile.id, depth);
+        }
+        let budget = TILE_WINDOWS * self.targets.iter().map(|target| (target.size.0 / TILE + 2) * (target.size.1 / TILE + 2)).max().unwrap_or(0);
+        // Each tile is drawn from its picture's scene as it is, its cell the viewport, so it's the same to the pixel
+        // whichever cell it's in, where moved into one its arithmetic rounded otherwise (the web's frames, coming at other
+        // times, put a tile in another cell: words a few levels apart). Each scene's instances are in the frame's data once.
+        let mut rastering: Vec<(Arc<Sheet>, Vec<Drawing>)> = Vec::new();
+        let mut pushed: std::collections::HashMap<*const Scene, Vec<(u64, u64)>> = Default::default();
+        for depth in 0..depths.values().max().map_or(0, |most| most + 1) {
+            let mut pages: std::collections::BTreeMap<u32, Vec<Drawing>> = Default::default();
+            for tile in new.iter().filter(|tile| depths[&tile.id] == depth) {
+                let reads: Vec<usize> = tile.scene.rasters.iter().filter_map(|raster| self.tiles.cells.get(&raster.raster)).map(|cell| (cell.at / (CELLS * CELLS)) as usize).collect();
+                let px = crate::geometry::ScaledPixels;
+                let area = Bounds { origin: crate::geometry::Point { x: px(tile.origin[0] - 1.0), y: px(tile.origin[1] - 1.0) }, size: crate::geometry::Size { width: px(CELL as f32), height: px(CELL as f32) } };
+                let prints = Arc::new(tile.scene.prints(area));
+                let (cell, rects) = match self.tiles.changed(tile, frame, &reads, prints.clone()) {
+                    Some(changed) => changed,
+                    None => {
+                        let cell = match self.tiles.place(tile, frame, budget, &reads, prints.clone()) {
+                            Some(cell) => cell,
+                            None => {
+                                let texture = self.made((CELLS * CELL, CELLS * CELL), LAYER);
+                                let group = self.texture(&texture.create_view(&wgpu::TextureViewDescriptor::default()));
+                                self.tiles.grow(Arc::new(Sheet { texture, group }));
+                                self.tiles.place(tile, frame, budget, &reads, prints).expect("a page was made")
+                            }
+                        };
+                        (cell, vec![[0, 0, CELL, CELL]])
+                    }
+                };
+                let origin = [tile.origin[0] - 1.0, tile.origin[1] - 1.0];
+                let globals = GlobalParams { viewport_size: [CELL as f32; 2], origin };
+                let globals = self.push(bytemuck::bytes_of(&globals));
+                let offsets = match pushed.get(&Arc::as_ptr(&tile.scene)) {
+                    Some(offsets) => offsets.clone(),
+                    None => {
+                        let offsets: Vec<(u64, u64)> = tile.scene.batches().map(|batch| self.push_batch(&batch)).collect();
+                        pushed.insert(Arc::as_ptr(&tile.scene), offsets.clone());
+                        offsets
+                    }
+                };
+                pages.entry(cell / (CELLS * CELLS)).or_default().push(Drawing { scene: tile.scene.clone(), globals, origin, offsets, cell: cell_at(cell), rects });
+            }
+            rastering.extend(pages.into_iter().map(|(page, tiles)| (self.tiles.pages[page as usize].clone(), tiles)));
         }
         let batches: Vec<PrimitiveBatch<'_>> = scene.batches().collect();
         let instances: Vec<(u64, u64)> = batches.iter().map(|batch| self.push_batch(batch)).collect();
@@ -124,15 +164,8 @@ impl Renderer {
             .collect();
         // Each thing in each batch: what it is (its kind, texture and instance, wherever it comes in the order) and where
         // it's drawn, by which a frame is drawn again only where they changed (`damage`), and a blur that's behind them
-        // changed only in part is taken again there (`Blur::damaged`); what it is scrolled back, where it's in a box that
-        // scrolls (the innermost whose clip it's inside, the last painted of those as big), by which a frame moves what it kept of one (`damage::scrolled`);
-        // and the rows and columns of it that are each the same all along, where it's a box of one colour.
-        let scrolling = |extent: &Bounds<ScaledPixels>| {
-            let inside = |clip: &Bounds<ScaledPixels>| extent.origin.x.0 >= clip.origin.x.0 && extent.origin.y.0 >= clip.origin.y.0 && extent.origin.x.0 + extent.size.width.0 <= clip.origin.x.0 + clip.size.width.0 && extent.origin.y.0 + extent.size.height.0 <= clip.origin.y.0 + clip.size.height.0;
-            scene.scrolls.iter().rev().filter(|scroll| inside(&scroll.mask.bounds)).min_by(|a, b| (a.mask.bounds.size.width.0 * a.mask.bounds.size.height.0).total_cmp(&(b.mask.bounds.size.width.0 * b.mask.bounds.size.height.0)))
-        };
-        type Thing = (u64, Bounds<ScaledPixels>, Option<(u64, u64)>, Option<([f32; 2], [f32; 2])>);
-        let things: Vec<Vec<Thing>> = batches
+        // changed only in part is taken again there (`Blur::damaged`).
+        let things: Vec<Vec<(u64, Bounds<ScaledPixels>)>> = batches
             .iter()
             .zip(&instances)
             .map(|(batch, (offset, _))| {
@@ -153,9 +186,7 @@ impl Renderer {
                     .into_iter()
                     .enumerate()
                     .map(|(at, extent)| {
-                        let print = hash(&|hasher| (std::mem::discriminant(batch), texture, &self.data[start + at * stride + order..start + (at + 1) * stride]).hash(hasher));
-                        let moved = scrolling(&extent).and_then(|scroll| batch.unscrolled(at, scroll.by, &scroll.mask).map(|bytes| (scroll.id, hash(&|hasher| (std::mem::discriminant(batch), texture, &bytes).hash(hasher)))));
-                        (print, extent, moved, batch.even(at))
+                        (hash(&|hasher| (std::mem::discriminant(batch), texture, &self.data[start + at * stride + order..start + (at + 1) * stride]).hash(hasher)), extent)
                     })
                     .collect()
             })
@@ -221,40 +252,18 @@ impl Renderer {
                     }
                     blurs.push(these);
                 }
-                // Each thing it draws, in order, a backdrop with the blur behind it, what it is scrolled back and where
-                // it's the same all along; and what scrolls in it, in its device pixels.
-                let mut shown = damage::Shown::default();
-                for (at, one, (thing, extent, moved, even)) in reaching.iter().enumerate().flat_map(|(at, batch)| things[*batch].iter().enumerate().map(move |(one, thing)| (at, one, thing))) {
-                    if !extent.intersects(&area) {
-                        continue;
+                // Each thing it draws, in order, a backdrop with the blur behind it, in its device pixels.
+                let mut shown = Prints::new();
+                for (at, one, (thing, extent)) in reaching.iter().enumerate().flat_map(|(at, batch)| things[*batch].iter().enumerate().map(move |(one, thing)| (at, one, thing))) {
+                    if extent.intersects(&area) {
+                        shown.push((blurs[at].get(one).and_then(|blur| blur.behind).map_or(*thing, |behind| hash(&|hasher| std::hash::Hash::hash(&(thing, behind), hasher))), device(extent)));
                     }
-                    shown.prints.push((blurs[at].get(one).and_then(|blur| blur.behind).map_or(*thing, |behind| hash(&|hasher| std::hash::Hash::hash(&(thing, behind), hasher))), device(extent)));
-                    shown.moved.push(*moved);
-                    let inner = |[first, last]: [f32; 2], from: f32| [(first - from).ceil().max(0.0) as u32, (last - from).floor().max(0.0) as u32];
-                    shown.even.push(even.map(|(rows, columns)| damage::Even { rows: inner(rows, origin[1]), columns: inner(columns, origin[0]) }));
                 }
-                shown.scrolls = scene
-                    .scrolls
-                    .iter()
-                    .map(|scroll| {
-                        let clip = &scroll.mask.bounds;
-                        let rect = [
-                            (clip.origin.x.0 - origin[0]).ceil().clamp(0.0, size.0 as f32) as u32,
-                            (clip.origin.y.0 - origin[1]).ceil().clamp(0.0, size.1 as f32) as u32,
-                            (clip.origin.x.0 + clip.size.width.0 - origin[0]).floor().clamp(0.0, size.0 as f32) as u32,
-                            (clip.origin.y.0 + clip.size.height.0 - origin[1]).floor().clamp(0.0, size.1 as f32) as u32,
-                        ];
-                        let radii = &scroll.mask.corner_radii;
-                        let reach = crate::geometry::corner_reach(radii.top_left.0.max(radii.top_right.0).max(radii.bottom_right.0).max(radii.bottom_left.0), clip.size.width.0.min(clip.size.height.0));
-                        damage::Scroll { id: scroll.id, rect, by: scroll.by.map(|by| by.round() as i64), corners: if reach > 0.0 { reach.ceil() as u32 + 1 } else { 0 } }
-                    })
-                    .filter(|scroll| scroll.rect[0] < scroll.rect[2] && scroll.rect[1] < scroll.rect[3])
-                    .collect();
                 Planned { globals, batches: reaching, drawn, blurs, shown, origin: *origin }
             })
             .collect();
         // Each target's damage since the frame it drew last, which it's drawn again by where its canvas holds that.
-        let since: Vec<Option<Vec<damage::Rect>>> = self.targets.iter().zip(&planned).map(|(target, planned)| target.previous.as_ref().filter(|(over, _)| *over == planned.drawn.over).map(|(_, shown)| damage::damage(&shown.prints, &planned.shown.prints))).collect();
+        let since: Vec<Option<Vec<damage::Rect>>> = self.targets.iter().zip(&planned).map(|(target, planned)| target.previous.as_ref().filter(|(over, _)| *over == planned.drawn.over).map(|(_, shown)| damage::damage(shown, &planned.shown))).collect();
         if new.is_empty() && since.iter().zip(&self.targets).all(|(since, target)| since.as_ref().is_some_and(|rects| damage::apart(rects.iter().copied(), target.size).is_empty())) {
             return Draw::Unchanged;
         }
@@ -266,18 +275,27 @@ impl Renderer {
         let images: Vec<Option<Image>> = self.targets.iter_mut().map(|target| target.acquire(&self.device)).collect();
         drop(calling);
         self.acquired = acquiring.elapsed();
-        // None to draw on now (a window hidden or asleep, a surface lost): it's drawn on the next.
+        // None to draw on now (a window hidden or asleep, a surface lost): it's drawn on the next, its new tiles too.
         if images.iter().all(Option::is_none) {
+            for tile in &new {
+                if self.tiles.cells.contains_key(&tile.id) {
+                    let cell = self.tiles.let_go(tile.id);
+                    self.tiles.free.push(cell.at);
+                }
+            }
             return Draw::Missed;
         }
         // The tiles of the frame's shadows that haven't one yet, each its box alone, blurred, in a frame of its own.
         let mut tiles: Vec<(TileKey, (u32, u32), (u64, u64), (u64, u64))> = Vec::new();
+        // Those the targets draw and those the tiles drawn this frame draw, so a shadow in a tile is drawn the same whatever
+        // else the frame draws, and a tile drawn again in part matches what's left of it.
         let drawn: std::collections::BTreeSet<usize> = planned.iter().flat_map(|planned| planned.batches.iter().copied()).collect();
-        for at in drawn {
-            let PrimitiveBatch::Shadows(shadows) = &batches[at] else { continue };
+        let shadows = drawn.into_iter().filter_map(|at| if let PrimitiveBatch::Shadows(shadows) = &batches[at] { Some(*shadows) } else { None });
+        let in_tiles: Vec<&Scene> = rastering.iter().flat_map(|(_, tiles)| tiles.iter().map(|tile| &*tile.scene)).collect();
+        for shadows in shadows.chain(in_tiles.iter().map(|scene| &scene.shadows[..])) {
             for shadow in shadows.iter() {
                 let Some((key, tile)) = tiled(shadow) else { continue };
-                if self.tiles.contains_key(&key) || tiles.iter().any(|(planned, ..)| *planned == key) {
+                if self.shadow_tiles.contains_key(&key) || tiles.iter().any(|(planned, ..)| *planned == key) {
                     continue;
                 }
                 let blur = shadow.blur_radius.0;
@@ -302,7 +320,7 @@ impl Renderer {
         let largest = instances
             .iter()
             .chain(tiles.iter().map(|(.., instance)| instance))
-            .chain(rastering.iter().flat_map(|(.., instances)| instances))
+            .chain(rastering.iter().flat_map(|(_, tiles)| tiles.iter().flat_map(|tile| &tile.offsets)))
             .map(|(_, length)| *length)
             .max()
             .unwrap_or(4);
@@ -322,19 +340,14 @@ impl Renderer {
         }
         let group = self.instances.as_ref().expect("made above").2.clone();
 
-        // Shadows' tiles and rasters first, once for every target that draws them.
+        // Shadows' tiles and pictures' tiles first, once for every target that draws them.
         for (key, (width, height), globals, instance) in tiles {
             self.draw_tile(&mut encoder, &buffer, &group, key, (width, height), globals, gamma, instance);
         }
-        for (drawn, view, globals, offsets) in rastering {
-            self.draw_sheet(&mut encoder, &buffer, &group, &drawn, &view, globals, gamma, &offsets);
+        for (page, tiles) in rastering {
+            self.draw_sheet(&mut encoder, &buffer, &group, &page.texture.create_view(&wgpu::TextureViewDescriptor::default()), gamma, &tiles);
         }
-        let gone: Vec<Arc<Sheet>> = self.rasters.extract_if(|id, _| !scene.recordings.iter().any(|recording| recording.id == *id) && !scene.rasters.iter().any(|raster| raster.raster == *id)).map(|(_, (sheet, _))| sheet).collect();
-        for sheet in gone {
-            if let Some(sheet) = Arc::into_inner(sheet) {
-                self.let_go(sheet.texture);
-            }
-        }
+        self.pictures.retain(|id, _| scene.rasters.iter().any(|raster| raster.raster == *id));
         // Then each target, in runs of batches, one pass each, broken at each backdrop that blurs what's drawn before
         // it afresh.
         let mut targets = std::mem::take(&mut self.targets);
@@ -398,7 +411,7 @@ impl Renderer {
     /// back in no known order with what was drawn on them frames before; where most did, it's drawn whole in its
     /// image, and the next frame that changes little draws whole into its canvas, as its first frame does.
     #[allow(clippy::too_many_arguments)]
-    fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn, shown: damage::Shown, since: Option<Vec<Rect>>, origin: [f32; 2]) {
+    fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn, shown: Prints, since: Option<Vec<Rect>>, origin: [f32; 2]) {
         let (texture, view) = (&image.texture, &image.view);
         let size = (texture.width(), texture.height());
         let whole = u64::from(size.0) * u64::from(size.1);
@@ -407,48 +420,38 @@ impl Renderer {
         let blurrable = copies || texture.usage().intersects(wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC);
         let decided = self.decide(target, blurs, blurrable);
         // Drawn again only where it changed since the frame its canvas holds (which frames drawn whole since leave as it
-        // was, as a buffer's age has it), a box that scrolled moved there first where that leaves less to draw and copy
-        // (`damage::scrolled`), where that's under three quarters of it; else whole into its image. Where its canvas holds
-        // no frame of this one's (let go idle, made again) or one too far behind, it's drawn whole on it where little
-        // changed since the frame before.
+        // was, as a buffer's age has it), where that's under three quarters of it; else whole into its image. Where its
+        // canvas holds no frame of this one's (let go idle, made again) or one too far behind, it's drawn whole on it
+        // where little changed since the frame before.
         let canvas = target.canvas.take().filter(|canvas| (canvas.width(), canvas.height()) == size);
-        fn on(shown: &Option<(u64, damage::Shown)>, now: u64) -> Option<&damage::Shown> {
+        fn on(shown: &Option<(u64, Prints)>, now: u64) -> Option<&Prints> {
             shown.as_ref().filter(|(over, _)| *over == now).map(|(_, shown)| shown)
         }
         let held = canvas.is_some() && on(&target.shown, drawn.over).is_some();
         let reads: Vec<Rect> = decided.reads(blurs).collect();
-        let changed = |last: &damage::Shown| {
-            let apart = |changed: Vec<Rect>| damage::apart(changed.into_iter().chain(reads.iter().copied()), size);
+        let changed = |last: &Prints| {
             // Its damage since its last frame, found already where that's the frame it's drawn on.
-            let found = since.as_ref().filter(|_| target.previous.as_ref().is_some_and(|(_, previous)| previous.prints == last.prints));
-            let still = apart(found.cloned().unwrap_or_else(|| damage::damage(&last.prints, &shown.prints)));
-            let scrolled = damage::scrolled(last, &shown).map(|(blit, was, is, more)| (apart(damage::damage(&was, &is).into_iter().chain(more).collect()), blit));
-            match scrolled {
-                Some((rects, blit)) if damage::area(&rects) as f64 + COPIED * 2.0 * (damage::area(&[blit.from]) as f64) < damage::area(&still) as f64 => (rects, Some(blit)),
-                _ => (still, None),
-            }
+            let found = since.as_ref().filter(|_| target.previous.as_ref().is_some_and(|(_, previous)| previous == last));
+            damage::apart(found.cloned().unwrap_or_else(|| damage::damage(last, &shown)).into_iter().chain(reads.iter().copied()), size)
         };
         let little = |rects: &[Rect]| damage::area(rects) * 4 < whole * 3;
         let plan = on(&target.shown, drawn.over)
             .filter(|_| held && copies)
             .map(changed)
-            .filter(|(rects, _)| little(rects))
-            .map(|(rects, blit)| (Some(Clip::new(rects, origin)), blit))
-            .or_else(|| on(&target.previous, drawn.over).filter(|_| copies).map(changed).filter(|(rects, _)| little(rects)).map(|_| (None, None)))
+            .filter(|rects| little(rects))
+            .map(|rects| Some(Clip::new(rects, origin)))
+            .or_else(|| on(&target.previous, drawn.over).filter(|_| copies).map(changed).filter(|rects| little(rects)).map(|_| None))
             // Its first frame, with none before it to tell what changes, is drawn whole on its canvas too, so the next,
             // which most often changes little (a press, a hover), draws only that, where it drew all again.
-            .or_else(|| (copies && target.previous.is_none()).then_some((None, None)));
+            .or_else(|| (copies && target.previous.is_none()).then_some(None));
         let mut work = self.work.get();
         match plan {
-            Some((clip, blit)) => {
+            Some(clip) => {
                 let canvas = canvas.unwrap_or_else(|| self.made(size, LAYER));
                 let canvas_view = canvas.create_view(&wgpu::TextureViewDescriptor::default());
                 work.damage += clip.as_ref().map_or(whole as f64, |clip| damage::area(&clip.rects) as f64);
                 work.copied += whole as f64;
                 self.work.set(work);
-                if let Some(blit) = blit {
-                    self.blit(encoder, &canvas, blit);
-                }
                 if clip.as_ref().is_none_or(|clip| !clip.rects.is_empty()) {
                     self.draw_batches(encoder, target, &canvas, &canvas_view, globals, buffer, batches, instances, blurs, decided, clip.as_ref());
                 }
@@ -468,28 +471,6 @@ impl Renderer {
         target.last = drawn;
         // What's behind no backdrop this frame isn't kept; what's still drawn starts the next frame unused.
         target.blurred.retain(|_, kept| std::mem::take(&mut kept.used));
-    }
-
-    /// Moves `blit`'s pixels of `canvas` where they're moved to, through a texture of their size, as a texture's copy
-    /// into itself mustn't overlap.
-    fn blit(&mut self, encoder: &mut wgpu::CommandEncoder, canvas: &wgpu::Texture, blit: damage::Blit) {
-        let [left, top, right, bottom] = blit.from;
-        let (width, height) = (right - left, bottom - top);
-        if width == 0 || height == 0 {
-            return;
-        }
-        let through = self.made((width, height), LAYER);
-        let texel = |texture, x: u32, y: u32| wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d { x, y, z: 0 }, aspect: wgpu::TextureAspect::All };
-        let extent = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-        let to = |edge: u32, by: i64| (i64::from(edge) + by) as u32;
-        self.copy(encoder, false, |encoder| {
-            encoder.copy_texture_to_texture(texel(canvas, left, top), texel(&through, 0, 0), extent);
-            encoder.copy_texture_to_texture(texel(&through, 0, 0), texel(canvas, to(left, blit.by[0]), to(top, blit.by[1])), extent);
-        });
-        let mut work = self.work.get();
-        work.copied += 2.0 * f64::from(width) * f64::from(height);
-        self.work.set(work);
-        self.let_go(through);
     }
 
     /// How the blurs of a frame's batches are had (`Decided`): kept from the frames before, else taken afresh, or again
@@ -567,6 +548,12 @@ impl Renderer {
             pass.set_bind_group(1, &instances.group, &[0]);
             self.clipped(&mut pass, clip.map(|clip| &clip.rects[..]), &|pass| pass.draw(0..4, 0..1));
         }
+        self.draw_in(&mut pass, batches, instances, run, clip);
+    }
+
+    /// Draws the batches `run` names into `pass`, only where `clip` says where it does; a backdrop as one of its batch's,
+    /// with what's behind it blurred.
+    fn draw_in(&self, pass: &mut wgpu::RenderPass<'_>, batches: &[PrimitiveBatch<'_>], instances: &Instances, run: &[(usize, Option<(wgpu::TextureView, usize)>)], clip: Option<&Clip>) {
         for (at, blurred) in run {
             let at = *at;
             // A backdrop is drawn alone, one of its batch's; where it's clipped, only in the rectangles it reaches.
@@ -581,21 +568,21 @@ impl Renderer {
             let (rects, scene) = (reached.as_ref().map(|(rects, _)| &rects[..]), reached.as_ref().map(|(_, scene)| &scene[..]));
             self.covered(&batch, scene);
             if let PrimitiveBatch::Shadows(shadows) = &batches[at] {
-                self.draw_shadows(&mut pass, shadows, &instances.group, instances.offsets[at], rects);
+                self.draw_shadows(pass, shadows, &instances.group, instances.offsets[at], rects);
                 continue;
             }
             if let PrimitiveBatch::Rasters(rasters) = &batches[at] {
                 pass.set_pipeline(&self.pipelines.rasters);
                 pass.set_bind_group(1, &instances.group, &[instances.offsets[at]]);
                 // A draw for each texture in a row of them, of the images in it.
-                let sheet = |raster: &Raster| self.rasters.get(&raster.raster).map(|(sheet, _)| sheet);
+                let sheet = |raster: &Raster| self.slot(raster).map(|(sheet, _)| sheet);
                 let mut start = 0;
                 while start < rasters.len() {
                     let first = sheet(&rasters[start]);
                     let end = start + 1 + rasters[start + 1..].iter().take_while(|raster| sheet(raster).zip(first).is_some_and(|(one, other)| Arc::ptr_eq(one, other))).count();
                     if let Some(first) = first {
                         pass.set_bind_group(2, &first.group, &[]);
-                        self.clipped(&mut pass, rects, &|pass| pass.draw(0..4, start as u32..end as u32));
+                        self.clipped(pass, rects, &|pass| pass.draw(0..4, start as u32..end as u32));
                     }
                     start = end;
                 }
@@ -612,7 +599,7 @@ impl Renderer {
                     pass.set_pipeline(&self.pipelines.backdrops);
                     pass.set_bind_group(1, &instances.group, &[instances.offsets[at]]);
                     pass.set_bind_group(2, &self.texture(blurred), &[]);
-                    self.clipped(&mut pass, rects, &|pass| pass.draw(0..4, *one as u32..*one as u32 + 1));
+                    self.clipped(pass, rects, &|pass| pass.draw(0..4, *one as u32..*one as u32 + 1));
                     continue;
                 }
             };
@@ -621,7 +608,7 @@ impl Renderer {
             if let Some(id) = texture {
                 pass.set_bind_group(2, &self.atlas_group(id), &[]);
             }
-            self.clipped(&mut pass, rects, &|pass| pass.draw(0..4, 0..count as u32));
+            self.clipped(pass, rects, &|pass| pass.draw(0..4, 0..count as u32));
         }
     }
 
@@ -711,48 +698,39 @@ impl Renderer {
             PrimitiveBatch::PolychromeSprites { sprites, .. } => self.push_instances(sprites),
             PrimitiveBatch::Backdrops(backdrops) => self.push_instances(backdrops),
             PrimitiveBatch::Rasters(rasters) => {
-                let placed: Vec<Raster> = rasters.iter().map(|raster| Raster { slot: self.rasters.get(&raster.raster).map_or_else(Default::default, |(_, slot)| *slot), ..raster.clone() }).collect();
+                let placed: Vec<Raster> = rasters.iter().map(|raster| Raster { slot: self.slot(raster).map_or_else(Default::default, |(_, slot)| slot), ..raster.clone() }).collect();
                 self.push_instances(&placed)
             }
         }
     }
 
-    /// Draws the images packed in a texture (`drawn`, their scenes in their slots) into it (`view`), over nothing, with
-    /// its own `globals`, the frame's `gamma`, and its batches' instances at `offsets`: in one pass, as a raster's
-    /// backdrops draw nothing.
+    /// Draws `tiles` into their cells of a page (`view`), with the frame's `gamma`: in one pass, each with its cell
+    /// the viewport, cleared first and drawn only where it says, as a tile's backdrops draw nothing.
     #[allow(clippy::too_many_arguments)]
-    fn draw_sheet(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, group: &wgpu::BindGroup, drawn: &Scene, view: &wgpu::TextureView, globals: (u64, u64), gamma: (u64, u64), offsets: &[(u64, u64)]) {
-        let globals = self.pipelines.layouts.globals(buffer, globals, gamma);
-        let batches: Vec<PrimitiveBatch<'_>> = drawn.batches().collect();
-        let instances = Instances { group: group.clone(), offsets: offsets.iter().map(|(offset, _)| *offset as u32).collect() };
-        let run: Vec<(usize, Option<(wgpu::TextureView, usize)>)> = (0..batches.len()).map(|at| (at, None)).collect();
-        self.draw_run(encoder, view, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), &globals, &batches, &instances, &run, None);
+    fn draw_sheet(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, group: &wgpu::BindGroup, view: &wgpu::TextureView, gamma: (u64, u64), tiles: &[Drawing]) {
+        let mut pass = self.pass(encoder, view, wgpu::LoadOp::Load, self.stamps.as_ref().and_then(|stamps| stamps.pass(false)));
+        for tile in tiles {
+            let [x, y] = tile.cell;
+            pass.set_bind_group(0, &self.pipelines.layouts.globals(buffer, tile.globals, gamma), &[]);
+            pass.set_viewport(x as f32, y as f32, CELL as f32, CELL as f32, 0.0, 1.0);
+            let rects: Vec<Rect> = tile.rects.iter().map(|[left, top, right, bottom]| [x + left, y + top, x + right, y + bottom]).collect();
+            pass.set_pipeline(&self.pipelines.clear);
+            pass.set_bind_group(1, group, &[0]);
+            self.clipped(&mut pass, Some(&rects), &|pass| pass.draw(0..4, 0..1));
+            let batches: Vec<PrimitiveBatch<'_>> = tile.scene.batches().collect();
+            let instances = Instances { group: group.clone(), offsets: tile.offsets.iter().map(|(offset, _)| *offset as u32).collect() };
+            let run: Vec<(usize, Option<(wgpu::TextureView, usize)>)> = (0..batches.len()).map(|at| (at, None)).collect();
+            let [left, top] = [tile.origin[0] - x as f32, tile.origin[1] - y as f32];
+            self.draw_in(&mut pass, &batches, &instances, &run, Some(&Clip::new(rects, [left, top])));
+        }
     }
-}
 
-/// Packs images of `sizes` into textures no wider or taller than `largest`, on shelves, tallest first, each as wide
-/// as the widest or a square of their area. → each texture's size, and where each image (by where it is in `sizes`)
-/// is in it.
-fn pack(sizes: &[[u32; 2]], largest: u32) -> Vec<([u32; 2], Vec<(usize, [u32; 2])>)> {
-    let area: f64 = sizes.iter().map(|[width, height]| f64::from(*width) * f64::from(*height)).sum();
-    let wide = sizes.iter().map(|[width, _]| *width).max().unwrap_or(0).max(area.sqrt().ceil() as u32).min(largest);
-    let mut order: Vec<usize> = (0..sizes.len()).collect();
-    order.sort_by_key(|at| std::cmp::Reverse(sizes[*at][1]));
-    let mut sheets: Vec<([u32; 2], Vec<(usize, [u32; 2])>)> = Vec::new();
-    let (mut x, mut y, mut shelf) = (0, 0, 0);
-    for at in order {
-        let [width, height] = sizes[at];
-        if x > 0 && x + width > wide {
-            (x, y, shelf) = (0, y + shelf, 0);
-        }
-        if sheets.is_empty() || y + height > largest {
-            sheets.push(([0, 0], Vec::new()));
-            (x, y, shelf) = (0, 0, 0);
-        }
-        let (size, placed) = sheets.last_mut().expect("pushed above");
-        placed.push((at, [x, y]));
-        *size = [size[0].max(x + width), size[1].max(y + height)];
-        (x, shelf) = ((x + width).min(largest), shelf.max(height));
+    /// `raster`'s texture and its slot in it: its tile's part (`Raster::slot`), or a picture's, all of it.
+    fn slot(&self, raster: &Raster) -> Option<(&Arc<Sheet>, Bounds<ScaledPixels>)> {
+        self.tiles.slot(raster.raster, raster.slot).or_else(|| {
+            let sheet = self.pictures.get(&raster.raster)?;
+            let px = crate::geometry::ScaledPixels;
+            Some((sheet, Bounds { origin: crate::geometry::Point { x: px(0.0), y: px(0.0) }, size: crate::geometry::Size { width: px(sheet.texture.width() as f32), height: px(sheet.texture.height() as f32) } }))
+        })
     }
-    sheets
 }

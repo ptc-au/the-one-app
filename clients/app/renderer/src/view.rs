@@ -15,7 +15,7 @@ use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, Pix
 use crate::inspect::{self, Key, Rect, Rects};
 use crate::js::{Posted, Thread};
 use crate::render::atlas::{Atlas, AtlasTile};
-use crate::render::scene::{Backdrop, BorderStyle, PolychromeSprite, Quad, Recording, Scene, Shadow, TransformationMatrix};
+use crate::render::scene::{Backdrop, BorderStyle, PolychromeSprite, Quad, Scene, Shadow, TILE, Tile, TransformationMatrix, tiled};
 use crate::style::{self, Look, Offset, Paint, State, Text};
 use crate::text::{Paragraph, TextRun, TextSystem};
 use crate::tokens::{Conditions, Radius};
@@ -262,6 +262,8 @@ pub struct Screen {
     frame: u64,
     /// What the last frame showed, which a frame that would show the same doesn't paint again.
     seen: Option<Seen>,
+    /// It's painted afresh, to check a frame by (`paint_afresh`): nothing is a surface.
+    afresh: bool,
     /// How many times its atlas had let tiles go as it last painted (`Atlas::evictions`), whose pictures it forgets.
     evictions: u64,
     /// The key of the shortcut that summoned it, and when it was last pressed (`summoned`).
@@ -413,6 +415,7 @@ impl Screen {
             styled: States::default(),
             frame: 0,
             seen: None,
+            afresh: false,
             evictions: 0,
             shortcut: None,
             laid_out: HashMap::new(),

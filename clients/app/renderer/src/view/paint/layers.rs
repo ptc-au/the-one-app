@@ -62,10 +62,10 @@ impl Painter<'_> {
     }
 
     /// Whether another surface fits in the window's: fewer than `SURFACES` so far this frame, whose pictures take less
-    /// than `SURFACE_WINDOWS` windows' worth of the GPU's memory.
+    /// than `SURFACE_WINDOWS` windows' worth of the GPU's memory; none painted afresh.
     fn room(&self) -> bool {
         let window = 4.0 * self.window.size.width * self.window.size.height * self.scale * self.scale;
-        self.surfaces.drawn.len() < SURFACES && (self.surfaces.bytes as f32) < SURFACE_WINDOWS * window
+        !self.afresh && self.surfaces.drawn.len() < SURFACES && (self.surfaces.bytes as f32) < SURFACE_WINDOWS * window
     }
 
     /// Draws node `id`'s layer moved by `by` and grown by `grown` (p ↦ p·grown + by), `opacity` as opaque, cut to `mask`.
@@ -79,7 +79,7 @@ impl Painter<'_> {
                 // drew, moved, the same to the pixel as drawn without a layer, so coming to rest there draws nothing
                 // again.
                 Part::Scene(scene, Some(_)) if grown == 1.0 && opacity == 1.0 && whole(by.x) && whole(by.y) => self.scene.splice(&scene, 1.0, [(by.x * self.scale).round(), (by.y * self.scale).round()], opacity, mask.scale_to(self.scale)),
-                Part::Scene(_, Some(recording)) => self.scene.raster(&recording, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
+                Part::Scene(_, Some(tiles)) => self.scene.raster(&tiles, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Scene(scene, None) => self.scene.splice(&scene, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Sublayer(sublayer) => {
                     let transform = Transform { offset: point(sublayer.transform.offset.x * grown + by.x, sublayer.transform.offset.y * grown + by.y), scale: sublayer.transform.scale * grown, rest: sublayer.transform.rest };
@@ -112,9 +112,9 @@ impl Painter<'_> {
         let mut drawn = std::mem::replace(&mut self.parts, parts);
         scene.sort();
         drawn.push(Part::Scene(std::sync::Arc::new(scene), None));
-        for part in &mut drawn {
+        for (at, part) in drawn.iter_mut().enumerate() {
             if let Part::Scene(scene, image) = part {
-                *image = kept.then(|| recording(scene)).flatten();
+                *image = kept.then(|| pictured(scene, picture(id, at))).flatten();
             }
         }
         self.animating |= animating;
@@ -253,7 +253,7 @@ impl Painter<'_> {
                 // Words that don't show aren't drawn: their lines start at its content's left and run on to the right.
                 let size = paragraph.size();
                 let covers = Bounds { origin: content.origin, size: Size { width: size.width.max(width) * transform.scale, height: size.height * transform.scale } };
-                if self.turned(covers).intersects(&mask.bounds) {
+                if self.turned(covers).intersects(&mask.bounds) && self.turned(covers).intersects(&self.shows) {
                     self.paint_text(&paragraph, &runs, content, width, transform.scale, text, opacity, mask);
                 }
             }
@@ -273,17 +273,23 @@ impl Painter<'_> {
             Kind::Box | Kind::Scroll | Kind::List => {
                 let mut child_mask = mask;
                 let mut child_offset = placement.laid_out.origin;
+                // What scrolls in it, where it's longer than it, is a surface of its own, drawn from tiles (`surface`),
+                // where it's drawn ungrown and unturned and not in a layer being drawn (whose texts, drawn each frame
+                // where they are outside the surface, would go uncut by its box: a card's list showed its rows past it):
+                // painted, not cut to what shows, into a scene of its own, which is put back once it's painted, its
+                // texts only those in the tiles that show.
+                let mut surface = None;
                 if look.clips || look.scrolls {
                     child_mask = placement.clip(&look, mask, self.turn);
                     if look.scrolls {
                         let at = |of: &HashMap<Id, Point<f32>>| of.get(&id).copied().unwrap_or(point(0.0, 0.0));
-                        let (_, now, by) = scroll(&laid, at(self.scrolled), at(&self.stretched), self.scale);
+                        let (most, now, by) = scroll(&laid, at(self.scrolled), at(&self.stretched), self.scale);
                         self.scrolled.insert(id, now);
                         child_offset = point(child_offset.x - by.x, child_offset.y - by.y);
-                        // Moved by whole device pixels (`scroll`), a frame moves the pixels it kept
-                        // (`Renderer::draw_target`) and draws only what came in.
-                        if transform.scale == 1.0 && self.turn == TransformationMatrix::unit() {
-                            self.scene.scrolled(id, child_mask.scale_to(self.scale), [by.x * self.scale, by.y * self.scale]);
+                        if (most.x > 0.0 || most.y > 0.0) && transform.scale == 1.0 && self.turn == TransformationMatrix::unit() && self.recording.is_none() && self.room() {
+                            let (at, area, tiles) = self.tiles_shown(child_mask, child_offset);
+                            surface = Some((std::mem::take(&mut *self.scene), child_mask, at, area, std::mem::replace(&mut self.shows, tiles)));
+                            child_mask = ContentMask::from(Bounds { origin: point(-1.0e6, -1.0e6), size: Size { width: 2.0e6, height: 2.0e6 } });
                         }
                     }
                 }
@@ -318,6 +324,70 @@ impl Painter<'_> {
                     }
                     self.stacked = outer;
                 }
+                if let Some((outer, clip, at, area, shows)) = surface {
+                    // What's in it that's drawn after its stacking context's flow, outside it, isn't in the surface: it's
+                    // drawn where it is, cut to what it's in.
+                    for ((_, path), stacked) in &mut self.stacked {
+                        if path.starts_with(&self.path) {
+                            stacked.mask = stacked.mask.intersect(&clip);
+                        }
+                    }
+                    let content = std::mem::replace(&mut *self.scene, outer);
+                    self.shows = shows;
+                    self.surface(id, content, clip, at, area);
+                }
+            }
+        }
+    }
+
+    /// Of a surface whose content's top left is at `origin` in the window, cut to `clip`: the whole device pixel its
+    /// tiles are laid from, where nothing it draws changes as it scrolls (whole device pixels, `scroll`); what of it
+    /// shows, in its device pixels from there; and the tiles that reaches, in the window.
+    fn tiles_shown(&self, clip: ContentMask<f32>, origin: Point<f32>) -> ([f32; 2], [f32; 4], Bounds<f32>) {
+        let scale = self.scale;
+        let at = [(origin.x * scale).round(), (origin.y * scale).round()];
+        let shown = clip.bounds.intersect(&self.shows);
+        let area = [(shown.origin.x * scale - at[0]).floor(), (shown.origin.y * scale - at[1]).floor(), ((shown.origin.x + shown.size.width) * scale - at[0]).ceil(), ((shown.origin.y + shown.size.height) * scale - at[1]).ceil()];
+        let side = TILE as f32;
+        let [left, top] = [(area[0] / side).floor() * side - 1.0, (area[1] / side).floor() * side - 1.0];
+        let [right, bottom] = [(area[2] / side).ceil() * side + 1.0, (area[3] / side).ceil() * side + 1.0];
+        (at, area, Bounds { origin: point((left + at[0]) / scale, (top + at[1]) / scale), size: Size { width: (right - left) / scale, height: (bottom - top) / scale } })
+    }
+
+    /// Draws `content`, what scrolls in node `id`, painted where it is now, as a surface of its own (`Surfaced::Painted`)
+    /// cut to `clip`: its tiles in its own device pixels, from `at` in the window's (`tiles_shown`), those that show
+    /// (`area`) drawn where it's scrolled to, so a frame that scrolls it draws again only the tiles that came in. What's
+    /// a surface in it (a layer, a box that scrolls) is drawn over them where it comes (`Scene::runs`), not into them,
+    /// so one moving, fading or scrolling draws none of them again. One that blurs what's behind it is drawn in what
+    /// it's in.
+    fn surface(&mut self, id: Id, content: Scene, clip: ContentMask<f32>, at: [f32; 2], area: [f32; 4]) {
+        let mask = clip.scale_to(self.scale);
+        if !content.backdrops.is_empty() {
+            return self.scene.splice(&content, 1.0, [0.0, 0.0], 1.0, mask);
+        }
+        // Cut to a box of its own pixels, inside everywhere it was painted (cut to nothing), so what that cuts it to is
+        // the same wherever it's scrolled.
+        let own = Bounds { origin: point(ScaledPixels(-5.0e5), ScaledPixels(-5.0e5)), size: Size { width: ScaledPixels(1.0e6), height: ScaledPixels(1.0e6) } };
+        let mut unscrolled = Scene::default();
+        unscrolled.splice(&content, 1.0, [-at[0], -at[1]], 1.0, own.into());
+        unscrolled.sort();
+        self.surfaces.drawn.insert(id, Surfaced::Painted);
+        for (at_run, (run, over)) in unscrolled.runs().into_iter().enumerate() {
+            let tiles = tiled(&std::sync::Arc::new(run), [0.0, 0.0], area, picture(id, at_run));
+            self.surfaces.bytes += tile_bytes(&tiles);
+            self.scene.raster(&tiles, 1.0, at, 1.0, mask);
+            for mut raster in over {
+                raster.bounds.origin.x.0 += at[0];
+                raster.bounds.origin.y.0 += at[1];
+                raster.content_mask.bounds.origin.x.0 += at[0];
+                raster.content_mask.bounds.origin.y.0 += at[1];
+                raster.content_mask = raster.content_mask.intersect(&mask);
+                self.scene.insert_primitive(raster);
+            }
+        }
+        for tile in &content.tiles {
+            if !self.scene.tiles.iter().any(|kept| kept.id == tile.id) {
+                self.scene.tiles.push(tile.clone());
             }
         }
     }

@@ -5,7 +5,7 @@
 // Copyright 2022 - 2025 Zed Industries, Inc. Licensed under the Apache License, Version 2.0
 // (clients/app/renderer/LICENSE-APACHE); this file is changed from the original.
 
-use super::scene::{PrimitiveBatch, Scene};
+use super::scene::{PrimitiveBatch, Scene, TILE};
 use super::atlas::Atlas;
 use super::context::Context;
 use crate::geometry::{Bounds, ContentMask, DevicePixels, ScaledPixels, Size};
@@ -40,10 +40,6 @@ const IDLE: web_time::Duration = web_time::Duration::from_secs(2);
 /// a GPU (its TDR's 2 s) where it says so. On 22 Nov a Surface's Intel driver timed out (0x141) and failed its reset, and
 /// every wait for its GPU, wgpu's own with no limit too, never ended.
 pub const HANG: web_time::Duration = web_time::Duration::from_secs(2);
-
-/// How many textures a renderer keeps that its frames let go of (`Renderer::spare`): a launcher's pages a wheel turns
-/// let go of a page's raster as they take another of its size.
-const SPARE: usize = 2;
 
 /// What came of drawing a frame (`Renderer::draw`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -82,18 +78,14 @@ pub struct Renderer {
     sampler: wgpu::Sampler,
     gamma: GammaParams,
     /// Each shadow's tile, drawn the first frame it's in, with what binds it (`tiled`).
-    tiles: std::collections::HashMap<TileKey, (wgpu::Texture, wgpu::BindGroup)>,
-    /// Textures a frame let go of (a raster's, a canvas), each taken again by the next that needs one of its size,
-    /// format and use, rather than made (`made`): one a window's size is more than a heap of 8 MB (`Context::create`),
-    /// so a heap of its own, which Intel's Direct3D 12 driver makes resident as it's made, waiting on its GPU, and
-    /// frees as it goes: on a Surface, a launcher's pages turned by a wheel made and freed one each few frames. The last
-    /// `SPARE` are kept, and none once it idles.
-    spare: Vec<wgpu::Texture>,
+    shadow_tiles: std::collections::HashMap<TileKey, (wgpu::Texture, wgpu::BindGroup)>,
     /// The bind group of the frame's data for its batches' instances, each at its offset, and how much of the data
     /// from there it binds; made again only as the data's buffer is, or a batch needs more.
     instances: Option<(wgpu::Buffer, u64, wgpu::BindGroup)>,
-    /// Each raster's texture and its slot in it, by its id, drawn the first frame it's in, kept while frames have it.
-    rasters: std::collections::HashMap<u32, (Arc<Sheet>, Bounds<ScaledPixels>)>,
+    /// The tiles of pictures (`scene::Tile`), each drawn the first frame it's in (`Tiles`).
+    tiles: Tiles,
+    /// Each picture of a frame drawn before (`picture`), by its raster's id, kept while frames draw it.
+    pictures: std::collections::HashMap<u64, Arc<Sheet>>,
     /// Each atlas texture's bind group, as of the atlas's having made so many textures.
     atlas_groups: std::cell::RefCell<(u64, std::collections::HashMap<super::atlas::AtlasTextureId, wgpu::BindGroup>)>,
     /// How many draw calls and render passes the last frame made (`draws`, `passes`).
@@ -150,11 +142,8 @@ struct Drawn {
     batches: Vec<u64>,
 }
 
-/// The start of a frame that's the same as the frames before it, drawn once into a texture of its own, as a
-/// compositor keeps a layer: a frame starts as a copy of it and draws only what follows. What stays the same as the
-/// rest moves (a launcher's card under its turning pages, a page under a sheet sliding up), shadows, blurs and all.
 /// What a frame's GPU did, the same on any GPU: the device pixels of quads (and underlines), shadows, glyphs and
-/// pictures (sprites), backdrops and layers' images (rasters) it drew, each counted as often as it's drawn over, the
+/// pictures (sprites), backdrops and pictures' tiles (rasters) it drew, each counted as often as it's drawn over, the
 /// pixels it copied of the frames before, the bytes it uploaded to the atlas, and the device pixels of what it blurred
 /// afresh behind backdrops (`blurred`), where a blur kept from the frames before costs none; and how many blurs it took
 /// afresh, whole or in part (`blurs`) and drew as they were kept from the frames before (`blurs_kept`); and the device
@@ -174,16 +163,123 @@ struct Work {
     blurs_kept: u32,
 }
 
-/// What a layer's texture is for, a raster's or a target's canvas (`Target::canvas`): drawn into, sampled, copied out
-/// of, and into, as a scroll moves a canvas's pixels; one use for all, so each takes one another
-/// let go of (`spare`), where making one its window's size took a Surface's Intel driver 500 ms.
+/// What a texture of its own is for, a page of tiles or a target's canvas (`Target::canvas`): drawn into, sampled,
+/// copied out of, and into.
 const LAYER: wgpu::TextureUsages = wgpu::TextureUsages::RENDER_ATTACHMENT.union(wgpu::TextureUsages::TEXTURE_BINDING).union(wgpu::TextureUsages::COPY_SRC).union(wgpu::TextureUsages::COPY_DST);
 
-/// A texture rasters' images are drawn in, those a frame first draws packed together (`Raster::slot`), with its bind
-/// group: kept while any of them is, as a compositor's tiles are.
+/// A texture rasters' images are in (`Raster::slot`): a page of tiles, or a picture of a frame drawn before; with its
+/// bind group.
 struct Sheet {
     texture: wgpu::Texture,
     group: wgpu::BindGroup,
+}
+
+/// A side of a page of tiles, in cells, each a tile with the pixel round it (`scene::TILE`): 2048 device pixels.
+const CELLS: u32 = 8;
+const CELL: u32 = TILE + 2;
+
+/// The tiles pictures are drawn in (`scene::Tile`), by their ids, each in a cell of a page, as the atlas keeps glyphs:
+/// one drawn the first frame it's in, kept while there's room under the budget (`TILE_WINDOWS` windows' worth), the one
+/// longest undrawn taken for a new one past it, all let go as the atlas's pixels change (its generation) and once
+/// idle. A frame that draws more than the budget has more pages, which go as it idles. A tile where one was drawn
+/// (`Tile::key`) is drawn in its cell, again only where what it draws changed (`changed`), as WebRender's picture
+/// cache draws a tile's dirty rectangle.
+#[derive(Clone, Default)]
+struct Tiles {
+    pages: Vec<Arc<Sheet>>,
+    /// Each tile's cell, by its id.
+    cells: std::collections::HashMap<u64, Cell>,
+    /// The tile last drawn where each is (`Tile::key`), by its id.
+    keys: std::collections::HashMap<u64, u64>,
+    free: Vec<u32>,
+    generation: u64,
+}
+
+/// Where a tile is drawn: its cell, a page's at `at / CELLS²`; the frame that last drew it; where it is (`Tile::key`);
+/// and each thing it drew, and where in its cell (`Scene::prints`).
+#[derive(Clone)]
+struct Cell {
+    at: u32,
+    drawn: u64,
+    key: u64,
+    prints: Arc<Vec<(u64, damage::Rect)>>,
+}
+
+/// How many windows' worth of tiles a renderer keeps, those it no longer draws (a list scrolled away) among them.
+const TILE_WINDOWS: u32 = 4;
+
+impl Tiles {
+    /// A page of tiles' texture and where `part` of tile `id` (in its pixels) is in it, past the pixel round it.
+    fn slot(&self, id: u64, part: Bounds<ScaledPixels>) -> Option<(&Arc<Sheet>, Bounds<ScaledPixels>)> {
+        let cell = self.cells.get(&id)?.at;
+        let [x, y] = cell_at(cell);
+        // Mutant: a tile shown in part drawn from all of it, squeezed, as before this change's own fix.
+        let part = if crate::mutants::mutant("tile-squeezed") { Bounds { origin: Default::default(), size: crate::geometry::Size { width: ScaledPixels(TILE as f32), height: ScaledPixels(TILE as f32) } } } else { part };
+        let origin = crate::geometry::Point { x: ScaledPixels((x + 1) as f32 + part.origin.x.0), y: ScaledPixels((y + 1) as f32 + part.origin.y.0) };
+        Some((&self.pages[(cell / (CELLS * CELLS)) as usize], Bounds { origin, size: part.size }))
+    }
+
+    /// A cell for `tile`, drawn in `frame`, which draws `prints`, on none of the pages `reads` (what it draws from them
+    /// can't be drawn into them in the same pass): a free one, else the one longest undrawn, where there are `budget` or
+    /// more and some went undrawn this frame. None where a page must be made first (`grow`).
+    fn place(&mut self, tile: &super::scene::Tile, frame: u64, budget: u32, reads: &[usize], prints: Arc<Vec<(u64, damage::Rect)>>) -> Option<u32> {
+        let full = self.pages.len() as u32 * CELLS * CELLS >= budget;
+        let apart = |cell: u32| !reads.contains(&((cell / (CELLS * CELLS)) as usize));
+        let at = match self.free.iter().rposition(|cell| apart(*cell)) {
+            Some(at) => self.free.swap_remove(at),
+            None => {
+                let evicted = *self.cells.iter().filter(|(_, cell)| cell.drawn < frame && full && apart(cell.at)).min_by_key(|(_, cell)| (cell.drawn, cell.at))?.0;
+                self.let_go(evicted).at
+            }
+        };
+        self.keys.insert(tile.key, tile.id);
+        self.cells.insert(tile.id, Cell { at, drawn: frame, key: tile.key, prints });
+        Some(at)
+    }
+
+    /// The cell of the tile last drawn where `tile` is, given to it to draw only where what it draws (`prints`) changed
+    /// (`damage`), or all of it where most did, where that one wasn't drawn this frame and is on none of the pages `reads`;
+    /// and where in it to draw.
+    fn changed(&mut self, tile: &super::scene::Tile, frame: u64, reads: &[usize], prints: Arc<Vec<(u64, damage::Rect)>>) -> Option<(u32, Vec<damage::Rect>)> {
+        let was = *self.keys.get(&tile.key)?;
+        let cell = self.cells.get(&was).filter(|cell| cell.drawn < frame && !reads.contains(&((cell.at / (CELLS * CELLS)) as usize)))?;
+        let rects = damage::apart(damage::damage(&cell.prints, &prints), (CELL, CELL));
+        let rects = if damage::area(&rects) * 4 < u64::from(CELL * CELL) * 3 { rects } else { vec![[0, 0, CELL, CELL]] };
+        let at = self.let_go(was).at;
+        self.keys.insert(tile.key, tile.id);
+        self.cells.insert(tile.id, Cell { at, drawn: frame, key: tile.key, prints });
+        Some((at, rects))
+    }
+
+    /// Lets go of tile `id`, and of where it is drawn, its cell no longer its. → its cell.
+    fn let_go(&mut self, id: u64) -> Cell {
+        let cell = self.cells.remove(&id).expect("it's drawn");
+        if self.keys.get(&cell.key) == Some(&id) {
+            self.keys.remove(&cell.key);
+        }
+        cell
+    }
+
+    /// Another page, its cells free.
+    fn grow(&mut self, page: Arc<Sheet>) {
+        let first = self.pages.len() as u32 * CELLS * CELLS;
+        self.pages.push(page);
+        self.free.extend((first..first + CELLS * CELLS).rev());
+    }
+
+    /// Lets go of every tile, keeping its pages, as what they drew from changed (the atlas's generation).
+    fn clear(&mut self, generation: u64) {
+        self.cells.clear();
+        self.keys.clear();
+        self.free = (0..self.pages.len() as u32 * CELLS * CELLS).rev().collect();
+        self.generation = generation;
+    }
+}
+
+/// Where cell `cell` is in its page, in device pixels.
+fn cell_at(cell: u32) -> [u32; 2] {
+    let at = cell % (CELLS * CELLS);
+    [(at % CELLS) * CELL, (at / CELLS) * CELL]
 }
 
 impl Renderer {
@@ -273,10 +369,10 @@ impl Renderer {
             atlas,
             sampler,
             gamma: GammaParams { gamma_ratios: gamma_ratios(1.8), grayscale_enhanced_contrast: 1.0, pad: [0.0; 3] },
+            shadow_tiles: Default::default(),
             tiles: Default::default(),
-            spare: Vec::new(),
+            pictures: Default::default(),
             instances: None,
-            rasters: Default::default(),
             atlas_groups: Default::default(),
             draws: Default::default(),
             passes: Default::default(),
@@ -340,7 +436,7 @@ impl Renderer {
     /// Keeps `rgba`, `width` by `height` pixels as raster `id`'s image, a frame drawn before (a window's snapshot,
     /// `platform::WindowOptions::snapshot`), which a scene draws by `Scene::picture` and which goes once a frame
     /// doesn't.
-    pub fn picture(&mut self, id: u32, width: u32, height: u32, rgba: &[u8]) {
+    pub fn picture(&mut self, id: u64, width: u32, height: u32, rgba: &[u8]) {
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -359,8 +455,7 @@ impl Renderer {
             size,
         );
         let group = self.texture(&texture.create_view(&wgpu::TextureViewDescriptor::default()));
-        let slot = Bounds { origin: crate::geometry::Point { x: ScaledPixels(0.0), y: ScaledPixels(0.0) }, size: crate::geometry::Size { width: ScaledPixels(width as f32), height: ScaledPixels(height as f32) } };
-        self.rasters.insert(id, (Arc::new(Sheet { texture, group }), slot));
+        self.pictures.insert(id, Arc::new(Sheet { texture, group }));
     }
 
     /// Waits until the GPU has done all it was given, and reads its timestamps of the frame it last drew, which `gpu`
@@ -501,32 +596,27 @@ impl Renderer {
     pub fn memory(&self) -> serde_json::Value {
         let backdrop = self.targets.iter().flat_map(|target| target.backdrop.iter()).flat_map(|backdrop| backdrop.source.iter().chain(backdrop.levels.iter().flatten().flatten())).map(|(texture, _)| bytes(texture));
         let blurred = self.targets.iter().flat_map(|target| target.blurred.values()).map(|kept| bytes(kept.view.texture()));
-        // Each raster's sheet once, however many of them it holds.
-        let mut sheets: Vec<&Arc<Sheet>> = self.rasters.values().map(|(sheet, _)| sheet).collect();
-        sheets.sort_by_key(|sheet| Arc::as_ptr(sheet));
-        sheets.dedup_by(|one, other| Arc::ptr_eq(one, other));
         serde_json::json!({
             "surface": self.targets.iter().map(Target::surface_bytes).sum::<u64>(),
             "canvas": self.targets.iter().flat_map(|target| target.canvas.as_ref()).map(bytes).sum::<u64>(),
-            "spare": self.spare.iter().map(bytes).sum::<u64>(),
             "backdrop": backdrop.chain(blurred).sum::<u64>(),
-            "rasters": sheets.iter().map(|sheet| bytes(&sheet.texture)).sum::<u64>(),
-            "tiles": self.tiles.values().map(|(texture, _)| bytes(texture)).sum::<u64>(),
+            "rasters": self.tiles.pages.iter().chain(self.pictures.values()).map(|sheet| bytes(&sheet.texture)).sum::<u64>(),
+            "tiles": self.shadow_tiles.values().map(|(texture, _)| bytes(texture)).sum::<u64>(),
             "buffer": self.buffer.as_ref().map_or(0, wgpu::Buffer::size),
         })
     }
 
     /// How long until it's drawn nothing for a while (`IDLE`), where it holds what it lets go of then (`idle`).
     pub fn idle_in(&self) -> Option<web_time::Duration> {
-        (!self.spare.is_empty() || self.targets.iter().any(Target::holds)).then(|| IDLE.saturating_sub(crate::platform::now().saturating_duration_since(self.drew)))
+        (!self.tiles.pages.is_empty() || self.targets.iter().any(Target::holds)).then(|| IDLE.saturating_sub(crate::platform::now().saturating_duration_since(self.drew)))
     }
 
-    /// It's drawn nothing for a while (`IDLE`): it lets go of the frame it kept and its backdrops' textures and blurs,
+    /// It's drawn nothing for a while (`IDLE`): it lets go of its tiles, the frame it kept and its backdrops' textures and blurs,
     /// each its window's size or a part of it (12 MB a kept frame of 1024 × 720 points at 2x), which make frames
     /// drawn one after another quicker and are made again by the next that need them, as browsers let go of an idle
     /// tab's tiles.
     pub fn idle(&mut self) {
-        self.spare.clear();
+        self.tiles = Tiles::default();
         for target in &mut self.targets {
             target.idle();
         }
@@ -585,10 +675,10 @@ impl Renderer {
 
 
 
-    /// Draws its layers from `other`'s layers' images (`Windows::whole`).
+    /// Draws its rasters from `other`'s tiles and pictures (`Windows::whole`).
     #[cfg(feature = "fake")]
-    pub fn layers_of(&mut self, other: &Renderer) {
-        self.rasters = other.rasters.clone();
+    pub fn tiles_of(&mut self, other: &Renderer) {
+        (self.tiles, self.pictures) = (other.tiles.clone(), other.pictures.clone());
     }
 
     /// The scene it last drew, while what it drew it with is all still in its atlas: none once tiles it may have drawn
@@ -633,12 +723,8 @@ impl Renderer {
         self.finished.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// A texture of `size` in its target's format, for `usage`: one it let go of lately (`spare`), else made.
-    fn made(&mut self, (width, height): (u32, u32), usage: wgpu::TextureUsages) -> wgpu::Texture {
-        let fits = |texture: &wgpu::Texture| (texture.width(), texture.height()) == (width, height) && texture.format() == self.format && texture.usage() == usage;
-        if let Some(at) = self.spare.iter().position(fits) {
-            return self.spare.remove(at);
-        }
+    /// A texture of `size` in its target's format, for `usage`.
+    fn made(&self, (width, height): (u32, u32), usage: wgpu::TextureUsages) -> wgpu::Texture {
         self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -649,14 +735,6 @@ impl Renderer {
             usage,
             view_formats: &[],
         })
-    }
-
-    /// Keeps a texture a frame let go of for the next that needs one like it (`spare`), letting go of the oldest kept.
-    fn let_go(&mut self, texture: wgpu::Texture) {
-        if self.spare.len() >= SPARE {
-            self.spare.remove(0);
-        }
-        self.spare.push(texture);
     }
 
     /// An atlas texture's bind group, kept till the atlas makes another texture (which may be in its place).

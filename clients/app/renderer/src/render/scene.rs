@@ -9,7 +9,7 @@ use std::{iter::Peekable, slice};
 
 use super::atlas::{AtlasTextureId, AtlasTile};
 use super::bounds_tree::BoundsTree;
-use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, ScaledPixels, corner_reach};
+use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, ScaledPixels};
 
 pub(crate) type DrawOrder = u32;
 
@@ -23,30 +23,69 @@ pub struct Scene {
     pub(crate) polychrome_sprites: Vec<PolychromeSprite>,
     pub(crate) backdrops: Vec<Backdrop>,
     pub(crate) rasters: Vec<Raster>,
-    /// What each of its rasters is of, by its id: a layer's scene, drawn once into a texture of its own by the
-    /// renderer, from `origin` (device pixels) and `size` big.
-    pub(crate) recordings: Vec<Recording>,
-    /// What scrolls in it (`Scrolled`), each where it clips what's in it and how far it's scrolled, by which a frame
-    /// moves the pixels it kept of one that scrolled (`damage::scrolled`).
-    pub(crate) scrolls: Vec<Scrolled>,
+    /// What each of its rasters is of, by its id: a tile of a picture (`Tile`), drawn once by the renderer.
+    pub(crate) tiles: Vec<Tile>,
 }
 
-/// A box whose content scrolls: its node, what it clips its content to, and how far its content is moved up and to
-/// the left, in whole device pixels.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Scrolled {
-    pub id: u64,
-    pub mask: ContentMask<ScaledPixels>,
-    pub by: [f32; 2],
-}
+/// The side of a tile, in device pixels: a picture (a layer's, a scroll box's content) is a grid of them, in its own
+/// pixels, each drawn whole into the renderer's tiles as what touches it changes, as WebRender's picture cache and
+/// Chromium's tiles are.
+pub(crate) const TILE: u32 = 254;
 
-/// A layer's scene, as it was drawn (`view::Layer`), which a raster is an image of.
+/// A tile of a picture (`tiled`): the square `TILE` device pixels from `origin` in `scene`, with a device pixel round
+/// it so what's drawn from it grown blends into the next as one image would, by its id, a hash of where it is and of
+/// what in `scene` touches it; where it is (`key`: which picture's, and where in it), by which one that changed is drawn
+/// again only where it did; and the part of it a raster shows, left, top, right and bottom in the tile, what of the
+/// picture it's in.
 #[derive(Clone)]
-pub(crate) struct Recording {
-    pub id: u32,
+pub(crate) struct Tile {
+    pub id: u64,
+    pub key: u64,
     pub scene: std::sync::Arc<Scene>,
     pub origin: [f32; 2],
-    pub size: [u32; 2],
+    pub shown: [u32; 4],
+}
+
+/// The tiles of `scene` that `area` reaches (whole device pixels, in the scene's), on a grid from `origin` (whole
+/// device pixels), each with something in it: each its id, a hash of where it is and what touches it in the order it's
+/// drawn, by which a tile is drawn again only where that changed and a picture drawn again as it was is drawn nothing.
+pub(crate) fn tiled(scene: &std::sync::Arc<Scene>, origin: [f32; 2], area: [f32; 4], key: u64) -> Vec<Tile> {
+    use std::hash::{Hash, Hasher};
+    let side = TILE as f32;
+    let index = |at: f32, from: f32| ((at - from) / side).floor() as i32;
+    let (first, last) = ([index(area[0], origin[0]), index(area[1], origin[1])], [index(area[2] - 1.0, origin[0]), index(area[3] - 1.0, origin[1])]);
+    let mut touched: std::collections::BTreeMap<(i32, i32), std::collections::hash_map::DefaultHasher> = Default::default();
+    for batch in scene.batches() {
+        for (at, extent) in batch.extents().into_iter().enumerate() {
+            if extent.is_empty() {
+                continue;
+            }
+            // With the pixel round each tile.
+            let (left, top) = (index(extent.origin.x.0 - 1.0, origin[0]).max(first[0]), index(extent.origin.y.0 - 1.0, origin[1]).max(first[1]));
+            let (right, bottom) = (index(extent.origin.x.0 + extent.size.width.0 + 1.0, origin[0]).min(last[0]), index(extent.origin.y.0 + extent.size.height.0 + 1.0, origin[1]).min(last[1]));
+            let print = batch.print(at);
+            for y in top..=bottom {
+                for x in left..=right {
+                    let hasher = touched.entry((x, y)).or_insert_with(|| {
+                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        (x, y, origin.map(f32::to_bits)).hash(&mut hasher);
+                        hasher
+                    });
+                    print.hash(hasher);
+                }
+            }
+        }
+    }
+    touched
+        .into_iter()
+        .map(|((x, y), hasher)| {
+            let at = [origin[0] + x as f32 * side, origin[1] + y as f32 * side];
+            let edge = |edge: f32, from: f32| (edge - from).clamp(0.0, side) as u32;
+            let mut place = std::collections::hash_map::DefaultHasher::new();
+            (key, x, y).hash(&mut place);
+            Tile { id: hasher.finish(), key: place.finish(), scene: scene.clone(), origin: at, shown: [edge(area[0], at[0]), edge(area[1], at[1]), edge(area[2], at[0]), edge(area[3], at[1])] }
+        })
+        .collect()
 }
 
 impl Scene {
@@ -59,12 +98,16 @@ impl Scene {
         self.polychrome_sprites.clear();
         self.backdrops.clear();
         self.rasters.clear();
-        self.recordings.clear();
-        self.scrolls.clear();
+        self.tiles.clear();
     }
 
     pub(crate) fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
-        let mut primitive = primitive.into();
+        self.place(primitive.into(), None);
+    }
+
+    /// Draws `primitive` over what it holds: at `order` where it's said (what it's moved from was in order already),
+    /// else after what it overlaps.
+    fn place(&mut self, mut primitive: Primitive, order: Option<DrawOrder>) {
         // What it's cut to has its edges on whole device pixels, half up, as browsers snap a clip: a pixel is in it where
         // its middle is, and an edge through a row of middles (a list's at 674.5) kept or cut that row by how the GPU's
         // arithmetic rounded, otherwise wherever it's moved (a generated scene, `animation.js --generated 1 --from 1`).
@@ -78,7 +121,7 @@ impl Scene {
         if clipped_bounds.is_empty() || primitive.shows_nothing() {
             return;
         }
-        let order = self.primitive_bounds.insert(clipped_bounds);
+        let order = order.unwrap_or_else(|| self.primitive_bounds.insert(clipped_bounds));
         match &mut primitive {
             Primitive::Shadow(shadow) => {
                 shadow.order = order;
@@ -112,37 +155,64 @@ impl Scene {
     }
 
     /// Draws raster `id`'s image (`Renderer::picture`) over `bounds`, `opacity` as opaque, over what's drawn there.
-    pub fn picture(&mut self, id: u32, bounds: Bounds<ScaledPixels>, opacity: f32) {
+    pub fn picture(&mut self, id: u64, bounds: Bounds<ScaledPixels>, opacity: f32) {
         let transformation = TransformationMatrix::unit();
-        self.insert_primitive(Raster { order: 0, raster: id, opacity, pad: 0, bounds, content_mask: ContentMask::from(bounds), transformation, slot: Bounds::default() });
+        self.insert_primitive(Raster { order: 0, opacity, raster: id, bounds, content_mask: ContentMask::from(bounds), transformation, slot: Bounds::default() });
     }
 
-    /// Draws `recording` in this scene as an image of it, drawn once, grown `scale` times and moved `by` (`p ↦
-    /// p·scale + by`), `opacity` as opaque, and cut to `mask`, as a compositor draws a layer: as `splice` draws it,
-    /// and as cheaply as one picture however much is in it.
-    pub(crate) fn raster(&mut self, recording: &Recording, scale: f32, by: [f32; 2], opacity: f32, mask: ContentMask<ScaledPixels>) {
-        let px = |length: f32| ScaledPixels(length * scale);
-        let origin = crate::geometry::Point { x: ScaledPixels(recording.origin[0] * scale + by[0]), y: ScaledPixels(recording.origin[1] * scale + by[1]) };
-        let bounds = Bounds::new(origin, crate::geometry::Size { width: px(recording.size[0] as f32), height: px(recording.size[1] as f32) });
-        // Unseen, it isn't drawn, but its image is still made, ahead of its showing.
-        if opacity > 0.0 {
-            self.insert_primitive(Raster {
-                order: 0,
-                raster: recording.id,
-                opacity,
-                pad: 0,
-                bounds,
-                content_mask: mask,
-                transformation: TransformationMatrix::unit(),
-                slot: Bounds::default(),
-            });
-        }
-        // What's drawn in it as images is drawn into their textures before it.
-        for inner in recording.scene.recordings.iter().chain([recording]) {
-            if !self.recordings.iter().any(|kept| kept.id == inner.id) {
-                self.recordings.push(inner.clone());
+    /// Draws a picture's `tiles` (`tiled`) in this scene as images of them, each drawn once, grown `scale` times and
+    /// moved `by` (`p ↦ p·scale + by`), `opacity` as opaque, and cut to `mask`, as a compositor draws a layer: as
+    /// `splice` draws what they're of, and as cheaply as a picture of what each shows however much is in it.
+    pub(crate) fn raster(&mut self, tiles: &[Tile], scale: f32, by: [f32; 2], opacity: f32, mask: ContentMask<ScaledPixels>) {
+        for tile in tiles {
+            let [left, top, right, bottom] = tile.shown.map(|edge| edge as f32);
+            let origin = crate::geometry::Point { x: ScaledPixels((tile.origin[0] + left) * scale + by[0]), y: ScaledPixels((tile.origin[1] + top) * scale + by[1]) };
+            let bounds = Bounds::new(origin, crate::geometry::Size { width: ScaledPixels((right - left) * scale), height: ScaledPixels((bottom - top) * scale) });
+            let shown = Bounds::new(crate::geometry::Point { x: ScaledPixels(left), y: ScaledPixels(top) }, crate::geometry::Size { width: ScaledPixels(right - left), height: ScaledPixels(bottom - top) });
+            // Unseen, it isn't drawn, but its image is still made, ahead of its showing.
+            if opacity > 0.0 {
+                self.insert_primitive(Raster { order: 0, opacity, raster: tile.id, bounds, content_mask: mask, transformation: TransformationMatrix::unit(), slot: shown });
+            }
+            // What's drawn in it as images is drawn into their tiles before it.
+            for inner in tile.scene.tiles.iter().chain([tile]) {
+                if !self.tiles.iter().any(|kept| kept.id == inner.id) {
+                    self.tiles.push(inner.clone());
+                }
             }
         }
+    }
+
+    /// Each thing it draws in `area`, in order: what it is (`PrimitiveBatch::print`) and where, in whole device pixels
+    /// from `area`'s top left, within it; as a tile drawn from it is told what changed in it (`damage`).
+    pub(crate) fn prints(&self, area: Bounds<ScaledPixels>) -> Vec<(u64, [u32; 4])> {
+        let edge = |at: f32, from: f32, most: f32, up: bool| (if up { (at - from).ceil() } else { (at - from).floor() }).clamp(0.0, most) as u32;
+        let (width, height) = (area.size.width.0, area.size.height.0);
+        self.batches()
+            .flat_map(|batch| batch.extents().into_iter().enumerate().filter(|(_, extent)| extent.intersects(&area)).map(move |(at, extent)| (batch.print(at), extent)))
+            .map(|(print, extent)| {
+                let (x, y) = (area.origin.x.0, area.origin.y.0);
+                (print, [edge(extent.origin.x.0, x, width, false), edge(extent.origin.y.0, y, height, false), edge(extent.origin.x.0 + extent.size.width.0, x, width, true), edge(extent.origin.y.0 + extent.size.height.0, y, height, true)])
+            })
+            .collect()
+    }
+
+    /// What it draws, in order, as runs of what isn't an image, each a scene of its own, with the images drawn after each
+    /// (its rasters): a surface's content, whose surfaces in it are drawn over its tiles, each where it comes, not into
+    /// them, as WebRender cuts its picture cache into slices at what's composited on its own.
+    pub(crate) fn runs(&self) -> Vec<(Scene, Vec<Raster>)> {
+        let cuts: Vec<DrawOrder> = self.rasters.iter().map(|raster| raster.order).collect();
+        let run = |order: DrawOrder| cuts.partition_point(|cut| *cut < order);
+        let mut runs: Vec<(Scene, Vec<Raster>)> = (0..=cuts.len()).map(|_| Default::default()).collect();
+        self.shadows.iter().for_each(|one| runs[run(one.order)].0.shadows.push(one.clone()));
+        self.quads.iter().for_each(|one| runs[run(one.order)].0.quads.push(one.clone()));
+        self.underlines.iter().for_each(|one| runs[run(one.order)].0.underlines.push(one.clone()));
+        self.monochrome_sprites.iter().for_each(|one| runs[run(one.order)].0.monochrome_sprites.push(one.clone()));
+        self.polychrome_sprites.iter().for_each(|one| runs[run(one.order)].0.polychrome_sprites.push(one.clone()));
+        self.backdrops.iter().for_each(|one| runs[run(one.order)].0.backdrops.push(one.clone()));
+        for (at, raster) in self.rasters.iter().enumerate() {
+            runs[at].1.push(raster.clone());
+        }
+        runs
     }
 
     /// Where everything it draws is, in device pixels, a shadow's blur and all: what a raster of it covers.
@@ -169,11 +239,6 @@ impl Scene {
     /// Draws what `other` holds in this scene, in the order it was drawn there, grown `scale` times and moved `by`
     /// (`p ↦ p·scale + by`), `opacity` as opaque, and cut to `mask`: as a frame's page is drawn in its box, and as a
     /// layer kept from an earlier frame (`view::Layer`) is drawn where it's moved, grown or faded to now.
-    /// A box whose content scrolls (`Scrolled`).
-    pub(crate) fn scrolled(&mut self, id: u64, mask: ContentMask<ScaledPixels>, by: [f32; 2]) {
-        self.scrolls.push(Scrolled { id, mask, by });
-    }
-
     pub fn splice(&mut self, other: &Scene, scale: f32, by: [f32; 2], opacity: f32, mask: ContentMask<ScaledPixels>) {
         let px = |length: ScaledPixels| ScaledPixels(length.0 * scale);
         let moved = |bounds: &Bounds<ScaledPixels>| {
@@ -229,9 +294,9 @@ impl Scene {
             (raster.bounds, raster.content_mask, raster.opacity) = (moved(&raster.bounds), masked(&raster.content_mask), raster.opacity * opacity);
             (raster.order, raster.into())
         }));
-        for recording in &other.recordings {
-            if !self.recordings.iter().any(|kept| kept.id == recording.id) {
-                self.recordings.push(recording.clone());
+        for tile in &other.tiles {
+            if !self.tiles.iter().any(|kept| kept.id == tile.id) {
+                self.tiles.push(tile.clone());
             }
         }
         all.extend(other.backdrops.iter().map(|backdrop| {
@@ -240,8 +305,16 @@ impl Scene {
             (backdrop.order, backdrop.into())
         }));
         all.sort_by_key(|(order, _)| *order);
-        for (_, primitive) in all {
-            self.insert_primitive(primitive);
+        // Into a scene that holds nothing, what's moved keeps its order, which it was in already, and what's drawn in it
+        // after comes after all of it; else each comes after what it overlaps.
+        let empty = [self.shadows.len(), self.quads.len(), self.underlines.len(), self.monochrome_sprites.len(), self.polychrome_sprites.len(), self.backdrops.len(), self.rasters.len()].iter().all(|len| *len == 0);
+        let last = all.last().map(|(order, _)| *order);
+        for (order, primitive) in all {
+            self.place(primitive, empty.then_some(order));
+        }
+        if let Some(last) = last.filter(|_| empty) {
+            let everywhere = Bounds { origin: crate::geometry::Point { x: ScaledPixels(-1.0e9), y: ScaledPixels(-1.0e9) }, size: crate::geometry::Size { width: ScaledPixels(2.0e9), height: ScaledPixels(2.0e9) } };
+            self.primitive_bounds.insert_at(everywhere, last);
         }
     }
 
@@ -615,80 +688,30 @@ pub(crate) fn drawn<T>(item: &T) -> &[u8] {
 }
 
 impl PrimitiveBatch<'_> {
-    /// Its thing `at` as it'd be drawn scrolled back `by` device pixels, in a box that scrolls clipping it to `mask`
-    /// (`Scrolled`): its bytes (`drawn`), each edge of what it's clipped to that's the box's own left out, as that stays
-    /// put as what's in it scrolls (a card longer than the window, cut by its bottom, is the same card scrolled). None
-    /// where it's turned or scaled, or a backdrop, whose blur is of what's behind it.
-    pub(crate) fn unscrolled(&self, at: usize, by: [f32; 2], mask: &ContentMask<ScaledPixels>) -> Option<Vec<u8>> {
-        let shift = |bounds: &mut Bounds<ScaledPixels>| {
-            bounds.origin.x.0 += by[0];
-            bounds.origin.y.0 += by[1];
+    /// What its thing `at` is, wherever it comes in the order: a hash of its kind, its texture and its bytes past its
+    /// place in the scene's order (`drawn`).
+    pub(crate) fn print(&self, at: usize) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let texture = match self {
+            PrimitiveBatch::MonochromeSprites { texture_id, .. } | PrimitiveBatch::PolychromeSprites { texture_id, .. } => Some(texture_id),
+            _ => None,
         };
-        // Its left, top, right and bottom, in its bounds' four numbers, only to be compared.
-        let edges = |bounds: &Bounds<ScaledPixels>| [bounds.origin.x.0, bounds.origin.y.0, bounds.origin.x.0 + bounds.size.width.0, bounds.origin.y.0 + bounds.size.height.0];
-        let box_edges = edges(&mask.bounds);
-        let clip = |clip: &mut ContentMask<ScaledPixels>| {
-            let at = edges(&clip.bounds);
-            let edge = |side: usize, by: f32| if at[side] == box_edges[side] { f32::MIN } else { at[side] + by };
-            let [left, top, right, bottom] = [edge(0, by[0]), edge(1, by[1]), edge(2, by[0]), edge(3, by[1])];
-            clip.bounds = Bounds { origin: crate::geometry::Point { x: ScaledPixels(left), y: ScaledPixels(top) }, size: crate::geometry::Size { width: ScaledPixels(right), height: ScaledPixels(bottom) } };
-        };
-        let unit = TransformationMatrix::unit();
-        match self {
-            PrimitiveBatch::Quads(all) => Some(all[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
-                (shift(&mut one.bounds), clip(&mut one.content_mask));
-                drawn(&one).to_vec()
-            }),
-            PrimitiveBatch::Shadows(all) => Some(all[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
-                (shift(&mut one.bounds), shift(&mut one.outer), clip(&mut one.content_mask));
-                drawn(&one).to_vec()
-            }),
-            PrimitiveBatch::Underlines(all) => {
-                let mut one = all[at].clone();
-                (shift(&mut one.bounds), clip(&mut one.content_mask));
-                Some(drawn(&one).to_vec())
-            }
-            PrimitiveBatch::MonochromeSprites { sprites, .. } => Some(sprites[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
-                (shift(&mut one.bounds), clip(&mut one.content_mask));
-                drawn(&one).to_vec()
-            }),
-            PrimitiveBatch::PolychromeSprites { sprites, .. } => Some(sprites[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
-                (shift(&mut one.bounds), clip(&mut one.content_mask));
-                drawn(&one).to_vec()
-            }),
-            PrimitiveBatch::Rasters(all) => Some(all[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
-                (shift(&mut one.bounds), clip(&mut one.content_mask));
-                drawn(&one).to_vec()
-            }),
-            PrimitiveBatch::Backdrops(_) => None,
-        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (std::mem::discriminant(self), texture, self.drawn(at)).hash(&mut hasher);
+        hasher.finish()
     }
 
-    /// Of its thing `at`, where it's a box of one colour, unturned, its borders solid: from the first to the last of its
-    /// rows that are each the same as the next (past its corners' reach and its borders, and its clip's), and of its
-    /// columns, in the scene's pixels, top and bottom, left and right.
-    pub(crate) fn even(&self, at: usize) -> Option<([f32; 2], [f32; 2])> {
-        let PrimitiveBatch::Quads(quads) = self else { return None };
-        let quad = &quads[at];
-        let bordered = [quad.border_widths.top, quad.border_widths.right, quad.border_widths.bottom, quad.border_widths.left].iter().any(|width| width.0 > 0.0);
-        if quad.transformation != TransformationMatrix::unit() || quad.background.tag != 0 || (bordered && quad.border_style != BorderStyle::Solid) {
-            return None;
+    /// Its thing `at`'s bytes past its place in the scene's order (`drawn`): what it is, wherever it comes.
+    fn drawn(&self, at: usize) -> &[u8] {
+        match self {
+            PrimitiveBatch::Quads(all) => drawn(&all[at]),
+            PrimitiveBatch::Shadows(all) => drawn(&all[at]),
+            PrimitiveBatch::Underlines(all) => drawn(&all[at]),
+            PrimitiveBatch::MonochromeSprites { sprites, .. } => drawn(&sprites[at]),
+            PrimitiveBatch::PolychromeSprites { sprites, .. } => drawn(&sprites[at]),
+            PrimitiveBatch::Backdrops(all) => drawn(&all[at]),
+            PrimitiveBatch::Rasters(all) => drawn(&all[at]),
         }
-        let (bounds, radii, widths) = (&quad.bounds, &quad.corner_radii, &quad.border_widths);
-        let (mask, mask_radii) = (&quad.content_mask.bounds, &quad.content_mask.corner_radii);
-        let edges = |bounds: &Bounds<ScaledPixels>| (bounds.origin.x.0, bounds.origin.y.0, bounds.origin.x.0 + bounds.size.width.0, bounds.origin.y.0 + bounds.size.height.0);
-        let ((left, top, right, bottom), (mask_left, mask_top, mask_right, mask_bottom)) = (edges(bounds), edges(mask));
-        // A box's corners and its clip's are both continuous, bending as far as their reach (`corner_reach`).
-        let reach = |bounds: &Bounds<ScaledPixels>, one: ScaledPixels, other: ScaledPixels| corner_reach(one.0.max(other.0), bounds.size.width.0.min(bounds.size.height.0));
-        let rows = [
-            (top + reach(bounds, radii.top_left, radii.top_right).max(widths.top.0)).max(mask_top + reach(mask, mask_radii.top_left, mask_radii.top_right)),
-            (bottom - reach(bounds, radii.bottom_left, radii.bottom_right).max(widths.bottom.0)).min(mask_bottom - reach(mask, mask_radii.bottom_left, mask_radii.bottom_right)),
-        ];
-        let columns = [
-            (left + reach(bounds, radii.top_left, radii.bottom_left).max(widths.left.0)).max(mask_left + reach(mask, mask_radii.top_left, mask_radii.bottom_left)),
-            (right - reach(bounds, radii.top_right, radii.bottom_right).max(widths.right.0)).min(mask_right - reach(mask, mask_radii.top_right, mask_radii.bottom_right)),
-        ];
-        Some((rows, columns))
     }
 
     /// Whether anything in it is drawn in `area`, cut to where it's drawn inside.
@@ -954,16 +977,15 @@ impl From<Backdrop> for Primitive {
     }
 }
 
-/// An image of a layer's scene (`Recording`), drawn once into its texture, drawn `opacity` as opaque in `bounds`, cut
-/// to `content_mask`: what a compositor draws a layer as. Where it is in its texture (`slot`, in texels) is the
-/// renderer's, which packs the images made in a frame into one (`Renderer::draw_frame`).
+/// An image of a tile of a picture (`Tile`), drawn once into the renderer's tiles, drawn `opacity` as opaque in
+/// `bounds`, cut to `content_mask`: what a compositor draws a layer as. What of it's shown (`slot`, in texels) is the
+/// part of the tile it shows, which the renderer moves to where the tile is in its texture (`Renderer::draw_frame`).
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub(crate) struct Raster {
     pub order: DrawOrder,
-    pub raster: u32,
     pub opacity: f32,
-    pub pad: u32,
+    pub raster: u64,
     pub bounds: Bounds<ScaledPixels>,
     pub content_mask: ContentMask<ScaledPixels>,
     pub transformation: TransformationMatrix,

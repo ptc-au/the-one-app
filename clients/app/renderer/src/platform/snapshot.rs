@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 /// The raster a snapshot is drawn as (`Renderer::picture`), which no layer's is.
-pub(super) const RASTER: u32 = u32::MAX;
+pub(super) const RASTER: u64 = u64::MAX;
 
 /// Its file, as light or dark as the system is, where the page's are as it follows it.
 fn file(stem: &Path) -> PathBuf {

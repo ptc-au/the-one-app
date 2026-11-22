@@ -22,11 +22,11 @@ pub(super) struct Target {
     /// frame it holds drew, thing by thing, over what (`Drawn::over`, `damage::Shown`): kept as frames are drawn whole
     /// into its image, as making one again its window's size took a Surface's Intel driver 500 ms, and the frame it holds
     /// is what the next is drawn on.
-    pub(super) shown: Option<(u64, super::damage::Shown)>,
+    pub(super) shown: Option<(u64, super::blur::Prints)>,
     pub(super) canvas: Option<wgpu::Texture>,
     /// What its last frame drew, by which a canvas that holds none of this one's is drawn whole again where little
     /// changed (`draw_target`).
-    pub(super) previous: Option<(u64, super::damage::Shown)>,
+    pub(super) previous: Option<(u64, super::blur::Prints)>,
 }
 
 /// A window's surface, or a texture of our own, which `read` reads back.

@@ -466,8 +466,8 @@ fn blend_color(color: vec4<f32>, alpha_factor: f32) -> vec4<f32> {
 // How far to move a colour at pixel `position` so that what changes slowly across pixels, as a gradient, a shadow's
 // edge or a blur does, shows no bands where its 8 bits a channel step: less than half a step either way, by blue
 // noise, whose dither the eye doesn't see as a pattern, as Skia dithers a gradient. The noise is laid from the pixel
-// nearest the top left of what's drawn (`anchor`, in the scene), not the frame's, so it moves with it: a frame that
-// moves the pixels it kept (a scroll's) has them as they'd be drawn where they're moved to.
+// nearest the top left of what's drawn (`anchor`, in the scene), not the frame's, so it moves with it: a tile drawn once
+// and moved (a scroll's) has them as they'd be drawn where it's moved to.
 fn dither(position: vec2<f32>, anchor: vec2<f32>) -> f32 {
     let at = vec2<i32>(floor(position)) - vec2<i32>(floor(anchor - globals.origin + 0.5));
     return (textureLoad(t_noise, vec2<u32>(at & vec2<i32>(63)), 0).r - 0.5) / 255.0;
@@ -1225,6 +1225,8 @@ struct UnderlineVarying {
     //TODO: use `clip_distance` once Naga supports it
     @location(3) clip_distances: vec4<f32>,
     @location(4) @interpolate(flat) mask_radii: vec4<f32>,
+    // Where in its box, from its top left: the fragment's own position is the viewport's, which a tile's cell moves.
+    @location(5) local: vec2<f32>,
 }
 
 @vertex
@@ -1238,6 +1240,7 @@ fn vs_underline(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) 
     out.underline_id = instance_id;
     out.clip_distances = distance_from_clip_rect(unit_vertex, underline.bounds, underline.content_mask.bounds);
     out.mask_radii = mask_radii(underline.content_mask);
+    out.local = unit_vertex * underline.bounds.size;
     return out;
 }
 
@@ -1260,7 +1263,7 @@ fn fs_underline(input: UnderlineVarying) -> @location(0) vec4<f32> {
 
     let half_thickness = underline.thickness * 0.5;
 
-    let st = (input.position.xy + globals.origin - underline.bounds.origin) / underline.bounds.size.y - vec2<f32>(0.0, 0.5);
+    let st = input.local / underline.bounds.size.y - vec2<f32>(0.0, 0.5);
     let frequency = M_PI_F * WAVE_FREQUENCY * underline.thickness / underline.bounds.size.y;
     let amplitude = (underline.thickness * WAVE_HEIGHT_RATIO) / underline.bounds.size.y;
 
@@ -1540,9 +1543,8 @@ fn fs_backdrop(input: BackdropVarying) -> @location(0) vec4<f32> {
 
 struct Raster {
     order: u32,
-    raster: u32,
     opacity: f32,
-    pad: u32,
+    raster: vec2<u32>,
     bounds: Bounds,
     content_mask: ContentMask,
     transformation: TransformationMatrix,
@@ -1573,12 +1575,13 @@ fn vs_raster(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) ins
 
 // Its texture holds what was drawn over nothing, premultiplied as every target is: it's drawn over what's there as it
 // is, as opaque as the raster is.
-// It's read from its slot in its texture, held to its slot's edge texels as a texture of its own is by its sampler's
-// clamp to its edge, so what's beside it in the texture never bleeds in.
+// It's read from its slot in its texture, a tile's, which has a pixel of what's round it drawn round it, so grown or
+// moved by a fraction of a pixel, tiles side by side blend into each other as one image would; or a picture's, alone
+// in its texture, held to its edge by its sampler's clamp.
 @fragment
 fn fs_raster(input: RasterVarying) -> @location(0) vec4<f32> {
     let slot = b_rasters[input.raster_id].slot;
-    let at = slot.origin + clamp(input.uv * slot.size, vec2<f32>(0.5), slot.size - vec2<f32>(0.5));
+    let at = slot.origin + input.uv * slot.size;
     let texel = textureSample(t_sprite, s_sprite, at / vec2<f32>(textureDimensions(t_sprite)));
     let mask = mask_coverage(input.clip_distances, input.mask_radii);
     if (mask <= 0.0) {

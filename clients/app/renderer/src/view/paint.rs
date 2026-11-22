@@ -108,9 +108,9 @@ pub(super) struct Layer {
 }
 
 impl Layer {
-    /// The bytes of the GPU's memory its pictures take (`Recording`), four a device pixel.
+    /// The bytes of the GPU's memory its pictures take (`Tile`), four a device pixel of each tile.
     pub(super) fn bytes(&self) -> u64 {
-        self.parts.iter().filter_map(|part| if let Part::Scene(_, Some(recording)) = part { Some(4 * u64::from(recording.size[0]) * u64::from(recording.size[1])) } else { None }).sum()
+        self.parts.iter().map(|part| if let Part::Scene(_, Some(tiles)) = part { tile_bytes(tiles) } else { 0 }).sum()
     }
 }
 
@@ -161,11 +161,11 @@ impl Surfaced {
     }
 }
 
-/// Part of what a layer draws: a scene of it, drawn as an image of it (`Recording`, as a compositor draws a layer,
-/// once, with `Scene::raster`) where it can be one, or what's in it that's a layer of its own.
+/// Part of what a layer draws: a scene of it, drawn as images of its tiles (`Tile`, as a compositor draws a layer, once,
+/// with `Scene::raster`) where it can be, or what's in it that's a layer of its own.
 #[derive(Clone)]
 pub(super) enum Part {
-    Scene(std::sync::Arc<Scene>, Option<Recording>),
+    Scene(std::sync::Arc<Scene>, Option<Vec<Tile>>),
     Sublayer(Sublayer),
 }
 
@@ -305,6 +305,9 @@ pub(super) struct Painter<'a> {
     pub(super) surfaces: Surfaces,
     /// The window isn't shown (a panel put away, an app in the background): what moves is where it's going at once.
     pub(super) unseen: bool,
+    /// Painted afresh to check a frame by (`Screen::paint_afresh`): nothing is a surface, as nothing is kept, so a
+    /// frame drawn from surfaces and their tiles is checked against one drawn without.
+    pub(super) afresh: bool,
     pub(super) recording: Option<Id>,
     /// The parts of the layer being drawn so far, before its scene now.
     pub(super) parts: Vec<Part>,
@@ -349,6 +352,9 @@ pub(super) struct Painter<'a> {
     pub(super) animating: bool,
     /// The window, where what's fixed is placed.
     pub(super) window: Bounds<f32>,
+    /// What of it can show: the window, or in a surface the tiles it draws (`Painter::surface`), outside which no text
+    /// is painted.
+    pub(super) shows: Bounds<f32>,
     /// How what's painted now is turned, in the window: the `rotate`s of what it's in.
     pub(super) turn: TransformationMatrix,
     /// What's positioned or says its `zIndex` in the stacking context being painted, by its `zIndex` (`auto`'s 0) and
@@ -535,23 +541,26 @@ pub(super) fn decode(src: &str, device: Size<u32>) -> Option<Decoded> {
     Some(Decoded { picture: Picture { width, height }, bgra: rgba })
 }
 
-/// The largest a layer's image is, in device pixels, along either side, as every GPU the renderer runs on allows.
-pub(super) const RASTER_MOST: f32 = 8192.0;
-
-/// A layer's scene as an image of it (`Recording`), with an id of its own, where it can be one: what it draws covers
-/// whole device pixels from its origin, and it blurs nothing behind it.
-pub(super) fn recording(scene: &std::sync::Arc<Scene>) -> Option<Recording> {
-    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+/// A layer's scene as images of its tiles (`tiled`), the picture `key`, where it can be: it blurs nothing behind it.
+pub(super) fn pictured(scene: &std::sync::Arc<Scene>, key: u64) -> Option<Vec<Tile>> {
     if !scene.backdrops.is_empty() {
         return None;
     }
     let extent = scene.extent()?;
-    let (left, top) = (extent.origin.x.0.floor(), extent.origin.y.0.floor());
-    let (right, bottom) = ((extent.origin.x.0 + extent.size.width.0).ceil(), (extent.origin.y.0 + extent.size.height.0).ceil());
-    let size = [right - left, bottom - top];
-    if size[0] < 1.0 || size[1] < 1.0 || size[0] > RASTER_MOST || size[1] > RASTER_MOST {
-        return None;
-    }
-    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    Some(Recording { id, scene: scene.clone(), origin: [left, top], size: [size[0] as u32, size[1] as u32] })
+    let area = [extent.origin.x.0.floor(), extent.origin.y.0.floor(), (extent.origin.x.0 + extent.size.width.0).ceil(), (extent.origin.y.0 + extent.size.height.0).ceil()];
+    Some(tiled(scene, [area[0], area[1]], area, key))
+}
+
+/// Which picture of node `id`'s this is, its `at`th, as tiles are told where they are (`Tile::key`).
+pub(super) fn picture(id: Id, at: usize) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    (id, at).hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The bytes of the GPU's memory a picture of what `tiles` show takes, four a device pixel, as a surface's share of the
+/// window's (`SURFACE_WINDOWS`); the renderer's tiles are held to a budget of their own.
+pub(super) fn tile_bytes(tiles: &[Tile]) -> u64 {
+    tiles.iter().map(|tile| 4 * u64::from(tile.shown[2] - tile.shown[0]) * u64::from(tile.shown[3] - tile.shown[1])).sum()
 }

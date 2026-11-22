@@ -282,12 +282,13 @@ impl Atlas {
     }
 }
 
-/// The tiles `scene` draws, and those of the layers it draws from their images (`Scene::recordings`).
+/// The tiles `scene` draws, and those of the pictures it draws from their tiles (`Scene::tiles`), each scene once.
 fn tiles(scene: &Scene, into: &mut HashSet<(AtlasTextureId, TileId)>) {
     into.extend(scene.monochrome_sprites.iter().map(|sprite| (sprite.tile.texture_id, sprite.tile.tile_id)));
     into.extend(scene.polychrome_sprites.iter().map(|sprite| (sprite.tile.texture_id, sprite.tile.tile_id)));
-    for recording in &scene.recordings {
-        tiles(&recording.scene, into);
+    let mut seen = HashSet::new();
+    for tile in scene.tiles.iter().filter(|tile| seen.insert(std::sync::Arc::as_ptr(&tile.scene))) {
+        tiles(&tile.scene, into);
     }
 }
 

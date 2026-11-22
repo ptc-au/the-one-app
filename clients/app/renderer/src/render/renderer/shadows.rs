@@ -36,7 +36,7 @@ impl Renderer {
         pass.set_bind_group(1, instances, &[offset]);
         let mut at = 0;
         while at < shadows.len() {
-            match tiled(&shadows[at]).and_then(|(key, _)| self.tiles.get(&key)) {
+            match tiled(&shadows[at]).and_then(|(key, _)| self.shadow_tiles.get(&key)) {
                 Some((_, group)) => {
                     pass.set_pipeline(&self.pipelines.tiles);
                     pass.set_bind_group(2, group, &[]);
@@ -45,7 +45,7 @@ impl Renderer {
                 }
                 None => {
                     // The run of those worked out where they're drawn.
-                    let end = (at..shadows.len()).find(|one| tiled(&shadows[*one]).is_some_and(|(key, _)| self.tiles.contains_key(&key))).unwrap_or(shadows.len());
+                    let end = (at..shadows.len()).find(|one| tiled(&shadows[*one]).is_some_and(|(key, _)| self.shadow_tiles.contains_key(&key))).unwrap_or(shadows.len());
                     pass.set_pipeline(&self.pipelines.shadows);
                     self.clipped(pass, rects, &|pass| pass.draw(0..10, at as u32..end as u32));
                     at = end;
@@ -58,8 +58,8 @@ impl Renderer {
     /// own), and keeps it, as `key`'s. A window's shadows are few and keep their tiles; past 64 they're made again.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_tile(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, instances: &wgpu::BindGroup, key: TileKey, (width, height): (u32, u32), globals: (u64, u64), gamma: (u64, u64), instance: (u64, u64)) {
-        if self.tiles.len() >= 64 {
-            self.tiles.clear();
+        if self.shadow_tiles.len() >= 64 {
+            self.shadow_tiles.clear();
         }
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -85,6 +85,6 @@ impl Renderer {
             self.drew();
         }
         let group = self.texture(&view);
-        self.tiles.insert(key, (texture, group));
+        self.shadow_tiles.insert(key, (texture, group));
     }
 }

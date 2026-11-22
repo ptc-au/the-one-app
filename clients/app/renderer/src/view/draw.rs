@@ -74,7 +74,9 @@ impl Screen {
     /// the one on the screen.
     pub fn paint_afresh(&mut self, size: Size<Pixels>, scale: f32, text: &mut TextSystem, atlas: &Atlas, scene: &mut Scene) {
         self.seen = None;
+        self.afresh = true;
         self.paint(self.painted_at, size, scale, text, atlas, scene);
+        self.afresh = false;
     }
 
     /// Paints the screen into `scene`, `size` logical pixels at `scale` device pixels each, as a frame's passes, in
@@ -306,6 +308,7 @@ impl Screen {
             transitions: &mut self.transitions,
             animating: false,
             window,
+            shows: window,
             turn: TransformationMatrix::unit(),
             stacked: Default::default(),
             path: Vec::new(),
@@ -318,6 +321,7 @@ impl Screen {
             layered,
             surfaces: Surfaces::default(),
             unseen: !self.visible,
+            afresh: self.afresh,
             recording: None,
             parts: Vec::new(),
         };

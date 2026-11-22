@@ -325,10 +325,10 @@ impl Windows {
 
     /// Window `id`'s last frame drawn whole, from the scene its renderer drew (its page's, with what covers it), as its
     /// compositor would show it (`presented`): each of its parts drawn where it is by a renderer of its own, from its
-    /// renderer's layers' images, so nothing else kept from frames before (a blur, the frame's start, the frame before
-    /// it drew only what changed on) is in it. Its frame as presented must be the same, every frame of a motion. Its
-    /// layers' images are the same ones: drawn afresh, packed otherwise into textures of other sizes, linear filtering
-    /// reads them a level or two apart, which `afresh` compares at rest.
+    /// renderer's tiles, so nothing else kept from frames before (a blur, the frame the one before it drew only what
+    /// changed on) is in it. Its frame as presented must be the same, every frame of a motion. Its tiles are the same
+    /// ones: drawn afresh in other cells, linear filtering reads them a level or two apart, which `afresh` compares at
+    /// rest.
     pub fn whole(&mut self, id: WindowId) -> Option<(u32, u32, Vec<u8>)> {
         let scene = self.windows.get(&id)?.renderer.as_ref()?.scene()?.clone();
         self.alone(id, &scene, true)
@@ -373,7 +373,7 @@ impl Windows {
                 let device = if window.panel { Size { width: size(part.bounds.size.width), height: size(part.bounds.size.height) } } else { part.native.device_size() };
                 let mut renderer = Renderer::offscreen(&self.context, self.atlas.clone(), device);
                 if layers && let Some(drew) = &window.renderer {
-                    renderer.layers_of(drew);
+                    renderer.tiles_of(drew);
                 }
                 renderer.draw(scene, &[[(part.bounds.origin.x * scale).round(), (part.bounds.origin.y * scale).round()]]);
                 let read = renderer.read(0);
