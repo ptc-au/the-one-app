@@ -18,7 +18,9 @@ The network's edge, where assistants, browsers and sharing links come in over th
 each request it handled (`POST /mcp`, `relay forward`, `POST /sign-in/auth/oauth2/token`), on the
 server `edge`, with its route, status, duration, the server it was passed to and why it failed, even when it never
 reached a server. A call that reached one is one trace with the server's span, and with the client's when the
-client sent a `traceparent`.
+client sent a `traceparent`. While none of the network's servers answers it, the edge keeps that too, once one does:
+a span `network unreachable` from the first request none answered to the first a server answered, so an outage
+nothing on a server saw is in `errors` and in `alerts` (a resolved `server` alert, past 5 minutes) with its own times.
 
 - `overview` is what Telemetry's app shows: what's failing, what's slowest and what AI cost, over
   the last `hours` (24 if left out, up to 336).
@@ -53,7 +55,7 @@ client sent a `traceparent`.
   `one.database.lease.moves` (`one.reason`), a call kept waiting by its holder `one.database.lease.wait`
   (`one.outcome` `not_answered`, warned of, or `gone`), and an app not answering a hook in time
   `one.hook.timeouts`, each by `one.app`.
-- Telemetry keeps what needs a person as alerts, and tells no one: a server not running or restarting over and over,
+- Telemetry keeps what needs a person as alerts, and tells no one: a server not running or restarting over and over, no server answering the edge,
   a server the network's update left behind or an edge that couldn't update itself, a kind of error not seen in 14 days, an app's tools failing, an app not answering, an app's
   deploys slow to show in its window (over 500 ms, `one.client.deploy.window`), a server that acts for someone unable to
   open what's encrypted for them, or one that doesn't able to (`one.encryption.access`). `alerts`

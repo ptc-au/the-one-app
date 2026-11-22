@@ -6,7 +6,7 @@ defmodule Telemetry.Alerts do
 
   | Kind | Fires when | Clears when |
   | --- | --- | --- |
-  | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`), heard in the last 10 min | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and no loop has been heard of for 10 min |
+  | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`), heard in the last 10 min. Or, as the edge saw from outside, none of the network's servers answered its requests for 5 min or more (`network unreachable`, which the edge keeps once one answers again): it's resolved as it's read, with the outage's own times | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and no loop has been heard of for 10 min |
   | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater hasn't said so for 10 min, while no update or edge deploy is under way: the edge's deploy begins a few minutes after the servers' update ends |
   | `error` | A kind of error that wasn't in the last 14 days on the device or server it's on, as `errors` lists them: a span that failed, and an error logged outside one, by its first line, numbers and ids aside. A fault, a crash, a call that failed or a client's exception, not a call refused for what it was given or who asked (`one.outcome` `refused`, whose span isn't an error) | None arrives for 10 min, or it stops being new an hour after it first arrived |
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
@@ -99,7 +99,7 @@ defmodule Telemetry.Alerts do
   ]
 
   @kinds %{
-    "server" => "A server isn't running for 5 minutes, or keeps restarting",
+    "server" => "A server isn't running for 5 minutes, or keeps restarting, or none answered the edge for 5 minutes",
     "update" => "A server didn't take the network's update, or the edge couldn't update itself",
     "error" => "A kind of error not seen on its device or server in the last 14 days",
     "failing" => "Half or more of an app's tool calls fail, of 10 or more in 10 minutes",
@@ -282,6 +282,10 @@ defmodule Telemetry.Alerts do
     end
   end
 
+  # An outage the edge saw, once a server answered it again (`apps/telemetry/edge/worker.ts`): when none answered.
+  defp span(%{"name" => "network unreachable", "status" => %{"message" => message}} = span),
+    do: [{:unreachable, ms(span["start"]), ms(span["end"]), message}]
+
   # What the network's updater says is the `update` alert's, read of it as it is (`OneCore.Servers.network/0`).
   defp span(%{"name" => name}) when name in ["network update", "edge update"], do: []
 
@@ -389,6 +393,15 @@ defmodule Telemetry.Alerts do
         db,
         "insert or replace into servers (server, name, failing, failed, started, looping, why) values (?, ?, ?, ?, ?, ?, ?)",
         [server, name, row["failing"], row["failed"], row["started"], row["looping"], row["why"]]
+      )
+    end
+
+    # An outage is over by the time it's read, so its alert is resolved as it's kept, with its own times.
+    for {:unreachable, start, stop, message} <- signals, stop - start >= 5 * @minute do
+      query(
+        db,
+        "insert into alerts (kind, key, state, title, text, began, last, ended) values ('server', 'network', 'resolved', ?, ?, ?, ?, ?)",
+        ["None of the network's servers answered for #{took(stop - start)}", message, start, stop, stop]
       )
     end
 
@@ -758,6 +771,10 @@ defmodule Telemetry.Alerts do
   defp in_state("background"), do: "in the background"
   defp in_state("launcher"), do: "with the launcher open"
   defp in_state(_windows), do: "with windows open"
+
+  # How long something took, as a person says it: `7 min`, `2 h 12 min`.
+  defp took(ms) when ms < 3_600_000, do: "#{div(ms, @minute)} min"
+  defp took(ms), do: "#{div(ms, 3_600_000)} h #{div(rem(ms, 3_600_000), @minute)} min"
 
   # When the last backup was, as a person says it.
   defp last_backup(0, _now), do: "It hasn't been backed up yet."
