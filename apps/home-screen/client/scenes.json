@@ -1227,6 +1227,145 @@
           "wait": 1000
         }
       ],
+      "Its page arrows stay clear of the App Library as the pages are flicked toward it": [
+        {
+          "trace": "traces/flick.json"
+        },
+        {
+          "up": true
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 80
+        },
+        {
+          "expect": {
+            "apart": {
+              "of": {
+                "role": "button",
+                "name": "Next Page"
+              },
+              "from": {
+                "role": "group"
+              }
+            }
+          }
+        },
+        {
+          "wait": 800
+        }
+      ],
       "Its page arrows stay clear of the App Library as the pages spring back let go": [
         {
           "trace": "traces/drag-held.json"
