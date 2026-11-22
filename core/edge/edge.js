@@ -29,7 +29,7 @@
 //
 // A part whose `package.json` says `"tail": true` is a Tail Worker: the edge and every other part are given it as a
 // tail consumer, so it hears what each did.
-import { createPrivateKey, sign } from "node:crypto";
+import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import { $, Glob } from "bun";
@@ -93,8 +93,9 @@ await $`bun build.js ${web}/renderer`.cwd(`${root}/clients/web/renderer`).quiet(
 // Tauri's updater and Sparkle do, the app takes it only with `update.json.sig`, the platform's Ed25519 signature of
 // `update.json`, whose public half it has built in, so neither whoever runs the network's edge nor anything in front
 // of it can give the app a page of their own. PAGE_SIGNING_KEY is its private half, a PKCS#8 DER in base64 (in
-// 1Password, "The One App page signing key"), read from there when the variable isn't set; without a key the deploy
-// refuses, as an unsigned page is one apps refuse.
+// 1Password, "The One App page signing key"), read from there when the variable isn't set; without a key a build or
+// deploy refuses, as an unsigned page is one apps refuse. A local network's edge signs with a key made as it starts,
+// whose public half no app has, so no app takes its page, as reading the platform's from 1Password took 1.2 s of it.
 const version = (await $`sh ${root}/tooling/version`.text()).trim();
 {
   const files = {};
@@ -105,8 +106,9 @@ const version = (await $`sh ${root}/tooling/version`.text()).trim();
   const update = { version, ...(await Bun.file(`${app}/page/update.json`).json()), files };
   const said = Buffer.from(JSON.stringify(update));
   await Bun.write(`${web}/page/update.json`, said);
-  const pageKey = process.env.PAGE_SIGNING_KEY || (await $`op read ${"op://van-tonder-nosudo/The One App page signing key/credential"}`.text()).trim();
-  const key = createPrivateKey({ key: Buffer.from(pageKey, "base64"), format: "der", type: "pkcs8" });
+  const key = what === "dev" && !process.env.PAGE_SIGNING_KEY
+    ? generateKeyPairSync("ed25519").privateKey
+    : createPrivateKey({ key: Buffer.from(process.env.PAGE_SIGNING_KEY || (await $`op read ${"op://van-tonder-nosudo/The One App page signing key/credential"}`.text()).trim(), "base64"), format: "der", type: "pkcs8" });
   await Bun.write(`${web}/page/update.json.sig`, sign(null, said, key).toString("base64"));
 }
 
