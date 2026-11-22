@@ -270,16 +270,22 @@ function mapped(page, html) {
 /**
  * What a page's `component` has its host do before it imports another app's module (`host.component`, which the
  * browser's own loader can't): that app's styles, `styles.json` beside the module, fetched once for each app and
- * handed to `take`, as a native host's loader loads them as it loads the module.
+ * handed to `take`, as a native host's loader loads them as it loads the module. → where the module is: `url` names it
+ * among the apps' clients (`/<app>/client/<name>.js`), as a native host serves them at its root, and a browser's are
+ * where the page's own app is, `<apps>/<host>/`, two folders up from its `client/` (`address` in `host.js`). From the
+ * address's root, the frame, whose origin is its own, was refused: Sign In & Security didn't show (22 Nov).
  * @param {URL} page @param {(styles: string) => void} take
  */
 function styled(page, take) {
+  const apps = new URL("../../", page)
   /** @type {Map<string, Promise<void>>} */
   const loaded = new Map()
-  return (/** @type {string} */ url) => {
-    const table = new URL("styles.json", new URL(url, page)).href
+  return async (/** @type {string} */ url) => {
+    const module = new URL(url.replace(/^\//, ""), apps)
+    const table = new URL("styles.json", module).href
     if (!loaded.has(table)) loaded.set(table, fetch(table).then(async (response) => void (response.ok && take(await response.text()))))
-    return loaded.get(table)
+    await loaded.get(table)
+    return module.href
   }
 }
 

@@ -356,8 +356,7 @@ export const useRecoveryKey: typeof Page.useRecoveryKey = async ({ subject } = {
 /// here with what they're given.
 export const component: typeof Page.component = async (app, name) => {
   const url = `/${app}/client/${name}.js`
-  await host?.component?.(url)
-  return import(/* @vite-ignore */ url)
+  return import(/* @vite-ignore */ (await host?.component?.(url)) ?? url)
 }
 /// `createEffect(link, (to) => ...)`: the link the page was opened to last, `one:settings#vault/accounts&request=4`'s `vault/accounts&request=4`, as it
 /// changes: a link followed while the page is open is told too, the same one again as well. The page's address
