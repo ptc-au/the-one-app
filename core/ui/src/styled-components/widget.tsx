@@ -31,7 +31,8 @@ const look = styles({
   // reader names it.
   open: { position: "absolute", top: 0, bottom: 0, start: 0, end: 0, zIndex: -1, borderRadius: tokens.radius.large, boxShadow: { focused: tokens.shadow.focus } },
   name: { flexShrink: 0, font: tokens.type.small, fontWeight: tokens.weight.medium, color: tokens.colour.secondaryLabel, lineClamp: 1 },
-  problem: { font: tokens.type.small, color: tokens.colour.orange },
+  // Plain words in the label colour, as iOS draws a widget that can't load, never the warning orange, which is 2.4:1 on the card's grey.
+  problem: { font: tokens.type.small, color: tokens.colour.label },
   // A column or a row.
   column: { gap: tokens.grid[1], minWidth: 0, minHeight: 0 },
   row: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2], minWidth: 0, minHeight: 0 },

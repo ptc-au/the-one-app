@@ -106,6 +106,10 @@ export default {
   }),
   "Widgets/Dropped where it's narrow, 2x2": cell("2x2", "Calendar", narrowOrWide),
   "Widgets/Kept where it's wide, 4x2": cell("4x2", "Calendar", narrowOrWide),
-  "Widgets/A problem, 2x2": cell("2x2", "Weather", undefined, "Couldn't reach the weather service."),
+  "Widgets/A problem, 2x2": {
+    render: cell("2x2", "Weather", undefined, "Couldn't reach the weather service."),
+    // The only thing the widget says, read at a glance: WCAG's 4.5:1 for words this size, on the card's grey.
+    checks: { "Its problem is readable on the card": [{ expect: { inked: { of: "This widget stopped working. Couldn't reach the weather service.", width: 40, contrast: 4.5 } } }] },
+  },
   "Widgets/No layout yet, 2x2": cell("2x2", "Weather"),
 } satisfies Scenes
