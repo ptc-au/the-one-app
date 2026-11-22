@@ -7,7 +7,7 @@ defmodule OneCore.Apps.Store do
   deploys at once can't both be the app's next version, and first writes the version it replaces to
   `versions/<number>`, with when; only the last few versions, and those replaced in the last week, keep their files
   (`prune/1`). Each deploy's set is its own
-  (`deployment/1`), so one that goes back to an earlier version's files writes them again. `latest` names the files it was deployed from too, by their
+  (`deployment/2`), so one that goes back to an earlier version's files writes them again. `latest` names the files it was deployed from too, by their
   hash, its `source`, and the git repo it was installed from, if it was, its `from`: as a lock file has it, where
   it was fetched from, the ref asked for, the commit and the hash of the files as installed (`one install`). Each
   version after keeps its `from`, so one whose `source` isn't that hash was changed since. `trusted` says whether it's
@@ -24,9 +24,12 @@ defmodule OneCore.Apps.Store do
   @doc "Whose the app `artifact` is: a user, a group or the network."
   def whose(artifact), do: String.replace_suffix(artifact, "/apps/" <> Path.basename(artifact), "")
 
-  # Each deploy's set of files is its own, by an id no other deploy has, kept among them as One Core's own file
-  # `deployment`, as `client/ui` is (`OneCore.Entrypoint`): so no deploy writes files an earlier one wrote, which a
-  # prune may have chosen to remove (`prune/1`).
+  # Each deploy's set of files is its own, by an id named for the `latest` it read before it wrote anything, kept among
+  # them as One Core's own file `deployment`, as `client/ui` is (`OneCore.Entrypoint`). `latest` never says the same
+  # twice (its number and its prunes are counted), so no deploy writes files an earlier one that read another wrote,
+  # which a prune may have chosen to remove (`prune/1`); and an app's first deploy, which read none, is the same set
+  # for the same files on every network, so a server of another network on the machine loads what it was compiled to
+  # (`OneCore.Apps.Version.Compile`).
   @deployment "deployment"
 
   @doc "One file of the set of the app `artifact`'s files named `code`, which needn't be the set running now."
@@ -127,11 +130,11 @@ defmodule OneCore.Apps.Store do
 
   def repo(_from), do: nil
 
-  @doc "A deploy's `files`, with the id that makes its set of files its own (`keep/8`)."
-  def deployment(files), do: Map.put(files, @deployment, Base.encode16(:crypto.strong_rand_bytes(16), case: :lower))
+  @doc "A deploy's `files`, with the id that makes its set of files its own (`keep/8`), from `was`, the app's `latest/1` it read."
+  def deployment(files, was), do: Map.put(files, @deployment, Version.code(was))
 
   @doc """
-  Commits a deploy: writes its set of files, as `deployment/1` made them, and what its `version` says of itself
+  Commits a deploy: writes its set of files, as `deployment/2` made them, and what its `version` says of itself
   (`describe/1`), and makes it the app's next version, then prunes the app (`prune/1`). `files` are as the server
   keeps them, and `deployed` as they were deployed. `was` is the app's `latest` as the deploy read it before it wrote
   anything (`latest/1`): `latest` is replaced only if it's still that, so two deploys at once can't both be the app's
