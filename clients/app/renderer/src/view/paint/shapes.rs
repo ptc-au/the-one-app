@@ -90,8 +90,11 @@ impl Painter<'_> {
         // far in as it reaches (its blur's three deviations, its spread and its offset) too, with a pixel to spare.
         let corner = radii.top_left.max(radii.top_right).max(radii.bottom_left).max(radii.bottom_right);
         let reach = if shadow.inset { 0.75 * shadow.blur * grown + spread.abs() + shadow.x.abs().max(shadow.y.abs()) * grown + 1.0 } else { 0.0 };
+        // On whole device pixels, as a pixel whose centre is on where two bands meet is drawn by both: an inset edge's
+        // 1.5 in from a whole pixel darkened a dot on each side, where a scroll moved it there.
         let inside = corner + reach;
-        let (left, top, right, bottom) = (bounds.origin.x + inside, bounds.origin.y + inside, bounds.origin.x + bounds.size.width - inside, bounds.origin.y + bounds.size.height - inside);
+        let pixel = |at: f32, up: bool| if up { (at * scale).ceil() / scale } else { (at * scale).floor() / scale };
+        let (left, top, right, bottom) = (pixel(bounds.origin.x + inside, true), pixel(bounds.origin.y + inside, true), pixel(bounds.origin.x + bounds.size.width - inside, false), pixel(bounds.origin.y + bounds.size.height - inside, false));
         if self.turn != TransformationMatrix::unit() || right <= left || bottom <= top {
             return self.scene.insert_primitive(drawn);
         }
