@@ -2,7 +2,7 @@
 // app, stands off what it's drawn on by WCAG AA's 4.5:1, light and dark: the style's own fill where it has one (a badge,
 // a filled button), else each surface a page draws on (the page, a card, a sheet, glass, a panel, a field). So a token
 // pair that can't be read is found where it's written, before any scene draws it, as orange words on a grey tile were
-// (L79). scenes.js runs it first; it says each pair that falls short, a line each, and fails. A style that isn't words a
+// (L79). screenshot.js runs it first; it says each pair that falls short, a line each, and fails. A style that isn't words a
 // person must read (a chevron, a disabled pill) is named in `EXCEPT` with why.
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
@@ -19,7 +19,7 @@ const GLYPH = 3
 const EXCEPT = {
   "core/ui/src/styled-components/field.tsx:tick": [TEXT, "its tick is drawn only ticked, on `ticked`'s blue", "blue"],
   "apps/settings/client/app.tsx:initials": [TEXT, "on its `avatar`'s fill", "secondaryLabel"],
-  "apps/home-screen/client/looks.ts:installing": [0, "a progress ring over an app's icon, on that icon's picture, which scenes.js's contrast judges as drawn"],
+  "apps/home-screen/client/looks.ts:installing": [0, "a progress ring over an app's icon, on that icon's picture, which screenshot.js's contrast judges as drawn"],
   "core/ui/src/styled-components/list.tsx:chevron": [0, "a row's chevron says nothing its row doesn't, as iOS's tertiary one"],
   "core/ui/src/styled-components/screen.tsx:pillOff": [0, "a pill that's off is disabled, which WCAG asks no contrast of"],
   "core/ui/src/styled-components/widget.tsx:track": [0, "a gauge's track is the ground its fill is read against"],

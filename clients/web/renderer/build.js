@@ -36,7 +36,7 @@ if (!existsSync(kept)) {
   if (mutants !== "--mutants") writeFileSync(`${making}/${named}.br`, brotliCompressSync(wasm, { params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_LGWIN]: 24, [constants.BROTLI_PARAM_SIZE_HINT]: wasm.length } }))
   // Another build of the same renderer that finished first kept the same files.
   try { renameSync(making, kept) } catch { rmSync(making, { recursive: true }) }
-  // The last few builds are kept, the harness's (`--mutants`) and the edge's among them.
+  // The last few builds are kept, the tests' (`--mutants`) and the edge's among them.
   const older = readdirSync(bound).map((name) => `${bound}/${name}`).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
   for (const old of older.slice(4)) rmSync(old, { recursive: true, force: true })
 }

@@ -1,5 +1,5 @@
 {
-  "about": "The devices motion.js judges a frame's work against (bun motion.js --tiers). Each tier's CPU is its Geekbench 6 single-core score, and its GPU its GFXBench Manhattan 3.1 offscreen fps (1080p), from the sources beside them; `measured` is what calibrate.js measured a real device's GPU take for each kind of work, which a tier's time is that device's scaled by their GPUs' scores, and its CPU take to draw a frame for the GPU (`draw`: each render pass and draw call, making and submitting their command lists), scaled by their CPUs'. `scale` is its device pixels a point; `hz` its display's frames a second.",
+  "about": "The devices animation.js judges a frame's work against (bun animation.js --tiers). Each tier's CPU is its Geekbench 6 single-core score, and its GPU its GFXBench Manhattan 3.1 offscreen fps (1080p), from the sources beside them; `measured` is what calibrate.js measured a real device's GPU take for each kind of work, which a tier's time is that device's scaled by their GPUs' scores, and its CPU take to draw a frame for the GPU (`draw`: each render pass and draw call, making and submitting their command lists), scaled by their CPUs'. `scale` is its device pixels a point; `hz` its display's frames a second.",
   "tiers": [
     {
       "name": "low-end Android",
