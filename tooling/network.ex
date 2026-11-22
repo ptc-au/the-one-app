@@ -88,7 +88,9 @@ defmodule Mix.Tasks.Network do
 
   # Deploys each of this repo's apps for the network from its folder, as `one deploy --files-from` sends it,
   # installing none: each is the network's to install. They're deployed side by side, as people deploy apps to a
-  # network, since one at a time took 21 s of a network's start.
+  # network, since one at a time took 21 s of a network's start. A network started here runs on this machine alone, so
+  # an app's `server/checksums.json` names only the builds of its NIFs and programs for this kind of machine, and the
+  # others (37 of a network's 93 MB in its bucket) are neither downloaded nor kept.
   defp publish do
     Path.join(@root, "apps/*")
     |> Path.wildcard()
@@ -101,12 +103,18 @@ defmodule Mix.Tasks.Network do
 
     with {:ok, paths} <- Folder.files(folder) do
       files = Map.new(paths, &{&1, File.read!(Path.join(folder, &1))})
+      files = if sums = files["server/checksums.json"], do: %{files | "server/checksums.json" => built_here(sums)}, else: files
 
       case Deploy.deploy("network", name, files, nil, true, fn _version -> false end) do
         {:ok, _number, _warnings} -> Logger.info("#{name} is deployed for the network")
         {:error, why} -> Logger.error("#{name} wasn't deployed for the network: #{why}")
       end
     end
+  end
+
+  defp built_here(sums) do
+    kind = OneCore.Builds.target()
+    sums |> JSON.decode!() |> Map.filter(fn {path, _build} -> Path.basename(path, ".so") == kind end) |> JSON.encode!()
   end
 
   defp start(folder, server, options) do
