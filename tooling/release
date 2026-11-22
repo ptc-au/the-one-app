@@ -189,6 +189,18 @@ part=server
 # Each line says how many seconds into the release it is, so where a release's time goes is in what it printed.
 [[ $(uname) != Linux ]] || exec > >(while IFS= read -r line; do printf '%4ds %s\n' "$SECONDS" "$line"; done) 2>&1
 
+# The devices that get dev builds (Software Update's `dev_builds`), each with the target `one builds` says it runs, as
+# `{devices: [{name, target}]}`; `skipped` says which targets nothing gets one for and why. A device that has said no
+# target has none to build.
+getting_dev_builds() {
+  one software-update dev_builds | jq -c --argjson builds "${builds:-$(one builds)}" '
+    [.devices[] | . as $device | {name, on, target: ([$builds.devices[] | select(.device == $device.id) | .target][0])}] as $all
+    | [$all[] | select(.on and .target)] as $on
+    | {devices: $on,
+       skipped: ([$all[] | select(.on | not) | select(.target) | select(.target as $target | $on | map(.target) | index($target) | not)]
+         | group_by(.target) | map({target: .[0].target, names: map(.name)}))}'
+}
+
 # A network's iPhone app goes to TestFlight beside its computers' clients, where its native code changed
 # (`tooling/testflight`), built from the network's repo, which ONE_NETWORK_REPO names (Agent Memory says where it is).
 # The release ends once Apple has taken the upload, and fails if it doesn't.
@@ -196,7 +208,7 @@ iphone=
 if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
   if [[ -z ${ONE_NETWORK_REPO:-} ]]; then
     echo "The iPhone's app isn't built: ONE_NETWORK_REPO names the network's repo, which it's built from"
-  elif one builds | jq -e '[.devices[] | select(.target | startswith("ios-"))] | length > 0' >/dev/null; then
+  elif getting_dev_builds | jq -e '[.devices[] | select(.target | startswith("ios-"))] | length > 0' >/dev/null; then
     tooling/testflight "$ONE_NETWORK_REPO" > >(sed 's/^/iphone: /') 2>&1 &
     iphone=$!
   fi
@@ -275,6 +287,7 @@ covers() {
 # to build, and `notes` says why each of the rest isn't.
 survey() {
   builds=$(one builds)
+  getting=$(getting_dev_builds)
   git fetch -q origin main
   # What's asked for, by name. A desktop or the CLI is built for each kind of machine a device of the network's is,
   # but a phone, whose app the network's owner builds.
@@ -282,9 +295,9 @@ survey() {
   for want in "${wanted[@]}"; do
     case $want in
       server) names+=($(jq -r '.servers[].target | "server/" + .' <<<"$builds")) ;;
-      client) names+=($(jq -r '.devices[].target | select(startswith("linux-")) | "one/" + ., "one-cli/" + .' <<<"$builds")
-        $(jq -r '.devices[].target | select(startswith("macos-")) | "one/" + .' <<<"$builds")
-        $(jq -r '.devices[].target | select(startswith("windows-")) | "one/" + ., "one-cli/" + .' <<<"$builds")) ;;
+      client) names+=($(jq -r '.devices[].target | select(startswith("linux-")) | "one/" + ., "one-cli/" + .' <<<"$getting")
+        $(jq -r '.devices[].target | select(startswith("macos-")) | "one/" + .' <<<"$getting")
+        $(jq -r '.devices[].target | select(startswith("windows-")) | "one/" + ., "one-cli/" + .' <<<"$getting")) ;;
       *) names+=("$want") ;;
     esac
   done
@@ -307,6 +320,10 @@ survey() {
   [[ -z $behind ]] || { echo "$build speaks protocol $(jq -r 'if .oldest == .newest then "\(.oldest)" else "\(.oldest) to \(.newest)" end' core/protocol.json), which $behind, doesn't: keep the protocol they speak until they have the newer build." >&2 && exit 1; }
 
   mine=() notes=()
+  # A device that doesn't get dev builds keeps its build, and has the next release once it does.
+  if [[ " ${wanted[*]} " == *" client "* ]]; then
+    while IFS= read -r line; do notes+=("$line"); done < <(jq -r '.skipped[] | select(.target | test("^(linux|macos|windows|ios)-")) | "\(.target)  skipped, dev builds are off for \(.names | join(", ")) (Software Update)"' <<<"$getting")
+  fi
   # Which are built here, and which are published already.
   for name in "${names[@]}"; do
     kind=${name#*/}
