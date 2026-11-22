@@ -17,7 +17,7 @@ mkdirSync(out, { recursive: true })
 for (const file of ["index.html", "renderer.js", "text-input.js", "semantics.js", "video.js", "check.html", "check.js"]) copyFileSync(here(file), `${out}/${file}`)
 // The gate's check page, an app's page built as a server builds one (core/ui/app.js), which check.html hosts.
 await $`bun ${root}/core/ui/dist/build/app.js ${here("check")} ${out}/check`.quiet()
-const compiled = (await $`${root}/tooling/cached-build ${here(".")} --target wasm32-unknown-unknown --profile web ${mutants === "--mutants" ? ["--features", "mutants"] : []}`.quiet().text()).trim()
+const compiled = (await $`${root}/tooling/cached-build ${here(".")} --target wasm32-unknown-unknown ${mutants === "--mutants" ? ["--profile", "web-tests", "--features", "mutants"] : ["--profile", "web"]}`.quiet().text()).trim()
 // What's made of Cargo's WebAssembly, by wasm-bindgen, binaryen's wasm-opt and Brotli at its most, takes most of a build
 // (17 of a local network's edge's 28 s to start, 22 Nov), and is the same for the same WebAssembly, so it's kept by its
 // hash beside the builds, for every worktree on the machine: a build of a renderer built before copies it.
@@ -26,7 +26,8 @@ const kept = `${bound}/${hash(readFileSync(compiled))}`
 if (!existsSync(kept)) {
   const making = `${kept}-${process.pid}`
   await $`wasm-bindgen --target web --no-typescript --out-dir ${making} ${compiled}`.quiet()
-  await $`wasm-opt -Oz --strip-debug --strip-producers ${making}/web_renderer_bg.wasm -o ${making}/web_renderer_bg.wasm`.quiet()
+  // Smaller for the edge to send, which the web gate's own needn't be.
+  if (mutants !== "--mutants") await $`wasm-opt -Oz --strip-debug --strip-producers ${making}/web_renderer_bg.wasm -o ${making}/web_renderer_bg.wasm`.quiet()
   // Named by what's in it, so a browser keeps it for good (clients/web/_headers) and a new build is a new name, which
   // the frame's page and script are given; and kept compressed at Brotli's most too, which the edge sends as it's kept
   // (core/edge/web/web.ts), but for the web gate's own, which no edge serves (7 s of its start).

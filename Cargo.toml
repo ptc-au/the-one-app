@@ -36,6 +36,14 @@ panic = "abort"
 # incrementally and unoptimized, in seconds where a release build of `one` takes half a minute after every commit,
 # while the packages it uses are optimized, as a release's are, and kept in the compiler cache once for every
 # worktree. Only what's published is built `--release`.
+# The web gate's own build of the renderer (`clients/web/renderer/build.js --mutants`): as it ships, but for what only
+# makes it smaller, which a test needn't wait for (LTO into one codegen unit kept 20 of a machine's threads busy, 22 Nov).
+[profile.web-tests]
+inherits = "web"
+lto = false
+codegen-units = 16
+incremental = true
+
 [profile.dev]
 debug = "line-tables-only"
 
