@@ -390,10 +390,15 @@ fn continuous_corner(radius: f32, half_size: vec2<f32>) -> vec2<f32> {
     if (radius <= 0.0) {
         return vec2<f32>(0.0, 2.0);
     }
-    let reach = max(radius, min(1.528665 * radius, min(half_size.x, half_size.y)));
+    let reach = corner_reach(radius, half_size);
     // A circle's middle is radius·(1 - 1/√2) in from each edge; a superellipse's, reach·(1 - 2^(-1/exponent)).
     let exponent = -log(2.0) / log(1.0 - (1.0 - inverseSqrt(2.0)) * radius / reach);
     return vec2<f32>(reach, exponent);
+}
+
+// How far in from its corner a continuous corner of `radius` bends (`continuous_corner`'s reach), without its exponent.
+fn corner_reach(radius: f32, half_size: vec2<f32>) -> f32 {
+    return max(radius, min(1.528665 * radius, min(half_size.x, half_size.y)));
 }
 
 // Signed distance of the point to the quad's border - positive outside the
@@ -665,10 +670,6 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     // minimum distance between the center of the pixel and the edge.
     let antialias_threshold = 0.5;
 
-    // The nearest corner, continuous: how far in from the corner it bends (`corner_radius`), and how.
-    let corner = continuous_corner(pick_corner_radius(center_to_point, quad.corner_radii), half_size);
-    let corner_radius = corner.x;
-
     // Width of the nearest borders
     let border = vec2<f32>(
         select(
@@ -690,6 +691,28 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     // the point into the bottom right quadrant. Both components are <= 0.
     let corner_to_point = abs(center_to_point) - half_size;
 
+    // Vector from straight border inner corner to point.
+    let straight_border_inner_corner_to_point = corner_to_point + reduced_border;
+
+    // Whether the point is far enough inside the quad, such that the pixels are
+    // not affected by the straight border.
+    let is_within_inner_straight_border =
+        straight_border_inner_corner_to_point.x < -antialias_threshold &&
+        straight_border_inner_corner_to_point.y < -antialias_threshold;
+
+    // Fast path for points that must be part of the background: inside the border, and not where the nearest corner
+    // bends (its reach), which is most of a card's, a sheet's or a pane's pixels. It's taken before the corner's
+    // exponent (two logs and an inverse square root), which only a pixel near a corner needs.
+    let radius = pick_corner_radius(center_to_point, quad.corner_radii);
+    let reach = corner_reach(radius, half_size);
+    if (is_within_inner_straight_border && (corner_to_point.x + reach < 0.0 || corner_to_point.y + reach < 0.0)) {
+        return masked(blend_color(background_color, 1.0), mask);
+    }
+
+    // The nearest corner, continuous: how far in from the corner it bends (`corner_radius`), and how.
+    let corner = continuous_corner(radius, half_size);
+    let corner_radius = corner.x;
+
     // Vector from the point to the center of the rounded corner's circle, also
     // mirrored into bottom right quadrant.
     let corner_center_to_point = corner_to_point + corner_radius;
@@ -699,29 +722,10 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
             corner_center_to_point.x >= 0 &&
             corner_center_to_point.y >= 0;
 
-    // Vector from straight border inner corner to point.
-    let straight_border_inner_corner_to_point = corner_to_point + reduced_border;
-
     // Whether the point is beyond the inner edge of the straight border.
     let is_beyond_inner_straight_border =
             straight_border_inner_corner_to_point.x > 0 ||
             straight_border_inner_corner_to_point.y > 0;
-
-    // Whether the point is far enough inside the quad, such that the pixels are
-    // not affected by the straight border.
-    let is_within_inner_straight_border =
-        straight_border_inner_corner_to_point.x < -antialias_threshold &&
-        straight_border_inner_corner_to_point.y < -antialias_threshold;
-
-    // Fast path for points that must be part of the background.
-    //
-    // This could be optimized further for large rounded corners by including
-    // points in an inscribed rectangle, or some other quick linear check.
-    // However, that might negatively impact performance in the case of
-    // reasonable sizes for rounded corners.
-    if (is_within_inner_straight_border && !is_near_rounded_corner) {
-        return masked(blend_color(background_color, 1.0), mask);
-    }
 
     // Signed distance of the point to the outside edge of the quad's border. It
     // is positive outside this edge, and negative inside.
