@@ -5,7 +5,7 @@ import { along as alongOf, cell as cellOf, group, INSET, OVERHANG, PAGE, PILLS, 
 import { type At, type Placed } from "./machine.ts"
 import { type Item, type Listed } from "./types.ts"
 import { looks } from "./looks.ts"
-import { home, state, at, screensOf, editingNow, launcher, query, setQuery, chosenResult, setChosenResult, type Selected, selected, setSelected, room, laidPage } from "./store.ts"
+import { home, state, at, screensOf, editingNow, editingOwner, launcher, query, setQuery, chosenResult, setChosenResult, type Selected, selected, setSelected, room, laidPage } from "./store.ts"
 import { type Owner, badgeOf, findAll, type From, launch, opens, press, opener } from "./owners.ts"
 import { Card, Tile } from "./tiles.tsx"
 import { type Cell, HomePage } from "./pages.tsx"
@@ -354,7 +354,7 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
                 // The strip clips what rolls above and below, from as far above the pages as their badges reach.
                 const overhang = () => OVERHANG * room().scale
                 const Page = (inner: { page: number; placed: Placed<Cell>[] }) => (
-                  <View style={[looks.absolute, looks.at(room().side + alongOf(room(), inner.page, pages()[index()]?.length ?? 1), overhang(), PAGE, room().height)]}>
+                  <View style={[looks.absolute, looks.at(room().side + alongOf(room(), inner.page), overhang(), PAGE, room().height)]}>
                     <View style={[looks.absolute, looks.placedPage((laidPage().height * (room().scale - 1)) / 2, (laidPage().width * (room().scale - 1)) / 2, room().scale)]}>
                       <HomePage owner={owner()} index={index()} page={inner.page} placed={inner.placed} laid={laidPage()} scale={room().scale} />
                     </View>
@@ -373,6 +373,14 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
                       <For each={pages()[index()] ?? []} keyed={false}>
                         {(placed, at) => <Page page={at} placed={placed()} />}
                       </For>
+                      {/* A Home with nothing on it is one grey line in the card's middle, not in its first column. */}
+                      <Show when={!(pages()[index()] ?? []).some((placed) => placed.length) && !editingOwner(index())}>
+                        <View style={[looks.absolute, looks.at(0, overhang(), room().width, room().height)]}>
+                          <View style={looks.empty(0, 0, 0, 0)}>
+                            <Empty>No apps on this page.</Empty>
+                          </View>
+                        </View>
+                      </Show>
                     </View>
                   </View>
                 )

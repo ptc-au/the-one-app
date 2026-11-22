@@ -75,7 +75,8 @@ export function HomePage(props: { owner: Owner; index: number; page: number; pla
       {...gestures}
       style={[looks.slots, looks.sized(props.laid.width, props.laid.height)]}
     >
-      <Show when={props.placed.length || editingHere()} fallback={<View style={looks.empty(props.laid.top, props.laid.left, props.laid.right, props.laid.bottom)}><Empty>No apps on this page.</Empty></View>}>
+      {/* An empty page says so in its middle; in the launcher, a page isn't the screen, and the card says it once. */}
+      <Show when={props.placed.length || editingHere()} fallback={launcher() ? undefined : <View style={looks.empty(props.laid.top, props.laid.left, props.laid.right, props.laid.bottom)}><Empty>No apps on this page.</Empty></View>}>
         <For each={props.placed} keyed={({ item }) => (item.item.widget ?? item.item.entrypoint) + (item.item.size ?? "")}>
           {(placed) => (
             <HomeCell

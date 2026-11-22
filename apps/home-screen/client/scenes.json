@@ -1015,6 +1015,32 @@
       "ui/open-link": {}
     },
     "checks": {
+      "Its two pages are the card's first two columns, as a full screenful has them": [
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 1"
+              },
+              "x": 46,
+              "width": 316
+            }
+          }
+        },
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 2"
+              },
+              "x": 362,
+              "width": 316
+            }
+          }
+        }
+      ],
       "A trackpad's swipe goes to the App Library, the pointer nudged as it goes and its momentum after": [
         {
           "trace": "traces/mac-swipe-to-app-library.json"
@@ -2055,6 +2081,44 @@
       }
     },
     "checks": {
+      "Its first screenful's three pages are the card's three columns, filling it": [
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 1"
+              },
+              "x": 46,
+              "width": 316
+            }
+          }
+        },
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 2"
+              },
+              "x": 362,
+              "width": 316
+            }
+          }
+        },
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 3"
+              },
+              "x": 678,
+              "width": 316
+            }
+          }
+        }
+      ],
       "A badge's full circle is drawn over its icon's top, not cut by the page's clip": [
         {
           "expect": {
@@ -2804,6 +2868,22 @@
         "launcher": true,
         "mac": true
       }
+    },
+    "checks": {
+      "Its page is the card's first column, as a full screenful's first is": [
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 1"
+              },
+              "x": 46,
+              "width": 316
+            }
+          }
+        }
+      ]
     }
   },
   "Launcher, two pages and a widget": {
@@ -3128,6 +3208,46 @@
           }
         ]
       }
+    },
+    "checks": {
+      "Its 4×4 widget is its page's whole grid across, in the card's first column, beside its second page, as Andre's Mac has them": [
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 1"
+              },
+              "x": 46,
+              "width": 316
+            }
+          }
+        },
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "button",
+                "name": "Devices"
+              },
+              "x": 58,
+              "width": 292
+            }
+          }
+        },
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 2"
+              },
+              "x": 362,
+              "width": 316
+            }
+          }
+        }
+      ]
     }
   },
   "Launcher, App Library": {
@@ -3273,6 +3393,20 @@
       }
     },
     "checks": {
+      "Its one page is the card's first column, as a full screenful's first is": [
+        {
+          "expect": {
+            "at": {
+              "of": {
+                "role": "group",
+                "name": "Page 1"
+              },
+              "x": 46,
+              "width": 316
+            }
+          }
+        }
+      ],
       "Its words are in the middle of the page": [
         {
           "expect": {
