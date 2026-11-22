@@ -7,6 +7,7 @@ import { For, Show } from "solid-js"
 import { link, render, type Scene, type Scenes, ScrollView, Section, styles, Text, tokens, View } from "ui"
 import actions from "./actions.scenes.tsx"
 import buttons from "./buttons.scenes.tsx"
+import careless from "./careless.scenes.tsx"
 import fields from "./fields.scenes.tsx"
 import generated from "./generated.scenes.tsx"
 import images from "./images.scenes.tsx"
@@ -31,7 +32,7 @@ const look = styles({
   safe: { paddingTop: tokens.length.safeTop, paddingBottom: tokens.length.safeBottom, paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight },
 })
 
-const scenes: Scenes = { ...text, ...images, ...buttons, ...lists, ...fields, ...states, ...tabs, ...widgets, ...over, ...actions, ...live, ...motion, ...styling, ...screens, ...generated }
+const scenes: Scenes = { ...text, ...images, ...buttons, ...lists, ...fields, ...states, ...tabs, ...widgets, ...over, ...actions, ...live, ...motion, ...careless, ...styling, ...screens, ...generated }
 const draw = (scene: Scene) => (typeof scene === "function" ? scene() : scene.render())
 const named = () => {
   const to = link()
