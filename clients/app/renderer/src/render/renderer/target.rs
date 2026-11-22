@@ -1,18 +1,17 @@
 use super::blur::BackdropTextures;
-use super::{Drawn, Kept, OFFSCREEN_FORMAT};
+use super::{Drawn, OFFSCREEN_FORMAT};
 use super::super::context::Context;
 
 /// What a renderer draws into: a window's surface, each of a panel's parts' (`platform::Window::arrange`), or an
-/// image of its own offscreen; with what it kept of its own frames before.
+/// image of its own offscreen.
 pub(super) struct Target {
     pub(super) output: Output,
     /// An image of its surface taken ahead, as its window went from the screen (`put_away`), drawn on first as it's
     /// back; let go before the surface it's of.
     pub(super) reserved: Option<wgpu::SurfaceTexture>,
     pub(super) size: (u32, u32),
-    /// What its last frame drew, batch by batch (`Drawn`), and what of the frames before was the same and is kept.
+    /// What its last frame drew, batch by batch (`Drawn`).
     pub(super) last: Drawn,
-    pub(super) kept: Option<Kept>,
     /// What a backdrop blurs: the frame as drawn so far, halved and halved again, then blurred one way and the other.
     pub(super) backdrop: Option<BackdropTextures>,
     /// Each blur of what's behind a backdrop, by what was drawn before it (`Blur::behind`), kept while frames draw the
@@ -64,7 +63,7 @@ fn offscreen(device: &wgpu::Device, (width, height): (u32, u32)) -> Output {
 
 impl Target {
     fn with(output: Output, size: (u32, u32)) -> Self {
-        Self { output, reserved: None, size, last: Drawn::default(), kept: None, backdrop: None, blurred: Default::default(), shown: None, canvas: None, previous: None }
+        Self { output, reserved: None, size, last: Drawn::default(), backdrop: None, blurred: Default::default(), shown: None, canvas: None, previous: None }
     }
 
     /// An image `size` device pixels drawn offscreen, read back by `read`.
@@ -84,7 +83,7 @@ impl Target {
         // A browser's canvas may be read, as WebGPU's `GPUCanvasConfiguration.usage` has it, which wgpu's WebGPU
         // backend doesn't say (only `RENDER_ATTACHMENT`): without it a backdrop drew nothing on the web, so its glass
         // showed what's under it unblurred. And copied into, so a frame drawn again only where it changed (its canvas,
-        // `Renderer::draw_target`) and the kept start of frames before are copied into it there too.
+        // `Renderer::draw_target`) is copied into it there too.
         #[cfg(target_arch = "wasm32")]
         let capabilities = wgpu::SurfaceCapabilities { usages: capabilities.usages | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING, ..capabilities };
         // 8 bits a channel, unconverted: the shaders blend in sRGB, as the DOM does. BGRA where the surface has it,
@@ -116,7 +115,7 @@ impl Target {
         let config = wgpu::SurfaceConfiguration {
             // A backdrop blurs what's drawn so far, read from the frame where the surface lets a shader read it
             // (Vulkan's), else copied out of it (`blur_behind`).
-            // A frame starts as a copy of what's kept of the frames before, where the surface lets it be copied into.
+            // A frame drawn on its canvas is copied into it, where the surface lets it be copied into.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                 | (capabilities.usages & wgpu::TextureUsages::COPY_DST)
                 | if capabilities.usages.contains(wgpu::TextureUsages::TEXTURE_BINDING) {
@@ -212,12 +211,11 @@ impl Target {
 
     /// Whether it holds what it lets go of when idle (`idle`).
     pub(super) fn holds(&self) -> bool {
-        self.kept.is_some() || self.backdrop.is_some() || !self.blurred.is_empty() || self.canvas.is_some()
+        self.backdrop.is_some() || !self.blurred.is_empty() || self.canvas.is_some()
     }
 
-    /// Lets go of the frames it kept and its backdrops' textures and blurs (`Renderer::idle`).
+    /// Lets go of its canvas and its backdrops' textures and blurs (`Renderer::idle`).
     pub(super) fn idle(&mut self) {
-        self.kept = None;
         self.canvas = None;
         self.backdrop = None;
         self.blurred.clear();

@@ -67,7 +67,7 @@ pub struct Renderer {
     gamma: GammaParams,
     /// Each shadow's tile, drawn the first frame it's in, with what binds it (`tiled`).
     tiles: std::collections::HashMap<TileKey, (wgpu::Texture, wgpu::BindGroup)>,
-    /// Textures a frame let go of (a raster's, a frame kept), each taken again by the next that needs one of its size,
+    /// Textures a frame let go of (a raster's, a canvas), each taken again by the next that needs one of its size,
     /// format and use, rather than made (`made`): one a window's size is more than a heap of 8 MB (`Context::create`),
     /// so a heap of its own, which Intel's Direct3D 12 driver makes resident as it's made, waiting on its GPU, and
     /// frees as it goes: on a Surface, a launcher's pages turned by a wheel made and freed one each few frames. The last
@@ -145,15 +145,10 @@ struct Work {
     blurs_kept: u32,
 }
 
-/// What a layer's texture is for, a raster's, a frame kept or a target's canvas (`Target::canvas`): drawn into,
-/// sampled, copied out of, and into, from what's kept of the frames before; one use for all, so each takes one another
+/// What a layer's texture is for, a raster's or a target's canvas (`Target::canvas`): drawn into, sampled, copied out
+/// of, and into, as a scroll moves a canvas's pixels; one use for all, so each takes one another
 /// let go of (`spare`), where making one its window's size took a Surface's Intel driver 500 ms.
 const LAYER: wgpu::TextureUsages = wgpu::TextureUsages::RENDER_ATTACHMENT.union(wgpu::TextureUsages::TEXTURE_BINDING).union(wgpu::TextureUsages::COPY_SRC).union(wgpu::TextureUsages::COPY_DST);
-
-struct Kept {
-    texture: wgpu::Texture,
-    drawn: Drawn,
-}
 
 /// A texture rasters' images are drawn in, those a frame first draws packed together (`Raster::slot`), with its bind
 /// group: kept while any of them is, as a compositor's tiles are.
@@ -397,7 +392,7 @@ impl Renderer {
     }
 
     /// The bytes of GPU memory it holds: its targets' surfaces' images (three each, `desired_maximum_frame_latency`
-    /// 2's), or its offscreen texture and readback, and each texture of its own (a frame kept, a backdrop's, a raster,
+    /// 2's), or its offscreen texture and readback, and each texture of its own (a canvas, a backdrop's, a raster,
     /// a shadow's tile), by kind.
     pub fn memory(&self) -> serde_json::Value {
         let backdrop = self.targets.iter().flat_map(|target| target.backdrop.iter()).flat_map(|backdrop| backdrop.source.iter().chain(backdrop.levels.iter().flatten().flatten())).map(|(texture, _)| bytes(texture));
@@ -408,7 +403,7 @@ impl Renderer {
         sheets.dedup_by(|one, other| Arc::ptr_eq(one, other));
         serde_json::json!({
             "surface": self.targets.iter().map(Target::surface_bytes).sum::<u64>(),
-            "kept": self.targets.iter().flat_map(|target| target.kept.as_ref().map(|kept| &kept.texture).into_iter().chain(target.canvas.as_ref())).map(bytes).sum::<u64>(),
+            "canvas": self.targets.iter().flat_map(|target| target.canvas.as_ref()).map(bytes).sum::<u64>(),
             "spare": self.spare.iter().map(bytes).sum::<u64>(),
             "backdrop": backdrop.chain(blurred).sum::<u64>(),
             "rasters": sheets.iter().map(|sheet| bytes(&sheet.texture)).sum::<u64>(),

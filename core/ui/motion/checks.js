@@ -92,7 +92,7 @@ async function walk(built, scene, folder) {
 
 /// How much of a window's images (its surface's, as `Renderer::memory` counts three, the frame it kept and spare ones,
 /// its backdrops' and blurs) its renderers hold, as `memory` answers: hidden, a 1×1 surface's at most.
-const images = (answer) => (answer?.result?.windows ?? []).flatMap((window) => window.renderers).reduce((all, held) => all + held.surface + held.kept + held.spare + held.backdrop, 0)
+const images = (answer) => (answer?.result?.windows ?? []).flatMap((window) => window.renderers).reduce((all, held) => all + held.surface + held.canvas + held.spare + held.backdrop, 0)
 const IMAGES_HIDDEN = 4096
 
 /// A scene drawn the same however it came to be, as a frame drawn on what was kept from frames before must be, by what

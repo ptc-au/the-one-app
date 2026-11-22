@@ -63,7 +63,7 @@ fn measure() {
         };
         let sum = |key: &str| all.iter().flat_map(|window| window["renderers"].as_array().cloned().unwrap_or_default()).map(|renderer| renderer[key].as_u64().unwrap_or(0)).sum::<u64>();
         let surfaces = sum("surface");
-        let textures = sum("kept") + sum("backdrop") + sum("rasters") + sum("tiles") + sum("buffer") + parts["atlas"].as_u64().unwrap_or(0);
+        let textures = sum("canvas") + sum("backdrop") + sum("rasters") + sum("tiles") + sum("buffer") + parts["atlas"].as_u64().unwrap_or(0);
         let js: u64 = all.iter().map(|window| window["js"].as_u64().unwrap_or(0)).sum();
         let gpu = parts["gpu"]["reserved"].as_u64();
         let (graphics, heap) = (graphics(), heap());
