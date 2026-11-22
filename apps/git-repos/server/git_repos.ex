@@ -42,6 +42,22 @@ defmodule GitRepos do
   @impl true
   def hooks, do: ["soft-delete.moved"]
 
+  # A repo kept in step with another host, as GitHub Sync keeps one with GitHub, has its say on each change before
+  # it's kept, as a git server's pre-receive hook has: there, the change goes to the host first.
+  @impl true
+  def offers,
+    do: [
+      %{
+        name: "push",
+        kind: :validate,
+        description:
+          "A repo's refs are about to change, by a push, a merge or a pull request closed: `repo`, `by` whom, " <>
+            "`updates` (each `ref`, `old` and `new` sha, `new` all zeros where the ref goes), the push's `pack` " <>
+            "as base64 (thin, against what the repo has; `nil` where nothing was sent), and `merge`, the pull " <>
+            "request a merge takes. Refusing refuses every one of them, and git is told why"
+      }
+    ]
+
   @impl true
   def entrypoints, do: [%{page: "client/index.html", runtime_version: 4}]
 
@@ -539,6 +555,8 @@ defmodule GitRepos do
             else: merge(folder, base, tip, "Take #{pull_request}: #{about["title"]}", person, by)
 
         refs = state["refs"] |> Map.put(into, merged) |> Map.delete("refs/pull/#{pull_request}")
+        updates = [update(state, into, merged), update(state, "refs/pull/#{pull_request}", @zero)]
+        validated!(call, name, by, updates, %{"merge" => pull_request})
 
         merged =
           Map.merge(about, %{"state" => "merged", "commit" => tip, "from" => base, "by_then" => by, "then" => now()})
@@ -570,6 +588,7 @@ defmodule GitRepos do
           Map.merge(about, %{"state" => "closed", "commit" => tip, "from" => from, "by_then" => by, "then" => now()})
 
         refs = Map.delete(state["refs"], "refs/pull/#{pull_request}")
+        validated!(call, name, by, [update(state, "refs/pull/#{pull_request}", @zero)], %{})
 
         {%{state | "refs" => refs, "pull_requests" => Map.put(state["pull_requests"], pull_request, closed)}, [],
          %{pull_request: pull_request}}
@@ -646,7 +665,16 @@ defmodule GitRepos do
               end
             end)
 
-          {if(changed != state, do: changed), [], Enum.reverse(results)}
+          results = Enum.reverse(results)
+          updates = for {old, new, ref} <- commands, state["refs"][ref] != changed["refs"][ref], do: update(state, ref, new)
+
+          case validated(call, name, by, updates, %{"pack" => file && Base.encode64(File.read!(file))}) do
+            :ok -> {if(changed != state, do: changed), [], results}
+            # What git is told is a line for each ref.
+            {:refuse, why} ->
+              why = String.replace(why, ~r/\s*\n\s*/, " ")
+              {nil, [], for({ref, result} <- results, do: {ref, if(result == :ok, do: {:no, why}, else: result)})}
+          end
         end)
 
       if Enum.any?(results, &(elem(&1, 1) == :ok)), do: pushed(name)
@@ -716,6 +744,18 @@ defmodule GitRepos do
              "pull_requests" => Map.put(state["pull_requests"], name, about)
          }}
     end
+  end
+
+  defp update(state, ref, new), do: %{"ref" => ref, "old" => state["refs"][ref] || @zero, "new" => new}
+
+  # What the apps that validate `git-repos.push` say of a change to the repo `name`'s refs, before it's kept.
+  defp validated(_call, _name, _by, [], _more), do: :ok
+
+  defp validated(call, name, by, updates, more),
+    do: Call.run_hook(call, "push", Map.merge(%{"repo" => name, "by" => by, "updates" => updates, "pack" => nil}, more))
+
+  defp validated!(call, name, by, updates, more) do
+    with {:refuse, why} <- validated(call, name, by, updates, more), do: raise(OneCore.Call.Refused, why)
   end
 
   defp ref?(_folder, "refs/pull/" <> name), do: name =~ ~r/^[a-z0-9][a-z0-9_-]*$/
