@@ -268,6 +268,9 @@ async function web(browser, serve, key, scene, folder) {
     problems.push(`${url} failed on the network once and wasn't fetched again, so it's drawn broken`)
     process.exitCode = 1
   }
+  // Its page's clock is paused for the pictures that follow, so they're of one time, as the native harness's are: on
+  // the web's own clock a caret blinked between the frame drawn on what it kept and the one drawn whole (L77).
+  if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: true }))
   if (drawn) await page.screenshot({ path: join(folder, "web.png") })
   // The frame drawn on what it kept from the frames before is the one drawn whole, within a level, as the native harness
   // checks each frame of each motion (`unlike_whole`), where nothing on it moves (a spinner turns between pictures).
@@ -282,6 +285,7 @@ async function web(browser, serve, key, scene, folder) {
       process.exitCode = 1
     }
   }
+  if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: false }))
   // What its screen reader reads: each text and name in sight (the native query's), and all of them, as the native tree's
   // are checked for words that aren't a person's.
   const { words, names } = drawn
