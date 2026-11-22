@@ -267,6 +267,8 @@ pub struct Screen {
     /// Where each node was drawn in the last frame, for the inspector, and the frame's size and scale.
     rects: Rects,
     painted: (Size<f32>, f32),
+    /// The time of the frame it last painted, which a picture of it afresh is painted at too (`paint_afresh`).
+    painted_at: Option<web_time::Instant>,
     /// Where each node was drawn and how far what scrolls showed scrolled, with its stretch past an end, in the frame its
     /// window last presented (`presented`), which a harness reads as what's on the screen: a frame laid out for input
     /// it took (`Windows::lay_out`) is shown only on the display's next refresh.
@@ -401,6 +403,7 @@ impl Screen {
             arrived: Default::default(),
             rects: Rects::new(),
             painted: (Size::default(), 1.0),
+            painted_at: None,
             #[cfg(feature = "fake")]
             shown: None,
             unanswered: HashMap::new(),

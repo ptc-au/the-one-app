@@ -19,10 +19,11 @@ impl Windows {
         self.context.wait_compiled();
     }
 
-    /// Whether the loop wants the display's next frame: something on a window moves, or a frame keeps its thread busy
-    /// (`set_frame_ms`), which the display shows once it's drawn.
+    /// Whether the loop wants the display's next frame: something on a window moves, a window on screen has a change
+    /// to draw (one held for the refresh its last frame shows on: a word's menu as two taps select it), or a frame
+    /// keeps its thread busy (`set_frame_ms`), which the display shows once it's drawn.
     pub fn wanted(&self) -> bool {
-        self.display.wanted() || self.display.busy().is_some()
+        self.display.wanted() || self.windows.values().any(|window| window.dirty && window.on_screen()) || self.display.busy().is_some()
     }
 
     /// The display's refreshes come late as `seed` decides (`fake::Display::seed`), and `random` draws from it too, and
@@ -336,7 +337,7 @@ impl Windows {
         let started = fake::time();
         let mut late = 0;
         loop {
-            if self.wait() | self.due().is_some_and(|due| due.is_zero()) {
+            if std::env::var("MAINLOOP").is_ok() | self.wait() | self.due().is_some_and(|due| due.is_zero()) {
                 self.display.wake();
             }
             if self.display.woke() && self.display.busy().is_none() {
@@ -359,7 +360,7 @@ impl Windows {
             // While a frame keeps the windows' thread busy (`set_frame_ms`), the display's refreshes go by unseen, and
             // the loop turns once it's done, for what woke it meanwhile.
             let busy = self.display.busy();
-            let tick = (busy.is_none() && (self.display.wanted() || self.windows.values().any(|window| window.dirty && window.on_screen()))).then(|| (due - now).max(0.0));
+            let tick = (busy.is_none() && self.wanted()).then(|| (due - now).max(0.0));
             let timer = self.windows.values().filter_map(|window| window.screen.as_ref().ok()?.timer_due()).chain(self.display.answer_due().map(|at| at - now)).reduce(f64::min).map(|due| due.max(0.0));
             // What the loop has due by itself (`due`), as a host's waits for it: the loop's own clock standing in for
             // a display link that's stopped, a refresh after its last frame, not at the display's next refresh. A
@@ -402,7 +403,7 @@ impl Windows {
                 }
             }
         }
-        if self.wait() {
+        if self.wait() | std::env::var("MAINLOOP").is_ok() {
             self.display.wake();
         }
         if self.display.woke() && self.display.busy().is_none() {
@@ -525,6 +526,11 @@ impl Windows {
         }
         self.run(0.0);
         drawn
+    }
+
+    /// Whether window `id` has a change it hasn't drawn yet, as one held for the next refresh.
+    pub fn undrawn(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|window| window.dirty && window.on_screen())
     }
 
     /// How many frames window `id` has presented, all told.

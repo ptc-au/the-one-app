@@ -52,10 +52,12 @@ impl Screen {
     }
 
     /// Paints the screen into `scene`, a scene of its own, all of it, as an offscreen picture of it is: `paint` keeps the
-    /// scene a frame that changes nothing drew, which a new scene doesn't have.
+    /// scene a frame that changes nothing drew, which a new scene doesn't have. What moves by itself is where it was in
+    /// the frame it last painted: painted at the clock's time, a spinner a late refresh left undrawn was a step on from
+    /// the one on the screen.
     pub fn paint_afresh(&mut self, size: Size<Pixels>, scale: f32, text: &mut TextSystem, atlas: &Atlas, scene: &mut Scene) {
         self.seen = None;
-        self.paint(None, size, scale, text, atlas, scene);
+        self.paint(self.painted_at, size, scale, text, atlas, scene);
     }
 
     /// Paints the screen into `scene`, `size` logical pixels at `scale` device pixels each, as a frame's passes, in
@@ -81,6 +83,7 @@ impl Screen {
         let modal = drawn.modal;
         let intersections = self.keep(drawn, &plan);
         self.painted = (plan.window.size, scale);
+        self.painted_at = Some(at.unwrap_or_else(crate::platform::now));
         self.pictures.drawn();
         self.tell_settled();
         scene.finish();

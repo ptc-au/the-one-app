@@ -434,6 +434,12 @@ fn main() -> anyhow::Result<()> {
             println!("{}", renderer::inspect::answer(&request.id, answered));
             continue;
         }
+        // A read reaches a page busy with what came before it (`--seed`) once it's taken it, as a device's busy page's
+        // time goes by while an agent's request comes: on the paused clock it was held for ever, and a read just after
+        // a tap found the tap still waiting (no menu for a word two taps selected; settled, with its request not sent).
+        if let Some(free) = windows.with(id, |screen| screen.holding()).flatten() {
+            windows.run(free.max(0.0));
+        }
         let deadline = request.f64("deadline").unwrap_or(5000.0);
         let tap = request.op == "tap";
         let answered = std::rc::Rc::new(std::cell::RefCell::new(None));

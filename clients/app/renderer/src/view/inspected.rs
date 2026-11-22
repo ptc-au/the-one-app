@@ -498,6 +498,12 @@ impl Screen {
         self.moved(ms, false) | self.seen.as_ref().is_some_and(|seen| seen.caret != self.caret_shows())
     }
 
+    /// How long, in ms on its clock, its page is busy with something else (`seed`), what came for it held till then.
+    #[cfg(feature = "fake")]
+    pub fn holding(&self) -> Option<f64> {
+        self.js.holding()
+    }
+
     /// Whether what it shows is still on its way somewhere: a transition, a node let go springing back, a list
     /// flung, what its page asked a frame for, or for a harness, a picture decoded that's there only later on its clock,
     /// or its page busy (`seed`).

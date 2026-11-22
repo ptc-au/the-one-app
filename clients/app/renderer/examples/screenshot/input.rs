@@ -22,14 +22,15 @@ pub(crate) const CLICK_MS: f64 = 80.0;
 
 /// Window `id` has handled the input given it and drawn what that changed: what its system was told (its keyboard,
 /// its menu for text) is told as it draws, and input waits for a busy page (`Windows::waiting`) and a late refresh puts
-/// a frame off, so it's looked at once it has, as Playwright's assertions wait, the display ticking meanwhile, a second
-/// at most.
+/// a frame off, so it's looked at once it has, with nothing it changed left undrawn (a page busy with two taps selects
+/// a word after the frame they drew first), as Playwright's assertions wait, the display ticking meanwhile, a second at
+/// most.
 pub(crate) fn drawn(windows: &mut Windows, id: renderer::platform::WindowId) {
     let (started, mut frames) = (renderer::platform::fake_time(), windows.frames(id));
     while renderer::platform::fake_time() - started < 1000.0 {
         match windows.waiting(id) {
             true => frames = windows.frames(id),
-            false if !windows.wanted() || windows.frames(id) != frames => return,
+            false if !windows.wanted() || (windows.frames(id) != frames && !windows.undrawn(id)) => return,
             false => {}
         }
         windows.run(1000.0 / 60.0 * 1.01);
@@ -93,19 +94,14 @@ pub(crate) fn input(windows: &mut Windows, id: renderer::platform::WindowId, req
             Ok(json!({}))
         }
         // The frame the window's page presented last, drawn on what it kept from frames before, beside one drawn
-        // afresh as it is now (`Windows::afresh`): how many of their pixels differ, and where, as a frame must be the same however
-        // it was come to; with both pictures where they differ. What's still on its way is drawn afresh a moment on
-        // from its last frame, so is only said to be moving; a loop (a spinner) is drawn at the time its last frame
-        // was, so it's compared; what isn't on the screen (a panel put away) shows nothing, and is judged as it's shown
-        // again.
+        // afresh as it is now, at its last frame's time (`Windows::afresh`): how many of their pixels differ, and where,
+        // as a frame must be the same however it was come to; with both pictures where they differ. What's still on its
+        // way is only said to be moving; a loop (a spinner) is compared; what isn't on the screen (a panel put away)
+        // shows nothing, and is judged as it's shown again.
         "fresh" => {
             drawn(windows, id);
             if windows.arriving(id) {
                 return Ok(json!({"moving": true}));
-            }
-            if windows.wanted() {
-                let (now, refresh) = (renderer::platform::fake_time(), 1000.0 / 60.0);
-                windows.run(((now / refresh).floor() + 1.0) * refresh - now);
             }
             if !windows.on_screen(id) {
                 return Ok(json!({"shown": false}));
