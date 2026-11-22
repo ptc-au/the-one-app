@@ -19,9 +19,9 @@ pub(super) async fn fetched_program(one: &Value, program: &Path) -> Result<PathB
     #[cfg(unix)]
     fs::set_permissions(&new, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
     #[cfg(target_os = "macos")]
-    let started = bundled(&new)?;
+    let started = bundled(&new).await?;
     #[cfg(not(target_os = "macos"))]
-    let started = build_of(&new);
+    let started = build_of(&new).await?;
     if started.as_deref() != Some(build) {
         fs::remove_file(&new)?;
         bail!("The build {build} of one doesn't start here.")
@@ -44,9 +44,9 @@ pub(super) const BUNDLE: &[(&str, &[u8])] = &[
 /// it's run as the program of a bundle of its own inside it (`Contents/Updates/<pid>.app`), and `BUNDLE` is put in
 /// place around both, so it starts there, and as the bundle's program once it's put in place.
 #[cfg(target_os = "macos")]
-pub(super) fn bundled(new: &Path) -> Result<Option<String>> {
+pub(super) async fn bundled(new: &Path) -> Result<Option<String>> {
     let Some(contents) = new.parent().filter(|folder| folder.ends_with("Contents/MacOS")).and_then(Path::parent) else {
-        return Ok(build_of(new));
+        return build_of(new).await;
     };
     let updates = contents.join("Updates");
     let checking = updates.join(format!("{}.app/Contents", std::process::id()));
@@ -65,18 +65,26 @@ pub(super) fn bundled(new: &Path) -> Result<Option<String>> {
     let program = checking.join("MacOS/one");
     fs::create_dir_all(checking.join("MacOS"))?;
     fs::rename(new, &program)?;
-    let build = build_of(&program);
+    let build = build_of(&program).await;
     fs::rename(&program, new)?;
     fs::remove_dir_all(checking.parent().context("a bundle is in a folder")?)?;
     // Another's may be checking beside it, as the app and the server take a build at once.
     let _ = fs::remove_dir(&updates);
-    Ok(build)
+    build
 }
 
-/// The build the program `program` says it is (`one --version`), if it starts.
-pub fn build_of(program: &Path) -> Option<String> {
-    let output = command(program).arg("--version").output().ok()?;
-    String::from_utf8_lossy(&output.stdout).split_whitespace().nth(1).map(str::to_owned)
+/// The build the program `program` says it is (`one --version`), if it starts. It's run as `tar` is (`ran`), on a
+/// thread of its own and with a minute, and the one thread all of `one serve` runs on goes on meanwhile: a build of
+/// `one` that hangs as it starts fails the update that asked for it, saying so, where it held the server for hours.
+pub async fn build_of(program: &Path) -> Result<Option<String>> {
+    let mut version = command(program);
+    version.arg("--version");
+    let output = match ran(version, Duration::from_secs(60)).await {
+        // One that doesn't start here says no build, which whoever asked says in its own words (`fetched_program`).
+        Err(error) if error.downcast_ref::<std::io::Error>().is_some() => return Ok(None),
+        output => output?,
+    };
+    Ok(String::from_utf8_lossy(&output.stdout).split_whitespace().nth(1).map(str::to_owned))
 }
 
 /// Puts the program `new` in place of `program`, in one step. Windows replaces or removes no program that's running,
