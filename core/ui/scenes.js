@@ -565,8 +565,9 @@ function differs(one, other, diff) {
   return changed / (a.width * a.height)
 }
 
-/// How much of a picture is drawn, from 0 to 1: the share of its pixels that aren't its background's, its most common
-/// colour (to within a rounding of a channel or two). A picture that drew nothing, or only its background, has none.
+/// How many pixels of a picture are drawn: those that aren't its background's, its most common colour (to within a rounding
+/// of a channel or two). A picture that drew nothing, or only its background, has none, however big its window and small
+/// what's in it (a button in a computer's window).
 function inked(file) {
   const { data } = PNG.sync.read(readFileSync(file))
   const counts = new Map()
@@ -575,7 +576,7 @@ function inked(file) {
   const [r, g, b, a] = [background >>> 24, (background >>> 16) & 255, (background >>> 8) & 255, background & 255]
   let ink = 0
   for (let at = 0; at < data.length; at += 4) if (Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b), Math.abs(data[at + 3] - a)) > 2) ink++
-  return ink / (data.length / 4)
+  return ink
 }
 
 /// How many pixels of two pictures of a size differ by more than a level in a channel, and by how much at most, or
@@ -613,9 +614,6 @@ const EDGE = 8
 const WEB_DIFFERS_MOST = 0.01
 /// Scenes whose web picture, or text, differs for a known reason that isn't a fault, by `<folder> · <scene>`, each with why.
 const WEB_DIFFERS = {}
-/// The least of a picture that must be drawn (not its background's colour) to count as drawn, from 0 to 1: under it a picture is
-/// blank. The least of any scene's is 0.03%, one word's.
-const BLANK = 0.0001
 
 // Our renderer on the web, on WebGPU, which a machine with no GPU has only as SwiftShader's, and whose canvas is put on
 // the page only when the page is composited on the GPU too (ANGLE on SwiftShader), at a phone's two pixels a point.
@@ -709,13 +707,13 @@ for (const target of targets) {
     // native one does.
     if (existsSync(join(folder, "native.png"))) {
       const native = inked(join(folder, "native.png"))
-      if (native < BLANK) {
-        said.push(`  native: the picture is blank (${(native * 100).toFixed(3)}% drawn)`)
+      if (native === 0) {
+        said.push("  native: the picture is blank (nothing drawn)")
         process.exitCode = 1
       }
       const onWebPicture = onTheWeb && !onWeb.missing ? inked(join(folder, "web.png")) : native
-      if (onWebPicture < BLANK && native >= BLANK) {
-        said.push(`  web: the picture is blank (${(onWebPicture * 100).toFixed(3)}% drawn), where the native one has ${(native * 100).toFixed(2)}%`)
+      if (onWebPicture === 0 && native > 0) {
+        said.push(`  web: the picture is blank (nothing drawn), where the native one has ${native} pixels`)
         process.exitCode = 1
       }
     }
