@@ -35,6 +35,10 @@ defmodule Backups.Run do
 
   # How many blobs are read from the bucket at once.
   @together 32
+  # How many objects are sent to a destination at once, and how big one is, in bytes, that's kept when it's sent
+  # rather than with the rest of the blobs read with it.
+  @uploads 16
+  @kept_at 8_000_000
   # How often a backup under way says it still is, and how long after it last did it's taken to have been cut short.
   @beat 30_000
   @stale 120_000
@@ -349,22 +353,12 @@ defmodule Backups.Run do
             {[%{key: key, tag: tag, object: object, size: byte_size(data), sha256: sha256} | read], new, known}
         end
 
-      for {object, data} <- Enum.reverse(new), do: Destination.put(opened, "objects/" <> object, data)
-
-      new = for {object, data} <- new, do: %{object: object, sha256: digest(data), stored: byte_size(data), digest: digest(data)}
+      new = upload(call, opened, Enum.reverse(new))
 
       # What was sent and read is kept as it's sent, so a backup cut short, as by its server restarting, sends and
       # reads none of it again.
       transaction(call, fn db ->
-        for object <- new do
-          query(db, "insert or ignore into objects (destination, object, sha256, stored, digest) values (?, ?, ?, ?, ?)", [
-            id,
-            object.object,
-            object.sha256,
-            object.stored,
-            object.digest
-          ])
-        end
+        keep(db, id, new)
 
         for blob <- read do
           query(db, "insert or replace into listed (destination, key, tag, object, size, sha256) values (?, ?, ?, ?, ?, ?)", [
@@ -381,6 +375,48 @@ defmodule Backups.Run do
       {read ++ listed, new ++ sent, known}
     end)
     |> then(fn {listed, sent, _known} -> {listed, sent} end)
+  end
+
+  # Sends `objects`, a few at once, since each is a round trip to the destination that a small one is all of, and gives
+  # what each is as a row of `objects`. One this big is kept as soon as it's sent, since sending it took long enough
+  # to be cut short in the middle of the rest.
+  defp upload(call, opened, objects) do
+    id = opened.destination["id"]
+
+    objects
+    |> Task.async_stream(
+      fn {object, data} ->
+        try do
+          Destination.put(opened, "objects/" <> object, data)
+          {:ok, %{object: object, sha256: digest(data), stored: byte_size(data), digest: digest(data)}}
+        rescue
+          failed -> {:error, Exception.message(failed)}
+        end
+      end,
+      max_concurrency: @uploads,
+      timeout: :infinity,
+      ordered: false
+    )
+    |> Enum.map(fn
+      {:ok, {:ok, sent}} ->
+        if sent.stored >= @kept_at, do: transaction(call, &keep(&1, id, [sent]))
+        sent
+
+      {:ok, {:error, why}} ->
+        raise why
+    end)
+  end
+
+  defp keep(db, id, objects) do
+    for object <- objects do
+      query(db, "insert or ignore into objects (destination, object, sha256, stored, digest) values (?, ?, ?, ?, ?)", [
+        id,
+        object.object,
+        object.sha256,
+        object.stored,
+        object.digest
+      ])
+    end
   end
 
   # Removes the backups the rule doesn't keep, and then the objects no backup kept holds. Gives how many went.

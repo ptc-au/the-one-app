@@ -100,9 +100,11 @@ defmodule Backups.Destination do
         do: "/" <> Enum.map_join(String.split(folder(opened) <> name, "/"), "/", &URI.encode_www_form/1),
         else: ""
 
-    # A big object sent while the machine's upload is busy takes longer than Req's 15 s to be answered.
+    # A big object sent while the machine's upload is busy takes longer than Req's 15 s to be answered. Storage
+    # answers a request it's too busy for with a 503 or drops the connection, which is asked again as S3's SDKs do,
+    # where one is all it takes to end an hour's backup.
     Req.request!(
-      [method: method, url: "#{destination["endpoint"]}/#{bucket}#{path}", aws_sigv4: sign, decode_body: false, receive_timeout: 120_000] ++
+      [method: method, url: "#{destination["endpoint"]}/#{bucket}#{path}", aws_sigv4: sign, decode_body: false, receive_timeout: 120_000, retry: :transient] ++
         options
     )
   end
