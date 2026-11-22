@@ -23,7 +23,8 @@ before choosing.
 - A special case is a missing design: an `if` for one value or app, a parameter for one caller, a swallowed error,
   a retry or a sleep, a skipped test. Fix the design so it goes; keep one only when the outside world needs it, with
   a comment saying what in the world.
-- No kept tests for now: each change is checked by the agent that makes it, for whatever it could affect.
+- No kept tests for now: each change is checked by the agent that makes it, for whatever it could affect. The one
+  exception is the renderer's tests, in `clients/app/renderer/tests`: subtle pixel bugs only a picture comparison finds.
 - While it changes this fast, check your work with a throwaway test and don't commit it.
 - People use apps. The CLI and MCP are for their agents, even for the most technical person on a network, so never
   shape a person's flow around a terminal.

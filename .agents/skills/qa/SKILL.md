@@ -1,9 +1,9 @@
 ---
 name: qa
-description: Use before you commit a change, to check it works and doesn't break what it could touch, and whenever you change a screen, which is shown with real pictures before it's called done. There are no kept tests: you check your own change.
+description: Use before you commit a change, to check it works and doesn't break what it could touch, and whenever you change a screen, which is shown with real pictures before it's called done. There are no kept tests but the renderer's: you check your own change.
 ---
 
-Check your work with a throwaway check and never commit it. Use the cheapest thing that shows it works: call the
+Check your work with a throwaway check and never commit it. The one exception is the renderer's tests (`clients/app/renderer/tests`, below). Use the cheapest thing that shows it works: call the
 tool on a local network (`local-network`), open the screen (Screens, below), or run the function in `iex -S mix`
 in `core/server/`.
 
@@ -41,25 +41,28 @@ shrunk sequence is what the commit says.
 
 UI work is shown with real pictures of the real app, never described. Pictures are for checking your own change:
 take the few that check it, not every size and theme, a before only where judging it needs one, and where motion
-is what changed, its filmstrip and curve (Motion, below). A change that goes live in seconds, as an app deploy does, is seen live.
+is what changed, its filmstrip and curve (Animation tests, below). A change that goes live in seconds, as an app deploy does, is seen live.
 A phone-sized desktop window (390×844) shows most screen changes; build for a phone or simulator only when the change
-is about that platform. Save pictures in your harness's scratch folder, never in the repo, and look at each before
+is about that platform. Save pictures in your scratch folder, never in the repo, and look at each before
 you show it. Screen wording and look follow `DESIGN.md`: read the section of the screen you change first.
 
-### Scenes: every UI change
+### Screenshot tests: every UI change
 
-A screen's states are scenes, with what they show beside them, so no network is needed to see one: a component's in
-`core/ui/gallery/*.scenes.tsx`, an app's in `apps/<app>/client/scenes.json` (the format is `core/ui/scenes.js`'s
-header). A change that makes a screen, or a state of one, adds its scene. Every change to how something looks runs,
-in core/ui, after `bun build.js`:
+The renderer's tests are kept in `clients/app/renderer/tests`, the one exception to "no kept tests" (AGENTS.md): a
+subtle pixel bug only a picture comparison finds. A screen's states are scenes (the gallery's, a component's in
+`clients/app/renderer/tests/gallery/*.scenes.tsx`) or previews (an app's, in `apps/<app>/client/previews.json`, what each
+screen shows with what it's given, as SwiftUI and Compose have them; the format is `screenshot.js`'s header). No network
+is needed to see either. A change that makes a screen, or a state of one, adds its preview. An app's previews hold no
+expectations of its own: the renderer's tests run over every one. Every change to how something looks runs, in
+`clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
 
-    bun scenes.js --release --out <scratch>/before          # on main, before the change (or an earlier run)
-    bun scenes.js --release --out <scratch>/after --against <scratch>/before [<folder>…]
+    bun screenshot.js --release --out <scratch>/before          # on main, before the change (or an earlier run)
+    bun screenshot.js --release --out <scratch>/after --against <scratch>/before [<folder>…]
 
-It draws every scene, or those of the folders named, on a native host by its headless harness (`cargo build -p
-renderer --example screenshot --features fake --release`: a debug build draws several times slower), on the machine's
-GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every scene in about a minute. Like motion.js, it
-runs harnesses side by side, twice its share of the cores (8 on the Linux machine, shared by about 4 agents), and says
+It draws every scene and preview, or those of the folders named, on a native host by the headless renderer (`cargo build -p
+renderer --example headless --features fake --release`: a debug build draws several times slower), on the machine's
+GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every one in about a minute. Like animation.js, it
+runs headless renderers side by side, twice its share of the cores (8 on the Linux machine, shared by about 4 agents), and says
 what it found in the same order whatever finished first; `--jobs <n>` sets how many. `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
 not every time. Compare only runs made on the same GPU. With `--web` it draws by our renderer on the web too, in headless Chromium
@@ -68,41 +71,41 @@ which draws on the CPU: `web.png`, compared with `native.png`, the web gate belo
 (`changed.png`): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
 in the commit; one that isn't is fixed. Our renderer is the reference, judged against DESIGN.md (Raycast-inspired), not
 the browser: it draws the web too. A native host that hasn't the runtime version the UI library needs draws nothing, which it says.
-Every scene is held to the same rules too, whatever its page (`core/ui/rules.js`, and `lint-tokens.js` for the colours
-styles give words): a kind of bug found once in one scene gets a rule there, with any exception named and why, not a
-check of that scene alone.
+Every scene and preview is held to the same rules too, whatever its page (`rules.js`, and `core/ui/lint-tokens.js` for the colours
+styles give words): a kind of bug found once in one gets a rule there, with any exception named and why, not a
+check of that one alone.
 
 ### Checks: every change to the UI library or the renderer
 
-A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in core/ui, after `bun
-build.js` and `cargo build -p renderer --example screenshot --features fake --release` (about 6 minutes for all 500 on
-the Linux machine at a load of 20, 8 harnesses at once; a debug build takes about 20, so name the folders your change
+A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in `clients/app/renderer/tests`, after `bun
+build.js` in `core/ui` and `cargo build -p renderer --example headless --features fake --release` (about 6 minutes for all 500 on
+the Linux machine at a load of 20, 8 headless renderers at once; a debug build takes about 20, so name the folders your change
 can touch while you work):
 
-    bun motion.js --checks --release [<folder>…]
-    bun motion.js --checks --release --dark [<folder>…]
-    bun motion.js --generated 4 --release
-    bun motion.js --generated 4 --release --dark
+    bun animation.js --checks --release [<folder>…]
+    bun animation.js --checks --release --dark [<folder>…]
+    bun animation.js --generated 4 --release
+    bun animation.js --generated 4 --release --dark
 
-A scene's `checks` (the `CheckStep` type in `core/ui/src/types/ui.d.ts`) are what people do with it and what must
-hold, as the UI SDK's own tests have them, played on the headless harness's window, a fake platform's under the loop
+A gallery scene's `checks` (the `CheckStep` type in `core/ui/src/types/ui.d.ts`) are what people do with it and what must
+hold, as the UI SDK's own tests have them, played on the headless renderer's window, a fake platform's under the loop
 every host's windows run, once as it is and again with seeds that make it adversarial (refreshes late, input as
 things move, presses held as long as a person's). A failure says its seed; a fix keeps it in the scene's `seeds`. Every scene at rest is drawn the same moved by whole device pixels too.
 `--generated` plays pages no app draws (random cards, shadows, glass, lists, transforms and text, changing under random
 drags or a wheel), every frame against the same drawn whole and moved, as other people's apps will draw what the
 gallery doesn't: a seed that fails plays again alone with `--generated 1 --from <seed>`. A
 component or primitive changed or added gets checks for what it promises, ported from its upstream file's tests where
-it's copied from the UI SDK. A bug a device showed that the checks passed is the harness's too: make a check fail on
-it first (a scene shaped like where it happened), say why the harness missed it, then fix both.
+it's copied from the UI SDK. A bug a device showed that the checks passed is the tests' too: make a check fail on
+it first (a scene shaped like where it happened), say why the tests missed it, then fix both.
 
 ### The web gate: every change to the renderer, the UI library or the web client
 
 A change under `clients/app/renderer/`, `core/ui/` or `clients/web/` runs every scene on the web too, light and dark,
-before it's committed, in core/ui, after `bun build.js` and `cargo build -p renderer --example screenshot --features
+before it's committed, in `clients/app/renderer/tests`, after `bun build.js` in `core/ui` and `cargo build -p renderer --example headless --features
 fake --release`:
 
-    bun scenes.js --web --release --out <scratch>/web-light
-    bun scenes.js --web --release --dark --out <scratch>/web-dark
+    bun screenshot.js --web --release --out <scratch>/web-light
+    bun screenshot.js --web --release --dark --out <scratch>/web-dark
 
 Each must exit 0: a web picture more than 1% from its native one, a word on one and not the other, a blank picture or
 an error the scene doesn't say it logs fails it. The two run side by side in about 12 minutes on the Linux machine's
@@ -111,35 +114,35 @@ took 8, but its pictures, under load, were taken before what a page does on the 
 goes in `WEB_DIFFERS` with why; the gate isn't widened. On 21 Nov a change to how the launcher's scenes are drawn
 natively failed 13 of them on the web, unnoticed for five hours, as it ran without `--web`.
 
-### Mutants: every change to the harness or its checks
+### Mutants: every change to the renderer's tests
 
 The checks are shown to work by putting back the bugs we've had, one at a time, and seeing a check fail on each, as
 mutation testing does (cargo-mutants, Stryker):
 
-    tooling/mutants [<mutant>…] [--light | --dark]
+    bun mutants.js [<mutant>…] [--light | --dark]
 
-Each mutant is a bug planted where it was, behind `ONE_MUTANT=<name>` (`renderer::mutants`), which only the harness's
+Each mutant is a bug planted where it was, behind `ONE_MUTANT=<name>` (`renderer::mutants`), which only the headless renderer's
 builds have; each plays only the scenes, motions and checks that could show it, after a baseline run
 of them with none. It says which it caught, by which check, and which it missed (`--list` lists them). A change to the
-headless harness, motion.js, scenes.js or a check runs it, and must miss none. A bug a device found that the harness
+headless renderer, animation.js, screenshot.js or a check runs it, and must miss none. A bug a device found that the tests
 missed gets a mutant beside the check that now catches it.
 
-### Motion: every change to how something moves
+### Animation tests: every change to how something moves
 
 What moves under a finger or a pointer (a drag, a swipe, a sheet pulled, a list flung or pulled past its end) and how
 it springs is played headless, through the real gesture and spring code, on a paused clock, at 60 and 120 Hz, in a
-few seconds: give the scene that shows it `motions` (the `Motion` type in `core/ui/src/types/ui.d.ts`), then, in
-core/ui, after `bun build.js`:
+few seconds: give the gallery scene that shows it `motions` (the `Motion` type in `core/ui/src/types/ui.d.ts`), then, in
+`clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
 
-    bun motion.js --release --out <scratch>/before [<folder>…]          # on main, before the change
-    bun motion.js --release --out <scratch>/after --against <scratch>/before [<folder>…] [--watch]
+    bun animation.js --release --out <scratch>/before [<folder>…]          # on main, before the change
+    bun animation.js --release --out <scratch>/after --against <scratch>/before [<folder>…] [--watch]
 
 (every motion in about 2 minutes, where a debug build takes 7) and the same again with `--dark` (an `--out` of its own): a frame drawn on what was kept is checked against the same
 drawn whole, and a light card on a near-white page leaves little to be wrong by, so on 22 Nov partial redraws that
 passed in light failed 4 motions in dark.
 
 Each motion gets a filmstrip, a position-over-time curve beside the finger's and before's, and the frames that went
-over their budget, and how many frames each tier of device in `core/ui/devices.json` would drop (with `--release`,
+over their budget, and how many frames each tier of device in `clients/app/renderer/tests/devices.json` would drop (with `--release`,
 whose CPU times are a shipped build's); `index.html` there is the contact sheet. `bun calibrate.js` measures a real
 device's GPU against the same work, keeping what it found there. `--watch` plays them again as you edit. A live window
 takes the same `replay` through the inspector.
@@ -147,7 +150,7 @@ takes the same `replay` through the inspector.
 
 
 On a computer every app's page opens as a native window: drive it with the inspector (Native windows, below). A
-screen's states with no network → `bun scenes.js` (above): before against after.
+screen's states with no network → `bun screenshot.js` (above): before against after.
 
 ### Native windows
 
@@ -156,11 +159,11 @@ inspector, which every native window answers (`clients/app/renderer/src/inspect.
 protocol). Find nodes by role and text, tap, type, `settle`, then `snap`, never a sleep:
 
 - Offscreen, the same on every run, with no network: `bun dist/build/app.js apps/<app>/client <out>` in `core/ui`
-  (after `bun build.js`), then `cargo run -p renderer --example screenshot --features fake -- <out> <png> <json>
+  (after `bun build.js`), then `cargo run -p renderer --example headless --features fake -- <out> <png> <json>
   --ui core/ui/dist/client --answers <answers.json> --requests <requests.jsonl>`, its header says how. Its clock is
   paused: `clock` `step` moves it.
 - On Windows (the Surface, `ssh surface`): build with `cargo xwin build --target x86_64-pc-windows-msvc` (the
-  harness as `--example screenshot --features fake`, the app as `-p app`) and copy it to a folder of your own in `%TEMP%`; the harness
+  headless renderer as `--example headless --features fake`, the app as `-p app`) and copy it to a folder of your own in `%TEMP%`; the headless renderer
   runs over ssh as it is (Direct3D 12 draws offscreen without a desktop). The app's windows need the logged-in
   session: start it there with a scheduled task (`schtasks /Create … /IT`, `conhost.exe --headless <a .cmd setting
   ONE_HOME>`), and a second `one.exe one:<app>` with the same `ONE_HOME`, even over ssh, hands it the link. A local
@@ -182,17 +185,10 @@ protocol). Find nodes by role and text, tap, type, `settle`, then `snap`, never 
 ### The app around its windows: every change to `clients/app/src/`
 
 What a device does with the app itself, not one page (its launcher, an app's window opened, closed and opened
-again, a second start, an update's restart, pages gone stale as it starts), is checked by the app harness: the app
-on the fake platform, its windows drawn offscreen, against a network of its own, driven by the inspector:
-
-    systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 timeout 20m \
-      tooling/app-harness <folder> [--seed <n>] [start|reopen|stale|cached|restart]…
-
-capped, as every network and app an agent starts on a machine others share is (one render grew to 28 GB and froze
-the whole container, 21 Nov). Each check says `ok` or `FAILED` with why (a few minutes for all, the first a few more
-to start the network). A bug
-a device found in the app around its windows is made to fail here first, as a check of its own, then fixed. The
-seed picks when things happen; a failure says the moment, and its seed is run again after the fix.
+again, a second start, an update's restart, pages gone stale as it starts) is checked by a throwaway check: the app
+on a local network of your own (`local-network`), in a desktop of your own (Native windows, above), driven with the
+inspector and capped as every process an agent starts on a machine others share is (one render grew to 28 GB and froze
+the whole container, 21 Nov). Nothing of it is kept. A bug a device found there is reproduced first, then fixed.
 
 ### Android
 
