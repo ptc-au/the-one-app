@@ -29,7 +29,7 @@ defmodule OneCore.Application do
     Calendar.put_time_zone_database(Tz.TimeZoneDatabase)
     {:ok, key} = Iroh.key(Server.key_file())
 
-    if Servers.joined?(key, Application.get_env(:one_core, :owner, "network")) do
+    if joined?(key, Application.get_env(:one_core, :owner, "network")) do
       # What state each call is in, which this process, the application's, keeps.
       OneCore.Call.State.table()
       # What everyone has deployed (`OneCore.Apps.Deploy.deployed/0`), which this process keeps too.
@@ -89,6 +89,22 @@ defmodule OneCore.Application do
     else
       {:error, {:not_joined, key}}
     end
+  end
+
+  # A machine that's back from a power cut starts its server before it reaches the network: the edge's name doesn't
+  # resolve yet, and nothing here can be done until it does. The server waits for it, looking again after a wait that
+  # grows (to `@lookup_max`) as a database does that starts before its disk, rather than stop for the system to
+  # start it again, which it does only so often.
+  @lookup 1_000
+  @lookup_max 30_000
+
+  defp joined?(key, owner, wait \\ @lookup) do
+    Servers.joined?(key, owner)
+  rescue
+    unreachable in OneCore.Edge.Unreachable ->
+      Logger.warning("Waiting to reach the network's edge, to start: #{Exception.message(unreachable)}")
+      Process.sleep(wait)
+      joined?(key, owner, min(wait * 2, @lookup_max))
   end
 
   defp answer(message, from, ask) do

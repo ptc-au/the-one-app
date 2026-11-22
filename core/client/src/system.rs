@@ -141,9 +141,12 @@ mod imp {
             Some(within) => format!("Type=notify\nTimeoutStartSec={}\n", within.as_secs()),
             None => String::new(),
         };
+        // It's started again for as long as it's wanted: a machine that's back from a power cut starts it before its
+        // network is up, and a unit that gave up then stays down. systemd's user manager has no `network-online.target`
+        // to order it after, so what it needs of the network it waits for itself.
         let text = format!(
-            "[Unit]\nDescription={}\nStartLimitIntervalSec=600\nStartLimitBurst=10\n{session}\n\
-             [Service]\n{ready}ExecStart={}\n{env}Restart=on-failure\nRestartSec=10\n\
+            "[Unit]\nDescription={}\nStartLimitIntervalSec=0\n{session}\n\
+             [Service]\n{ready}ExecStart={}\n{env}Restart=always\nRestartSec=10\n\
              KillMode=mixed\nTimeoutStopSec={}\n\n[Install]\nWantedBy={wanted}\n",
             program.description,
             program.command.iter().map(|word| quoted(word).replace('$', "$$")).collect::<Vec<_>>().join(" "),
