@@ -6,12 +6,17 @@
 // (clients/app/renderer/LICENSE-APACHE); this file is changed from the original.
 
 use super::context::Context;
+use super::scene::Scene;
 use crate::geometry::{Bounds, DevicePixels, Point, Size};
 use crate::text::RenderGlyphParams;
 use anyhow::Result;
 use etagere::AtlasAllocator;
 use parking_lot::Mutex;
-use std::{borrow::Cow, collections::HashMap, ops};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    ops,
+};
 
 pub struct Atlas(Mutex<AtlasState>);
 
@@ -28,8 +33,8 @@ struct AtlasState {
     tiles_by_key: HashMap<AtlasKey, Kept>,
     uploads: Vec<PendingUpload>,
     /// How many times what's in a tile has been drawn over (a video's next frame), or its room given to another (a
-    /// glyph let go of, `trim`): a frame whose sprites are the same bytes as another's, with this the same too, looks
-    /// the same. A tile added changes none a frame drew before.
+    /// glyph or a picture let go of, `trim`): a frame whose sprites are the same bytes as another's, with this the same
+    /// too, looks the same. A tile added changes none a frame drew before.
     generation: u64,
     /// How many times its textures have changed, one made or let go of, whose bind groups a renderer keeps
     /// (`Renderer::atlas_group`).
@@ -38,9 +43,9 @@ struct AtlasState {
     turn: u64,
     /// The most its textures may take, in bytes (`budget`).
     budget: u64,
-    /// A texture was made past its budget since its last turn, so the glyphs not drawn lately go at its next.
+    /// A texture was made past its budget since its last turn, so the tiles not drawn lately go at its next.
     over: bool,
-    /// How many times it's let glyphs go (`trim`).
+    /// How many times it's let tiles go (`trim`).
     evictions: u64,
 }
 
@@ -50,15 +55,16 @@ struct Kept {
     used: u64,
 }
 
-/// How many of the loop's turns a glyph isn't drawn in before it may go: a few seconds of what moves, longer while
-/// nothing does, as WebRender keeps what's cached for a number of frames.
+/// How many of the loop's turns a glyph or a picture isn't drawn in before it may go: a few seconds of what moves,
+/// longer while nothing does, as WebRender keeps what's cached for a number of frames.
 const STALE: u64 = 600;
 
-/// The most an atlas's textures may take before the glyphs not drawn lately go to make room, as WebRender's texture
-/// cache and glyphon's atlas let theirs go: a 16th of what its device's pages' JS may have (`js::memory_limit`, itself a
-/// 16th of the device's memory), 16 MB on a phone of 4 GB and 64 on a computer of 16. A session that opens every app's
-/// every screen and plays every motion, light and dark, draws 38,000 glyphs (7 MB) and 680 pictures (17 MB) (21 Nov),
-/// so on a phone the glyphs it no longer shows go, never what's on screen; what's drawn lately is kept past it.
+/// The most an atlas's textures may take before the glyphs and pictures not drawn lately go to make room, as
+/// WebRender's texture cache and glyphon's atlas let theirs go: a 16th of what its device's pages' JS may have
+/// (`js::memory_limit`, itself a 16th of the device's memory), 16 MB on a phone of 4 GB and 64 on a computer of 16. A
+/// session that opens every app's every screen and plays every motion, light and dark, draws 38,000 glyphs (7 MB) and
+/// 680 pictures (17 MB) (21 Nov), so on a phone those it no longer shows go, never what's on screen; what's drawn
+/// lately is kept past it.
 fn budget() -> u64 {
     #[cfg(not(target_arch = "wasm32"))]
     return crate::js::memory_limit() as u64 / 16;
@@ -137,15 +143,15 @@ impl Atlas {
         self.0.lock().generation
     }
 
-    /// How many times it's let glyphs go (`trim`): what kept a tile of it from a frame before (a scene, a layer) draws
-    /// afresh once this changes, its glyphs put in again.
+    /// How many times it's let tiles go (`trim`), which what keeps a picture's size in it forgets then
+    /// (`Pictures::evicted`).
     pub(crate) fn evictions(&self) -> u64 {
         self.0.lock().evictions
     }
 
     /// What it holds, for the inspector's `profile`: its `tiles` (`glyphs` and pictures), its `textures`, the `bytes`
     /// they take on the GPU and its `budget`, how much of them its tiles fill (`filled`, 0 to 1), and how many
-    /// times it's let glyphs go (`evictions`).
+    /// times it's let tiles go (`evictions`).
     pub fn usage(&self) -> serde_json::Value {
         let lock = self.0.lock();
         let textures: Vec<&AtlasTexture> = lock.storage.textures().collect();
@@ -157,29 +163,40 @@ impl Atlas {
     }
 
     /// A turn of the loop, before anything's painted in it: where a texture was made past its budget since the last,
-    /// every glyph not drawn in the last `STALE` turns goes, and each texture left empty with them, as glyphon's atlas
-    /// and WebRender's texture cache let theirs go; what's drawn after puts any of them it draws in again. Never in the
-    /// middle of a frame, so no scene being made, or drawn from what a frame kept (a layer's), loses a glyph it has: one
-    /// kept from a frame before draws afresh (`evictions`).
-    pub(crate) fn trim(&self) {
+    /// every glyph and picture not drawn in the last `STALE` turns goes, and each texture left empty with them, as
+    /// glyphon's atlas and WebRender's texture cache let theirs go; what's drawn after puts any of them it draws in
+    /// again, a glyph rasterized as it's drawn and a picture decoded in the background (`view::pictures`). Never what
+    /// `keeps` gives, asked only then: the scenes its windows show or keep (a scene a frame that changes nothing keeps,
+    /// a layer's), which a frame may draw again without looking any of it up, so what's kept is never painted afresh
+    /// for it and nothing on screen goes blank while it's decoded again; and the pictures by their keys that each
+    /// window last painted, shown or not, however long ago, which a frame that shows them has at once. Never in the
+    /// middle of a frame, so no scene being made loses a tile it has. → whether any went.
+    pub(crate) fn trim<'a>(&self, keeps: impl FnOnce(&mut Vec<&'a Scene>, &mut Vec<u64>)) -> bool {
         let mut lock = self.0.lock();
         let state = &mut *lock;
         state.turn += 1;
         if !std::mem::take(&mut state.over) {
-            return;
+            return false;
         }
+        let (mut scenes, mut pictures) = (Vec::new(), Vec::new());
+        keeps(&mut scenes, &mut pictures);
+        let mut drawn = HashSet::new();
+        for scene in scenes {
+            tiles(scene, &mut drawn);
+        }
+        let pictures: HashSet<u64> = pictures.into_iter().collect();
         let stale = state.turn.saturating_sub(STALE);
         let storage = &mut state.storage;
         let before = state.tiles_by_key.len();
         state.tiles_by_key.retain(|key, kept| {
-            let keep = !matches!(key, AtlasKey::Glyph(_)) || kept.used >= stale;
+            let keep = kept.used >= stale || drawn.contains(&(kept.tile.texture_id, kept.tile.tile_id)) || matches!(key, AtlasKey::Image(id) if pictures.contains(id));
             if !keep && let Some(texture) = storage.get_mut(kept.tile.texture_id) {
                 texture.allocator.deallocate(etagere::AllocId::deserialize(kept.tile.tile_id.0));
             }
             keep
         });
         if state.tiles_by_key.len() == before {
-            return;
+            return false;
         }
         for slot in storage.monochrome_textures.iter_mut().chain(&mut storage.polychrome_textures) {
             if slot.as_ref().is_some_and(|texture| texture.allocator.is_empty()) {
@@ -189,6 +206,12 @@ impl Atlas {
         }
         state.generation += 1;
         state.evictions += 1;
+        true
+    }
+
+    /// Whether it has `key`, which nothing's let go of since it was put in (`trim`).
+    pub(crate) fn contains(&self, key: &AtlasKey) -> bool {
+        self.0.lock().tiles_by_key.contains_key(key)
     }
 
     /// The view of texture `id`, which a batch of sprites samples.
@@ -228,6 +251,15 @@ impl Atlas {
         lock.uploads.push(PendingUpload { id: tile.texture_id, bounds: tile.bounds, data: bytes.into_owned() });
         lock.tiles_by_key.insert(key.clone(), Kept { tile: tile.clone(), used: turn });
         Ok(Some(tile))
+    }
+}
+
+/// The tiles `scene` draws, and those of the layers it draws from their images (`Scene::recordings`).
+fn tiles(scene: &Scene, into: &mut HashSet<(AtlasTextureId, TileId)>) {
+    into.extend(scene.monochrome_sprites.iter().map(|sprite| (sprite.tile.texture_id, sprite.tile.tile_id)));
+    into.extend(scene.polychrome_sprites.iter().map(|sprite| (sprite.tile.texture_id, sprite.tile.tile_id)));
+    for recording in &scene.recordings {
+        tiles(&recording.scene, into);
     }
 }
 
@@ -388,7 +420,7 @@ pub(crate) enum AtlasTextureKind {
     Polychrome = 1,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub(crate) struct TileId(pub(crate) u32);
 

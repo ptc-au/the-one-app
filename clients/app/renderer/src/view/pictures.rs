@@ -3,7 +3,7 @@
 //! it's ready, and the window is woken to draw it then. One that doesn't decode is tried again a little later, as a
 //! browser's decode under load is cut short and comes the next time, and is broken only once it's failed every time.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
@@ -129,8 +129,8 @@ pub(super) struct Pictures {
     addresses: HashMap<u64, u64>,
     /// Each address's picture as it was last put in the atlas, drawn while it decodes at another size.
     latest: HashMap<u64, (u64, Picture)>,
-    /// Each address's sizes it's been put in the atlas at, in device pixels.
-    copies: HashMap<u64, Vec<Size<u32>>>,
+    /// Each address's sizes it's been put in the atlas at, in device pixels, and their keys there.
+    copies: HashMap<u64, Vec<(Size<u32>, u64)>>,
     /// What didn't decode and is tried again, by its key.
     failed: HashMap<u64, Failed>,
     /// Each address that's failed to decode every time it was tried: broken, as a browser's broken image is.
@@ -145,6 +145,11 @@ pub(super) struct Pictures {
     pub(super) blank: usize,
     /// How many the frame being drawn has drawn empty.
     drawing_blank: usize,
+    /// The keys in the atlas of what the frame drawn last looked up, shown or not (out of sight in what scrolls, faded
+    /// out, a page beside the one shown), which its atlas keeps (`Atlas::trim`).
+    pub(super) looked_up: HashSet<u64>,
+    /// Those the frame being drawn has looked up.
+    looking_up: HashSet<u64>,
 }
 
 fn hash(key: impl Hash) -> u64 {
@@ -241,9 +246,23 @@ impl Pictures {
     /// What's been decoded and wasn't drawn this frame goes: the atlas alone keeps a picture's pixels. What was due to
     /// be tried again and wasn't drawn by this frame, which draws everything again (`decoded`), no longer shows.
     pub(super) fn drawn(&mut self) {
+        self.looked_up = std::mem::take(&mut self.looking_up);
         self.ready.clear();
         self.failed.retain(|_, failed| failed.again != Again::Due);
         self.blank = std::mem::take(&mut self.drawing_blank);
+    }
+
+    /// Forgets each picture its atlas let go of (`Atlas::trim`): it's decoded again, at the size it's drawn, as it's next
+    /// drawn, as it was the first time, so a frame that shows it again isn't held up by it, and no copy larger than
+    /// what's drawn is kept for it.
+    pub(super) fn evicted(&mut self, atlas: &Atlas) {
+        let held = |id: &u64| atlas.contains(&AtlasKey::Image(*id));
+        self.sizes.retain(|id, size| size.is_none() || self.ready.contains_key(id) || held(id));
+        self.latest.retain(|_, (id, _)| held(id));
+        self.copies.retain(|_, copies| {
+            copies.retain(|(_, id)| held(id));
+            !copies.is_empty()
+        });
     }
 
     /// Forgets every picture put in the atlas, as the atlas is made again (its GPU was lost): each is decoded again as
@@ -259,6 +278,7 @@ impl Pictures {
     /// page's icons show with it.
     pub(super) fn now(&mut self, atlas: &Atlas, key: &str, draw: impl Fn() -> Option<Decoded>) -> Option<AtlasTile> {
         let id = hash(key);
+        self.looking_up.insert(id);
         if let Some(None) = self.sizes.get(&id) {
             return None;
         }
@@ -279,8 +299,12 @@ impl Pictures {
         // A copy up to twice as large is drawn smaller rather than decoded again, as a GPU's mipmap is for what's up to
         // half its size: an icon pressed in, a page's grown to fit its screen.
         let fits = |copy: &&Size<u32>| copy.width >= device.width && copy.height >= device.height && copy.width <= device.width * 2 && copy.height <= device.height * 2;
-        let device = self.copies.get(&address).and_then(|copies| copies.iter().filter(fits).min_by_key(|copy| copy.width)).copied().unwrap_or(device);
+        let device = self.copies.get(&address).and_then(|copies| copies.iter().map(|(copy, _)| copy).filter(fits).min_by_key(|copy| copy.width)).copied().unwrap_or(device);
         let id = hash((device.width, device.height, src));
+        self.looking_up.insert(id);
+        if let Some((latest, _)) = self.latest.get(&address) {
+            self.looking_up.insert(*latest);
+        }
         let latest = |pictures: &Self| {
             let (id, picture) = *pictures.latest.get(&address)?;
             let tile = atlas.get_or_insert_with(&AtlasKey::Image(id), &mut || Ok(None)).ok()??;
@@ -299,8 +323,8 @@ impl Pictures {
         if let (Some(tile), Some(Some(picture))) = (tile, self.sizes.get(&id).copied()) {
             self.latest.insert(address, (id, picture));
             let copies = self.copies.entry(address).or_default();
-            if !copies.contains(&device) {
-                copies.push(device);
+            if !copies.iter().any(|(copy, _)| *copy == device) {
+                copies.push((device, id));
             }
             return Some((picture, tile));
         }

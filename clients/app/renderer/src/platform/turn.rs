@@ -130,8 +130,18 @@ impl Windows {
         if self.context.lost() {
             self.recover();
         }
-        // Glyphs not drawn lately go, before anything's painted (`Atlas::trim`).
-        self.atlas.trim();
+        // Glyphs and pictures not drawn lately go, before anything's painted, but none a window shows, keeps to draw
+        // again or last painted (`Atlas::trim`).
+        if self.atlas.trim(|scenes, pictures| {
+            for window in self.windows.values() {
+                scenes.extend(std::iter::once(&window.scene).chain(window.cover.scene()));
+                if let Ok(screen) = &window.screen {
+                    screen.kept(scenes, pictures);
+                }
+            }
+        }) {
+            self.text.evicted(&self.atlas);
+        }
         // Each window waiting for its pipelines has its renderer once they're compiled, on whatever turns the loop: a
         // harness's own turns too, as well as the windows' thread woken as they are (`Context::prepare`).
         #[cfg(not(target_arch = "wasm32"))]

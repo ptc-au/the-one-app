@@ -268,6 +268,7 @@ pub struct TextSystem {
     shaped: HashMap<u64, Shaped>,
     faces: Vec<Face>,
     scaler: ScaleContext,
+    /// Where each glyph is drawn from its pen (`glyph_bounds`), while its atlas has it (`evicted`).
     raster_bounds: HashMap<RenderGlyphParams, Bounds<DevicePixels>>,
     /// A glyph's image, made to measure it, until it's put in the atlas.
     pending: HashMap<RenderGlyphParams, swash::scale::image::Image>,
@@ -435,6 +436,12 @@ impl TextSystem {
         let mut layout = builder.build(text);
         layout.set_alignment(Alignment::Left, AlignmentOptions::default());
         layout
+    }
+
+    /// Forgets where each glyph its atlas let go of is drawn from its pen, and each space's, so it keeps no more of them
+    /// than its atlas does of their pixels (`Atlas::trim`): each is measured again as it's next drawn.
+    pub(crate) fn evicted(&mut self, atlas: &Atlas) {
+        self.raster_bounds.retain(|params, bounds| !bounds.is_zero() && atlas.contains(&AtlasKey::Glyph(params.clone())));
     }
 
     /// Where glyph `params` is drawn from its pen, in device pixels, which is nothing for a space.

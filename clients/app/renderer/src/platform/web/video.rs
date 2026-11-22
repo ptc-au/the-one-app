@@ -38,9 +38,16 @@ pub(crate) fn video(id: crate::tree::Id, content: crate::geometry::Bounds<f32>, 
         let mut key = std::collections::hash_map::DefaultHasher::new();
         ("video", id, size.width, size.height).hash(&mut key);
         let padded = Size { width: DevicePixels(size.width as i32 + 2), height: DevicePixels(size.height as i32 + 2) };
-        let bytes = vec![0u8; (size.width as usize + 2) * (size.height as usize + 2) * 4];
-        let tile = atlas.get_or_insert_with(&crate::render::atlas::AtlasKey::Image(key.finish()), &mut || Ok(Some((padded, std::borrow::Cow::Borrowed(&bytes[..]))))).ok()??;
-        if video.copied != video.came {
+        // A tile new to it, or put in again since its atlas let it go (`Atlas::trim`) while it wasn't drawn, has its
+        // latest frame written in.
+        let mut new = false;
+        let tile = atlas
+            .get_or_insert_with(&crate::render::atlas::AtlasKey::Image(key.finish()), &mut || {
+                new = true;
+                Ok(Some((padded, std::borrow::Cow::Owned(vec![0; (size.width as usize + 2) * (size.height as usize + 2) * 4]))))
+            })
+            .ok()??;
+        if new || video.copied != video.came {
             video.copied = video.came;
             let bgra = video.frame.as_ref().map(|(_, bgra)| bgra.clone()).unwrap_or_default();
             atlas.write(&tile, Size { width: DevicePixels(size.width as i32), height: DevicePixels(size.height as i32) }, bgra);

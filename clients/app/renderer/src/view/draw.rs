@@ -35,6 +35,23 @@ impl Screen {
         });
     }
 
+    /// What its atlas keeps for it (`Atlas::trim`): what it keeps that a frame may draw again without painting it (its
+    /// layers' scenes, and each frame's page's scene as it last drew itself), and the pictures it last painted, shown
+    /// or not, which a frame that shows them (a page swiped in after the window's been still a while) has at once,
+    /// with what each frame's page keeps.
+    pub fn kept<'a>(&'a self, scenes: &mut Vec<&'a Scene>, pictures: &mut Vec<u64>) {
+        for part in self.layers.values().flat_map(|layer| &layer.parts) {
+            if let Part::Scene(scene, _) = part {
+                scenes.push(scene);
+            }
+        }
+        pictures.extend(&self.pictures.looked_up);
+        for child in self.frames.values() {
+            scenes.push(&child.scene);
+            child.screen.kept(scenes, pictures);
+        }
+    }
+
     /// Its GPU was lost, and what it drew with is made again: what it kept in the old atlas (its pictures, and the
     /// layers drawn from them) goes, and it's all drawn afresh, its frames' pages too.
     pub fn gpu_lost(&mut self) {
@@ -71,11 +88,10 @@ impl Screen {
     /// drew a quarter refresh late for a link that stopped moved a step and a quarter, and the next three quarters.
     /// → whether it painted anything, which a frame that changed nothing doesn't: the scene drawn last is it.
     pub fn paint(&mut self, at: Option<Instant>, size: Size<Pixels>, scale: f32, text: &mut TextSystem, atlas: &Atlas, scene: &mut Scene) -> bool {
-        // Its atlas let glyphs go since it last painted, which what it kept from then (its scene, its layers) may draw:
-        // it's all drawn afresh, each glyph it draws put in again.
+        // Its atlas let tiles go since it last painted, none it keeps (`kept`): each picture it no longer has is decoded
+        // again as it's next drawn.
         if std::mem::replace(&mut self.evictions, atlas.evictions()) != self.evictions {
-            self.layers.clear();
-            self.seen = None;
+            self.pictures.evicted(atlas);
         }
         self.tell_room(size);
         self.paint_frames(at, scale, text, atlas);

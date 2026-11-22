@@ -103,7 +103,7 @@ pub struct Renderer {
     frames: u64,
     finished: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`), and how
-    /// many times its atlas had let glyphs go then (`Atlas::evictions`).
+    /// many times its atlas had let tiles go then (`Atlas::evictions`).
     #[cfg(feature = "fake")]
     scene: Option<(Scene, u64)>,
 }
@@ -482,7 +482,7 @@ impl Renderer {
         self.rasters = other.rasters.clone();
     }
 
-    /// The scene it last drew, while what it drew it with is all still in its atlas: none once glyphs it may have drawn
+    /// The scene it last drew, while what it drew it with is all still in its atlas: none once tiles it may have drawn
     /// have gone since (`Atlas::trim`).
     #[cfg(feature = "fake")]
     pub fn scene(&self) -> Option<&Scene> {

@@ -179,13 +179,16 @@ impl Video {
         let mut key = std::collections::hash_map::DefaultHasher::new();
         ("video", id, size.width, size.height).hash(&mut key);
         let padded = Size { width: DevicePixels(size.width as i32 + 2), height: DevicePixels(size.height as i32 + 2) };
-        let empty = vec![0u8; (size.width as usize + 2) * (size.height as usize + 2) * 4];
+        // A tile new to it, or put in again since its atlas let it go (`Atlas::trim`) while it wasn't drawn, has its
+        // latest frame written in.
+        let mut new = false;
         let tile = atlas
             .get_or_insert_with(&AtlasKey::Image(key.finish()), &mut || {
-                Ok(Some((padded, std::borrow::Cow::Borrowed(&empty[..]))))
+                new = true;
+                Ok(Some((padded, std::borrow::Cow::Owned(vec![0; (size.width as usize + 2) * (size.height as usize + 2) * 4]))))
             })
             .ok()??;
-        if self.copied != shared.came {
+        if new || self.copied != shared.came {
             self.copied = shared.came;
             atlas.write(
                 &tile,
