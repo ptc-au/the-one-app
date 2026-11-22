@@ -5,8 +5,9 @@ this build, finished for it afterwards, as white-label apps are made: its name, 
 its links and its address are written in, and it's signed for it. The network's settings are in its repo's `app/`, as
 a Tauri config (`tauri.conf.json`: `productName`, `identifier`, `plugins.deep-link.mobile`) and its address
 (`address`), and never in this repo or its GitHub runs, whose logs anyone can read. An iPhone's is finished and sent to
-TestFlight by `tooling/testflight <the network's repo>`, and an Android APK finished by `tooling/android-apk`, which
-puts in only its address: its name, identifier and link hosts are built into its manifest and Rust. Its link hosts are where its web view uses the network's
+TestFlight by `tooling/testflight <the network's repo>`, a Mac's made by `tooling/mac-app`, and an Android APK
+finished by `tooling/android-apk`, which puts in only its address: its name, identifier and link hosts are built into
+its manifest and Rust. Its link hosts are where its web view uses the network's
 passkeys (`webcredentials:`) and which of its links open in it (`applinks:`), as the network's edge says it may
 (`apps/sign-in/edge/wrangler.jsonc`). `tooling/network` starts a network on this machine and opens an app built from
 here on it.
@@ -28,7 +29,10 @@ on that network's sign-in page.
 
 A Mac's app is its bundle, `macos/` with the program as `Contents/MacOS/one`, which `tooling/release` signs in it. It
 goes in `/Applications`, and `~/.local/bin/one` is a link to the program in it, so the CLI, a server and `one update`
-all run and replace that one program.
+all run and replace that one program. Its identifier and name, and with them the folder its client is kept in, are
+its bundle's Info.plist's, so a network's own app (`tooling/mac-app`) keeps its own beside the One App's, and an
+update replaces its program alone. The program, signed in the One App's bundle, runs in another's, though `codesign
+--verify` then says its Info.plist was changed.
 
 ## On Windows
 

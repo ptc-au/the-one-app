@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Finishes the plain build of the One App for a Mac for a network, as `tooling/testflight` does an iPhone's and
+# `tooling/android-apk` an Android APK, here on Linux: the latest `one/macos-aarch64` of the core's release, in a bundle
+# of the network's own, which this makes:
+#
+#     tooling/mac-app <the network's repo> <the network's app, a folder that ends in .app>
+#
+# Its `app/`, as that repo's main has it on the remote, says the app's name and bundle identifier, as Tauri's config
+# says them (`tauri.conf.json`'s `productName` and `identifier`, with `tauri.macos.conf.json` over it where there is
+# one, as Tauri merges a platform's config), its icon (`icons/icon.png`, square, 1024 across, filling its square as its
+# own background), put on macOS's icon grid, and its network's address (`address`), which goes in its
+# `Contents/Resources/network`, read as it starts (`bundled` in core/client). The rest of its Info.plist is the One
+# App's (`clients/app/macos`), with the network's name for the One App's. It's signed with the Developer ID
+# (`tooling/developer-id-sign`). Each update after replaces its program alone and keeps the rest (`bundled` in
+# clients/cli), and its client keeps its own folder, by its identifier, beside the One App's (`identifier` in
+# core/client).
+set -euo pipefail
+(($# == 2)) && [[ $2 == *.app ]] || { echo "tooling/mac-app <the network's repo> <the network's app, a folder that ends in .app>" >&2 && exit 1; }
+network=$1 out=$2
+root=$(cd "$(dirname "$0")/.." && pwd)
+work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
+
+git -C "$network" fetch -q origin main
+git -C "$network" archive origin/main app | tar -x -C "$work"
+config=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.macos.conf.json ]] && echo "$work/app/tauri.macos.conf.json"))
+name=$(jq -er .productName <<<"$config") identifier=$(jq -er .identifier <<<"$config")
+
+# The plain build, as every network's Mac takes it (`core/edge/updater/core.ts`), signed in the One App's bundle.
+build=$(curl -fsSL https://github.com/ptc-au/the-one-app/releases/download/builds/macos-aarch64.json | jq -e .one)
+curl -fsSL -o "$work/one.gz" "$(jq -r .link.url <<<"$build")"
+sha256sum -c --quiet <<<"$(jq -r .sha256 <<<"$build")  $work/one.gz"
+
+rm -rf "$out" && mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
+gunzip -c "$work/one.gz" >"$out/Contents/MacOS/one" && chmod +x "$out/Contents/MacOS/one"
+jq -nc --arg address "$(cat "$work/app/address")" '{address: $address}' >"$out/Contents/Resources/network"
+python3 -I - "$root/clients/app/macos/Contents/Info.plist" "$out/Contents/Info.plist" "$name" "$identifier" <<'EOF'
+import plistlib, sys
+source, to, name, identifier = sys.argv[1:]
+with open(source, "rb") as file:
+    info = plistlib.load(file)
+info = {key: value.replace("The One App", name) if isinstance(value, str) else value for key, value in info.items()}
+info.update(CFBundleIdentifier=identifier, CFBundleIconFile="AppIcon.icns")
+with open(to, "wb") as file:
+    plistlib.dump(info, file)
+EOF
+
+# macOS's grid for an app icon of 1024, as `tooling/helper-icon` draws it: a body 824 square, rounded by 185, with a
+# shadow below it, 80, 90 from the corner. Pillow writes the .icns of it, every size a Mac's icon has.
+convert "$work/app/icons/icon.png" -resize 824x824! "$work/body.png"
+convert -size 824x824 xc:none -fill white -draw 'roundrectangle 0,0,823,823,185,185' "$work/mask.png"
+convert "$work/body.png" "$work/mask.png" -compose DstIn -composite "$work/rounded.png"
+convert "$work/rounded.png" \( +clone -background black -shadow 30x10+0+10 \) +swap -background none -layers merge +repage \
+  "$work/shadowed.png"
+convert -size 1024x1024 xc:none "$work/shadowed.png" -geometry +80+90 -composite "$work/1024.png"
+python3 -c 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])' "$work/1024.png" "$out/Contents/Resources/AppIcon.icns"
+
+"$root/tooling/developer-id-sign" "$out"
+echo "$out: $name ($identifier), on $(cat "$work/app/address"), $(jq -r .build <<<"$build")"
