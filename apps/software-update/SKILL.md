@@ -1,10 +1,10 @@
 ---
 name: software-update
-description: Read when the network's edge is behind its servers' build, when Software Update says the edge went back, or before setting up a network's edge to update itself.
+description: Read when the network's edge is behind its servers' build, when Software Update says the edge went back, before setting up a network's edge to update itself, or to choose which devices get dev builds.
 metadata:
   title: "Software Update"
   subtitle: "Keeps your network's edge current"
-  about: "Updates your network's web address, sign-in pages and web app to the build your servers run, by itself, after every update."
+  about: "Updates your network's web address, sign-in pages and web app to the build your servers run, by itself, after every update. Choose which of your devices get dev builds."
   category: Admin
 ---
 
@@ -21,3 +21,12 @@ network's Vault, switched on for this app, a token that can edit Workers and rea
 Only a server that opens the network's Vault reads it, and it never leaves that server. To set it up, keep the token
 there (`vault set`, as a plain tool on a device, `ONE_SUBJECT=network`, `secret: true`), and ask its person to switch
 it on for this app with `vault request` (`app: "software-update"`), whose link they open and Allow.
+
+## Dev builds
+
+`dev_builds` lists your devices (Sign-In's apps), each with whether it gets dev builds, and `set_dev_build` switches
+one: the network's one setting, which each person changes for their own devices. A device is on until it's switched
+off, so a new one starts on. The Home Screen widget Dev Builds shows the same, a row to press for each device.
+`tooling/release client` reads it and builds only for the devices that are on, saying which targets it skipped and why;
+a device that's off keeps its build and gets the next release once it's on again. Servers and the edge always get every
+release.
