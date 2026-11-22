@@ -283,6 +283,10 @@ impl Screen {
                 }
                 if let Some(ms) = request.f64("step") {
                     self.step(ms.max(0.0));
+                    // Mutant: a step leaves its clock running (a step pauses it), as the gate's was as it opened on real time.
+                    if crate::mutants::mutant("web-clock") {
+                        clock.resume();
+                    }
                 }
                 json!({"time": clock.now(), "paused": clock.paused()})
             }
