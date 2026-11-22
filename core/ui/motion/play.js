@@ -440,6 +440,10 @@ async function play(built, scene, name, motion, hz, folder) {
 }
 
 
+/// How many levels a channel may differ between two plays: a GPU's bilinear weights are fixed-point, so a tile packed
+/// elsewhere in the atlas (`--atlas starved`) reads a level apart from where it was, never more.
+const SAME = 2
+
 /// What two plays of a motion, in `first` and `again`, drew differently: the first frame where its time, where what moved
 /// was, what it counted or its picture isn't the same, or nothing. What each cost isn't drawn, and may differ.
 function differently(first, again) {
@@ -449,8 +453,9 @@ function differently(first, again) {
   for (let n = 0; n < one.length; n++) {
     const key = drawn.find((key) => JSON.stringify(one[n][key]) !== JSON.stringify(two[n][key]))
     if (key) return `frame ${n + 1} (${one[n].at} ms) has its ${key} ${JSON.stringify(one[n][key])}, then ${JSON.stringify(two[n][key])}`
-    const picture = (folder) => readFileSync(join(folder, "frames", `${String(n).padStart(3, "0")}.png`))
-    if (!picture(first).equals(picture(again))) return `frame ${n + 1} (${one[n].at} ms) is drawn otherwise`
+    const picture = (folder) => PNG.sync.read(readFileSync(join(folder, "frames", `${String(n).padStart(3, "0")}.png`))).data
+    const [was, now] = [picture(first), picture(again)]
+    if (was.some((level, at) => Math.abs(level - now[at]) > SAME)) return `frame ${n + 1} (${one[n].at} ms) is drawn otherwise`
   }
 }
 

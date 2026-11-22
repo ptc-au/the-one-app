@@ -92,6 +92,12 @@ fn budget() -> u64 {
     return 16 << 20;
 }
 
+/// Whether the atlas is as a device short of memory has it (`ONE_ATLAS=starved`, which only a harness sets): every turn lets
+/// go of every tile the turn before didn't draw, so what's drawn again is packed anew, beside other tiles.
+fn starved() -> bool {
+    std::env::var("ONE_ATLAS").as_deref() == Ok("starved")
+}
+
 impl Atlas {
     pub fn new(context: &Context) -> Self {
         Atlas(Mutex::new(AtlasState {
@@ -194,7 +200,8 @@ impl Atlas {
         let mut lock = self.0.lock();
         let state = &mut *lock;
         state.turn += 1;
-        if !std::mem::take(&mut state.over) {
+        let starved = starved();
+        if !std::mem::take(&mut state.over) && !starved {
             return false;
         }
         let (mut scenes, mut pictures) = (Vec::new(), Vec::new());
@@ -204,7 +211,7 @@ impl Atlas {
             tiles(scene, &mut drawn);
         }
         let pictures: HashSet<u64> = pictures.into_iter().collect();
-        let stale = state.turn.saturating_sub(STALE);
+        let stale = if starved { state.turn.saturating_sub(1) } else { state.turn.saturating_sub(STALE) };
         let storage = &mut state.storage;
         let before = state.tiles_by_key.len();
         state.tiles_by_key.retain(|key, kept| {

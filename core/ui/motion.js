@@ -1,6 +1,6 @@
 // Plays every scene's gestures (its `motions`) on a native host's headless harness, frame by frame, on its paused
 // clock: `bun motion.js [<folder>…] [--scene <words>] [--hz 60,120] [--out <dir>] [--against <dir>] [--dark]
-// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--ssh <host> --harness <its build of the harness>]` in core/ui, after `bun build.js` and `cargo
+// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--atlas starved] [--ssh <host> --harness <its build of the harness>]` in core/ui, after `bun build.js` and `cargo
 // build -p renderer --example screenshot --features fake` (`--release` too for `--release`, whose costs are a shipped
 // build's). `--ssh` plays them on a real device instead, as calibrate.js draws there (a Windows one's harness built with
 // `cargo xwin build --release … --target x86_64-pc-windows-msvc`, which draws with Direct3D 12 over ssh), at its tier's
@@ -16,6 +16,10 @@
 //
 // `--glass tinted` draws glass as a weak GPU does (a plain tint, `ONE_GLASS`), and fails any frame that draws a backdrop or runs
 // a blur pass; `blurred` draws it as a strong one does, on a device whose own GPU would tint it.
+//
+// `--atlas starved` packs the glyph and picture atlas as a device short of memory does (`ONE_ATLAS`): every turn lets go of
+// every tile it didn't draw, so what's drawn again sits beside other tiles, and each motion played twice must draw the same
+// frames (within `SAME` levels) packed either way.
 //
 // A folder is the gallery (core/ui/gallery, its scenes in `*.scenes.tsx`) or an app's (apps/<app>, in
 // `client/scenes.json`), as `scenes.js` takes them; with none, the gallery and every app with a motion. A motion is

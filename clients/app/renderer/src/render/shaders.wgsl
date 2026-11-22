@@ -184,6 +184,14 @@ fn to_tile_position(unit_vertex: vec2<f32>, tile: AtlasTile) -> vec2<f32> {
   return (vec2<f32>(tile.bounds.origin) + unit_vertex * vec2<f32>(tile.bounds.size)) / atlas_size;
 }
 
+// `uv` (in its atlas texture, 0 to 1) kept to where a bilinear tap reads only the texels of the tile at `origin`, `size`
+// texels across: no nearer its edge than the middle of its outermost texel, the clear pixel all round it (`Atlas`), so
+// a sprite drawn between device pixels (turned, grown, moved by a fraction) never mixes in the tile packed beside it.
+fn within_tile(uv: vec2<f32>, origin: vec2<f32>, size: vec2<f32>) -> vec2<f32> {
+  let atlas_size = vec2<f32>(textureDimensions(t_sprite, 0));
+  return clamp(uv * atlas_size, origin + 0.5, origin + size - 0.5) / atlas_size;
+}
+
 fn distance_from_clip_rect_impl(position: vec2<f32>, clip_bounds: Bounds) -> vec4<f32> {
     let tl = position - clip_bounds.origin;
     let br = clip_bounds.origin + clip_bounds.size - position;
@@ -1283,6 +1291,7 @@ struct MonoSpriteVarying {
     @builtin(position) position: vec4<f32>,
     @location(0) tile_position: vec2<f32>,
     @location(1) @interpolate(flat) color: vec4<f32>,
+    @location(2) @interpolate(flat) tile: vec4<f32>,
     @location(3) clip_distances: vec4<f32>,
     @location(4) @interpolate(flat) mask_radii: vec4<f32>,
 }
@@ -1296,6 +1305,7 @@ fn vs_mono_sprite(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index
     out.position = to_device_position_transformed(unit_vertex, sprite.bounds, sprite.transformation);
 
     out.tile_position = to_tile_position(unit_vertex, sprite.tile);
+    out.tile = vec4<f32>(vec2<f32>(sprite.tile.bounds.origin), vec2<f32>(sprite.tile.bounds.size));
     out.color = hsla_to_rgba(sprite.color);
     out.clip_distances = distance_from_clip_rect_transformed(unit_vertex, sprite.bounds, sprite.content_mask.bounds, sprite.transformation);
     out.mask_radii = mask_radii(sprite.content_mask);
@@ -1304,7 +1314,7 @@ fn vs_mono_sprite(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index
 
 @fragment
 fn fs_mono_sprite(input: MonoSpriteVarying) -> @location(0) vec4<f32> {
-    let sample = textureSample(t_sprite, s_sprite, input.tile_position).r;
+    let sample = textureSample(t_sprite, s_sprite, within_tile(input.tile_position, input.tile.xy, input.tile.zw)).r;
     let alpha_corrected = apply_contrast_and_gamma_correction(sample, input.color.rgb, gamma_params.grayscale_enhanced_contrast, gamma_params.gamma_ratios);
 
     // Alpha clip after using the derivatives.
@@ -1365,7 +1375,7 @@ fn sample_mipmapped(uv: vec2<f32>, tile: AtlasTile) -> vec4<f32> {
     let atlas_size = vec2<f32>(textureDimensions(t_sprite, 0));
     let texel = uv * atlas_size;
     let toward = saturate(log2(max(length(dpdx(texel)), length(dpdy(texel)))));
-    let level0 = textureSampleLevel(t_sprite, s_sprite, uv, 0.0);
+    let level0 = textureSampleLevel(t_sprite, s_sprite, within_tile(uv, vec2<f32>(tile.bounds.origin), vec2<f32>(tile.bounds.size)), 0.0);
     // Drawn at its size, give or take the float's rounding, it's its texels.
     if (toward < 1.0 / 256.0) {
         return level0;

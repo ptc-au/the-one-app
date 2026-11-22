@@ -21,12 +21,15 @@ export const dark = flag("--dark")
 /// Which glass the renderer draws, whatever its GPU says (`ONE_GLASS`): `tinted`, a plain tint, as it is on a weak GPU
 /// (devices.json's low-end Android and Intel UHD laptop), or `blurred`. Unsaid, the GPU's own.
 export const glass = option("--glass")
+/// The atlas a device short of memory has (`ONE_ATLAS`, `starved`): what it draws again is packed anew beside other glyphs and
+/// pictures, as `played twice` shows. Unsaid, as a device with room has it.
+export const atlas = option("--atlas")
 export const checking = flag("--checks")
 export const seeds = Number(option("--seeds") ?? 3)
 /// How many generated scenes to play (`--generated`), from which seed (`--from`).
 export const generating = option("--generated") && Number(option("--generated"))
 export const firstSeed = Number(option("--from") ?? 1)
-export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass", "--generated", "--from", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
+export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass", "--atlas", "--generated", "--from", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
 // On a device of devices.json's tiers over ssh (the one whose `measured` it is), with a harness built for it, its own
 // GPU and CPU draw each frame, as calibrate.js has them, and its tier is judged by the times it took there.
 export const ssh = option("--ssh")
@@ -46,7 +49,7 @@ export let harness = ssh ? option("--harness") && resolve(option("--harness")) :
 /// where there's none), or with `--lavapipe` on Mesa's software Vulkan, which draws on the CPU with 2 threads rather
 /// than one a core (`LP_NUM_THREADS`), as a few run at once: a second GPU whose frames must agree with the first's.
 export const lavapipe = flag("--lavapipe")
-export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), ...(lavapipe ? { VK_ICD_FILENAMES: "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" } : {}) }
+export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), ...(atlas ? { ONE_ATLAS: atlas } : {}), ...(lavapipe ? { VK_ICD_FILENAMES: "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" } : {}) }
 /// The most a harness may use, and for how long: a page that grows or never ends is stopped, not the machine.
 const MEMORY = "3G"
 const MINUTES = 10
