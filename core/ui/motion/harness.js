@@ -1,7 +1,7 @@
 // The harness process: here, or on `--ssh`'s device, and the scenes it lists and draws.
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
-import { capped, checking, dark, env, FACES, harness, out, ssh, stopped } from "./options.js"
+import { capped, checking, dark, env, FACES, glass, harness, out, ssh, stopped } from "./options.js"
 import { COMPONENTS, library, pageFolder } from "./pages.js"
 import { device, devices, hostScore } from "./tiers.js"
 
@@ -50,8 +50,8 @@ export async function runThere(at, folder, args, lines) {
   const there = args.map((arg) => (arg === at ? `${run}${sep}page` : arg === join(folder, "answers.json") ? `${run}${sep}answers.json` : arg === "-" ? `${run}${sep}requests.jsonl` : arg.startsWith(folder) ? `${run}${sep}${basename(arg)}` : arg === library("client") ? `${base}${sep}ui` : arg))
   // Its tree after what it said, whether it drew or not, and its folder taken away; the whole quoted for the shell here.
   const command = mac
-    ? `mkdir "${run}" && tar -xf - -C "${run}" && "${base}/${exe}" ${quoted(there)}; cat "${run}/end.json" 1>&2; rm -rf "${run}"`
-    : `mkdir "${run}" && tar -xf - -C "${run}" && "${base}\\${exe}" ${quoted(there)} & type "${run}\\end.json" 1>&2 & rmdir /s /q "${run}"`
+    ? `mkdir "${run}" && tar -xf - -C "${run}" && ${glass ? `ONE_GLASS=${glass} ` : ""}"${base}/${exe}" ${quoted(there)}; cat "${run}/end.json" 1>&2; rm -rf "${run}"`
+    : `${glass ? `set "ONE_GLASS=${glass}" && ` : ""}mkdir "${run}" && tar -xf - -C "${run}" && "${base}\\${exe}" ${quoted(there)} & type "${run}\\end.json" 1>&2 & rmdir /s /q "${run}"`
   const ran = Bun.spawn(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${command.replaceAll("'", "'\\''")}'`], { stdout: "pipe", stderr: "pipe" })
   const [stdout, stderr] = await Promise.all([new Response(ran.stdout).text(), new Response(ran.stderr).text(), ran.exited])
   rmSync(staged, { recursive: true, force: true })
@@ -81,13 +81,13 @@ export async function presentThere(at, folder, scene, played, taps) {
   writeFileSync(join(staged, "before.jsonl"), taps.map((tap, id) => JSON.stringify({ v: 1, id: id + 1, ...tap })).join("\n"))
   const args = ["page", "--play", "played.json", "--before", "before.jsonl", "--ui", `${base}${sep}ui`, "--answers", "answers.json", "--size", `${scene.size[0]}x${scene.size[1]}`, "--rounds", "3", ...panel(scene)]
   if (mac) {
-    const command = `mkdir "${run}" && tar -xf - -C "${run}" && cd "${run}" && { "${base}/${exe}" ${quoted(args)} > said.txt 2> err.txt; echo $?; cat said.txt; cat err.txt 1>&2; }; rm -rf "${run}"`
+    const command = `mkdir "${run}" && tar -xf - -C "${run}" && cd "${run}" && { ${glass ? `ONE_GLASS=${glass} ` : ""}"${base}/${exe}" ${quoted(args)} > said.txt 2> err.txt; echo $?; cat said.txt; cat err.txt 1>&2; }; rm -rf "${run}"`
     const ran = Bun.spawn(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${command.replaceAll("'", "'\\''")}'`], { stdout: "pipe", stderr: "pipe" })
     const [stdout, stderr] = await Promise.all([new Response(ran.stdout).text(), new Response(ran.stderr).text(), ran.exited])
     rmSync(staged, { recursive: true, force: true })
     return saidThere(stdout, stderr)
   }
-  writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, `start "" /b /wait "${base}\\screenshot.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
+  writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, ...(glass ? [`set "ONE_GLASS=${glass}"`] : []), `start "" /b /wait "${base}\\screenshot.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
   writeFileSync(
     join(staged, "wait.ps1"),
     [

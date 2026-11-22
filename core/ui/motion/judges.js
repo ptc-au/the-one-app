@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
 import { pressed, selector, single } from "./gesture.js"
+import { glass } from "./options.js"
 import { rect, strayInk, wrongHits } from "./output.js"
 
 /// The roles a layer over the page has, which a check's end finds drawn whole in the window wherever it's open.
@@ -396,7 +397,7 @@ export function requests(steps, folder, answers = {}) {
             return answer?.result?.png && before && corner(answer.result.png) > corner(before) * 0.9 && `the page behind it isn't dimmed: its corner is as light as before (${Math.round(corner(answer.result.png))} of ${Math.round(corner(before))})`
           },
         })
-      if (blur !== undefined) out.push({ request: { op: "profile", at: [0], snap: false }, judge: (answer) => (answer?.result?.frames?.[0]?.work?.backdrops > 0) !== blur && (blur ? "no blur is drawn" : "a blur is drawn") })
+      if (blur !== undefined) out.push({ request: { op: "profile", at: [0], snap: false }, judge: (answer) => (answer?.result?.frames?.[0]?.work?.backdrops > 0) !== (blur && glass !== "tinted") && (blur && glass !== "tinted" ? "no blur is drawn" : "a blur is drawn") })
       // What a phone's system was asked to show of a finger's selection: its menu for text with these items (or none,
       // `textMenu: false`), drawn inside the safe area; so many handles; its magnifier or not.
       if (textMenu !== undefined || handles !== undefined || magnifier !== undefined)

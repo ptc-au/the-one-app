@@ -1,5 +1,5 @@
 // Draws every scene on a native host, and with `--web` on the web too, and compares them: `bun scenes.js [<folder>…] [--scene <words>]
-// [--out <dir>] [--against <dir>] [--dark] [--size <width>x<height>] [--release] [--web] [--ssh <host> --harness <its build of the
+// [--out <dir>] [--against <dir>] [--dark] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --harness <its build of the
 // harness>]` in core/ui, after `bun build.js` (and, for the native half, `cargo build -p renderer
 // --example screenshot --features fake`, `--release` too for `--release`, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
 // `--out`: what a change did to how things look, drawn before it (on main) and after.
@@ -53,7 +53,7 @@ import { outline } from "./src/drawing-primitives/outline.ts"
 import { messages } from "./src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "./lint-tokens.js"
-import { build, capped, COMPONENTS, copied, env, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
+import { build, capped, COMPONENTS, copied, env, glass, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as motion.js's checks mark theirs.
@@ -76,7 +76,7 @@ const against = option("--against") && resolve(option("--against"))
 const ssh = option("--ssh")
 // Only the scenes whose names have these words, as motion.js's `--scene`.
 const only = option("--scene")?.toLowerCase()
-const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--harness", "--scene"].includes(args[at - 1])).map((folder) => resolve(folder))
+const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--harness", "--scene", "--glass"].includes(args[at - 1])).map((folder) => resolve(folder))
 const targets = folders.length ? folders : [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")))]
 let harness = join(root, `target/${flag("--release") ? "release" : "debug"}/examples/screenshot`)
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
@@ -406,7 +406,8 @@ function native(built, scene, folder, used) {
   // The harness's clock stands still, so what moves as the page opens and after each tap is moved on to where it
   // settles, as the DOM's is, and what's laid out once it's drawn (onLayout) is drawn again.
   // With a device to draw it too, each ends at rest with where every node is and a picture drawn afresh, to compare.
-  const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), { op: "query" }, { op: "query", frames: true }, ...(ssh ? DRAWN : [])]
+  // With a plain tint for glass (`--glass tinted`), the scene drawn whole runs no blur: its `profile` says what's drawn.
+  const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query" }, { op: "query", frames: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", "-", ...panel(scene)]
   const run = Bun.spawnSync(capped([harness, ...asked]), { stdin: new TextEncoder().encode(requests), env })
@@ -420,6 +421,8 @@ function native(built, scene, folder, used) {
   const measured = run.stderr.toString().match(/^measured (.*)$/m)
   const said = answered(run.stdout.toString())
   const after = ssh ? DRAWN.length : 0
+  const drew = glass === "tinted" ? said.at(-after - 3)?.result?.frames?.[0]?.work : undefined
+  const blurring = drew && (drew.backdrops > 0 || drew.blurs > 0 || drew.blurred > 0) ? `glass drawn tinted still blurs: ${drew.backdrops} backdrop pixels, ${drew.blurs} blur passes` : undefined
   const queried = said.at(-after - 2)?.result?.nodes ?? []
   const unsafe = scene.safeArea && underTheDevice(said.at(-after - 1)?.result?.nodes ?? [], scene.size[1], insets(scene.safeArea))
   const squeezed = squeezedWords(queried, scene.size[0])
@@ -447,7 +450,7 @@ function native(built, scene, folder, used) {
   const every = (list) => list.flatMap((node) => [...(node.name ? [node.name] : []), ...every(node.children ?? [])])
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
-  return { tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, answers: said, at, asked, requests }
+  return { tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, blurring, answers: said, at, asked, requests }
 }
 
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
@@ -687,6 +690,10 @@ for (const target of targets) {
     // A page that threw while drawing shows `render`'s Problem, whose scene says nothing of the page.
     if (drawn.tree?.includes(messages.cantShowPage)) {
       said.push(failing(`  native: the page crashed, showing "${messages.cantShowPage}"`))
+    }
+    if (drawn.blurring) {
+      said.push(`  native: ${drawn.blurring}`)
+      process.exitCode = 1
     }
     for (const line of drawn.unsafe ?? []) {
       said.push(failing(`  on a phone: ${line}`))

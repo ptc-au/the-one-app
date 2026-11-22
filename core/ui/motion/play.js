@@ -2,7 +2,7 @@
 import { PNG } from "pngjs"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join, relative } from "node:path"
-import { against, keeping, only, out, present, rates, ssh } from "./options.js"
+import { against, glass, keeping, only, out, present, rates, ssh } from "./options.js"
 import { build, pageFolder } from "./pages.js"
 import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./harness.js"
@@ -131,7 +131,7 @@ async function play(built, scene, name, motion, hz, folder) {
   }
   // A refresh that drew nothing new (a busy device's) shows the frame drawn before it.
   let blurs
-  const plain = motion.blurred ? frames.findIndex((frame, n) => ((blurs = frame.drawn === false ? blurs : frame.work?.backdrops), n > 0 && !blurs)) : -1
+  const plain = motion.blurred && glass !== "tinted" ? frames.findIndex((frame, n) => ((blurs = frame.drawn === false ? blurs : frame.work?.backdrops), n > 0 && !blurs)) : -1
   // What a swipe moves goes one way while it's under the fingers, a trace's till they lift: never back.
   const toward = Math.sign(values.at(-1) - values[0])
   const back = motion.steady ? values.findIndex((value, n) => n > 0 && frames[n].at <= end && (value - values[n - 1]) * toward < -1) : -1
@@ -392,6 +392,9 @@ async function play(built, scene, name, motion, hz, folder) {
   const drawing = (frame) => (frame.draw_ms ?? 0) + (frame.draw_wait_ms ?? 0)
   const waited = ssh ? -1 : frames.findIndex((frame) => drawing(frame) >= compiling)
   if (waited >= 0) failed.push(`frame ${waited + 1} (${frames[waited].at} ms) took ${drawing(frames[waited]).toFixed(0)} ms to draw, as long as pipelines take to compile (${compiling} ms)`)
+  // With a plain tint for glass, no frame draws a backdrop or runs a blur pass.
+  const blurring = glass === "tinted" ? frames.findIndex((frame) => frame.work?.backdrops > 0 || frame.work?.blurs > 0 || frame.work?.blurred > 0) : -1
+  if (blurring >= 0) failed.push(`glass drawn tinted still blurs in frame ${blurring + 1} of ${frames.length} (${frames[blurring].at} ms): ${frames[blurring].work.backdrops} backdrop pixels, ${frames[blurring].work.blurs} blur passes`)
   if (plain >= 0) failed.push(`glass not blurred from frame ${plain + 1} of ${frames.length} (${frames[plain].at} ms, pressure ${frames[plain].pressure})`)
   // Every frame within the budget of the device it's to keep (`keeps`), at that device's rate, its JS too, the frames a
   // press lands and lifts on as much as any: what a press sets off starts on the next frame, as on iOS, not a hitch on.

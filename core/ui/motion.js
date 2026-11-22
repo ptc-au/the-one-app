@@ -1,6 +1,6 @@
 // Plays every scene's gestures (its `motions`) on a native host's headless harness, frame by frame, on its paused
 // clock: `bun motion.js [<folder>…] [--scene <words>] [--hz 60,120] [--out <dir>] [--against <dir>] [--dark]
-// [--release] [--watch] [--keeps] [--ssh <host> --harness <its build of the harness>]` in core/ui, after `bun build.js` and `cargo
+// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--ssh <host> --harness <its build of the harness>]` in core/ui, after `bun build.js` and `cargo
 // build -p renderer --example screenshot --features fake` (`--release` too for `--release`, whose costs are a shipped
 // build's). `--ssh` plays them on a real device instead, as calibrate.js draws there (a Windows one's harness built with
 // `cargo xwin build --release … --target x86_64-pc-windows-msvc`, which draws with Direct3D 12 over ssh), at its tier's
@@ -12,6 +12,9 @@
 // pointer's moves at their times, or a press where it starts, held or dragged. It fails where its frames' painting and
 // drawing, or its GPU, took longer than a refresh at their 95th percentile, and says each part (waiting for an image,
 // submitting, presenting).
+//
+// `--glass tinted` draws glass as a weak GPU does (a plain tint, `ONE_GLASS`), and fails any frame that draws a backdrop or runs
+// a blur pass; `blurred` draws it as a strong one does, on a device whose own GPU would tint it.
 //
 // A folder is the gallery (core/ui/gallery, its scenes in `*.scenes.tsx`) or an app's (apps/<app>, in
 // `client/scenes.json`), as `scenes.js` takes them; with none, the gallery and every app with a motion. A motion is
@@ -59,7 +62,7 @@ import { round } from "./motion/play.js"
 import { cpuName, hostScore } from "./motion/tiers.js"
 
 // What scenes.js and calibrate.js import from here.
-export { capped, env, FACES, stopped } from "./motion/options.js"
+export { capped, env, FACES, glass, stopped } from "./motion/options.js"
 export { moves, selector } from "./motion/gesture.js"
 export { monospaced } from "./motion/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./motion/harness.js"

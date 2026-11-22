@@ -16,9 +16,12 @@ export const only = option("--scene")?.toLowerCase()
 /// Only the motions that keep a tier (`keeps`), which calibrate.js checks the tiers' model against a device by.
 export const keeping = flag("--keeps")
 export const dark = flag("--dark")
+/// Which glass the renderer draws, whatever its GPU says (`ONE_GLASS`): `tinted`, a plain tint, as it is on a weak GPU
+/// (devices.json's low-end Android and Intel UHD laptop), or `blurred`. Unsaid, the GPU's own.
+export const glass = option("--glass")
 export const checking = flag("--checks")
 export const seeds = Number(option("--seeds") ?? 3)
-export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness"].includes(args[at - 1])).map((folder) => resolve(folder))
+export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass"].includes(args[at - 1])).map((folder) => resolve(folder))
 // On a device of devices.json's tiers over ssh (the one whose `measured` it is), with a harness built for it, its own
 // GPU and CPU draw each frame, as calibrate.js has them, and its tier is judged by the times it took there.
 export const ssh = option("--ssh")
@@ -26,7 +29,7 @@ export const present = flag("--present")
 export let harness = ssh ? option("--harness") && resolve(option("--harness")) : join(root, `target/${flag("--release") ? "release" : "debug"}/examples/screenshot`)
 /// How every harness runs, here and in scenes.js, on a machine others share: Vulkan on lavapipe, which draws on the
 /// CPU with 2 threads rather than one a core (`LP_NUM_THREADS`), as a few run at once.
-export const env = { ...process.env, VK_ICD_FILENAMES: process.env.VK_ICD_FILENAMES ?? "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" }
+export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), VK_ICD_FILENAMES: process.env.VK_ICD_FILENAMES ?? "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" }
 /// The most a harness may use, and for how long: a page that grows or never ends is stopped, not the machine.
 const MEMORY = "3G"
 const MINUTES = 10
