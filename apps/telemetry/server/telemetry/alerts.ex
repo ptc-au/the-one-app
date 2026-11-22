@@ -14,6 +14,7 @@ defmodule Telemetry.Alerts do
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
   | `open` | An app's window took over its 300 ms budget, from being asked to open to its page's first frame, the last time it opened on a device (`one.client.native.open`, which a client says of each open, with each step's time) | It opens within its budget there, or hasn't opened there for a day |
   | `backup` | A destination's last backup is older than its schedule and a day, or its last backup failed, as Backups last said (`one.backup`, which it says each hour and as each backup ends) | Backups says it's backed up, or that the destination is gone |
+  | `behind` | A server or a desktop client has said for over an hour, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), and something of it arrived in the last day | It says it's on the latest, or nothing of it arrives for a day |
   | `access` | A server that acts for someone lacks the keys of something encrypted for them, or one that doesn't act for them has them, as Encryption last said (`one.encryption.access`, which it says every 10 minutes) | Encryption says every server that should hold its keys does, and no other |
 
   Each alert is a row of Telemetry's database, one per kind and key (the server, the build, the error's kind, the
@@ -81,7 +82,10 @@ defmodule Telemetry.Alerts do
     # What Encryption last said of who holds each encrypted artifact's keys (`one.encryption.access`).
     "create table access (artifact text primary key, at integer not null, outcome text not null, problem text) without rowid",
     # Spans' errors are kinds too: the next look reads the last 14 days again for every kind there was.
-    "delete from looked"
+    "delete from looked",
+    # Which build each server and client last said it is (`service.version`), as what it said arrived, and since when
+    # that's been older than the latest of its kind.
+    "create table builds (key text primary key, name text, build text not null, kind text not null, at integer not null, behind integer) without rowid"
   ]
 
   @kinds %{
@@ -93,7 +97,8 @@ defmodule Telemetry.Alerts do
     "deploy" => "An app's deploys take over 500 ms to show in its window, in 2 or more of the last 10 minutes",
     "backup" => "A backup isn't made within its schedule and a day, or the last one failed",
     "open" => "An app's window took over 300 ms to show its page the last time it opened on a device",
-    "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can"
+    "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can",
+    "behind" => "A server or a desktop client has been on an older build than the latest for over an hour"
   }
 
   # How long a deploy has to show in a window, from when it began, in milliseconds.
@@ -103,7 +108,7 @@ defmodule Telemetry.Alerts do
   @open_budget 300
 
   # How long each kind's alert stays after its symptom was last seen before it's resolved, in milliseconds.
-  @cool %{"server" => 0, "update" => 0, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0}
+  @cool %{"server" => 0, "update" => 0, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0}
 
   @doc "Each kind of alert, with what fires it."
   def kinds, do: @kinds
@@ -151,7 +156,7 @@ defmodule Telemetry.Alerts do
          for(%{"server" => server} <- query(db, sql, []), do: server)}
       end)
 
-    asked = %{presence: Map.new(failing, &{&1, presence(&1)}), update: update(), names: Map.new(Call.apps(call), &{&1.name, &1.title})}
+    asked = %{presence: Map.new(failing, &{&1, presence(&1)}), update: update(), latest: latest(), names: Map.new(Call.apps(call), &{&1.name, &1.title})}
 
     {names, exports} = if looked, do: Store.since(call, (now - @gap) * 1_000_000, read), else: {[], []}
     batches = if looked, do: Enum.map(exports, &elem(&1, 1)), else: Store.read(call, (now - Store.days() * 86_400_000) * 1_000_000)
@@ -163,6 +168,7 @@ defmodule Telemetry.Alerts do
         # Another evaluation read them already, as one that ran long overlapping the next does.
         if looked == (query(db, "select at from looked", []) != []) and not read?(db, names) do
           keep(db, signals, not looked, now)
+          behind(db, asked.latest, now)
           for name <- names, do: query(db, "insert into batches (name, at) values (?, ?)", [name, now])
           query(db, "delete from batches where at < ?", [now - 2 * @gap])
           # Said once: a minute that read nothing writes nothing, so it adds nothing to the database's log.
@@ -200,6 +206,15 @@ defmodule Telemetry.Alerts do
     end
   end
 
+  # The latest build of each kind, as the core's release lists them (`OneCore.Builds.latest/0`), or `:unknown` where
+  # none can be read now.
+  defp latest do
+    case OneCore.Builds.latest() do
+      latest when map_size(latest) == 0 -> :unknown
+      latest -> Map.new(latest, fn {name, %{"build" => build}} -> {name, build} end)
+    end
+  end
+
   # The alerts whose symptom couldn't be asked of the relay this time, which stay as they are, by kind and key: an
   # update's too while an update or the edge's deploy is under way, which takes back what it said went wrong
   # (`went_back`, `edge_update`) until it says again how it went.
@@ -207,6 +222,7 @@ defmodule Telemetry.Alerts do
     fn
       {"server", server} -> asked.presence[server] == :unknown
       {"update", _key} -> asked.update == :unknown or under_way?(asked.update)
+      {"behind", _key} -> asked.latest == :unknown
       _ -> false
     end
   end
@@ -215,11 +231,25 @@ defmodule Telemetry.Alerts do
 
   # What the rules need of what was recorded, as one list of tuples, from the batches' spans, logs and metrics.
   defp signals(batches) do
+    builds =
+      for batch <- batches, record <- batch["spans"] ++ batch["logs"], said = build(record), into: %{}, do: {elem(said, 1), said}
+
     Enum.flat_map(batches, fn batch ->
       Enum.flat_map(batch["spans"], &span/1) ++
         Enum.flat_map(batch["logs"], &log/1) ++ Enum.flat_map(batch["metrics"], &metric/1)
-    end)
+    end) ++ Map.values(builds)
   end
+
+  # Which build a server or a desktop client says it is, as each of its spans and log lines does: a server's is the
+  # same code whatever its machine (`server-code`), and a client's is its system's `one`. A phone's has no latest.
+  defp build(%{"attributes" => %{"service.version" => build, "service.name" => "one-server"}} = record),
+    do: {:build, "server|#{record["server"]}", "#{record["server"]}'s server", build, "server-code"}
+
+  defp build(%{"attributes" => %{"service.version" => build, "one.device" => device, "service.name" => service, "os.type" => os}} = record)
+       when os in ["macos", "linux", "windows"],
+       do: {:build, "#{device}|#{service}", Read.from(record), build, "one/#{os}"}
+
+  defp build(_record), do: nil
 
   defp span(%{"name" => "one.server.start", "attributes" => %{"one.server" => server} = a} = span) do
     case span["status"] do
@@ -396,6 +426,17 @@ defmodule Telemetry.Alerts do
       )
     end
 
+    for {:build, key, name, build, kind} <- signals do
+      query(
+        db,
+        """
+        insert into builds (key, name, build, kind, at) values (?, ?, ?, ?, ?)
+        on conflict (key) do update set name = excluded.name, build = excluded.build, kind = excluded.kind, at = excluded.at
+        """,
+        [key, name, build, kind, now]
+      )
+    end
+
     for {:open, device, view, from, at, took, steps} <- signals do
       query(
         db,
@@ -412,10 +453,31 @@ defmodule Telemetry.Alerts do
     query(db, "delete from minutes where minute < ?", [now - 15 * @minute])
     query(db, "delete from deploys where minute < ?", [now - 15 * @minute])
     query(db, "delete from opens where at < ?", [now - @day])
+    query(db, "delete from builds where at < ?", [now - @day])
     query(db, "delete from seen where last < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from servers where max(coalesce(failed, 0), coalesce(started, 0), coalesce(looping, 0)) < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from alerts where ended < ?", [now - 7 * 86_400_000])
   end
+
+  # Marks since when each server and client has been on an older build than the latest of its kind, by its builds'
+  # count of commits (`OneCore.Builds.count/1`), as the latest is now, and clears it once it isn't.
+  defp behind(_db, :unknown, _now), do: :ok
+
+  defp behind(db, latest, now) do
+    for row <- query(db, "select * from builds", []), newest = latest_of(latest, row["kind"]) do
+      older = OneCore.Builds.count(row["build"]) < OneCore.Builds.count(newest)
+
+      cond do
+        older and row["behind"] == nil -> query(db, "update builds set behind = ? where key = ?", [now, row["key"]])
+        not older and row["behind"] != nil -> query(db, "update builds set behind = null where key = ?", [row["key"]])
+        true -> :ok
+      end
+    end
+  end
+
+  # The latest build of a kind: `server-code`, or a client's `one/<system>` whichever its machine.
+  defp latest_of(latest, "server-code"), do: latest["server-code"]
+  defp latest_of(latest, "one/" <> _ = kind), do: Enum.find_value(latest, fn {name, build} -> if String.starts_with?(name, kind <> "-"), do: build end)
 
   ## Rules
 
@@ -530,7 +592,22 @@ defmodule Telemetry.Alerts do
         {{"access", row["artifact"]}, %{title: "A server is waiting for a key to #{row["artifact"]}", text: row["problem"]}}
       end
 
-    Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access], &Map.merge/2)
+    behind =
+      for row <- query(db, "select * from builds where behind < ?", [now - 60 * @minute]),
+          asked.latest != :unknown,
+          newest = latest_of(asked.latest, row["kind"]),
+          into: %{} do
+        apart = OneCore.Builds.count(newest) - OneCore.Builds.count(row["build"])
+        hours = div(now - row["behind"], 3_600_000)
+
+        {{"behind", row["key"]},
+         %{
+           title: "#{row["name"] || "A device"} is behind, on #{version(row["build"])}",
+           text: "It's #{apart} #{if apart == 1, do: "build", else: "builds"} behind #{version(newest)}, and has said so for over #{hours} #{if hours == 1, do: "hour", else: "hours"}."
+         }}
+      end
+
+    Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access, behind], &Map.merge/2)
   end
 
   # What the network's updater says went wrong: each server behind, which went back from the build or didn't take it
