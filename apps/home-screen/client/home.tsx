@@ -13,7 +13,7 @@
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, connection, covers, haptic, keydown, Problem, render, Screen, Status, View, viewport } from "ui"
+import { Button, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth } from "./store.ts"
 import { type Owner, owners } from "./owners.ts"
@@ -58,37 +58,40 @@ function HomeScreen(props: { owners: Owner[] }) {
   const opened = () => state().context.category
   const held = () => (state().matches("holding") ? state().context.held : undefined)
   const owner = () => props.owners[at().owner]
+  // In the launcher, its sheets are its card's, as Raycast's are its panel's: nothing's drawn outside its panes.
   return (
-    <View
-      style={[looks.root, looks.sized(windowWidth(), viewport().height)]}
-    >
-      <Show
-        when={launcher()}
-        fallback={<Phone owners={props.owners} layout={layout} paging={paging} />}
+    <PresentationContext value={() => (launcher() ? cardRect() : undefined)}>
+      <View
+        style={[looks.root, looks.sized(windowWidth(), viewport().height)]}
       >
-        <LauncherPanel owners={props.owners} layout={layout} paging={paging} launching={launching} />
-      </Show>
-      <Show when={editBar()}>
-        <EditBar going={editBarGoing()} within={launcher() ? cardRect() : undefined} />
-      </Show>
-      <Show when={copy()}>{(now) => <Carried now={now} owner={owner()} />}</Show>
-      <Show when={made()}>{(made) => <OpenCategory owner={props.owners[0]} made={made()} open={made() === opened()} within={launcher() ? cardRect() : undefined} />}</Show>
-      <Show when={held()}>{(held) => <Holding owner={owner()} index={at().owner} held={held()} />}</Show>
-      <Show when={overview()}>
-        {(edited) => <Overview owner={props.owners[edited().owner]} index={edited().owner} going={overviewGoing()} />}
-      </Show>
-      <Show when={editing()}>{(edited) => <Gallery owner={props.owners[edited().owner]} />}</Show>
-      <Show when={state().matches("editing") && !state().context.held?.item?.widget && state().context.held?.item && state().context.held}>
-        {(held) => (
-          <>
-            <Asking owner={owner()} held={held()} />
-            <Show when={owner().subject}>
-              <Refused owner={owner()} held={held()} />
-            </Show>
-          </>
-        )}
-      </Show>
-    </View>
+        <Show
+          when={launcher()}
+          fallback={<Phone owners={props.owners} layout={layout} paging={paging} />}
+        >
+          <LauncherPanel owners={props.owners} layout={layout} paging={paging} launching={launching} />
+        </Show>
+        <Show when={editBar()}>
+          <EditBar going={editBarGoing()} within={launcher() ? cardRect() : undefined} />
+        </Show>
+        <Show when={copy()}>{(now) => <Carried now={now} owner={owner()} />}</Show>
+        <Show when={made()}>{(made) => <OpenCategory owner={props.owners[0]} made={made()} open={made() === opened()} within={launcher() ? cardRect() : undefined} />}</Show>
+        <Show when={held()}>{(held) => <Holding owner={owner()} index={at().owner} held={held()} />}</Show>
+        <Show when={overview()}>
+          {(edited) => <Overview owner={props.owners[edited().owner]} index={edited().owner} going={overviewGoing()} />}
+        </Show>
+        <Show when={editing()}>{(edited) => <Gallery owner={props.owners[edited().owner]} />}</Show>
+        <Show when={state().matches("editing") && !state().context.held?.item?.widget && state().context.held?.item && state().context.held}>
+          {(held) => (
+            <>
+              <Asking owner={owner()} held={held()} />
+              <Show when={owner().subject}>
+                <Refused owner={owner()} held={held()} />
+              </Show>
+            </>
+          )}
+        </Show>
+      </View>
+    </PresentationContext>
   )
 }
 

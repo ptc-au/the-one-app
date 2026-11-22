@@ -1,9 +1,10 @@
 // What's over the page, as a system's own: a sheet, up from the foot of a narrow window and in the middle of a wide
 // one, and an alert, a question that stops everything until it's answered. Written once on the drawing
 // primitives, the same on every host: each a `Modal` (#primitives) over the window.
-import { children, createRoot, createSignal, Show } from "solid-js"
+import { children, createContext, createRoot, createSignal, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Modal, Pressable, ScrollView, Text, View } from "#primitives"
+import type { Rect } from "../drawing-primitives/renderer.ts"
 import { touch, viewport } from "#bridge"
 import { Button, Icon } from "./button.tsx"
 import { messages } from "../words.ts"
@@ -17,6 +18,8 @@ import { createDialog, createPull, type DialogProps } from "../headless-componen
 const wide = () => viewport().width >= 640
 
 const look = styles({
+  // Presented in a part of the window, it's drawn as a window is there: clipped to its rounded corners.
+  context: (top: number, left: number, width: number, height: number) => ({ position: "absolute", top, left, width, height, overflow: "hidden", borderRadius: tokens.radius.window }),
   scrim: {
     position: "absolute", top: 0, bottom: 0, start: 0, end: 0, backgroundColor: tokens.colour.overlay, pointerEvents: "auto",
     opacity: { default: 1, entering: 0, exiting: 0 }, transitionProperty: ["opacity"], transition: tokens.motion.travel,
@@ -48,17 +51,31 @@ const look = styles({
   half: { flexGrow: 1, flexBasis: "45%" },
 })
 
-/// What a sheet and an alert share: shown over the window in a modal layer while `open`, with what's around it
-/// dimmed, drawn going as it closes; Escape, the device's back and a press on what's around it close it,
-/// each calling `onClose`.
+/// `<PresentationContext value={() => card()}>…</PresentationContext>`: where in the window the sheets and alerts of
+/// what's in it are presented, dimming only that, as UIKit's `definesPresentationContext` has a view controller's: a
+/// panel's pane of glass, as a launcher's card is, whose page draws nothing outside its panes. The whole window
+/// unless said.
+export const PresentationContext = createContext<() => Rect | undefined>(() => undefined)
+
+/// What a sheet and an alert share: shown over the window, or the part of it presented in (`PresentationContext`),
+/// in a modal layer while `open`, with what's around it dimmed, drawn going as it closes; Escape, the device's back
+/// and a press on what's around it close it, each calling `onClose`.
 function Over(props: DialogProps & { children: (dialog: ReturnType<typeof createDialog>) => JSX.Element }) {
   const dialog = createDialog(props)
+  const within = useContext(PresentationContext)
+  const over = () => (
+    <>
+      <Pressable {...dialog.outside()} style={look.scrim} />
+      {/* What's over the page isn't the bar's, wherever it's written. */}
+      <Collect value={null}>{props.children(dialog)}</Collect>
+    </>
+  )
   return (
     <Show when={props.open}>
       <Modal>
-        <Pressable {...dialog.outside()} style={look.scrim} />
-        {/* What's over the page isn't the bar's, wherever it's written. */}
-        <Collect value={null}>{props.children(dialog)}</Collect>
+        <Show when={within()} fallback={over()}>
+          {(part) => <View style={look.context(part().y, part().x, part().width, part().height)}>{over()}</View>}
+        </Show>
       </Modal>
     </Show>
   )

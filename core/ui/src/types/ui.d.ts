@@ -2,7 +2,7 @@
 // components drawn with them, and what an app asks for in passing, each with only the props a native host draws
 // too. Nothing here is the DOM's. The UI library's own typecheck proves its components take these (../check.ts). A
 // component an app needs that isn't here yet is added here, with only the props every host can draw.
-import type { Element } from "solid-js"
+import type { Context, Element } from "solid-js"
 import type { Ice, Props, Rect } from "../drawing-primitives/renderer.ts"
 import type { Look, Styled, Styles } from "../styles.ts"
 import type { tokens as Tokens } from "../tokens.ts"
@@ -426,6 +426,8 @@ export declare function LiveScreen(props: { label: string; screen?: (inputs: Scr
 export declare function Alert(props: { heading: Element; text?: Element; open?: boolean; onClose?: () => void; action?: Element; children?: Element }): Element
 
 export declare function Sheet(props: { heading?: Element; open?: boolean; onClose?: () => void; children?: Element }): Element
+
+export declare const PresentationContext: Context<() => Rect | undefined>
 
 /** Something that can be done, as the action panel lists it: what it says, what does it, the keys that do it too
  * (`["mod", "enter"]`), an icon, whether it can't be undone, whether it can't be done now, and its section. */
