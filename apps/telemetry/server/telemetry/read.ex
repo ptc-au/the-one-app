@@ -213,9 +213,11 @@ defmodule Telemetry.Read do
 
   @doc """
   The metric `name`, of the data with all of `attributes`, in steps of `step` minutes (about 48 steps if `nil`) from
-  `from` to `to`: each step's start in milliseconds, its count, its sum and its quantiles.
+  `from` to `to`: each step's start in milliseconds, its count, its sum and its quantiles. Split by the attributes
+  named in `by`, as `one.device` and `service.version`, it's `groups`: each with its values of them, which client it's
+  from where it's one's, and its own steps.
   """
-  def series(batches, name, attributes, from, to, step) do
+  def series(batches, name, attributes, from, to, step, by \\ []) do
     step = if step, do: step * 60_000_000_000, else: max(div(to - from, 48), 60_000_000_000)
 
     points =
@@ -226,15 +228,24 @@ defmodule Telemetry.Read do
           do: p
 
     if points == [],
-      do: raise("Nothing's recorded of #{name} with those attributes then. `metric` with no name lists what is.")
+      do: raise(OneCore.Call.Refused, "Nothing's recorded of #{name} with those attributes then. `metric` with no name lists what is.")
 
-    %{
-      name: name,
-      steps:
-        for {at, within} <- steps(points, from, to, step) do
-          Map.put(if(within == [], do: %{count: 0}, else: quantiles(added(within))), :at, ms(at))
+    steps = fn points ->
+      for {at, within} <- steps(points, from, to, step) do
+        Map.put(if(within == [], do: %{count: 0}, else: quantiles(added(within))), :at, ms(at))
+      end
+    end
+
+    if by == [] do
+      %{name: name, steps: steps.(points)}
+    else
+      groups =
+        for {values, points} <- Enum.group_by(points, fn p -> Map.new(by, &{&1, p["attributes"][&1]}) end) do
+          %{by: values, from: Enum.find_value(points, &from/1), steps: steps.(points)}
         end
-    }
+
+      %{name: name, groups: Enum.sort_by(groups, & &1.by)}
+    end
   end
 
   @doc """

@@ -63,6 +63,15 @@ defmodule Telemetry do
       p99: maybe.("The 99th percentile")
     }
 
+    steps = %{
+      type: "array",
+      items: %{
+        type: "object",
+        properties: Map.merge(quantiles, %{at: ms.("The step's start")}),
+        required: ["at", "count"]
+      }
+    }
+
     failure = %{
       type: "object",
       properties: %{
@@ -237,6 +246,11 @@ defmodule Telemetry do
               description: "Only the data with these attributes, as {\"one.app\": \"backups\"}",
               additionalProperties: %{type: ["string", "number", "boolean"]}
             },
+            by: %{
+              type: "array",
+              items: %{type: "string"},
+              description: "Split by these attributes, as [\"one.device\", \"service.version\"]: each device and build is its own steps, in groups"
+            },
             hours: hours,
             step: %{type: "integer", minimum: 1, description: "Minutes per step. About 48 steps if left out"}
           }
@@ -258,12 +272,18 @@ defmodule Telemetry do
               }
             },
             name: %{type: "string"},
-            steps: %{
+            steps: steps,
+            groups: %{
               type: "array",
+              description: "With `by`: each combination of those attributes, as the data has it",
               items: %{
                 type: "object",
-                properties: Map.merge(quantiles, %{at: ms.("The step's start")}),
-                required: ["at", "count"]
+                properties: %{
+                  by: %{type: "object", description: "Its value of each attribute split by"},
+                  from: %{type: ["string", "null"], description: "Which client it's from, as a person reads it"},
+                  steps: steps
+                },
+                required: ["by", "steps"]
               }
             }
           }
@@ -467,13 +487,13 @@ defmodule Telemetry do
   end
 
   def call("trace", %{"id" => id} = inputs, call) do
-    if not (id =~ ~r/^[0-9a-f]{32}$/), do: raise("A trace's id is 32 lowercase hexadecimal digits.")
+    if not (id =~ ~r/^[0-9a-f]{32}$/), do: raise(Call.Refused, "A trace's id is 32 lowercase hexadecimal digits.")
     shown = meanwhile(fn -> shown(call) end)
     to = System.os_time(:nanosecond)
     batches = Store.trace(call, to - (inputs["hours"] || 24) * 3_600_000_000_000, id)
 
     case Read.trace(batches, id, shown(shown)) do
-      [] -> raise "No trace #{id} in the last #{inputs["hours"] || 24} hours."
+      [] -> raise Call.Refused, "No trace #{id} in the last #{inputs["hours"] || 24} hours."
       spans -> %{trace: id, spans: spans}
     end
   end
@@ -483,7 +503,7 @@ defmodule Telemetry do
 
     case inputs["name"] do
       nil -> %{metrics: Read.metrics(batches)}
-      name -> Read.series(batches, name, inputs["attributes"] || %{}, from, to, inputs["step"])
+      name -> Read.series(batches, name, inputs["attributes"] || %{}, from, to, inputs["step"], inputs["by"] || [])
     end
   end
 
