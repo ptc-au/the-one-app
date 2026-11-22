@@ -396,9 +396,13 @@ fn continuous_corner(radius: f32, half_size: vec2<f32>) -> vec2<f32> {
     return vec2<f32>(reach, exponent);
 }
 
+// How many radii from its corner a continuous corner's curve leaves each edge. Rust's `geometry::corner_reach` works out
+// what a box covers by it, and build.rs builds nothing while the two constants differ.
+const CONTINUOUS_CORNER_REACH: f32 = 1.528665;
+
 // How far in from its corner a continuous corner of `radius` bends (`continuous_corner`'s reach), without its exponent.
 fn corner_reach(radius: f32, half_size: vec2<f32>) -> f32 {
-    return max(radius, min(1.528665 * radius, min(half_size.x, half_size.y)));
+    return max(radius, min(CONTINUOUS_CORNER_REACH * radius, min(half_size.x, half_size.y)));
 }
 
 // Signed distance of the point to the quad's border - positive outside the

@@ -9,7 +9,7 @@ use std::{iter::Peekable, slice};
 
 use super::atlas::{AtlasTextureId, AtlasTile};
 use super::bounds_tree::BoundsTree;
-use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, ScaledPixels};
+use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, ScaledPixels, corner_reach};
 
 pub(crate) type DrawOrder = u32;
 
@@ -665,7 +665,7 @@ impl PrimitiveBatch<'_> {
     }
 
     /// Of its thing `at`, where it's a box of one colour, unturned, its borders solid: from the first to the last of its
-    /// rows that are each the same as the next (past its corners' rounding and its borders, and its clip's), and of its
+    /// rows that are each the same as the next (past its corners' reach and its borders, and its clip's), and of its
     /// columns, in the scene's pixels, top and bottom, left and right.
     pub(crate) fn even(&self, at: usize) -> Option<([f32; 2], [f32; 2])> {
         let PrimitiveBatch::Quads(quads) = self else { return None };
@@ -678,13 +678,15 @@ impl PrimitiveBatch<'_> {
         let (mask, mask_radii) = (&quad.content_mask.bounds, &quad.content_mask.corner_radii);
         let edges = |bounds: &Bounds<ScaledPixels>| (bounds.origin.x.0, bounds.origin.y.0, bounds.origin.x.0 + bounds.size.width.0, bounds.origin.y.0 + bounds.size.height.0);
         let ((left, top, right, bottom), (mask_left, mask_top, mask_right, mask_bottom)) = (edges(bounds), edges(mask));
+        // A clip's corners are circles (`mask_coverage` in shaders.wgsl), a box's continuous (`corner_reach`).
+        let reach = |one: ScaledPixels, other: ScaledPixels| corner_reach(one.0.max(other.0), bounds.size.width.0.min(bounds.size.height.0));
         let rows = [
-            (top + radii.top_left.0.max(radii.top_right.0).max(widths.top.0)).max(mask_top + mask_radii.top_left.0.max(mask_radii.top_right.0)),
-            (bottom - radii.bottom_left.0.max(radii.bottom_right.0).max(widths.bottom.0)).min(mask_bottom - mask_radii.bottom_left.0.max(mask_radii.bottom_right.0)),
+            (top + reach(radii.top_left, radii.top_right).max(widths.top.0)).max(mask_top + mask_radii.top_left.0.max(mask_radii.top_right.0)),
+            (bottom - reach(radii.bottom_left, radii.bottom_right).max(widths.bottom.0)).min(mask_bottom - mask_radii.bottom_left.0.max(mask_radii.bottom_right.0)),
         ];
         let columns = [
-            (left + radii.top_left.0.max(radii.bottom_left.0).max(widths.left.0)).max(mask_left + mask_radii.top_left.0.max(mask_radii.bottom_left.0)),
-            (right - radii.top_right.0.max(radii.bottom_right.0).max(widths.right.0)).min(mask_right - mask_radii.top_right.0.max(mask_radii.bottom_right.0)),
+            (left + reach(radii.top_left, radii.bottom_left).max(widths.left.0)).max(mask_left + mask_radii.top_left.0.max(mask_radii.bottom_left.0)),
+            (right - reach(radii.top_right, radii.bottom_right).max(widths.right.0)).min(mask_right - mask_radii.top_right.0.max(mask_radii.bottom_right.0)),
         ];
         Some((rows, columns))
     }

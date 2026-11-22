@@ -13,6 +13,7 @@ mod bindings;
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     quickjs();
+    corners();
     shaders();
     println!("cargo::rerun-if-changed=flutter");
     match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
@@ -98,6 +99,20 @@ fn quickjs() {
     // FNV-1a, as a folder's name.
     let hash = said.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3));
     println!("cargo::rustc-env=QUICKJS={hash:016x}");
+}
+
+/// A continuous corner's reach, which the shaders draw a box's corner by and Rust works out what a box covers by
+/// (`geometry::corner_reach`): nothing builds while the two say otherwise, where a box drawn one way and judged
+/// another left out what showed under its corner's curve.
+fn corners() {
+    println!("cargo::rerun-if-changed=src/geometry.rs");
+    let reach = |file: &str| {
+        let source = std::fs::read_to_string(file).expect("it's there");
+        let said = source.lines().find_map(|line| line.split_once("const CONTINUOUS_CORNER_REACH: f32 = ")).and_then(|(_, value)| value.strip_suffix(';')).map(str::to_owned);
+        said.unwrap_or_else(|| panic!("{file} says no CONTINUOUS_CORNER_REACH"))
+    };
+    let (shaders, rust) = (reach("src/render/shaders.wgsl"), reach("src/geometry.rs"));
+    assert_eq!(shaders, rust, "a continuous corner's reach is {shaders} radii in shaders.wgsl and {rust} in geometry.rs: make them the same");
 }
 
 /// Windows' shaders, compiled here to DXIL, as a game's and Chrome's ANGLE's are, so a window draws without a shader

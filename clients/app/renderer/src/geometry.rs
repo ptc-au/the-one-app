@@ -281,6 +281,21 @@ impl Bounds<Pixels> {
     }
 }
 
+/// How many radii from its corner a continuous corner's curve leaves each edge, Apple's, as the shaders draw one
+/// (`CONTINUOUS_CORNER_REACH` in shaders.wgsl, which build.rs checks is this).
+pub const CONTINUOUS_CORNER_REACH: f32 = 1.528665;
+
+/// How far from its corner a box's continuous corner of `radius` bends, where its shorter side is `shorter`: 1.528665
+/// radii, or as much as fits and at least the radius, as `continuous_corner` in shaders.wgsl draws it. Past it, the
+/// box's edge is straight. What it covers for certain is still all that's a radius in from its edges: the curve's
+/// middle is a circle's, a third of a radius in from the corner, so the curve never reaches that far in.
+pub fn corner_reach(radius: f32, shorter: f32) -> f32 {
+    if radius <= 0.0 {
+        return 0.0;
+    }
+    radius.max((CONTINUOUS_CORNER_REACH * radius).min(shorter / 2.0))
+}
+
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 #[repr(C)]
 pub struct Corners<T> {
