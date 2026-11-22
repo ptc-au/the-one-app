@@ -147,7 +147,8 @@ const Edge = createContext<() => { start: boolean; end: boolean }>(() => ({ star
  * detail beside its list, or a page or a part of one with no screen around it (an app that couldn't show its first
  * screen, an empty Home page), as iOS's ContentUnavailableView is. In a screen's parts, it's one of them. */
 export const Middle = createContext<() => boolean>(() => true)
-/// Where an `Empty` in a split's list side says it's there, so the split's detail side has nothing to pick.
+/// Where an `Empty` in a split's list side says it's there, so the split's detail side has nothing to pick: not one in a
+/// `Section`, which is only that section's.
 export const Blank = createContext<(change: number) => void>(() => {})
 
 /// `<Screen heading="Notes" action={<Button>Add</Button>}>...</Screen>`: a whole view of an app: a bar across its
@@ -317,7 +318,8 @@ export function Section(props: { heading?: JSX.Element; "aria-label"?: string; c
           {props.heading}
         </Heading>
       </Show>
-      {props.children}
+      {/* An `Empty` in a part of the list is that part's, not the list's: its split still has rows to pick. */}
+      <Blank value={() => {}}>{props.children}</Blank>
     </View>
   )
 }
@@ -348,7 +350,7 @@ const open: (() => void)[] = []
 /// calls `onClose`, and the app sets `open` false. Its list side's lists are one to the keyboard (`ListKeys`).
 /// Beside its list with nothing open, its detail side says `pick` ("Pick a repo to see its code."), as Mail says "No
 /// Message Selected", where the app has a list to pick from: it's left out where there's none, and where the list is
-/// empty (an `Empty` in it), when its detail side says nothing and the list's own line stands alone, as Mail's does.
+/// empty (an `Empty` in it, not in one of its sections), when its detail side says nothing and the list's own line stands alone, as Mail's does.
 export function Split(props: { open?: boolean; onClose?: () => void; pick?: string; detail?: JSX.Element; children?: JSX.Element }) {
   const room = useContext(Room)
   const history = useContext(Went)

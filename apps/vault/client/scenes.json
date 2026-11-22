@@ -455,6 +455,16 @@
   },
   "Chrome Profiles": {
     "like": "Empty",
+    "size": [1280, 800],
+    "checks": {
+      "Beside its list with a section empty, its detail says what to pick": [
+        {
+          "expect": {
+            "text": "Pick an item to see it."
+          }
+        }
+      ]
+    },
     "answers": {
       "vault_list": {
         "items": [],
