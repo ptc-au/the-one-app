@@ -6,9 +6,9 @@ defmodule Telemetry.Alerts do
 
   | Kind | Fires when | Clears when |
   | --- | --- | --- |
-  | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`) | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and it hasn't looped for 10 min |
+  | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`), heard in the last 10 min | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and no loop has been heard of for 10 min |
   | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater no longer says so, once an update or the edge's deploy under way has ended |
-  | `error` | A kind of error logged that wasn't in the last 14 days: its first line, numbers and ids aside. A fault, a crash or a client's exception, not a tool refusing (a `RuntimeError`) | It isn't logged for 10 min, or it stops being new an hour after it was first |
+  | `error` | A kind of error logged that wasn't in the last 14 days: its first line, numbers and ids aside. A fault, a crash or a client's exception, not a tool refusing (a `RuntimeError`) | None arrives for 10 min, or it stops being new an hour after it first arrived |
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
   | `unanswered` | An app didn't answer, in 2 or more of the last 5 minutes: a hook it didn't answer in time (`one.hook.timeouts`), or its database's server kept a call waiting without running it (`one.database.lease.wait`, `not_answered`) | 5 min without |
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
@@ -23,9 +23,11 @@ defmodule Telemetry.Alerts do
 
   What it reads is each batch kept since it last looked that it hasn't read, by its name (`Telemetry.Store.since/3`),
   so one kept late is read all the same, and it keeps of that only what its rules need: each server's last start and
-  failure, each kind of error and when it was first and last seen, and per app per minute its calls, its failures and
+  failure, each kind of error and when it first and last arrived, and per app per minute its calls, its failures and
   how often it didn't answer, what Backups last said of each destination, and what Encryption last said of each encrypted artifact. Its first look reads the last 14 days for the kinds of error there were, and has no alert for
-  any of them. Whether a server is one of the network's and ready, and how the network's update is, it asks of the relay
+  any of them. An error and a crash loop are judged by when they arrive, not when they happened, as Prometheus's alerts
+  are by when they're evaluated: what a device kept while it was away, or a server said once it was back, is told
+  when it's heard. Whether a server is one of the network's and ready, and how the network's update is, it asks of the relay
   as it looks (`OneCore.Servers.presence/1`, `OneCore.Servers.network/0`): where the relay doesn't answer, what it
   would have said of stays as it was.
   """
@@ -254,7 +256,7 @@ defmodule Telemetry.Alerts do
   defp log(%{"body" => "** (RuntimeError) " <> _}), do: []
 
   defp log(%{"severity" => "ERROR", "body" => body} = log) when is_binary(body),
-    do: [{:error, ms(log["time"]), kind(body), place(log), first_line(body)}]
+    do: [{:error, kind(body), place(log), first_line(body)}]
 
   defp log(_log), do: []
 
@@ -292,7 +294,7 @@ defmodule Telemetry.Alerts do
   # Keeps what the rules need of `signals`. Its first look keeps only the kinds of error there were, as seen, and
   # none is new.
   defp keep(db, signals, true, now) do
-    signals = for {:error, _at, _kind, _place, _message} = error <- signals, do: error
+    signals = for {:error, _kind, _place, _message} = error <- signals, do: error
     keep(db, signals, false, now)
     query(db, "update seen set new = 0", [])
   end
@@ -311,7 +313,7 @@ defmodule Telemetry.Alerts do
         case said do
           :started -> %{row | "started" => max(row["started"] || 0, at), "failing" => if(row["failing"] && row["failing"] < at, do: nil, else: row["failing"])}
           {:failed, why} -> %{row | "failing" => row["failing"] || at, "failed" => at, "why" => why}
-          {:looping, why} -> %{row | "looping" => at, "why" => why}
+          {:looping, why} -> %{row | "looping" => now, "why" => why}
         end
 
       query(
@@ -321,14 +323,14 @@ defmodule Telemetry.Alerts do
       )
     end
 
-    for {:error, at, kind, place, message} <- signals do
+    for {:error, kind, place, message} <- signals do
       query(
         db,
         """
         insert into seen (kind, place, message, first, last, new) values (?, ?, ?, ?, ?, ?)
-        on conflict (kind) do update set last = max(last, excluded.last)
+        on conflict (kind) do update set last = excluded.last
         """,
-        [kind, place, message, at, at, 1]
+        [kind, place, message, now, now, 1]
       )
     end
 
