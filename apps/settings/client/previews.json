@@ -345,7 +345,14 @@
       390,
       480
     ],
-    "touch": false
+    "touch": false,
+    "motions": {
+      "A mouse wheel's notches scroll it": {
+        "gesture": {
+          "trace": "traces/windows-wheel-narrow.json"
+        }
+      }
+    }
   },
   "Updates, an app that can't update": {
     "like": "Settings",
@@ -2063,6 +2070,13 @@
           }
         ],
         "types": []
+      }
+    },
+    "motions": {
+      "A mouse wheel's notches scroll it": {
+        "gesture": {
+          "trace": "traces/windows-wheel.json"
+        }
       }
     }
   },

@@ -134,10 +134,11 @@ async function play(built, scene, name, motion, hz, folder) {
   const lifting = frames.slice(Math.max(0, frames.findLastIndex((frame) => frame.at < end)))
   // What a finger moved and holds still is drawn nothing again while it's held still, once it's stopped, as Core
   // Animation keeps a still layer's pixels: a card held still was drawn afresh, then from its layer's picture, each third
-  // frame, its edge half a pixel aside each time (L86). A press that hasn't moved yet draws what it presses.
+  // frame, its edge half a pixel aside each time (L86). A press that hasn't moved yet draws what it presses. A caret blinking
+  // in a field that has the keyboard is drawn as it blinks, whatever is held still.
   const where = (n) => finger(stretches, frames[n].at - 1000 / hz, way)
   const holding = (n) => where(n - 2) === where(n) && where(n) !== where(0) && [n - 2, n - 1].every((was) => JSON.stringify(frames[was].rect) === JSON.stringify(frames[n].rect))
-  const redrawn = events || !motion.follow ? -1 : frames.findIndex((frame, n) => n > 1 && frame.at < end && holding(n) && frame.work?.damage > 0)
+  const redrawn = events || !motion.follow ? -1 : frames.findIndex((frame, n) => n > 1 && frame.at < end && holding(n) && frame.work?.damage > 0 && frame.caret === frames[n - 1].caret)
   if (redrawn >= 0) failed.push(`frame ${redrawn} (${frames[redrawn].at} ms) drew ${frames[redrawn].work.damage} pixels again while what the finger holds was held still`)
   // A frame the same as the one before, with nothing on its way since (the headless renderer's `arriving`), is drawn nothing and
   // presents nothing new, as a compositor with no damage presents none: on 22 Nov 77 motions drew and presented frames

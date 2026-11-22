@@ -154,6 +154,7 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
             frame["held"] = json!(true);
         }
         frame["arriving"] = json!(arriving);
+        frame["caret"] = json!(windows.caret(id));
         // What's tracked, where it's drawn, or that it's gone, as a page that's left takes it with it: the node the
         // selector first found, not another it finds once that's gone (an App Library's Notes, as Home's goes).
         if let Some(query) = &mut track {

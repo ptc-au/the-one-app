@@ -371,7 +371,140 @@
   },
   "Home, swiped": {
     "like": "Home, two pages",
-    "touch": true
+    "touch": true,
+    "motions": {
+      "Swiped to the next page": {
+        "from": {
+          "x": 300,
+          "y": 500
+        },
+        "gesture": {
+          "swipe": [
+            -200,
+            0
+          ],
+          "speed": 800
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      },
+      "Flicked": {
+        "from": {
+          "x": 300,
+          "y": 500
+        },
+        "gesture": {
+          "fling": [
+            -80,
+            0
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      },
+      "Dragged a third and let go": {
+        "from": {
+          "x": 300,
+          "y": 500
+        },
+        "gesture": {
+          "drag": [
+            -130,
+            0
+          ],
+          "speed": 300
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      },
+      "Pulled past the first page": {
+        "from": {
+          "x": 100,
+          "y": 500
+        },
+        "gesture": {
+          "swipe": [
+            160,
+            0
+          ],
+          "speed": 600
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      },
+      "Dragged past half slowly, as UIKit's recording": {
+        "from": {
+          "x": 330,
+          "y": 450
+        },
+        "gesture": {
+          "moves": [
+            {
+              "dx": -230,
+              "ms": 1500
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      },
+      "Dragged short of half slowly, as UIKit's recording": {
+        "from": {
+          "x": 300,
+          "y": 450
+        },
+        "gesture": {
+          "moves": [
+            {
+              "dx": -120,
+              "ms": 1200
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      },
+      "Swiped quickly, as UIKit's recording": {
+        "from": {
+          "x": 330,
+          "y": 450
+        },
+        "gesture": {
+          "moves": [
+            {
+              "dx": -250,
+              "ms": 250
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "nth": 0
+        }
+      }
+    }
   },
   "Home, one page of apps": {
     "answers": {
@@ -698,6 +831,51 @@
     "page": "client/index.html#library",
     "answers": {
       "ui/open-link": {}
+    },
+    "motions": {
+      "Open a category": {
+        "from": {
+          "role": "group",
+          "name": "Utilities"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Weather",
+          "within": {
+            "role": "dialog",
+            "name": "Utilities"
+          }
+        }
+      },
+      "Open a category with less motion": {
+        "from": {
+          "role": "group",
+          "name": "Utilities"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Weather",
+          "within": {
+            "role": "dialog",
+            "name": "Utilities"
+          }
+        },
+        "reducedMotion": true
+      }
     }
   },
   "Home, couldn't load": {
@@ -737,7 +915,86 @@
     }
   },
   "Launcher, swiped": {
-    "like": "Launcher on a computer"
+    "like": "Launcher on a computer",
+    "motions": {
+      "Dragged to the App Library": {
+        "from": {
+          "x": 700,
+          "y": 400
+        },
+        "gesture": {
+          "swipe": [
+            -500,
+            0
+          ],
+          "speed": 1200
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        }
+      },
+      "Flicked to the App Library": {
+        "from": {
+          "x": 700,
+          "y": 400
+        },
+        "gesture": {
+          "fling": [
+            -140,
+            0
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        }
+      },
+      "Dragged to the App Library with less motion": {
+        "from": {
+          "x": 700,
+          "y": 400
+        },
+        "gesture": {
+          "swipe": [
+            -500,
+            0
+          ],
+          "speed": 1200
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        },
+        "reducedMotion": true
+      },
+      "Dragged a little and let go": {
+        "from": {
+          "x": 700,
+          "y": 400
+        },
+        "gesture": {
+          "drag": [
+            -200,
+            0
+          ],
+          "speed": 400
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        }
+      },
+      "A trackpad's swipe, the pointer nudged, then its momentum": {
+        "gesture": {
+          "trace": "traces/mac-swipe-to-app-library.json"
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        }
+      }
+    }
   },
   "Launcher on Windows, its pages wheeled": {
     "like": "Launcher on a computer",
@@ -748,6 +1005,13 @@
         "theme": null,
         "launcher": true,
         "mac": false
+      }
+    },
+    "motions": {
+      "A mouse wheel's notches move its pages": {
+        "gesture": {
+          "trace": "traces/windows-wheel-pages.json"
+        }
       }
     }
   },
@@ -1316,6 +1580,26 @@
           }
         ]
       }
+    },
+    "motions": {
+      "A mouse's wheel turns a page": {
+        "gesture": {
+          "trace": "traces/mouse-wheel-down.json"
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        }
+      },
+      "A mouse's wheel spun on to the App Library": {
+        "gesture": {
+          "trace": "traces/mouse-wheel-spin.json"
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes"
+        }
+      }
     }
   },
   "Launcher, a full page": {
@@ -1868,10 +2152,62 @@
         "launcher": true,
         "mac": true
       }
+    },
+    "motions": {
+      "Open a category on a loaded Mac": {
+        "from": {
+          "role": "group",
+          "name": "Utilities"
+        },
+        "gesture": {
+          "moves": []
+        },
+        "frameMs": 92
+      },
+      "Open a category": {
+        "from": {
+          "role": "group",
+          "name": "Utilities"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Weather",
+          "within": {
+            "role": "dialog",
+            "name": "Utilities"
+          }
+        }
+      }
     }
   },
   "Launcher, App Library swiped back": {
-    "like": "Launcher, App Library"
+    "like": "Launcher, App Library",
+    "motions": {
+      "Dragged back to Home": {
+        "from": {
+          "x": 300,
+          "y": 500
+        },
+        "gesture": {
+          "swipe": [
+            500,
+            0
+          ],
+          "speed": 1200
+        },
+        "follow": {
+          "role": "group",
+          "name": "Productivity"
+        }
+      }
+    }
   },
   "Launcher, nothing installed": {
     "like": "Home, nothing installed",
@@ -1912,7 +2248,32 @@
         "role": "group",
         "name": "Productivity"
       }
-    ]
+    ],
+    "motions": {
+      "Close it on a loaded Mac": {
+        "from": {
+          "x": 700,
+          "y": 500
+        },
+        "gesture": {
+          "moves": []
+        },
+        "frameMs": 92
+      },
+      "Close it": {
+        "from": {
+          "x": 700,
+          "y": 500
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        }
+      }
+    }
   },
   "App Library on a computer": {
     "like": "App Library",
@@ -1928,7 +2289,73 @@
         "role": "group",
         "name": "Productivity"
       }
-    ]
+    ],
+    "motions": {
+      "Close it": {
+        "from": {
+          "x": 300,
+          "y": 700
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "within": {
+            "role": "dialog",
+            "name": "Productivity"
+          }
+        }
+      },
+      "Close it with less motion": {
+        "from": {
+          "x": 300,
+          "y": 700
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notes",
+          "within": {
+            "role": "dialog",
+            "name": "Productivity"
+          }
+        },
+        "reducedMotion": true
+      },
+      "Close it, its badge": {
+        "from": {
+          "x": 300,
+          "y": 700
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "button",
+          "name": "Tasks",
+          "within": {
+            "role": "dialog",
+            "name": "Productivity"
+          }
+        }
+      }
+    }
   },
   "General, opens at login": {
     "component": "general",

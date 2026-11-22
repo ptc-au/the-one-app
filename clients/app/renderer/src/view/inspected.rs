@@ -523,6 +523,11 @@ impl Screen {
         self.js.holding()
     }
 
+    /// Whether the caret shows now, as it blinks (a test's frame that draws it blinking draws nothing else).
+    pub fn caret_showing(&self) -> bool {
+        self.caret_shows()
+    }
+
     /// Whether what it shows is still on its way somewhere: a transition, a node let go springing back, a list
     /// flung, what its page asked a frame for, or for a test, a picture decoded that's there only later on its clock,
     /// or its page busy (`seed`).

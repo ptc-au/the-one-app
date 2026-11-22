@@ -598,6 +598,11 @@ impl Windows {
         self.windows.get(&id).is_some_and(|window| window.screen.as_ref().is_ok_and(Screen::arriving))
     }
 
+    /// Whether window `id`'s caret shows now, as it blinks (`Screen::caret_showing`).
+    pub fn caret(&self, id: WindowId) -> bool {
+        self.windows.get(&id).is_some_and(|window| window.screen.as_ref().is_ok_and(Screen::caret_showing))
+    }
+
     /// Whether window `id` is on screen (`Window::on_screen`): not a panel put away.
     pub fn on_screen(&self, id: WindowId) -> bool {
         self.windows.get(&id).is_some_and(Window::on_screen)
