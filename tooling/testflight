@@ -78,6 +78,9 @@ native() {
 
 # TestFlight's latest build, by its number, which is a commit's count on main.
 latest=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-version&limit=1&fields%5Bbuilds%5D=version" | jq -r '.data[0].attributes.version // empty')
+# An app with builds from before this numbering has them as `<n>.<m>` (the PTC pilot's 2278.14), which Bash's arithmetic
+# refuses, which skipped every build after: its whole number is compared.
+latest=${latest%%.*}
 if [[ -n $latest ]]; then
   ((latest < number)) || { echo "TestFlight has $latest, which has $build's changes" && exit 0; }
   git fetch -q origin main
