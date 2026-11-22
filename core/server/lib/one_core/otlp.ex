@@ -86,8 +86,14 @@ defmodule OneCore.Otlp do
   @doc false
   def shutdown(_signal), do: :ok
 
+  # A server that hasn't started, as one waiting for the network's edge, has no apps to tell and no key to say it's
+  # by: what the SDK gathered then is let go.
   @doc false
-  def export(spans, resource, :traces),
+  def export(exporting, resource, signal) do
+    if Server.key(), do: export_to_apps(exporting, resource, signal), else: :ok
+  end
+
+  defp export_to_apps(spans, resource, :traces),
     do:
       exported(
         "traces",
@@ -95,7 +101,7 @@ defmodule OneCore.Otlp do
         &:opentelemetry_exporter_trace_service_pb.encode_msg(&1, :export_trace_service_request)
       )
 
-  def export(metrics, resource, :metrics),
+  defp export_to_apps(metrics, resource, :metrics),
     do:
       exported(
         "metrics",
@@ -103,7 +109,7 @@ defmodule OneCore.Otlp do
         &:opentelemetry_exporter_metrics_service_pb.encode_msg(&1, :export_metrics_service_request)
       )
 
-  def export({logs, config}, resource, :logs),
+  defp export_to_apps({logs, config}, resource, :logs),
     do:
       exported(
         "logs",
