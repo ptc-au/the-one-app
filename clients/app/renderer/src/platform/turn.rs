@@ -35,7 +35,7 @@ impl Windows {
     }
 
     /// Whether a window, the root window or not, has the rail's home line: a phone's app's, over its Home Screen. The
-    /// headless harness draws a phone's page alone too, with no Home Screen under it to go home to, which has none.
+    /// headless renderer draws a phone's page alone too, with no Home Screen under it to go home to, which has none.
     pub(super) fn rail(&self, root: bool) -> bool {
         self.on_phone() && !root && (cfg!(not(feature = "fake")) || self.windows.values().any(|window| window.root))
     }
@@ -169,7 +169,7 @@ impl Windows {
             self.text.evicted(&self.atlas);
         }
         // Each window waiting for its pipelines has its renderer once they're compiled, on whatever turns the loop: a
-        // harness's own turns too, as well as the windows' thread woken as they are (`Context::prepare`).
+        // the headless renderer's own turns too, as well as the windows' thread woken as they are (`Context::prepare`).
         #[cfg(not(target_arch = "wasm32"))]
         self.compiled();
         for (id, part, input) in self.display.events() {
@@ -481,7 +481,7 @@ impl Windows {
             // scene's place for this frame; and once more as it's gone.
             changed |= !matches!(window.cover, Cover::Gone) || std::mem::take(&mut window.uncovered);
             let page = window.cover.scene().map(|cover| covered(&window.scene, Some(cover), window.cover.opacity(), device)).map(|shown| std::mem::replace(&mut window.scene, shown));
-            // Drawn moved by whole device pixels where a harness on the web asked (`web::moving`), in its page's scene's
+            // Drawn moved by whole device pixels where a test on the web asked (`web::moving`), in its page's scene's
             // place for this frame, as what covers it is.
             #[cfg(target_arch = "wasm32")]
             let page = match super::web::moving() {

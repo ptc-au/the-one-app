@@ -1,4 +1,4 @@
-// A check's steps as the harness's requests, each with what judges its answer.
+// A check's steps as the headless renderer's requests, each with what judges its answer.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
@@ -41,7 +41,7 @@ const EDGE = 4
 /// WCAG's contrast ratio of two luminances.
 const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 
-/// A check's steps as the harness's requests, each with what judges its answer: why it failed, or nothing. `answers`
+/// A check's steps as the headless renderer's requests, each with what judges its answer: why it failed, or nothing. `answers`
 /// are the scene's, which a server that restarted answers with again.
 export function requests(steps, folder, answers = {}) {
   const named = (tap) => (typeof tap === "string" ? tap : tap.name ?? tap.text ?? JSON.stringify(tap))
@@ -458,7 +458,7 @@ export const unlike = (answer, folder) => {
   return `the frame drawn on what it kept differs from one drawn afresh in ${differ} of ${of} pixels${box ? `, from ${box.x},${box.y} ${box.width}×${box.height} px` : ""}`
 }
 
-/// Why a frame drawn moved by whole device pixels isn't itself where it was (the harness's `moved`, `unlike_moved`), if
+/// Why a frame drawn moved by whole device pixels isn't itself where it was (the headless renderer's `moved`, `unlike_moved`), if
 /// it isn't, each offset's pictures kept in `folder` (`here-<dx>,<dy>.png`, `moved-<dx>,<dy>.png`) where they differ.
 export const unmoved = (answer, folder) => {
   if (answer?.error) return answer.error
@@ -471,7 +471,7 @@ export const unmoved = (answer, folder) => {
 
 /// Why the texts named, among a query's `nodes`, aren't in one monospace face, if they aren't: every glyph of them
 /// advances as far as every other, as a code view's columns line up, which the proportional face's narrow i and wide m
-/// don't, even in one text alone. Natively and on the web alike (`scenes.js`).
+/// don't, even in one text alone. Natively and on the web alike (`screenshot.js`).
 export function monospaced(nodes, texts) {
   const found = texts.map((text) => nodes.find((node) => node.name === text && node.rect))
   const missing = texts.filter((_, at) => !found[at])

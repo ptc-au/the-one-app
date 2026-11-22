@@ -54,7 +54,7 @@ impl Screen {
         let now = Instant::now();
         let settle = self.settling.iter().map(|(until, _)| *until).chain(self.tapping.iter().map(inspected::Tapping::deadline)).map(|until| until.saturating_duration_since(now)).min();
         let frames = self.frames.values().filter_map(|child| child.screen.due());
-        // For a harness, a picture decoded is there at its time on its clock (`Pictures::due`).
+        // For a test, a picture decoded is there at its time on its clock (`Pictures::due`).
         let pictures = self.pictures.due().map(|ms| Duration::from_secs_f64(ms / 1000.0));
         let hover = self.hover_after.map(|at| Duration::from_secs_f64((at - self.js.clock().now()).max(0.0) / 1000.0));
         settle.into_iter().chain(self.blinks()).chain(self.finger_hold()).chain(frames).chain(pictures).chain(hover).min()

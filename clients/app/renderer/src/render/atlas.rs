@@ -34,7 +34,7 @@ pub(crate) fn premultiply(pixels: &mut [u8]) {
 
 /// Whether every pixel of a colour tile is premultiplied by its alpha, none of its colour above it: the one way every
 /// colour in the renderer is held (`Layouts::new`), checked as each tile is put in, where a debug build runs (the
-/// harness), so a picture put in straight, whose clear edge would darken or bleed as it's filtered, is caught there.
+/// headless renderer), so a picture put in straight, whose clear edge would darken or bleed as it's filtered, is caught there.
 fn premultiplied(pixels: &[u8]) -> bool {
     pixels.chunks_exact(4).all(|pixel| pixel[..3].iter().all(|channel| *channel <= pixel[3]))
 }
@@ -92,7 +92,7 @@ fn budget() -> u64 {
     return 16 << 20;
 }
 
-/// Whether the atlas is as a device short of memory has it (`ONE_ATLAS=starved`, which only a harness sets): every turn lets
+/// Whether the atlas is as a device short of memory has it (`ONE_ATLAS=starved`, which only a test sets): every turn lets
 /// go of every tile the turn before didn't draw, so what's drawn again is packed anew, beside other tiles.
 fn starved() -> bool {
     std::env::var("ONE_ATLAS").as_deref() == Ok("starved")

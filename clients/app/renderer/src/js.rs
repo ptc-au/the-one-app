@@ -63,8 +63,8 @@ impl Clock {
         Clock(Arc::new(Ticking { epoch_ms: Some(1_767_225_600_000.0), zone: None, started: Instant::now(), moved: Mutex::new(Moved { ahead: 0.0, paused: Some(0.0) }) }))
     }
 
-    /// The real date, paused at 0 until it's moved: a web page opened by a harness, which steps it as the native
-    /// harness steps its fixed clock, so what moves by itself (a spinner, a caret) is where it is for the same step on
+    /// The real date, paused at 0 until it's moved: a web page opened by a test, which steps it as the headless
+    /// renderer steps its fixed clock, so what moves by itself (a spinner, a caret) is where it is for the same step on
     /// every run, however long the machine took to draw each.
     pub fn stopped() -> Clock {
         Clock(Arc::new(Ticking { epoch_ms: None, zone: None, started: Instant::now(), moved: Mutex::new(Moved { ahead: 0.0, paused: Some(0.0) }) }))

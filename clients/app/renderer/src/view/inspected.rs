@@ -46,8 +46,8 @@ impl Screen {
             return self.tell_settled();
         }
         // A tap on a node waits for it, as Playwright's click does (actionability): for it to be there, drawn, still
-        // and reached by a press there, a second at most unless `timeout` says, as the harness's taps do
-        // (examples/screenshot/main.rs).
+        // and reached by a press there, a second at most unless `timeout` says, as the headless renderer's taps do
+        // (examples/headless/main.rs).
         if request.op == "tap" && request.selects() {
             let deadline = Instant::now() + Duration::from_secs_f64(request.f64("timeout").unwrap_or(1000.0).max(0.0) / 1000.0);
             self.tapping.push(Tapping { deadline, request, reply, was: None });
@@ -491,7 +491,7 @@ impl Screen {
         said
     }
 
-    /// The node a selector names, once it's there, for a harness that waits for it: `None` while nothing matches, an
+    /// The node a selector names, once it's there, for a test that waits for it: `None` while nothing matches, an
     /// error where several do and it doesn't say which (`nth`), as `inspect::one` has it.
     pub fn matched(&self, selector: &Request) -> Option<anyhow::Result<Id>> {
         (!inspect::select(&self.tree, selector).is_empty()).then(|| inspect::one(&self.tree, selector))
@@ -524,7 +524,7 @@ impl Screen {
     }
 
     /// Whether what it shows is still on its way somewhere: a transition, a node let go springing back, a list
-    /// flung, what its page asked a frame for, or for a harness, a picture decoded that's there only later on its clock,
+    /// flung, what its page asked a frame for, or for a test, a picture decoded that's there only later on its clock,
     /// or its page busy (`seed`).
     /// A loop (a spinner) never arrives, so isn't.
     pub fn arriving(&self) -> bool {
@@ -543,9 +543,9 @@ impl Screen {
         self.pointer
     }
 
-    /// When its page's next timer is due, or a picture it decoded is there for a harness, in ms from now on its clock.
+    /// When its page's next timer is due, or a picture it decoded is there for a test, in ms from now on its clock.
     pub fn timer_due(&self) -> Option<f64> {
-        // A picture decoded is there at its time, for a harness (`Pictures::due`), as a timer is, and the caret blinks
+        // A picture decoded is there at its time, for a test (`Pictures::due`), as a timer is, and the caret blinks
         // at its, which a device's loop wakes for (`due`).
         self.js.due().into_iter().chain(self.pictures.due()).chain(self.blink_due()).chain(self.frames.values().filter_map(|child| child.screen.pictures.due())).reduce(f64::min)
     }

@@ -118,7 +118,7 @@ impl Check {
 }
 
 /// The inspector's `record` under way: every input its window gets, as it comes, for `ms`, as the events a trace plays
-/// (the headless harness's `trace`, a scene's `trace` gesture), so a device's input is played headless as it came.
+/// (the headless renderer's `trace`, a scene's `trace` gesture), so a device's input is played headless as it came.
 pub(super) struct Recording {
     pub window: super::WindowId,
     pub started: Instant,

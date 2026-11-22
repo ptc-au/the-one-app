@@ -58,7 +58,7 @@ pub enum Draw {
 
 pub struct Renderer {
     /// When it last drew a frame, as the windows' loop tells the time (`platform::now`: on the fake platform its clock,
-    /// so its harness lets go idle as a device would), by which it lets go of what it holds once idle (`idle`).
+    /// so its test lets go idle as a device would), by which it lets go of what it holds once idle (`idle`).
     drew: web_time::Instant,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -419,7 +419,7 @@ impl Renderer {
     }
 
     /// How long until the frames it gave the GPU are waited for, once it's given none for a while (`hung`): by the
-    /// windows' loop's clock alone, never by when the GPU says it's done, so a harness's loop turns at the same times
+    /// windows' loop's clock alone, never by when the GPU says it's done, so a test's loop turns at the same times
     /// each run. The browser has its own watchdog, which loses the device.
     pub fn hang_in(&self) -> Option<web_time::Duration> {
         let last = self.given.back()?;

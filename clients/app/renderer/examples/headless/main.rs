@@ -1,13 +1,13 @@
 //! A native page drawn offscreen, the same on every run: a PNG of it and its semantic tree as JSON.
 //!
-//!     cargo run -p renderer --example screenshot --features fake -- <page's built folder> <out.png> <out.json> \
+//!     cargo run -p renderer --example headless --features fake -- <page's built folder> <out.png> <out.json> \
 //!       [--ui core/ui/dist/client] [--answers answers.json] [--size 480x360] [--scale 2] [--dark] [--requests <file>|-]
 //!       [--safe-area <top>,<right>,<bottom>,<left>] [--touch] [--reduced-motion] [--panel <corner>] [--measure] [--seed <n>]
 //!       [--latency <ms> [--cached <tool>,…]] [--slower <times>] [--memory <GB>] [--time-zone <IANA name>] [--hz <n>]
 //!
 //! It runs the module the folder's `index.html` loads, as `bun app.js` built it, with the UI library a native host
 //! loads from `--ui` (`bun run build` in core/ui), and answers what the page asks its client from `--answers`, as
-//! core/ui's `record.js` does: `{ "<tool>": <its answer>, "<method>": <its result> }`. It's a window of the fake
+//! `record.js` does: `{ "<tool>": <its answer>, "<method>": <its result> }`. It's a window of the fake
 //! platform's (`renderer::platform`'s `fake`, built with that feature), drawn by the loop every host's windows are,
 //! whose display ticks as this says and whose time is the page's clock, with Allo alone as the typeface, the
 //! sandbox's fixed clock and randomness, and our renderer drawing offscreen on
@@ -23,7 +23,7 @@
 //! moves it, the display ticking each frame meanwhile; and after the requests, until what it shows comes to rest but
 //! for loops (at most 3 s), which is what's pictured. `changed` is a server saying something changed, as its client
 //! tells a page on screen, with what its tools answer from then on (`answers`, as `--answers` has them). A run whose
-//! page crashed fails, saying why, as does one whose window was still blank 5 s after it opened (`Event::Blank`), and so does one whose process grows past `HARNESS_MEMORY`, at once, wherever it is. `--touch` draws it for a finger, as a phone's window is (`pointer: coarse`),
+//! page crashed fails, saying why, as does one whose window was still blank 5 s after it opened (`Event::Blank`), and so does one whose process grows past `HEADLESS_MEMORY`, at once, wherever it is. `--touch` draws it for a finger, as a phone's window is (`pointer: coarse`),
 //! and presses are a finger's, as the display's touches, which its window takes as every phone's host does
 //! (`view::touch`): its slop, pans, a sheet taking the finger, and the swipe back from the left edge.
 //! `--panel` opens it as a computer's panel is (a Mac's launcher, its corners `<corner>` round), summoned: what its page
@@ -77,16 +77,16 @@ use renderer::render::renderer::Renderer;
 use renderer::{Appearance, Screen};
 use url::Url;
 
-/// The most the harness's process may hold: a run takes 200 to 500 MB, so one past it is running away, and is stopped
+/// The most the headless renderer's process may hold: a run takes 200 to 500 MB, so one past it is running away, and is stopped
 /// before it takes a machine others share (20 Nov: a page out of memory took 14 GB and swap with it).
-const HARNESS_MEMORY: usize = 2 << 30;
+const HEADLESS_MEMORY: usize = 2 << 30;
 
 fn main() -> anyhow::Result<()> {
     // Watched from a thread of its own, as whatever runs away may be holding the one that would notice.
     std::thread::spawn(|| loop {
         let held = memory_stats::memory_stats().map_or(0, |memory| memory.physical_mem);
-        if held > HARNESS_MEMORY {
-            eprintln!("Error: the harness grew to {} MB, past its {} MB, so it stopped", held >> 20, HARNESS_MEMORY >> 20);
+        if held > HEADLESS_MEMORY {
+            eprintln!("Error: the headless renderer grew to {} MB, past its {} MB, so it stopped", held >> 20, HEADLESS_MEMORY >> 20);
             std::process::exit(1);
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -467,7 +467,7 @@ fn main() -> anyhow::Result<()> {
         println!("{}", answer.unwrap_or_else(|| json!({"error": "it didn't answer"})));
     }
     // What it comes to rest on is what's pictured, as a page's animations that end are waited for on the DOM
-    // (scenes.js): its time runs, the display ticking, until nothing's on its way anywhere but in a loop (a spinner),
+    // (screenshot.js): its time runs, the display ticking, until nothing's on its way anywhere but in a loop (a spinner),
     // for at most SETTLE_MS.
     let settling = renderer::platform::fake_time();
     frame(&mut windows);

@@ -214,7 +214,7 @@ impl Thread {
         &self.clock
     }
 
-    /// Whether its page's timers run on its clock: the frame's own page, opened paused for a harness (renderer.js's
+    /// Whether its page's timers run on its clock: the frame's own page, opened paused for a test (renderer.js's
     /// `timed`, `stepped`), which steps them with the clock. A frame's page's are the browser's.
     pub fn on_clock(&self) -> bool {
         self.frame.is_none() && STEPPED.get()

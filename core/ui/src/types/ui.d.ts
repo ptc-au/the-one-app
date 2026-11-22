@@ -465,13 +465,13 @@ export declare function Widget(props: {
 }): Element
 
 // Scenes: a component's or a screen's states, named, each drawn as it is with what it shows, for the gallery
-// (core/ui/gallery) and for drawing each natively and on the web (core/ui/scenes.js). A scene is what to
+// (clients/app/renderer/tests/gallery) and for drawing each natively and on the web (clients/app/renderer/tests/screenshot.js). A scene is what to
 // draw, or that with what to press first (`taps`, by what each is named or says), whether it's drawn only by itself
 // (`alone`: something over the page), drawn edge to edge in its window, as a whole screen is, rather than inset in it
 // (`layout: "fullscreen"`, as Storybook's), how big its window is (`size`, a phone's 390 × 844 unless said) and whether a
 // finger points at it (`touch`: a window under 600 wide is a phone's unless it says `false`), what its window keeps at each
-// edge (`safeArea`, top, right, bottom and left: a phone's status bar and home indicator, an iPhone's for a touch scene), the gestures played on it, frame by frame (`motions`, core/ui/motion.js), and what
-// people do with it and what must hold as they do (`checks`, `bun motion.js --checks`), with the seeds a check once
+// edge (`safeArea`, top, right, bottom and left: a phone's status bar and home indicator, an iPhone's for a touch scene), the gestures played on it, frame by frame (`motions`, core/ui/animation.js), and what
+// people do with it and what must hold as they do (`checks`, `bun animation.js --checks`), with the seeds a check once
 // failed on (`seeds`). A page that logs an error fails the scene, as a browser's console does a test, but for the
 // words a scene that shows an error says it logs (`errors`: "Couldn't reach the network"). Its name is its family's and its own: "Buttons/Variants".
 export type Scene =
@@ -480,7 +480,7 @@ export type Scene =
 /** A step of a check, as a test's (Playwright's, the UI SDK's): what's done, as a tap is (pressed, a key, typed), a
  * press held `hold` ms or tapped `clicks` times (an `agent`'s comes as an agent's request to a device's window does, by the inspector, though
  * nobody could press it, as on a panel put away), the pointer moved onto something (`hover`), a button held `down` on something and let go (`up`), input played as
- * a device delivered it (`trace`, a JSON file of `{ ms, kind, … }` beside the scenes, as the harness's `trace` takes
+ * a device delivered it (`trace`, a JSON file of `{ ms, kind, … }` beside the scenes, as the headless renderer's `trace` takes
  * it: a trackpad's swipe with its phases and momentum, the pointer's nudges, a finger's `touch`es, each with its
  * `phase`), time passing (`wait`, ms), the app in the background that long and back (`away`, ms), which fails where it
  * draws meanwhile, as a phone's GPU refuses that, a panel put away or summoned (`putAway`, `summon`), or the device's own
@@ -526,7 +526,7 @@ export type Expect = { shown?: Tap; gone?: Tap; focused?: Tap; text?: string; st
  * ends, as a swipe that bounces does. `frameMs`: its frames drawn only that often,
  * as a device others load draws them (Telemetry's frame interval), which presses it as a window's late frames do.
  * `blurred`: glass shows blurred in every frame after its first, as a veil it opens does. `keeps`: the tier of
- * core/ui/devices.json whose budget each of its frames keeps, at that tier's rate, the frames a press lands and lifts
+ * clients/app/renderer/tests/devices.json whose budget each of its frames keeps, at that tier's rate, the frames a press lands and lifts
  * on too, their JS, painting and GPU as that device would take them. `opensFrom`: what `follow` names is first drawn from
  * where this is, its top and its middle there (within a point), as an iPhone's folder grows out of its square and its
  * apps out of the square's. `shows`: what it names is drawn from the frame what `follow` names has landed, as a folder's
@@ -549,7 +549,7 @@ export type Gesture =
   | { pull: number }
   | { moves: { dx?: number; dy?: number; ms: number }[]; lift?: boolean }
   | { trace: string }
-/** What's done, in order (core/ui/scenes.js runs them): pressed by what it's named or says, or that and its role
+/** What's done, in order (clients/app/renderer/tests/screenshot.js runs them): pressed by what it's named or says, or that and its role
  * where a name alone is two things (a field's label and its select), or by its role alone (the menu open); a point pressed; a key as the DOM names it, with
  * any of `ctrl`, `shift`, `alt` or `meta` held; or text typed where the keyboard is. */
 export type Tap =

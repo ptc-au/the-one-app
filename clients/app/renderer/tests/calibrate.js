@@ -1,12 +1,12 @@
-// Measures what a frame's work costs a real device, to calibrate the device tiers motion.js judges by (devices.json):
-// `bun calibrate.js --ssh <host> --harness <its build of the harness> [--window <its build of the window example>]
-// [--name <device>] [--out <dir>]` in clients/app/renderer/tests, after `bun build.js` in core/ui, with a harness built for that host (`cargo xwin
-// build --release -p renderer --example screenshot --features fake --target x86_64-pc-windows-msvc` for a Windows one,
+// Measures what a frame's work costs a real device, to calibrate the device tiers animation.js judges by (devices.json):
+// `bun calibrate.js --ssh <host> --headless <its build of the headless renderer> [--window <its build of the window example>]
+// [--name <device>] [--out <dir>]` in clients/app/renderer/tests, after `bun build.js` in core/ui, with a headless renderer built for that host (`cargo xwin
+// build --release -p renderer --example headless --features fake --target x86_64-pc-windows-msvc` for a Windows one,
 // which draws on its own GPU over ssh with Direct3D 12, and `--example window` for `--window`).
 //
 // It draws every scene of the gallery there, the first frames of each as it opens and every frame of each of its
-// motions at 60 Hz, and every motion of the apps' that keeps a tier (`keeps`) as motion.js plays them, each waited for
-// on its GPU, as the harness times its passes there (`gpu_ms`), at two device pixels a point, as a phone's or a
+// motions at 60 Hz, and every motion of the apps' that keeps a tier (`keeps`) as animation.js plays them, each waited for
+// on its GPU, as the headless renderer times its passes there (`gpu_ms`), at two device pixels a point, as a phone's or a
 // laptop's at 4K is. Each frame's work (`work`: the pixels of each kind of thing drawn, the pixels copied, the bytes
 // uploaded, and its draw calls and render passes) is the same on any device; how long its GPU took, and its thread
 // drawing it for the GPU (`draw_ms`: making and submitting its command lists, which a driver may take longer for than
@@ -17,26 +17,26 @@
 //
 // Then it checks the model against the device, motion by motion, for each that keeps a tier: what its frames take there
 // (their GPU's, their drawing's and how many it drops at 60 Hz) and what the model says they take, and with `--window`,
-// what they take played in a real window there (`motion.js --present`), with frames in flight as an app's are, which the
-// harness never has. It fails where the two are further apart than MARGIN_MS at their 90th percentile, which a motion's
+// what they take played in a real window there (`animation.js --present`), with frames in flight as an app's are, which the
+// headless renderer never has. It fails where the two are further apart than MARGIN_MS at their 90th percentile, which a motion's
 // few first frames of a kind (its pipelines compiled as it first draws with them, a driver's command lists first grown
 // to as many passes) don't reach.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { FACES, mac, moves, pageFolder, scenesOf, selector } from "./motion.js"
-import { modelled, SHADED } from "./motion/tiers.js"
+import { FACES, mac, moves, pageFolder, scenesOf, selector } from "./animation.js"
+import { modelled, SHADED } from "./animation/tiers.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 const args = process.argv.slice(2)
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 const host = option("--ssh")
-const harness = option("--harness") && resolve(option("--harness"))
+const headless = option("--headless") && resolve(option("--headless"))
 const windowed = option("--window") && resolve(option("--window"))
 const name = option("--name") ?? host
 // Its own worktree's, never a folder every agent on the machine shares, where one ran with another's UI build.
 const out = resolve(option("--out") ?? join(here("../../../../"), "target", "calibrate"))
-if (!host || !harness) throw new Error("Say where: --ssh <host> --harness <the harness built for it>")
+if (!host || !headless) throw new Error("Say where: --ssh <host> --headless <the headless renderer built for it>")
 
 /// The work a frame did, as the GPU's fit takes it: millions of pixels of each kind (`SHADED`, those blurred behind
 /// backdrops among them), its draw calls, megabytes uploaded and blurs taken; and as its drawing's fit takes it: its
@@ -72,7 +72,7 @@ export const predict = ({ costs, constant }, frame) => features(frame).reduce((s
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
 const p90 = (values) => [...values].sort((a, b) => a - b)[Math.round(0.9 * (values.length - 1))]
 
-// Every gallery scene, and its motions, in a folder of its own with what the harness is asked.
+// Every gallery scene, and its motions, in a folder of its own with what the headless renderer is asked.
 const gallery = here("gallery")
 const batch = join(out, "batch")
 rmSync(out, { recursive: true, force: true })
@@ -83,7 +83,7 @@ if (make.exitCode !== 0) throw new Error(`The gallery didn't build: ${make.stder
 const scenes = await scenesOf(gallery, built, join(out, "listing"), true)
 const lines = []
 // A Mac's shell is sh, a Windows PC's cmd.
-const [sep, exe] = mac ? ["/", "screenshot"] : ["\\", "screenshot.exe"]
+const [sep, exe] = mac ? ["/", "headless"] : ["\\", "headless.exe"]
 scenes.forEach((scene, n) => {
   const folder = join(batch, `${n}`)
   const page = pageFolder(built, scene.page, join(out, "pages", `${n}`))
@@ -96,7 +96,7 @@ scenes.forEach((scene, n) => {
   lines.push(`${mac ? "./" : ""}${exe} ${n}${sep}page ${n}${sep}end.png ${n}${sep}end.json --ui ui --answers ${n}${sep}answers.json --size ${scene.size[0]}x${scene.size[1]} --scale 2 ${scene.touch ? "--touch " : ""}--requests ${n}${sep}requests.jsonl > ${n}${sep}answers.jsonl 2> ${n}${sep}said.txt`)
 })
 cpSync(here("../../../../core/ui/dist/client"), join(batch, "ui"), { recursive: true, dereference: true })
-cpSync(harness, join(batch, exe))
+cpSync(headless, join(batch, exe))
 for (const face of FACES) cpSync(face, join(batch, basename(face)))
 const script = mac ? "run.sh" : "run.cmd"
 writeFileSync(join(batch, script), mac ? ['cd "$(dirname "$0")"', ...lines].join("\n") : ["@echo off", "cd /d %~dp0", ...lines].join("\r\n"))
@@ -118,15 +118,15 @@ say(["scp", "-rq", `${host}:${remote.replaceAll("\\", "/")}`, join(out, "back")]
 say(["ssh", host, gone])
 console.log(`${scenes.length} scenes drawn on ${name} in ${Math.round((performance.now() - started) / 1000)} s`)
 
-// The apps' motions that keep a tier, played there as motion.js plays them (and with `--window`, in a real window), each
+// The apps' motions that keep a tier, played there as animation.js plays them (and with `--window`, in a real window), each
 // motion's frames kept in a folder of its own: `<app>/<scene>/<motion>/60hz/frames.json` (and `presented.json`).
 const apps = readdirSync(here("../../../../apps")).map((app) => here(`../../../../apps/${app}`)).filter((app) => existsSync(join(app, "client/scenes.json")) && readFileSync(join(app, "client/scenes.json"), "utf8").includes('"keeps"'))
 const playThere = (folder, ...more) => {
-  const played = Bun.spawnSync(["bun", here("motion.js"), ...apps, "--keeps", "--hz", "60", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
-  if (!existsSync(join(out, folder))) throw new Error(`motion.js played nothing there: ${played.stderr.toString().trim()}`)
+  const played = Bun.spawnSync(["bun", here("animation.js"), ...apps, "--keeps", "--hz", "60", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
+  if (!existsSync(join(out, folder))) throw new Error(`animation.js played nothing there: ${played.stderr.toString().trim()}`)
 }
-playThere("motions", "--harness", harness)
-if (windowed) playThere("presented", "--present", "--harness", windowed)
+playThere("motions", "--headless", headless)
+if (windowed) playThere("presented", "--present", "--headless", windowed)
 const kept = (folder, file) =>
   readdirSync(join(out, folder), { recursive: true })
     .filter((path) => path.endsWith(`60hz/${file}`))

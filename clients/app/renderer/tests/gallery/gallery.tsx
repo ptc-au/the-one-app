@@ -1,6 +1,6 @@
 // Every component of the UI library in each of its states, as scenes (`<family>.scenes.tsx`): one page that
 // draws them all, under their families, or the one its link names (`#Buttons/Variants`), alone, as the scenes'
-// runner (core/ui/scenes.js) draws each, natively and on the web; `#scenes` lists them for it. What follows a `?` in a
+// runner (clients/app/renderer/tests/screenshot.js) draws each, natively and on the web; `#scenes` lists them for it. What follows a `?` in a
 // link is the scene's own to read, as a URL's query is (`#Generated/Random?seed=7`).
 // Nothing here calls a tool.
 import { For, Show } from "solid-js"

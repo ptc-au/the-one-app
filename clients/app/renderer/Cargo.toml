@@ -43,13 +43,13 @@ web-time = "1"
 wuff = "0.2"
 
 [features]
-# The platform with nothing behind it, for the headless harness (`platform::fake`), in place of the system's.
+# The platform with nothing behind it, for the headless renderer (`platform::fake`), in place of the system's.
 fake = ["mutants"]
-# Bugs we've had, put back one at a time as `ONE_MUTANT` asks (`mutants`), for `tooling/mutants`: the harness's builds alone.
+# Bugs we've had, put back one at a time as `ONE_MUTANT` asks (`mutants`), for `clients/app/renderer/tests/mutants.js`: the headless renderer's builds alone.
 mutants = []
 
 [dev-dependencies]
-# The memory the headless harness's `--measure` says drawing took.
+# The memory the headless renderer's `--measure` says drawing took.
 memory-stats = "1"
 
 # What only a native host has: its QuickJS sandbox (`js`), where on the web a page's JS is the browser's own, with its
@@ -233,5 +233,5 @@ cc = "1"
 naga = { version = "30.0.2", features = ["wgsl-in", "hlsl-out"] }
 
 [[example]]
-name = "screenshot"
+name = "headless"
 required-features = ["fake"]

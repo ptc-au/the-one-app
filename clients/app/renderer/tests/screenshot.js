@@ -1,7 +1,7 @@
-// Draws every scene on a native host, and with `--web` on the web too, and compares them: `bun scenes.js [<folder>…] [--scene <words>]
-// [--out <dir>] [--against <dir>] [--dark] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --harness <its build of the
-// harness>]` in clients/app/renderer/tests, after `bun build.js` in core/ui (and, for the native half, `cargo build -p renderer
-// --example screenshot --features fake`, `--release` too for `--release`, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
+// Draws every scene on a native host, and with `--web` on the web too, and compares them: `bun screenshot.js [<folder>…] [--scene <words>]
+// [--out <dir>] [--against <dir>] [--dark] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --headless <its build of the
+// headless renderer>]` in clients/app/renderer/tests, after `bun build.js` in core/ui (and, for the native half, `cargo build -p renderer
+// --example headless --features fake`, `--release` too for `--release`, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
 // `--out`: what a change did to how things look, drawn before it (on main) and after.
 //
 // A folder is the gallery (clients/app/renderer/tests/gallery, its scenes the components': `*.scenes.tsx`) or an app's (apps/<app>,
@@ -14,19 +14,19 @@
 // or `meta` held; or text typed where the keyboard is, `{ type }`), `size` (`[390, 844]`, a phone's, unless said), `wait` (ms the page runs on after its taps, before it's drawn, for a scene whose end is a state a few seconds on, as a live screen's "couldn't show this screen" is: a native host's clock is stepped by it, the web's runs it out, so both draw that state and not one on the way to it), `touch` (a finger points at it, as on a phone: true for any window narrower than COMPACT unless the scene says `false`, as a narrow computer's window is), `errors` (words of the errors it logs, as a page that can't reach its server does: any other the page logs fails the scene), `timeZone` (the IANA name of the device's, `UTC` unless said: a fixture's instants are said in it, as a person in it reads them), `latency` (ms each tool's answer takes to come on the page's clock, as a server's round trip: for checks of what shows meanwhile), and `like` (another scene's name, as Storybook's args are a
 // component's: this is that scene, with its own taps, and its answers in place of that one's, tool by tool). An answer `{ "$error": "Couldn't reach it" }` is a tool's
 // refusal, and `{ "$image": "data:image/png;base64,…" }` a picture, as a server answers one (MCP's `image`: a screenshot). A method of the client's (`ui/initialize`, `one/client`) is answered as it's named too. It's 1 January 2026,
-// 00:00 UTC, as a native host's harness has it, so a fixture's times are said from then.
+// 00:00 UTC, as a native host's headless renderer has it, so a fixture's times are said from then.
 //
-// Each scene is drawn on a native host by its headless harness (clients/app/renderer's `screenshot` example), with
+// Each scene is drawn on a native host by its headless renderer (clients/app/renderer's `screenshot` example), with
 // `--web` by our renderer in headless Chromium too, in a frame a stand-in client answers (its web frame, clients/web/renderer, on Chromium's WebGPU: on a machine with no GPU,
 // SwiftShader's, which draws every frame on the CPU, so it's slow, run for every change to the renderer, the UI library or the web client (the `qa` skill); elsewhere native and
-// web draw with the same renderer), with `--ssh` on a device's GPU too, by its own build of the harness (a Windows
-// one's Direct3D 12, as motion.js plays there: where each node is laid out there and here, and how much of the
+// web draw with the same renderer), with `--ssh` on a device's GPU too, by its own build of the headless renderer (a Windows
+// one's Direct3D 12, as animation.js plays there: where each node is laid out there and here, and how much of the
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
 // semantic tree as text (src/drawing-primitives/outline.ts) too. It says, scene by scene, how much of the pictures
 // differs (a web picture more than 1% from its native one fails, `WEB_DIFFERS_MOST`, as does one drawn on what its frame kept
-// that differs from the same drawn whole, `web-whole.png`, by more than a level, or drawn moved by whole device pixels, `web-moved-<dx>,<dy>.png`, by more than rounding, as motion.js's checks have it natively) and whether the text in sight is the same (any
+// that differs from the same drawn whole, `web-whole.png`, by more than a level, or drawn moved by whole device pixels, `web-moved-<dx>,<dy>.png`, by more than rounding, as animation.js's checks have it natively) and whether the text in sight is the same (any
 // difference fails, however small the pictures'), and keeps them all in `--out` to look at. A native host that can't draw a page yet (an older runtime
-// version) gives nothing, which it says. It says too how quickly the native host drew each (the harness's
+// version) gives nothing, which it says. It says too how quickly the native host drew each (the headless renderer's
 // `--measure`): its first frame, a frame when nothing changes, as its first field is typed in and as its first list
 // scrolls, the memory drawing took and what a second window adds, to compare a change's before and after.
 //
@@ -53,10 +53,10 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, capped, COMPONENTS, copied, env, glass, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, slot, stale, stopped, usedFolder } from "./motion.js"
+import { build, capped, COMPONENTS, copied, env, glass, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, slot, stale, stopped, usedFolder } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
-/// A line that fails the run, marked ✗ after its indent, as motion.js's checks mark theirs.
+/// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
 const failing = (line) => {
   process.exitCode = 1
   return line.replace(/^\s*/, (indent) => `${indent}✗ `)
@@ -66,27 +66,27 @@ const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 // Its own worktree's, never a folder every agent on the machine shares, where one ran with another's UI build.
-const out = resolve(option("--out") ?? join(root, "target", "scenes"))
+const out = resolve(option("--out") ?? join(root, "target", "screenshot"))
 const dark = flag("--dark")
 const onTheWeb = flag("--web")
 // Every scene in a window this size, a phone's if it is under COMPACT and a computer's if not, where it says none of its own.
 const sized = option("--size")?.split("x").map(Number)
 const against = option("--against") && resolve(option("--against"))
-// A device over ssh (`--ssh`, with its own build of the harness, `--harness`) draws each scene too, as motion.js plays there.
+// A device over ssh (`--ssh`, with its own build of the headless renderer, `--headless`) draws each scene too, as animation.js plays there.
 const ssh = option("--ssh")
-// Only the scenes whose names have these words, as motion.js's `--scene`.
+// Only the scenes whose names have these words, as animation.js's `--scene`.
 const only = option("--scene")?.toLowerCase()
-const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--harness", "--scene", "--glass", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
+const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--headless", "--scene", "--glass", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
 const targets = folders.length ? folders : [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")))]
-let harness = join(root, `target/${flag("--release") ? "release" : "debug"}/examples/screenshot`)
+let headless = join(root, `target/${flag("--release") ? "release" : "debug"}/examples/headless`)
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
 // page written for this one, so there's nothing yet to compare.
 const speaks = (file, pattern) => Number(readFileSync(join(root, file), "utf8").match(pattern)?.[1])
 const needed = speaks("core/ui/src/drawing-primitives/renderer.ts", /export const RUNTIME_VERSION = (\d+)/)
 const hosted = speaks("clients/app/renderer/src/lib.rs", /pub const RUNTIME_VERSION: u32 = (\d+)/)
 
-if (stale(harness)) throw new Error(stale(harness))
-harness = copied(harness, out)
+if (stale(headless)) throw new Error(stale(headless))
+headless = copied(headless, out)
 
 
 /// A target's scenes, each its name, page, link, answers, taps and size, and where a wheel's notch eases what it
@@ -104,7 +104,7 @@ async function scenesOf(target, built) {
       return { ...phone({ name, page, link, uses, answers, taps, size, touch: sized ? undefined : touch, timeZone, errors, safeArea: sized ? undefined : safeArea, checks }), wheel, wait }
     })
   }
-  // The gallery lists its own, drawn at `#scenes` by the native harness (motion.js).
+  // The gallery lists its own, drawn at `#scenes` by the headless renderer (animation.js).
   return (await gallery(target, built, join(out, basename(target), ".scenes"), true)).map((scene) => {
     return { ...(sized ? phone({ ...scene, size: sized, touch: undefined, safeArea: undefined }) : scene), timeZone: "UTC" }
   })
@@ -128,7 +128,7 @@ addEventListener("message", ({ data, source }) => {
     const [, mimeType, image] = answer?.$image?.match(/^data:(.*?);base64,(.*)$/) ?? []
     return reply({ result: { content: [mimeType ? { type: "image", mimeType, data: image } : { type: "text", text: JSON.stringify(answer) }] } })
   }
-  // A method no answer names isn't answered, as record.js's and the native harness's aren't.
+  // A method no answer names isn't answered, as record.js's and the headless renderer's aren't.
   const answer = own(data.method)
   reply(answer === undefined ? { error: { code: -32601, message: data.method + " isn't answered here" } } : { result: answer })
 })
@@ -199,7 +199,7 @@ function misreadWords(tree) {
 
 /// Presses what's named or says `name` on our renderer's canvas, as a person would: found in its ARIA tree
 /// (clients/web/renderer/semantics.js), scrolled into sight where it isn't as a screen reader has the browser do it,
-/// which the renderer reveals as the native harness's tap does (`Screen::reveal`: whole, with 16 points below it),
+/// which the renderer reveals as the headless renderer's tap does (`Screen::reveal`: whole, with 16 points below it),
 /// and pressed where it's drawn then.
 async function press(frame, name) {
   const page = frame.page()
@@ -237,12 +237,12 @@ const HANGS_AFTER_MS = 120000
 const WEB_HANGS_AFTER_MS = 10 * 60000
 
 /// A scene drawn by our renderer on the web, in headless Chromium's WebGPU, as `web.png`, once its first frame is drawn
-/// and what moves as it opens has settled, on the native harness's clock, language and time zone, each tap pressed
+/// and what moves as it opens has settled, on the headless renderer's clock, language and time zone, each tap pressed
 /// through its ARIA tree.
 async function web(browser, serve, key, scene, folder) {
   const page = await browser.newPage({ viewport: { width: scene.size[0], height: scene.size[1] }, deviceScaleFactor: 2, hasTouch: scene.touch, colorScheme: dark ? "dark" : "light", locale: "en-US", timezoneId: scene.timeZone })
   const problems = []
-  // What the page logs fails it but for the errors the scene says it logs (`errors`), as the native harness's `--errors`.
+  // What the page logs fails it but for the errors the scene says it logs (`errors`), as the headless renderer's `--errors`.
   const logged = (text) => {
     if (scene.errors?.some((words) => text.includes(words))) return
     problems.push(failing(text))
@@ -265,7 +265,7 @@ async function web(browser, serve, key, scene, folder) {
   await page.goto(serve.url(`${key} (web)`))
   const frame = await (await page.waitForSelector("#page")).contentFrame()
   const drawn = await frame.waitForFunction(() => "drawn" in document.documentElement.dataset, null, { timeout: HANGS_AFTER_MS }).then(() => true, () => false)
-  // Each picture is taken once the renderer says nothing is pending, as the native harness's `settle`, and the frame
+  // Each picture is taken once the renderer says nothing is pending, as the headless renderer's `settle`, and the frame
   // it drew last is on the screen.
   const settled = async () => {
     const { settled, pending } = await frame.evaluate((deadline) => /** @type {any} */ (globalThis).inspector.settle(deadline), HANGS_AFTER_MS)
@@ -275,7 +275,7 @@ async function web(browser, serve, key, scene, folder) {
     await frame.evaluate(() => new Promise((shown) => /** @type {any} */ (globalThis).inspector.frame(() => /** @type {any} */ (globalThis).inspector.frame(shown))))
   }
   // Its clock is paused at 0 as it opens (`paused`), and stepped a second after it's drawn and after each tap, as the
-  // native harness's is, so what moves by itself (a spinner, a caret's blink) is where the same steps put it on every
+  // headless renderer's is, so what moves by itself (a spinner, a caret's blink) is where the same steps put it on every
   // run, however long a loaded machine took to draw each frame: it was where the real time since it opened had it.
   const step = () => frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ step: 1000 }))
   if (drawn) await settled().then(step).then(settled)
@@ -290,7 +290,7 @@ async function web(browser, serve, key, scene, folder) {
     if (times > 1) continue
     problems.push(failing(`${url} failed on the network once and wasn't fetched again, so it's drawn broken`))
   }
-  // Its page's clock is paused for the pictures that follow, so they're of one time, as the native harness's are: on
+  // Its page's clock is paused for the pictures that follow, so they're of one time, as the headless renderer's are: on
   // the web's own clock a caret blinked between the frame drawn on what it kept and the one drawn whole (L77).
   const paused = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: true })))
   // Each picture is of what the browser shows once the frame drawn last is on it: on a GPU, Chrome composites the
@@ -307,7 +307,7 @@ async function web(browser, serve, key, scene, folder) {
     writeFileSync(join(folder, name), shown)
   }
   if (drawn) await picture("web.png")
-  // The frame drawn on what it kept from the frames before is the one drawn whole, within a level, as the native harness
+  // The frame drawn on what it kept from the frames before is the one drawn whole, within a level, as the headless renderer
   // checks each frame of each motion (`unlike_whole`), where nothing on it moves (a spinner turns between pictures).
   if (drawn) await settled().then(() => picture("web-again.png"))
   if (drawn && !levels(join(folder, "web.png"), join(folder, "web-again.png"))) {
@@ -319,7 +319,7 @@ async function web(browser, serve, key, scene, folder) {
       problems.push(failing(`its frame differs from the same drawn whole (web-whole.png) in ${unlike.differ} pixels, by up to ${unlike.most} levels`))
     }
   }
-  // Drawn moved by whole device pixels, it's the same moved, as natively (motion.js's checks): each way in turn, then
+  // Drawn moved by whole device pixels, it's the same moved, as natively (animation.js's checks): each way in turn, then
   // drawn where it is again.
   if (drawn) {
     // Drawn whole where it is first, as the moved ones are, so what a frame drawn on what it kept may differ by isn't in it.
@@ -447,31 +447,31 @@ const { tools, kept } = (() => {
   return { tools, kept: [...kept] }
 })()
 
-/// The native harness run with `asked`, and `requests` on its stdin, once a slot of `jobs` is free (motion.js's
+/// The headless renderer run with `asked`, and `requests` on its stdin, once a slot of `jobs` is free (animation.js's
 /// `--jobs`). → its exit status, stdout and stderr.
-const harnessed = (asked, requests) =>
+const headlessRun = (asked, requests) =>
   slot(async () => {
-    const run = Bun.spawn(capped([harness, ...asked]), { stdin: new TextEncoder().encode(requests), stdout: "pipe", stderr: "pipe", env })
+    const run = Bun.spawn(capped([headless, ...asked]), { stdin: new TextEncoder().encode(requests), stdout: "pipe", stderr: "pipe", env })
     const [stdout, stderr] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited])
     return { exitCode: run.exitCode, stdout, stderr }
   })
 
-/// A scene drawn by a native host's headless harness, or nothing where it hasn't been built or can't draw the page.
+/// A scene drawn by a native host's headless renderer, or nothing where it hasn't been built or can't draw the page.
 async function native(built, scene, folder) {
-  if (!existsSync(harness)) return { missing: "the native harness isn't built (`cargo build -p renderer --example screenshot --features fake`)", error: true }
+  if (!existsSync(headless)) return { missing: "the headless renderer isn't built (`cargo build -p renderer --example headless --features fake`)", error: true }
   if (hosted < needed) return { missing: `the native host's runtime version is ${hosted}, the UI library needs ${needed}: nothing to compare until it's ${needed}` }
   const at = pageFolder(built, scene.page, folder, scene.uses)
   const answers = { ...scene.answers, "ui/initialize": scene.answers["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
   writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
-  // The harness's clock stands still, so what moves as the page opens and after each tap is moved on to where it
+  // The headless renderer's clock stands still, so what moves as the page opens and after each tap is moved on to where it
   // settles, as the DOM's is, and what's laid out once it's drawn (onLayout) is drawn again.
   // With a device to draw it too, each ends at rest with where every node is and a picture drawn afresh, to compare.
   // With a plain tint for glass (`--glass tinted`), the scene drawn whole runs no blur: its `profile` says what's drawn.
   const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query" }, { op: "query", frames: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", "-", ...panel(scene)]
-  const run = await harnessed(asked, requests)
-  if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the harness drew nothing"), error: true }
+  const run = await headlessRun(asked, requests)
+  if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing"), error: true }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))
   // Its tree: each node's role, name and what it is (its states, by ARIA's names, beside them), and its words.
   const semantic = ({ id, role, name, children = [], actions, states = {}, ...more }) =>
@@ -521,13 +521,13 @@ async function windowed(drawn, scene, folder) {
   const flags = panel(scene)
   if (!flags.length) return { picture: join(folder, "native.png") }
   const asked = [drawn.asked[0], join(folder, "window.png"), join(folder, "window.json"), ...drawn.asked.slice(3, -flags.length).filter((flag) => flag !== "--measure")]
-  const run = await harnessed(asked, drawn.requests)
-  if (run.exitCode !== 0 || !existsSync(join(folder, "window.png"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the harness drew nothing") }
+  const run = await headlessRun(asked, drawn.requests)
+  if (run.exitCode !== 0 || !existsSync(join(folder, "window.png"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing") }
   return { picture: join(folder, "window.png") }
 }
 
 const insets = ([top, right, bottom, left]) => ({ top, right, bottom, left })
-/// What a phone draws over a window's words and controls (the harness's `query` of every node, at rest): each drawn under
+/// What a phone draws over a window's words and controls (the headless renderer's `query` of every node, at rest): each drawn under
 /// its status bar, or under its home indicator unless it's in what scrolls, which goes under it as UIKit's scroll views'
 /// content does. Under the status bar, what's scrolled there is meant to be, as under a bar, and so is what covers the
 // whole window, as a menu's backdrop that closes it does. → what's wrong, a line each.
@@ -676,7 +676,7 @@ function levels(one, other) {
 }
 
 /// How two drawings of a scene differ, from one run to the next of the same build: the first thing that isn't the same
-/// (a picture's pixels, a tree's line, what each node's query says), or nothing. A scene is drawn twice, on a harness
+/// (a picture's pixels, a tree's line, what each node's query says), or nothing. A scene is drawn twice, on a headless renderer
 /// each, and any difference fails it: a check that passes on a rerun is broken, so what leaks in (real time, an
 /// ordering, a clock nothing pins, a wait on time rather than state) is fixed where it comes from.
 function otherwise(folder, again, files, within = 0) {
@@ -705,7 +705,7 @@ function otherwise(folder, again, files, within = 0) {
 const WEB_MOVED = [[1, 0], [0, 1], [37, 23]]
 
 /// How `moved`, a picture of the frame in `here` (both drawn whole) drawn moved `by` device pixels on the canvas,
-/// differs from it where both have it, by the native harness's rules (its `unlike_moved`, whose constants these are): at
+/// differs from it where both have it, by the headless renderer's rules (its `unlike_moved`, whose constants these are): at
 /// an edge, where `here` changes by more than 8 levels across a pixel's neighbours, 32 levels apart, as what isn't on
 /// whole pixels rounds otherwise moved (SwiftShader's a pill's round end by 20); elsewhere 4 levels in 64 pixels at
 /// most; and under glass (`glass`, left, top, right and bottom each) 4, as its blur's samples are on its frame's grid,
@@ -766,7 +766,7 @@ const WEB_DIFFERS_MOST = 0.01
 /// Scenes whose web picture, or text, differs for a known reason that isn't a fault, by `<folder> · <scene>`, each with why.
 const WEB_DIFFERS = {}
 
-// Our renderer on the web, on WebGPU, in Chrome on the machine's GPU through Vulkan (as the native harness draws), at a
+// Our renderer on the web, on WebGPU, in Chrome on the machine's GPU through Vulkan (as the headless renderer draws), at a
 // phone's two pixels a point; with `--lavapipe`, on SwiftShader's, which draws every frame on the CPU, the second GPU whose
 // pictures must agree: its canvas is put on the page only when the page is composited on the GPU too (ANGLE on
 // SwiftShader).
@@ -777,7 +777,7 @@ const webgpuArgs = lavapipe
 // started again for the next, taking no other scene with it.
 const browsers = []
 /// How many pages it draws on the web at once: a page's JS, layout and compositing are on the CPU, where a native
-/// harness waits for half its run, so half as many as harnesses (`--jobs`), and a quarter with `--lavapipe`, whose
+/// headless renderer waits for half its run, so half as many as headless renderers (`--jobs`), and a quarter with `--lavapipe`, whose
 /// SwiftShader draws each on about two cores more: 16 of those at once, light and dark side by side, took the Linux
 /// machine's load to 120.
 const pages = pLimit(Math.max(1, Math.floor(jobs / (lavapipe ? 4 : 2))))
@@ -802,7 +802,7 @@ const webDrawn = (serve, key, scene, folder) =>
 // The renderer's frame, built once for every scene drawn on the web (clients/web/renderer/build.js).
 const rendererFrame = join(out, "renderer")
 // The gate's own, which can put a bug back (`renderer::mutants`) when its address names one: `ONE_MUTANT`'s, from
-// tooling/mutants. Always that one, as the native harness always is, so a run with a mutant and one without build the
+// clients/app/renderer/tests/mutants.js. Always that one, as the headless renderer always is, so a run with a mutant and one without build the
 // same and Cargo doesn't build it again for each (27 s).
 const mutant = process.env.ONE_MUTANT
 const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame, "--mutants"])
@@ -813,7 +813,7 @@ for (const line of lint()) {
   report.push(`tokens: ${line}`)
   process.exitCode = 1
 }
-// Every target and scene at once, their harnesses and pages as many at once as `jobs`, each said in their order.
+// Every target and scene at once, their headless renderers and pages as many at once as `jobs`, each said in their order.
 const drawnTargets = await Promise.all(targets.map(async (target) => {
   const name = basename(target)
   const built = join(out, name, "build")
@@ -826,7 +826,7 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
   const drawnScenes = await Promise.all((await scenesOf(target, built)).filter((scene) => !only || scene.name.toLowerCase().includes(only)).map(async (scene) => {
     const folder = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
     mkdirSync(folder, { recursive: true })
-    // Each scene is drawn twice, on a harness (and a browser page) of its own each, side by side, in `again`: the second
+    // Each scene is drawn twice, on a headless renderer (and a browser page) of its own each, side by side, in `again`: the second
     // is only compared, and any difference between the two fails the scene.
     const again = join(folder, "again")
     mkdirSync(again, { recursive: true })
@@ -874,7 +874,7 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
       said.push(`  breaks a rule: ${line}`)
       process.exitCode = 1
     }
-    // A scene the harness errored on fails the run, where one a host too old for the UI library can't draw only says so.
+    // A scene the headless renderer errored on fails the run, where one a host too old for the UI library can't draw only says so.
     if (drawn.missing) said.push(drawn.error ? failing(`  native: ${drawn.missing}`) : `  native: ${drawn.missing}`)
     if (drawn.measured) said.push(`  native: ${timings(drawn.measured)}`)
     if (drawn.measured?.first_content_ms > OPENS_WITHIN_MS) {

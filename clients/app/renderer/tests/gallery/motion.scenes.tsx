@@ -65,7 +65,7 @@ const Pushed = () => {
   )
 }
 
-// What moves under a pointer or a finger, each with the gestures core/ui/motion.js plays on it, frame by frame.
+// What moves under a pointer or a finger, each with the gestures core/ui/animation.js plays on it, frame by frame.
 export default {
   "Motion/Card dragged along": {
     touch: true,

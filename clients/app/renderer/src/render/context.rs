@@ -175,7 +175,7 @@ impl Context {
     }
 
     /// Whether glass is a plain tint here, not a blur: the GPU is too weak to blur at its refresh rate. `ONE_GLASS`
-    /// (`tinted` or `blurred`) says it where the harness stands for another device than its own.
+    /// (`tinted` or `blurred`) says it where the headless renderer stands for another device than its own.
     pub fn tinted(&self) -> bool {
         self.tinted
     }
@@ -216,10 +216,10 @@ async fn adapter(instance: &wgpu::Instance) -> anyhow::Result<wgpu::Adapter> {
     }
 }
 
-/// Whether `info`'s GPU is one of the weak ones, which blurring costs frames on (core/ui/devices.json's low-end Android
+/// Whether `info`'s GPU is one of the weak ones, which blurring costs frames on (clients/app/renderer/tests/devices.json's low-end Android
 /// and Intel UHD laptop, from its Manhattan 3.1 score, below the iPhone 11's): an Intel HD or UHD Graphics of the 600s
 /// or older, an Arm Mali of the Midgard or of G3x, G5x, an Adreno before the 640, a PowerVR. Apple's, AMD's, NVIDIA's,
-/// Intel's Iris Xe and Arc, and a software renderer's are not: a software renderer is only ever a harness's.
+/// Intel's Iris Xe and Arc, and a software renderer's are not: a software renderer is only ever a test's.
 fn weak(info: &wgpu::AdapterInfo) -> bool {
     if info.device_type != wgpu::DeviceType::IntegratedGpu {
         return false;

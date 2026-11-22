@@ -197,7 +197,7 @@ type Compile<'a> = &'a dyn Fn() -> wgpu::RenderPipeline;
 
 /// Compiles each pipeline at once, as each takes its compiler a while (Direct3D's most): on threads of their own, but
 /// on the web, which has none here and compiles in the browser's GPU process anyway, one after another. On the fake
-/// platform, as long as a device a harness stands for takes to compile them (`fake::costs`).
+/// platform, as long as a device a test stands for takes to compile them (`fake::costs`).
 fn side_by_side<const N: usize>(compile: [Compile; N]) -> [wgpu::RenderPipeline; N] {
     #[cfg(feature = "fake")]
     std::thread::sleep(crate::platform::fake::costs().pipelines);

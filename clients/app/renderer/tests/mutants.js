@@ -1,25 +1,25 @@
 #!/usr/bin/env bun
-// Mutation testing for the harness: puts back each bug we've had (a mutant, as cargo-mutants and Stryker call one),
+// Mutation testing for the headless renderer: puts back each bug we've had (a mutant, as cargo-mutants and Stryker call one),
 // one at a time, runs the checks that could show it, and says which caught it, by which check, and which it missed:
 //
 //     bun mutants.js [<mutant>…] [--light | --dark] [--out <dir>] [--jobs <n>] [--list]
 //
-// Each mutant is planted where its bug was (`renderer::mutants`, `ONE_MUTANT=<name>`, in the harness's builds alone:
-// the headless harness's and the web gate's frame) and plays only the scenes, motions and checks
+// Each mutant is planted where its bug was (`renderer::mutants`, `ONE_MUTANT=<name>`, in the headless renderer's builds alone:
+// the headless renderer's and the web gate's frame) and plays only the scenes, motions and checks
 // that could show it, light and dark (or the one asked), so a run is as short as it can be. First, as cargo-mutants
 // does, every play runs with no mutant (the baseline): one that fails then catches nothing, and is said. It exits 1
 // where a mutant was missed or the baseline failed. What each run said is kept in `--out` (`target/mutants` unless
 // said), `<mutant>/<light|dark>/<play>.log`.
 //
-// It builds what it plays first: core/ui (`bun build.js`) and the headless harness (`cargo build -p renderer --example
-// screenshot --features fake --release`, which plays them several times faster than a debug build); scenes.js builds
+// It builds what it plays first: core/ui (`bun build.js`) and the headless renderer (`cargo build -p renderer --example
+// screenshot --features fake --release`, which plays them several times faster than a debug build); screenshot.js builds
 // the web's frame.
 //
-// A mutant for a bug a device found and the harness missed is added here with the check that now catches it: the check
+// A mutant for a bug a device found and the headless renderer missed is added here with the check that now catches it: the check
 // is the fix's, the mutant shows it stays caught.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { jobs as harnesses, pLimit } from "./motion/options.js"
+import { jobs as renderers, pLimit } from "./animation/options.js"
 
 const root = resolve(import.meta.dir, "../../../..")
 const here = import.meta.dir
@@ -27,37 +27,37 @@ const args = process.argv.slice(2)
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined)
 const out = resolve(option("--out") ?? join(root, "target/mutants"))
 
-/// What plays a mutant: `motion` (motion.js's motions), `checks` (motion.js --checks: a scene's checks, its Tab walk and
-/// its being drawn the same however it came to be), `web` (scenes.js --web: native and the web's frame), `scenes`
-/// (scenes.js natively), each of a folder's scenes whose names have `scene`'s words.
-const motion = (folder, scene) => ({ tool: "motion", folder, scene })
+/// What plays a mutant: `animation` (animation.js's motions), `checks` (animation.js --checks: a scene's checks, its Tab walk and
+/// its being drawn the same however it came to be), `web` (screenshot.js --web: native and the web's frame), `screenshot`
+/// (screenshot.js natively), each of a folder's scenes whose names have `scene`'s words.
+const animation = (folder, scene) => ({ tool: "animation", folder, scene })
 const checks = (folder, scene) => ({ tool: "checks", folder, scene })
 const web = (folder, scene) => ({ tool: "web", folder, scene })
-const scenes = (folder, scene) => ({ tool: "scenes", folder, scene })
+const screenshot = (folder, scene) => ({ tool: "screenshot", folder, scene })
 
 /// Every mutant: the bug it puts back, what plays it, and the appearances it can show in (both unless said).
 const MUTANTS = {
-  "damage-short": { bug: "a damage rectangle 1 px short", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
-  "dropped-refresh": { bug: "a dropped refresh while moving", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
-  "double-frame": { bug: "a frame drawn twice in one refresh", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "damage-short": { bug: "a damage rectangle 1 px short", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "dropped-refresh": { bug: "a dropped refresh while moving", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "double-frame": { bug: "a frame drawn twice in one refresh", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "paint-order": { bug: "the wrong paint order for positioned elements", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Painting order")] },
   "dark-token": { bug: "dark mode not applied to one token (the text's, `label`)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Type styles")], only: "dark" },
   "rounded-clip": { bug: "rounded clip off", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Rounded corners clip")] },
-  "text-stretched": { bug: "text drawn from a stretched picture", plays: [motion("clients/app/renderer/tests/gallery", "Text/Flying")] },
+  "text-stretched": { bug: "text drawn from a stretched picture", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "late-tap": { bug: "a tap delivered a frame late", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
-  "stale-rect": { bug: "a stale inspector rect", plays: [motion("clients/app/renderer/tests/gallery", "Text/Flying")] },
+  "stale-rect": { bug: "a stale inspector rect", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "wrong-node": { bug: "a selector matching the wrong node", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
   "web-clock": { bug: "the web clock running during the gate", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
   "web-blank": { bug: "a blank web canvas", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
-  "spring-rest": { bug: "spring rest at 0.1 pt", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
-  "safe-area": { bug: "safe area ignored in a frame", plays: [scenes("apps/vault", "in its own frame")] },
+  "spring-rest": { bug: "spring rest at 0.1 pt", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "safe-area": { bug: "safe area ignored in a frame", plays: [screenshot("apps/vault", "in its own frame")] },
   // From the reports and look-issues.
-  "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
-  "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [motion("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   "hit-scroll": { bug: "what's in a scroll taking a press where it'd be unscrolled", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   // Planted hangs (22 Nov, a Surface's Intel driver hung on our frames): the app recovers on a new device, or stops
-  // saying why, never freezes, and the harness fails.
+  // saying why, never freezes, and the headless renderer fails.
   "gpu-hang": { bug: "a fence that never signals: the GPU hung on a frame, which the system never says", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
   "present-hang": { bug: "a present that never returns: the GPU's driver hung", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
   "picture-retry": { bug: "a picture that failed to decode left blank, never tried again (f0db8c31f)", plays: [checks("apps/home-screen", "App Library, by a finger")] },
@@ -81,9 +81,9 @@ function said(play) {
 /// The command a play runs, in light or dark, its output in `folder`.
 function command(play, dark, folder) {
   const theme = ["--release", ...(dark ? ["--dark"] : [])]
-  if (play.tool === "motion") return { cwd: here, argv: ["bun", "motion.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
-  if (play.tool === "checks") return { cwd: here, argv: ["bun", "motion.js", "--checks", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
-  return { cwd: here, argv: ["bun", "scenes.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...(play.tool === "web" ? ["--web"] : []), ...theme] }
+  if (play.tool === "animation") return { cwd: here, argv: ["bun", "animation.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
+  if (play.tool === "checks") return { cwd: here, argv: ["bun", "animation.js", "--checks", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
+  return { cwd: here, argv: ["bun", "screenshot.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...(play.tool === "web" ? ["--web"] : []), ...theme] }
 }
 
 /// The lines of what a play said that failed it: a motion's `FAILS` (under the motion it's of), a check's `✗` and
@@ -122,14 +122,14 @@ const started = performance.now()
 const minutes = () => `${((performance.now() - started) / 60000).toFixed(1)} min`
 for (const [what, argv, cwd] of [
   ["core/ui", ["bun", "build.js"], join(root, "core/ui")],
-  ["the headless harness", ["nice", "-n", "10", "cargo", "build", "-p", "renderer", "--example", "screenshot", "--features", "fake", "--release", "-j", "4"], root],
+  ["the headless renderer", ["nice", "-n", "10", "cargo", "build", "-p", "renderer", "--example", "headless", "--features", "fake", "--release", "-j", "4"], root],
 ]) {
   const built = Bun.spawnSync(argv, { cwd, stdout: "pipe", stderr: "pipe" })
   if (built.exitCode !== 0) throw new Error(`${what} didn't build: ${built.stderr.toString().trim().split("\n").slice(-5).join("\n")}`)
 }
 
-// Half as many plays at once as a pass runs harnesses (`--jobs`, motion.js's default unless said), each running two.
-const together = pLimit(Math.max(1, Math.floor(harnesses / 2)))
+// Half as many plays at once as a pass runs headless renderers (`--jobs`, animation.js's default unless said), each running two.
+const together = pLimit(Math.max(1, Math.floor(renderers / 2)))
 const each = (plays, work) => Promise.all(plays.map((play) => together(() => work(play))))
 
 // The baseline: each play once with no mutant, in each appearance it's played in.

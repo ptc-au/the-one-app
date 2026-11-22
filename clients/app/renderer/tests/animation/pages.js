@@ -1,4 +1,4 @@
-// Building a folder into what the harness loads: the UI library, an app's client and its page.
+// Building a folder into what the headless renderer loads: the UI library, an app's client and its page.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
 import { root, slot, ui } from "./options.js"
@@ -6,10 +6,10 @@ import { root, slot, ui } from "./options.js"
 /// When a file under `paths` last changed, the latest.
 const changed = (...paths) => Math.max(...paths.map((path) => (statSync(path).isDirectory() ? Math.max(0, ...readdirSync(path, { recursive: true }).map((file) => statSync(join(path, file)).mtimeMs)) : statSync(path).mtimeMs)))
 /// What's built that's older than what it's built from, as after a pull, so what a run draws and checks would be of the
-/// build, not the source: the UI library, or the harness where it's built. → what to build again, if anything.
-export function stale(harness) {
+/// build, not the source: the UI library, or the headless renderer where it's built. → what to build again, if anything.
+export function stale(headless) {
   if (!existsSync(ui("dist/build/app.js")) || changed(ui("src"), ui("tables.ts"), ui("build.js")) > statSync(ui("dist/build/app.js")).mtimeMs) return "Build the UI library: `bun build.js` in core/ui"
-  if (existsSync(harness) && changed(join(root, "clients/app/renderer/src"), join(root, "clients/app/renderer/examples")) > statSync(harness).mtimeMs) return `Build the native harness again, which is older than the renderer: \`cargo build -p renderer --example screenshot --features fake${harness.includes("/release/") ? " --release" : ""}\``
+  if (existsSync(headless) && changed(join(root, "clients/app/renderer/src"), join(root, "clients/app/renderer/examples")) > statSync(headless).mtimeMs) return `Build the headless renderer again, which is older than the renderer: \`cargo build -p renderer --example headless --features fake${headless.includes("/release/") ? " --release" : ""}\``
 }
 
 /// The UI library's build a pass runs: its own, until the pass copies it (`copied`).
@@ -17,21 +17,21 @@ let dist = ui("dist")
 /// `path` in the UI library's build a pass runs.
 export const library = (path) => join(dist, path)
 
-/// What a pass runs, copied into `out` as it starts: the UI library's build, and the harness where it's this machine's,
+/// What a pass runs, copied into `out` as it starts: the UI library's build, and the headless renderer where it's this machine's,
 /// so either built again while the pass goes on (by whoever else works in the same checkout) can't change what draws
-/// the rest of it. → the harness to run.
-export function copied(harness, out) {
+/// the rest of it. → the headless renderer to run.
+export function copied(headless, out) {
   const kept = join(out, ".built")
   rmSync(kept, { recursive: true, force: true })
   cpSync(ui("dist"), join(kept, "dist"), { recursive: true, dereference: true })
   dist = join(kept, "dist")
-  if (!harness || !existsSync(harness)) return harness
-  cpSync(harness, join(kept, basename(harness)))
-  return join(kept, basename(harness))
+  if (!headless || !existsSync(headless)) return headless
+  cpSync(headless, join(kept, basename(headless)))
+  return join(kept, basename(headless))
 }
 
-/// A built page's folder as the harness loads it: its `index.html` with what it loads beside it, and each app it `uses`
-/// (whose components it draws, as Settings draws its sections) built and beside it as `<app>/client/`, as scenes.js has it.
+/// A built page's folder as the headless renderer loads it: its `index.html` with what it loads beside it, and each app it `uses`
+/// (whose components it draws, as Settings draws its sections) built and beside it as `<app>/client/`, as screenshot.js has it.
 export function pageFolder(built, page, folder, uses = []) {
   const at = join(folder, "page")
   rmSync(at, { recursive: true, force: true })

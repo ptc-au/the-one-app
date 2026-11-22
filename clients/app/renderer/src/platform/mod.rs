@@ -45,7 +45,7 @@ use windows::{Display, Handle, NativeWindow, appearance, clipboard, open_files, 
 mod mac;
 #[cfg(all(target_os = "macos", not(feature = "fake")))]
 use mac::{Display, Handle, NativeWindow, appearance, clipboard, open_files, reduced_motion};
-/// A computer's host with nothing behind it, for a harness (`fake`'s top).
+/// A computer's host with nothing behind it, for a test (`fake`'s top).
 #[cfg(feature = "fake")]
 pub(crate) mod fake;
 #[cfg(feature = "fake")]
@@ -63,7 +63,7 @@ mod conformance;
 mod snapshot;
 mod cover;
 #[cfg(feature = "fake")]
-mod harness;
+mod headless;
 mod input;
 mod native;
 mod open;

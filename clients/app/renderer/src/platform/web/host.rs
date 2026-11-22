@@ -1,4 +1,4 @@
-//! What the frame's JS calls to open the page and to ask of it: `renderer.js`, as it opens the page, and a harness, as
+//! What the frame's JS calls to open the page and to ask of it: `renderer.js`, as it opens the page, and a test, as
 //! it waits for it to settle.
 
 use std::cell::RefCell;
@@ -37,7 +37,7 @@ pub(super) fn clock() -> Clock {
 /// Opens the page at `page` (where what it names by an address is from), at `link` in it, on `canvas`, `scale` device pixels to a CSS
 /// pixel, drawn with the design tokens and styles in `tables` (the UI library's tokens
 /// and styles, and its app's styles), in `theme` (`dark`, `light`, or as the device is), for a finger where `touch`,
-/// on a clock that's paused at 0 where `paused`, which a harness steps (`inspect`'s `clock`), at the text size its person chose where it's a phone's or a tablet's (`text_size`, as their app has it,
+/// on a clock that's paused at 0 where `paused`, which a test steps (`inspect`'s `clock`), at the text size its person chose where it's a phone's or a tablet's (`text_size`, as their app has it,
 /// `Screen::text_size`), as the frame's JS (`calls`) is told what it says of itself. The page's module is imported
 /// after, and says it ran (`started`).
 #[wasm_bindgen]
@@ -91,10 +91,10 @@ pub fn component(styles: String) -> Result<(), JsError> {
 }
 
 /// What the inspector answers to `request` (a line of its protocol, `{"v":1,"op":"query","text":"Sync"}`), as a native
-/// window's does (`Screen::inspect`), for a harness (core/ui's scenes.js): its `result`, or the error it said. `settle`
+/// window's does (`Screen::inspect`), for a test (screenshot.js): its `result`, or the error it said. `settle`
 /// resolves once nothing on the page, or its frames' pages, is pending (what it asked, a picture fetched or decoding,
 /// what moves), or at `deadline` ms with what still is. The picture is the canvas, so it resolves once the frame that
-/// drew what settled is on it too, which the GPU finished (`shown`), where a native harness paints its picture afresh:
+/// drew what settled is on it too, which the GPU finished (`shown`), where a headless renderer paints its picture afresh:
 /// on SwiftShader, two of the browser's frames after the page settled still showed the frame before it, without the
 /// shapes a widget draws once it's laid out.
 #[wasm_bindgen]
@@ -129,9 +129,9 @@ pub fn inspect(request: String) -> js_sys::Promise {
     })
 }
 
-/// Draws the window's frame again whole, as a harness asks (core/ui's scenes.js): its renderer lets go of what it kept
+/// Draws the window's frame again whole, as a test asks (screenshot.js): its renderer lets go of what it kept
 /// (`Renderer::idle`: the frame on its canvas, its blurs), so the next is drawn afresh, to compare with the one drawn on
-/// what it kept, as the native harness compares each frame with one drawn whole (`Windows::whole`).
+/// what it kept, as the headless renderer compares each frame with one drawn whole (`Windows::whole`).
 #[wasm_bindgen]
 pub fn whole() {
     let _ = Native::get().map(|native| {
@@ -144,8 +144,8 @@ pub fn whole() {
     });
 }
 
-/// Draws the window's frames whole and moved `dx`, `dy` device pixels from now, where it was with both 0, as a harness
-/// asks (core/ui's scenes.js), to compare with its frame where it was, as the native harness's `Windows::moved` draws
+/// Draws the window's frames whole and moved `dx`, `dy` device pixels from now, where it was with both 0, as a test
+/// asks (screenshot.js), to compare with its frame where it was, as the headless renderer's `Windows::moved` draws
 /// one: → where it draws glass, four numbers each, left, top, right and bottom (`Scene::glass`).
 #[wasm_bindgen]
 pub fn moved(dx: i32, dy: i32) -> Vec<u32> {

@@ -45,7 +45,7 @@ export async function record(folder, answers) {
     post({ id, method, params }) {
       if (id === undefined) return
       if (method !== "tools/call") return method in answers ? tell({ id, result: answers[method] }) : tell({ id, error: { message: `${method} isn't answered here` } })
-      // `{ "$error": … }` is its refusal and `{ "$image": "data:…" }` a picture, as scenes.js answers them.
+      // `{ "$error": … }` is its refusal and `{ "$image": "data:…" }` a picture, as screenshot.js answers them.
       const answer = answers[params.name]
       if (answer === undefined || answer?.$error) return tell({ id, result: { isError: true, content: [{ type: "text", text: answer?.$error ?? `No answer for ${params.name}` }] } })
       const [, mimeType, data] = answer?.$image?.match(/^data:(.*?);base64,(.*)$/) ?? []

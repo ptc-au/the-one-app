@@ -1,21 +1,21 @@
-// The harness process: here, or on `--ssh`'s device, and the scenes it lists and draws.
+// The headless renderer process: here, or on `--ssh`'s device, and the scenes it lists and draws.
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
-import { capped, checking, dark, env, FACES, glass, harness, out, slot, ssh, stopped } from "./options.js"
+import { capped, checking, dark, env, FACES, glass, headless, out, slot, ssh, stopped } from "./options.js"
 import { COMPONENTS, library, pageFolder } from "./pages.js"
 import { device, devices, hostScore } from "./tiers.js"
 
 
 /// Whether `--ssh`'s device is a Mac, whose shell is sh, where a Windows PC's is cmd.
 export const mac = Boolean(ssh) && Bun.spawnSync(["ssh", ssh, "uname -s"]).stdout.toString().trim() === "Darwin"
-/// What a path joins with there, and what the harness is called there.
+/// What a path joins with there, and what the headless renderer is called there.
 const sep = mac ? "/" : "\\"
-const exe = mac ? "screenshot" : "screenshot.exe"
+const exe = mac ? "headless" : "headless.exe"
 /// `args` quoted for the shell there: sh's, each in single quotes, or cmd's, each in double quotes as Windows' C runtime
 /// reads them, a quote in one escaped (an `--errors` list's).
 const quoted = (args) => args.map((arg) => (mac ? `'${arg.replaceAll("'", "'\\''")}'` : `"${arg.replaceAll('"', '\\"')}"`)).join(" ")
 
-/// The folder on `--ssh`'s device that each run there is in, with the UI library and the harness beside them, made
+/// The folder on `--ssh`'s device that each run there is in, with the UI library and the headless renderer beside them, made
 /// as the first run needs it and taken away as this ends.
 let remote
 function onDevice() {
@@ -29,15 +29,15 @@ function onDevice() {
   const staged = join(out, ".device")
   rmSync(staged, { recursive: true, force: true })
   cpSync(library("client"), join(staged, "ui"), { recursive: true, dereference: true })
-  cpSync(harness, join(staged, exe))
+  cpSync(headless, join(staged, exe))
   for (const face of FACES) cpSync(face, join(staged, basename(face)))
   const sent = Bun.spawnSync(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${mac ? "" : `mkdir "${remote}" && `}tar -xf - -C "${remote}"'`], { stdout: "pipe", stderr: "pipe" })
-  if (sent.exitCode !== 0) throw new Error(`${ssh}: the harness didn't go there: ${sent.stderr.toString().trim()}`)
+  if (sent.exitCode !== 0) throw new Error(`${ssh}: the headless renderer didn't go there: ${sent.stderr.toString().trim()}`)
   process.on("exit", () => Bun.spawnSync(["ssh", ssh, mac ? `rm -rf "${remote}"` : `rmdir /s /q "${remote}"`]))
   return remote
 }
 
-/// Runs the harness on `--ssh`'s device, in a folder of its own there with what it's given: its page, its answers and
+/// Runs the headless renderer on `--ssh`'s device, in a folder of its own there with what it's given: its page, its answers and
 /// its requests. → what it said on stdout and stderr, and whether it failed; its `end.json` back in `folder`.
 export async function runThere(at, folder, args, lines) {
   const base = onDevice()
@@ -94,7 +94,7 @@ async function presented(at, folder, scene, played, taps) {
     rmSync(staged, { recursive: true, force: true })
     return saidThere(stdout, stderr)
   }
-  writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, ...(glass ? [`set "ONE_GLASS=${glass}"`] : []), `start "" /b /wait "${base}\\screenshot.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
+  writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, ...(glass ? [`set "ONE_GLASS=${glass}"`] : []), `start "" /b /wait "${base}\\headless.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
   writeFileSync(
     join(staged, "wait.ps1"),
     [
@@ -144,19 +144,19 @@ export const panelled = (scene) => {
   return Boolean(client?.launcher)
 }
 
-/// The harness's flags that open `scene`'s window as the app does: a launcher as a panel with a computer's corners,
-/// 18 pt (clients/app/src/computer.rs `CORNER`), over the system's glass, in every harness alike.
+/// The headless renderer's flags that open `scene`'s window as the app does: a launcher as a panel with a computer's corners,
+/// 18 pt (clients/app/src/computer.rs `CORNER`), over the system's glass, in every headless renderer alike.
 export const panel = (scene) => (panelled(scene) ? ["--panel", "18"] : [])
 
-/// The harness run on a scene, with `requests`, once a slot of `jobs` is free: each answer, its stderr, and how long it
+/// The headless renderer run on a scene, with `requests`, once a slot of `jobs` is free: each answer, its stderr, and how long it
 /// ran. → `{ answers, said, failed, ms }`.
 export const run = (at, folder, scene, requests, seed = 0) =>
   slot(async () => {
     const started = performance.now()
-    return { ...(await harnessed(at, folder, scene, requests, seed)), ms: performance.now() - started }
+    return { ...(await headlessRun(at, folder, scene, requests, seed)), ms: performance.now() - started }
   })
 
-async function harnessed(at, folder, scene, requests, seed) {
+async function headlessRun(at, folder, scene, requests, seed) {
   const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
   writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
   const lines = requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n")
@@ -171,9 +171,9 @@ async function harnessed(at, folder, scene, requests, seed) {
   }
   // Its pipelines compile as slowly as the Surface's (`open.pipelines_ms`), so a frame that waits for some is a long one.
   const compiling = { ONE_PIPELINES_MS: String(devices.measured.surface.open.pipelines_ms) }
-  const harnessed = Bun.spawn(capped([harness, ...args]), { stdin: new TextEncoder().encode(lines), stdout: "pipe", stderr: "pipe", env: { ...env, ...compiling } })
-  const [stdout, stderr] = await Promise.all([new Response(harnessed.stdout).text(), new Response(harnessed.stderr).text(), harnessed.exited])
-  return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: [stderr.trim(), stopped(harnessed.exitCode)].filter(Boolean).join("\n"), failed: harnessed.exitCode !== 0 }
+  const headlessRun = Bun.spawn(capped([headless, ...args]), { stdin: new TextEncoder().encode(lines), stdout: "pipe", stderr: "pipe", env: { ...env, ...compiling } })
+  const [stdout, stderr] = await Promise.all([new Response(headlessRun.stdout).text(), new Response(headlessRun.stderr).text(), headlessRun.exited])
+  return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: [stderr.trim(), stopped(headlessRun.exitCode)].filter(Boolean).join("\n"), failed: headlessRun.exitCode !== 0 }
 }
 
 

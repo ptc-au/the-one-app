@@ -1,14 +1,14 @@
-// Plays every scene's gestures (its `motions`) on a native host's headless harness, frame by frame, on its paused
-// clock: `bun motion.js [<folder>…] [--scene <words>] [--hz 60,120] [--out <dir>] [--against <dir>] [--dark]
-// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--atlas starved] [--ssh <host> --harness <its build of the harness>]` in core/ui, after `bun build.js` and `cargo
-// build -p renderer --example screenshot --features fake` (`--release` too for `--release`, whose costs are a shipped
-// build's). `--ssh` plays them on a real device instead, as calibrate.js draws there (a Windows one's harness built with
+// Plays every scene's gestures (its `motions`) on a native host's headless renderer, frame by frame, on its paused
+// clock: `bun animation.js [<folder>…] [--scene <words>] [--hz 60,120] [--out <dir>] [--against <dir>] [--dark]
+// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--atlas starved] [--ssh <host> --headless <its build of the headless renderer>]` in core/ui, after `bun build.js` and `cargo
+// build -p renderer --example headless --features fake` (`--release` too for `--release`, whose costs are a shipped
+// build's). `--ssh` plays them on a real device instead, as calibrate.js draws there (a Windows one's headless renderer built with
 // `cargo xwin build --release … --target x86_64-pc-windows-msvc`, which draws with Direct3D 12 over ssh), at its tier's
 // device pixels a point, and judges its tier by each frame's own times there: its GPU's (its timestamps), its thread's
-// painting and drawing, and its JS's. With `--present` too, and the `window` example built for it as `--harness`, each
+// painting and drawing, and its JS's. With `--present` too, and the `window` example built for it as `--headless`, each
 // motion of a computer's scene is played in a real window in the device's person's session instead (a scheduled
 // task's), three times, each in a window opened afresh, drawn and presented on its display as the app's windows are,
-// with the GPU's work in flight as it is there, which the headless harness never has: a wheel's notches and the
+// with the GPU's work in flight as it is there, which the headless renderer never has: a wheel's notches and the
 // pointer's moves at their times, or a press where it starts, held or dragged. It fails where its frames' painting and
 // drawing, or its GPU, took longer than a refresh at their 95th percentile, and says each part (waiting for an image,
 // submitting, presenting). A device must start on the GPU there before each run (`window --gpu`), and the first that
@@ -22,7 +22,7 @@
 // frames (within `SAME` levels) packed either way.
 //
 // A folder is the gallery (clients/app/renderer/tests/gallery, its scenes in `*.scenes.tsx`) or an app's (apps/<app>, in
-// `client/scenes.json`), as `scenes.js` takes them; with none, the gallery and every app with a motion. A motion is
+// `client/scenes.json`), as `screenshot.js` takes them; with none, the gallery and every app with a motion. A motion is
 // `{ from, gesture, follow }` (the `Motion` type in src/types/ui.d.ts): the press goes down on what `from` names, moves
 // as `gesture` says, and what `follow` names is watched move, with what scrolls under the press. Each is played at
 // each rate of `--hz` (a display's frames a second: 60 and 120 unless said) by the inspector's `replay`, through the
@@ -48,10 +48,10 @@
 // `--checks` plays each scene's checks instead (`checks`, the `CheckStep` type): what people do with it, as the UI
 // SDK's own tests do (keyboard, pointer, focus, dismissing, typeahead, placement), and what must hold as they do, on
 // the fake platform's window, once as it is and again with `--seeds` (3 unless said) seeds that make it adversarial
-// (the harness's `--seed`: refreshes late, input as things move, presses held as long as a person might), and with
+// (the headless renderer's `--seed`: refreshes late, input as things move, presses held as long as a person might), and with
 // each seed a check once failed on (`seeds`). Every check also comes to rest, leaves nothing drawn going, draws every
 // picture, each within a few hundred ms of its page asking for it as the slowest device of its kind decodes it
-// (devices.json's CPU scores, the harness's `--slower`), any menu, list or dialog open at its end is drawn whole in
+// (devices.json's CPU scores, the headless renderer's `--slower`), any menu, list or dialog open at its end is drawn whole in
 // the window, and its last frame, drawn on what the window kept from frames before, is the one drawn afresh. Every
 // scene is drawn the same too, the frame it keeps against one afresh, at rest, back from the background, with the
 // system's appearance switched and on a computer its window made smaller; and every scene on a computer (not `touch`)
@@ -64,35 +64,35 @@
 // `--generated <count>` plays that many generated scenes instead, from seed 1 or `--from`'s (gallery/generated.scenes.tsx:
 // pages no app draws, a random tree of cards, shadows, glass, lists that scroll, things moved, turned and faded, and
 // text, changing as their seed says), each in a phone's window under a finger's drags and flings or a computer's under
-// a wheel, at 1 to 3 device pixels a point and 60 or 120 Hz, with the harness's `--seed` too, and every frame drawn on
+// a wheel, at 1 to 3 device pixels a point and 60 or 120 Hz, with the headless renderer's `--seed` too, and every frame drawn on
 // what was kept must be the one drawn whole and the same drawn moved by whole device pixels. A seed that fails says
 // its first wrong frame, with its pictures in `--out`'s `generated/<seed>`, and plays the same again: `--generated 1
 // --from <seed>`. About a second a seed here, a hundred or so frames each.
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs"
 import { join } from "node:path"
-import { checks } from "./motion/checks.js"
-import { checking, firstSeed, flag, folders, generating, harness, here, out, root, setHarness, ssh, ui } from "./motion/options.js"
-import { generated } from "./motion/generated.js"
-import { copied, stale } from "./motion/pages.js"
-import { round } from "./motion/play.js"
-import { cpuName, hostScore } from "./motion/tiers.js"
+import { checks } from "./animation/checks.js"
+import { checking, firstSeed, flag, folders, generating, headless, here, out, root, setHeadless, ssh, ui } from "./animation/options.js"
+import { generated } from "./animation/generated.js"
+import { copied, stale } from "./animation/pages.js"
+import { round } from "./animation/play.js"
+import { cpuName, hostScore } from "./animation/tiers.js"
 
-// What scenes.js and calibrate.js import from here.
-export { capped, env, FACES, glass, jobs, lavapipe, pLimit, slot, stopped } from "./motion/options.js"
-export { moves, selector } from "./motion/gesture.js"
-export { monospaced } from "./motion/judges.js"
-export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./motion/harness.js"
-export { build, COMPONENTS, copied, library, pageFolder, stale, usedFolder } from "./motion/pages.js"
+// What screenshot.js and calibrate.js import from here.
+export { capped, env, FACES, glass, jobs, lavapipe, pLimit, slot, stopped } from "./animation/options.js"
+export { moves, selector } from "./animation/gesture.js"
+export { monospaced } from "./animation/judges.js"
+export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animation/headless.js"
+export { build, COMPONENTS, copied, library, pageFolder, stale, usedFolder } from "./animation/pages.js"
 
 /// Every folder with motions, or with `--checks` every folder with scenes: the gallery, and each app's.
 const everything = () => [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")) && (checking || readFileSync(join(app, "client/scenes.json"), "utf8").includes('"motions"')))]
 
 // Run, rather than imported for what it shares (calibrate.js).
 if (import.meta.main) {
-  if (stale(ssh ? undefined : harness)) throw new Error(stale(ssh ? undefined : harness))
-  if (!existsSync(harness)) throw new Error("Build the native harness first: `cargo build -p renderer --example screenshot --features fake`")
+  if (stale(ssh ? undefined : headless)) throw new Error(stale(ssh ? undefined : headless))
+  if (!existsSync(headless)) throw new Error("Build the headless renderer first: `cargo build -p renderer --example headless --features fake`")
   // `--watch` plays what it builds again as it changes.
-  if (!flag("--watch")) setHarness(copied(ssh ? undefined : harness, out) ?? harness)
+  if (!flag("--watch")) setHeadless(copied(ssh ? undefined : headless, out) ?? headless)
   // A debug build's CPU is several times a shipped one's.
   if (!flag("--release") && !ssh) console.log("Its CPU times are a debug build's, so devices are judged by their GPU and drawing, as measured, alone: --release judges their painting and JS too")
   if (!hostScore && !ssh) console.log(`This CPU (${cpuName.trim()}) has no Geekbench score in devices.json's hosts, so devices are judged by their GPUs alone`)

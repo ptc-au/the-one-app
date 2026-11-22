@@ -37,7 +37,7 @@ else.
   `{dx, dy, ms}`, one with neither holding still) and lifts, on the paused clock, every frame of a display `hz` (60,
   or 120) times a second drawn until it comes to rest, each with its cost, its GPU `work`, where `track` (a selector)
   was drawn and how far what scrolls shows scrolled, and how many went `over` their budget. A fling is a short quick
-  move (300 px in 80 ms), a rubber band one past a list's end. `bun motion.js` in the One App's repo plays the same on
+  move (300 px in 80 ms), a rubber band one past a list's end. `bun animation.js` in `clients/app/renderer/tests` of the One App's repo plays the same on
   a scene, with no window, and judges it against kinds of devices.
 - `host` checks the device's host keeps the renderer's contract: a tick each display refresh, a frame presented each
   tick while something moves, nothing while still, and inputs with the device's own times. Move the pointer over the

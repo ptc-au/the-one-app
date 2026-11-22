@@ -23,7 +23,7 @@ export function moves(gesture) {
   throw new Error(`A gesture is a swipe, a fling, a drag, a pull or its moves: ${JSON.stringify(gesture)}`)
 }
 
-/// What the inspector selects for a tap's name, as `scenes.js` presses it.
+/// What the inspector selects for a tap's name, as `screenshot.js` presses it.
 export const selector = (tap) => (typeof tap === "string" ? { name: tap } : tap)
 
 /// The one node a `query` for `tap` found, as a check that means one reads it: `{ node }`, or `{ why }` where none matched
@@ -124,5 +124,5 @@ export function ios(frames, way, values, stretches) {
 }
 
 
-/// A tap as the harness's request, as scenes.js presses it.
+/// A tap as the headless renderer's request, as screenshot.js presses it.
 export const pressed = (tap) => (tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...selector(tap) })

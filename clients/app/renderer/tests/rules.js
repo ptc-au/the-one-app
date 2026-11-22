@@ -1,7 +1,7 @@
 // What every scene must meet, whatever its page, light and dark, a phone's and a computer's, judged from what the native
-// harness drew: the inspector's every node (`query`, with `frames`) and the picture. Each kind of bug the frames showed
+// headless renderer drew: the inspector's every node (`query`, with `frames`) and the picture. Each kind of bug the frames showed
 // more than once has a rule here, where a check of one scene (`judges.js`'s `contrast`, `whole`, `aligned`, `rounded`)
-// had found it in that scene alone. scenes.js runs them on every scene; a rule that fails says which node and why, a
+// had found it in that scene alone. screenshot.js runs them on every scene; a rule that fails says which node and why, a
 // line each. An exception is a node a rule can't judge, named in the rule with why.
 import { readFileSync } from "node:fs"
 import { PNG } from "pngjs"
@@ -145,7 +145,7 @@ export function marks(nodes, file, [width]) {
   )
 }
 
-/// No two words in sight are drawn over each other, at rest or in any frame of a motion (motion/play.js), as a large
+/// No two words in sight are drawn over each other, at rest or in any frame of a motion (animation/play.js), as a large
 /// title over a bar's (L24) or a folder's names twice over (L37) were: what scrolls under a bar while it's scrolled is
 /// meant to, and a cross-fade's two are each less than opaque. → what's wrong, a line each.
 export function wordsApart(nodes) {
@@ -321,7 +321,7 @@ const EXCEPT = {
   gallery: { centred: "a component drawn alone sits where the gallery puts it, at the window's start" },
 }
 
-/// Every rule, by its name, as scenes.js says what fails: each a line. The nodes are kept beside the picture
+/// Every rule, by its name, as screenshot.js says what fails: each a line. The nodes are kept beside the picture
 /// (`native-nodes.json`), so a rule can be tried again on a run's scenes without drawing them.
 export function rules(nodes, file, size, scene) {
   return Object.entries({ contrast: contrast(nodes, file, size), marks: marks(nodes, file, size), apart: [...wordsApart(nodes), ...controlsApart(nodes)], "row ends": rowEnds(nodes), centred: centred(nodes), unbroken: unbroken(nodes), "room to show it": roomy(nodes), corners: corners(nodes, file, size) }).filter(([rule]) => !EXCEPT[scene]?.[rule] && !EXCEPT[scene.split(" · ")[0]]?.[rule]).flatMap(([rule, lines]) => lines.map((line) => `${rule}: ${line}`))

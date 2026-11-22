@@ -43,22 +43,22 @@ fn run(job: Job) {
     let _ = jobs.lock().unwrap_or_else(std::sync::PoisonError::into_inner).send(job);
 }
 
-/// How many times as long as here a picture takes to decode on the device a harness stands for (`decoding_takes`).
+/// How many times as long as here a picture takes to decode on the device a test stands for (`decoding_takes`).
 #[cfg(feature = "fake")]
 static SLOWER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1f32.to_bits());
 
 /// Each picture decodes `times` as slowly as on this machine, as on a device with a slower CPU (the Surface's is a
-/// third as fast as a current desktop's): for a harness, so a page that has many to decode shows them as late as that
+/// third as fast as a current desktop's): for a test, so a page that has many to decode shows them as late as that
 /// device would.
 #[cfg(feature = "fake")]
 pub fn decoding_takes(times: f32) {
     SLOWER.store(times.to_bits(), std::sync::atomic::Ordering::Relaxed);
 }
 
-/// How long decoding `src` into `pixels` pixels takes on the machine a harness runs on, in ms: its bytes' share and its
+/// How long decoding `src` into `pixels` pixels takes on the machine a test runs on, in ms: its bytes' share and its
 /// pixels', as the decodes of the Home Screen's and App Store's scenes took there (an SVG's bytes are parsed and its
 /// paths filled, 0.5 µs a byte and 0.1 a pixel; a PNG's or a JPEG's are inflated and scaled, 0.01 and 0.055). A picture
-/// is so there at the same time on the harness's clock on every run and every machine, where the CPU time it measured
+/// is so there at the same time on the headless renderer's clock on every run and every machine, where the CPU time it measured
 /// varied fourfold from run to run for the same icon (0.53 to 2.38 ms), and with it which copy of a picture a frame drew
 /// (the App Library's icons, sharp on one run and smoothed on the next, which read as two GPUs sampling apart).
 #[cfg(feature = "fake")]
@@ -68,7 +68,7 @@ fn decoding_ms(src: &str, pixels: u32) -> f64 {
 }
 
 /// With a seed, one picture in three fails to decode the first time it's asked for, at once, as a browser's decode under
-/// load is cut short (`HTMLImageElement.decode()` rejecting): for a harness, which then shows whether it's tried again.
+/// load is cut short (`HTMLImageElement.decode()` rejecting): for a test, which then shows whether it's tried again.
 #[cfg(feature = "fake")]
 static CUT_SHORT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -79,7 +79,7 @@ pub fn cut_short(seed: u64) {
 }
 
 /// How long after a picture fails to decode, or to be fetched on the web, it's tried again, each time it has: one that
-/// fails once more is broken, within the second a harness's scene is given to settle.
+/// fails once more is broken, within the second a test's scene is given to settle.
 pub(crate) const RETRIES_MS: [f64; 3] = [50.0, 200.0, 500.0];
 
 /// A picture that didn't decode: how many times it hasn't, and when it's tried again, or that it's being tried again,
@@ -96,7 +96,7 @@ enum Again {
     Trying,
 }
 
-/// What's decoded, waiting to go in the atlas, each with when it's there (for a harness, as late as the device it
+/// What's decoded, waiting to go in the atlas, each with when it's there (for a test, as late as the device it
 /// stands for would have it; on a device, as it's decoded), and how many are still decoding.
 #[derive(Default)]
 struct Decoding {
@@ -104,7 +104,7 @@ struct Decoding {
     running: usize,
 }
 
-/// Now, in ms: for a harness, its own clock's, which a picture's time is told by, the same on any machine however
+/// Now, in ms: for a test, its own clock's, which a picture's time is told by, the same on any machine however
 /// busy; on a device, since it started.
 fn now() -> f64 {
     #[cfg(feature = "fake")]
@@ -212,7 +212,7 @@ impl Pictures {
         decoding.running + decoding.done.len() + self.failed.values().filter(|failed| failed.again != Again::Trying).count()
     }
 
-    /// Whether one's decoding, or decoded and there by now, to take: what a harness draws again for, not one that's
+    /// Whether one's decoding, or decoded and there by now, to take: what a test draws again for, not one that's
     /// there only later on its clock, which comes as its time does (`due`).
     pub(super) fn decoding(&self) -> bool {
         let decoding = self.decoding.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -220,7 +220,7 @@ impl Pictures {
         decoding.running > 0 || decoding.done.iter().any(|(_, _, at)| at.is_none_or(|at| at <= now)) || self.failed.values().any(|failed| failed.again == Again::Due)
     }
 
-    /// How long until the next decoded is there, where one's waiting to be (for a harness), or the next that didn't
+    /// How long until the next decoded is there, where one's waiting to be (for a test), or the next that didn't
     /// is tried again, in ms: when its window has something due.
     pub(super) fn due(&self) -> Option<f64> {
         let decoding = self.decoding.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -234,7 +234,7 @@ impl Pictures {
         self.broken.contains(&hash(src))
     }
 
-    /// Waits for what's decoding: for a harness, which draws what a step left once it's done.
+    /// Waits for what's decoding: for a test, which draws what a step left once it's done.
     pub(super) fn wait(&self) {
         let (decoding, done) = &*self.decoding;
         let mut decoding = decoding.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -364,7 +364,7 @@ impl Pictures {
             wasm_bindgen_futures::spawn_local(async move { done(crate::platform::web::decode(&src, device).await, None) });
             #[cfg(not(target_arch = "wasm32"))]
             run(Box::new(move || {
-                // For a harness, one cut short (`CUT_SHORT`) fails as it's asked for.
+                // For a test, one cut short (`CUT_SHORT`) fails as it's asked for.
                 #[cfg(feature = "fake")]
                 {
                     let seed = CUT_SHORT.load(std::sync::atomic::Ordering::Relaxed);
@@ -373,8 +373,8 @@ impl Pictures {
                     }
                 }
                 let decoded = super::paint::decode(&src, device);
-                // For a harness, it's there as late as on the device it stands for: its decoding's time here
-                // (`decoding_ms`), `SLOWER` times over, on the harness's clock from when it was asked for, so a busy
+                // For a test, it's there as late as on the device it stands for: its decoding's time here
+                // (`decoding_ms`), `SLOWER` times over, on the headless renderer's clock from when it was asked for, so a busy
                 // machine's doesn't make it later; on a device, once it's decoded.
                 #[cfg(feature = "fake")]
                 let at = Some(when + decoding_ms(&src, decoded.as_ref().map_or(device.width * device.height, |decoded| decoded.picture.width * decoded.picture.height)) * f64::from(f32::from_bits(SLOWER.load(std::sync::atomic::Ordering::Relaxed))));

@@ -206,7 +206,7 @@ impl Input {
         }
     }
 
-    /// It as a trace's event (`{kind, x, y, …}`, as the headless harness's `trace` plays it), where it's one a person
+    /// It as a trace's event (`{kind, x, y, …}`, as the headless renderer's `trace` plays it), where it's one a person
     /// gives: the pointer, a button, the wheel or a key.
     pub(super) fn traced(&self) -> Option<serde_json::Value> {
         use serde_json::json;

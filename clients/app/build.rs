@@ -1,7 +1,6 @@
 fn main() {
     let target = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    // A phone's app is Tauri's: on a phone, and on Linux built with `phone`, as the app harness runs a phone's app
-    // (`tooling/app-harness --phone`).
+    // A phone's app is Tauri's: on a phone, and on Linux built with `phone`.
     let phone = target == "android" || target == "ios" || std::env::var_os("CARGO_FEATURE_PHONE").is_some();
     println!("cargo::rustc-check-cfg=cfg(desktop)");
     println!("cargo::rustc-check-cfg=cfg(mobile)");

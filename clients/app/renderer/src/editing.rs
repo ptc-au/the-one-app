@@ -245,7 +245,7 @@ pub trait Clipboard {
     fn write(&mut self, primary: bool, text: &str);
 }
 
-/// A clipboard kept in memory, for a screen with no computer's clipboard (the headless harness).
+/// A clipboard kept in memory, for a screen with no computer's clipboard (the headless renderer).
 #[derive(Default)]
 pub struct Memory([Option<String>; 2]);
 

@@ -13,13 +13,13 @@ impl Windows {
             #[cfg(not(target_arch = "wasm32"))]
             context.prepare();
             let atlas = Arc::new(Atlas::new(&context));
-            // The system's fonts where ours lack a character: a fake platform has only those the harness's host is
+            // The system's fonts where ours lack a character: a fake platform has only those the headless renderer's host is
             // given for it (`fake::fallback_fonts`), so it draws the same everywhere.
             #[allow(unused_mut)]
             let mut fonts = crate::fonts()?;
             #[cfg(feature = "fake")]
             fonts.extend(fake::fallback_fonts()?);
-            // Code is in our own monospace where the host has no system fonts to give one (a browser's, a harness's).
+            // Code is in our own monospace where the host has no system fonts to give one (a browser's, a test's).
             #[cfg(any(feature = "fake", target_arch = "wasm32"))]
             fonts.push(crate::view::monospace()?);
             #[allow(unused_mut)]

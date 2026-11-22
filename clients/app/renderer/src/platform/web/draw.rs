@@ -176,7 +176,7 @@ async fn fetched(address: &str) -> Option<String> {
 }
 
 /// Waits `ms` on the browser's own clock, as the frame's JS gives it (renderer.js's `browser`), not the window's `setTimeout`,
-/// which a harness that steps the page's timers has the page's (`timed`): a fetch tried again waited on one that never came.
+/// which a test that steps the page's timers has the page's (`timed`): a fetch tried again waited on one that never came.
 async fn later(ms: f64) {
     let waiting = js_sys::Promise::new(&mut |done, _| drop(super::call_with("timer", &[done.into(), ms.into()])));
     let _ = wasm_bindgen_futures::JsFuture::from(waiting).await;

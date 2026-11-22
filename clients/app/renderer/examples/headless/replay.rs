@@ -307,7 +307,7 @@ fn unlike_whole(windows: &mut Windows, id: renderer::platform::WindowId) -> anyh
 /// pixel may be FLAT_APART levels apart in FLAT pixels at most, where a dither or a grid of the window's moves every one
 /// of a gradient or a shadow's. Under glass, its blur's samples are on its frame's grid, which moves under it, so there
 /// it may be GLASS levels apart (step 6 of the renderer's plan, a blur reading the surfaces beneath it, ends that).
-/// scenes.js judges the web's the same (`unmoved`).
+/// screenshot.js judges the web's the same (`unmoved`).
 pub(crate) fn unlike_moved(windows: &mut Windows, id: renderer::platform::WindowId, offsets: &[[i32; 2]]) -> anyhow::Result<Vec<Value>> {
     let mut unlike = Vec::new();
     for by in offsets {

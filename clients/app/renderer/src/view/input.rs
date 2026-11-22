@@ -9,7 +9,7 @@ impl Screen {
         (!self.js.clock().paused()).then(|| self.blink_due()).flatten().map(|ms| Duration::from_secs_f64(ms / 1000.0))
     }
 
-    /// When the caret next blinks on or off, in ms on the app's clock, which a harness steps as a timer (`timer_due`),
+    /// When the caret next blinks on or off, in ms on the app's clock, which a test steps as a timer (`timer_due`),
     /// where no input has the keyboard.
     pub(crate) fn blink_due(&self) -> Option<f64> {
         let typing = self.active && self.focus.focused.is_some_and(|id| self.editing.fields.contains_key(&id));

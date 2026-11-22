@@ -36,7 +36,7 @@ library as a page's type check sees it.
 - A behavior or a headless component is copied from Vercel's UI SDK (Apache-2.0, `src/UI-SDK-LICENSE.txt`), with the upstream file and commit in
   its header, its DOM parts replaced by our host's (the drawing primitives, the bridge). Copy only what a component
   uses; pure logic (which item a key moves to, where a popup goes, how fast a finger was going) as it is. Then its styled component,
-  from the tokens, a scene (`gallery/*.scenes.tsx`), and `///` comments that start with an example, which are the
+  from the tokens, a scene (`clients/app/renderer/tests/gallery/*.scenes.tsx`), and `///` comments that start with an example, which are the
   `ui` skill.
 - Updating from upstream: diff each copied file's upstream from the commit in its header to now, and apply that.
 

@@ -72,10 +72,10 @@ pub fn memory_limit() -> usize {
     (memory / 16).clamp(256 << 20, 2 << 30)
 }
 
-/// The memory of the device a harness stands for, where it isn't this machine's (`device_memory_is`).
+/// The memory of the device a test stands for, where it isn't this machine's (`device_memory_is`).
 static DEVICE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// Pages have the memory they'd have on a device with `bytes` of it, as a phone of 4 GB: for a harness, so a page that
+/// Pages have the memory they'd have on a device with `bytes` of it, as a phone of 4 GB: for a test, so a page that
 /// runs away runs out as soon as it would there.
 #[cfg(feature = "fake")]
 pub fn device_memory_is(bytes: usize) {
@@ -107,7 +107,7 @@ fn device_memory() -> usize {
 const STACK: usize = 1 << 20;
 
 /// What a node of a page's tree costs its window, in bytes: the node, its layout, styles and text as drawn. 20 Nov:
-/// 100,000 nodes (a box holding a line of text, each) took the headless harness's window 323 MB more.
+/// 100,000 nodes (a box holding a line of text, each) took the headless renderer's window 323 MB more.
 const NODE: usize = 3 << 10;
 
 /// One app's JS, running.
@@ -720,7 +720,7 @@ impl Thread {
     }
 
     /// Whether its thread has something it was sent to run yet, or hasn't started, or has run what its window hasn't
-    /// taken the posts of: what it posts is on its way. A harness asking after it ran the last of what it was sent, and
+    /// taken the posts of: what it posts is on its way. A test asking after it ran the last of what it was sent, and
     /// before the window took what that posted, found it quiet with its answer still to come, as quick or slow as
     /// its thread was (the clock's first step landed 16.67 or 33.33 ms on). What's held for it (`seed`) isn't its yet.
     pub fn busy(&self) -> bool {

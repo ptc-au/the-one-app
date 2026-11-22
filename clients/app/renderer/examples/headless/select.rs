@@ -1,4 +1,4 @@
-//! What the harness's window says it has and where: an inspector request answered, and where a press goes.
+//! What the headless renderer's window says it has and where: an inspector request answered, and where a press goes.
 
 use renderer::platform::Windows;
 use serde_json::{Value, json};

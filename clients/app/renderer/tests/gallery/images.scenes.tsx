@@ -14,7 +14,7 @@ const tile = (letter: string, fill: string) =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" style="fill:${fill}"/><text x="16" y="16" dy="0.35em" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="600" fill="#fff">${letter}</text></svg>`)}`
 
 /// A picture that takes a while to decode, as a large photo does: two circles blurred, which resvg draws at the
-/// size it's shown. Its frame, drawn as it decodes in the background, doesn't wait for it (the harness's
+/// size it's shown. Its frame, drawn as it decodes in the background, doesn't wait for it (the headless renderer's
 /// `worst_paint_ms`).
 const blurred = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><filter id="b"><feGaussianBlur stdDeviation="30"/></filter><g filter="url(#b)"><circle cx="120" cy="120" r="90" fill="#e33"/><circle cx="280" cy="190" r="110" fill="#33e"/></g></svg>`)}`
 

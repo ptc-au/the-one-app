@@ -5,7 +5,7 @@ import { basename, join, relative } from "node:path"
 import { against, glass, keeping, only, out, present, rates, ssh } from "./options.js"
 import { build, pageFolder } from "./pages.js"
 import { costlier, device, devices, hostScore, judge } from "./tiers.js"
-import { presentThere, run, scenesOf } from "./harness.js"
+import { presentThere, run, scenesOf } from "./headless.js"
 import { finger, ios, moves, projected, selector, single, travel } from "./gesture.js"
 import { wordsApart } from "../rules.js"
 import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
@@ -32,7 +32,7 @@ async function play(built, scene, name, motion, hz, folder) {
     // What a computer's window plays as a person would, at its times, its taps first, each settled: a wheel's notches and the pointer's moves, or a
     // press held where `from` is, or dragged from there as far as its moves go.
     const fingers = events?.some((event) => event.kind === "touch")
-    if (scene.touch || fingers || motion.frameMs || motion.reducedMotion) return { said: `  ${hz} Hz: ${scene.touch || fingers ? "a finger's, which a computer's window doesn't take" : motion.frameMs ? "paced as a loaded device's" : "with less motion"}, which only the headless harness plays` }
+    if (scene.touch || fingers || motion.frameMs || motion.reducedMotion) return { said: `  ${hz} Hz: ${scene.touch || fingers ? "a finger's, which a computer's window doesn't take" : motion.frameMs ? "paced as a loaded device's" : "with less motion"}, which only the headless renderer plays` }
     const [dx, dy] = stretches.reduce(([x, y], stretch) => [x + (stretch.dx ?? 0), y + (stretch.dy ?? 0)], [0, 0])
     const ms = stretches.reduce((sum, stretch) => sum + stretch.ms, 0)
     const played = events
@@ -115,7 +115,7 @@ async function play(built, scene, name, motion, hz, folder) {
   const holding = (n) => where(n - 2) === where(n) && where(n) !== where(0) && [n - 2, n - 1].every((was) => JSON.stringify(frames[was].rect) === JSON.stringify(frames[n].rect))
   const redrawn = events || !motion.follow ? -1 : frames.findIndex((frame, n) => n > 1 && frame.at < end && holding(n) && frame.work?.damage > 0)
   if (redrawn >= 0) failed.push(`frame ${redrawn} (${frames[redrawn].at} ms) drew ${frames[redrawn].work.damage} pixels again while what the finger holds was held still`)
-  // A frame the same as the one before, with nothing on its way since (the harness's `arriving`), is drawn nothing and
+  // A frame the same as the one before, with nothing on its way since (the headless renderer's `arriving`), is drawn nothing and
   // presents nothing new, as a compositor with no damage presents none: on 22 Nov 77 motions drew and presented frames
   // the same as the one before, 797 of them, most at rest, where the frame at rest drew whole (23.7 ms on the Surface
   // for the long Vault) for nothing. One on its way may change too little to see (a spring's last hundredth of a
@@ -255,7 +255,7 @@ async function play(built, scene, name, motion, hz, folder) {
   const slow = (n) => Math.abs((values[n + 1] ?? values[n]) - values[n - 1]) < 2 * pixel - 0.01
   const held = moved < 0 || motion.frameMs || motion.reducedMotion ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && !slow(n) && Math.abs(value - values.at(-1)) > 2)
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
-  // No refresh draws nothing while something on the window is on its way somewhere (the harness's `held`), whatever
+  // No refresh draws nothing while something on the window is on its way somewhere (the headless renderer's `held`), whatever
   // it follows: a refresh so is one the loop missed, the frame before shown twice, then a jump. A device others load
   // (`frameMs`) takes several refreshes a frame. Before the motion's first frame there's no frame before: a press that
   // came as its refresh's frame was drawn is drawn at the next, as a display link's frame begins at its tick.
@@ -404,7 +404,7 @@ async function play(built, scene, name, motion, hz, folder) {
     else if (soft) failed.push(`its words are drawn soft at frame ${soft.n + 1} (${frames[soft.n].at} ms), ${soft.sharp.toFixed(2)} sharp where they're ${rest.sharp.toFixed(2)} at rest`)
   }
   // No frame waits for pipelines to compile, as the first to draw glass did while its blur's were compiled as it drew
-  // (half a second on the Surface): the harness's compile as long as the Surface's (`run`), and a frame's drawing by
+  // (half a second on the Surface): the headless renderer's compile as long as the Surface's (`run`), and a frame's drawing by
   // the clock, what its thread waited for too.
   const compiling = devices.measured.surface.open.pipelines_ms
   const drawing = (frame) => (frame.draw_ms ?? 0) + (frame.draw_wait_ms ?? 0)
@@ -462,7 +462,7 @@ function differently(first, again) {
 /// Every motion played, by its folder, for the contact sheet: a round that plays some keeps the rest.
 const rows = new Map()
 
-/// Plays every motion of `targets`, every target at once, its harnesses as many at once as `jobs`. → each line it
+/// Plays every motion of `targets`, every target at once, its headless renderers as many at once as `jobs`. → each line it
 /// says, in the order of `targets`.
 export async function round(targets) {
   const played = await Promise.all(targets.map(async (target) => {
@@ -473,11 +473,11 @@ export async function round(targets) {
     const scenes = (await scenesOf(target, built, join(out, name, ".scenes"))).filter((scene) => !only || scene.name.toLowerCase().includes(only))
     // A trace a motion plays is beside its scenes.
     for (const scene of scenes) scene.from = target.endsWith("renderer/tests/gallery") ? target : join(target, "client")
-    // Each motion at each rate on a harness of its own.
+    // Each motion at each rate on a headless renderer of its own.
     const jobs = scenes.flatMap((scene) => Object.entries(scene.motions).filter(([, played]) => !keeping || played.keeps).flatMap(([motion, played]) => rates.map((hz) => ({ scene, motion, played, hz }))))
     const folderOf = ({ scene, motion, hz, again }) => join(out, name, scene.name.replace(/[^\w.-]+/g, "-"), motion.replace(/[^\w.-]+/g, "-"), `${hz}hz${again ? "-again" : ""}`)
-    // The harness draws the same frames for the same build each time, however busy the machine: the first motion is
-    // played again, on a harness of its own beside it and the others, and any frame it draws otherwise fails the round,
+    // The headless renderer draws the same frames for the same build each time, however busy the machine: the first motion is
+    // played again, on a headless renderer of its own beside it and the others, and any frame it draws otherwise fails the round,
     // as a frame clock or input that went by the wall clock does (the App Library's category opening, at 60 Hz, drew the
     // icon flying at y 547.40 or 543.75 in its 6th frame, by how busy the machine was).
     if (jobs.length && !present) jobs.splice(1, 0, { ...jobs[0], again: true })

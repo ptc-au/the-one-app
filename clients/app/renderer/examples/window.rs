@@ -13,16 +13,16 @@
 //!
 //! `--gpu` starts a device on the GPU, says which, and exits: 3 where none starts in five times `HANG`, as a driver
 //! that hung and failed its reset hangs every program that asks it for one (a Surface's Intel, 22 Nov), which
-//! motion.js's `--present` checks before each run. A window's thread stuck in the driver ends it with 3 too, saying why
+//! animation.js's `--present` checks before each run. A window's thread stuck in the driver ends it with 3 too, saying why
 //! (`renderer::render::watchdog`).
 //!
 //! on a desktop: X11 (`xvfb-run -a` where there's none), Windows in its person's session (over ssh, a scheduled task's
 //! `/IT`, as the qa skill starts the app), where Direct3D 12 presents through DirectComposition as the app does, or a
 //! Mac, from its person's own login (over ssh too), where AppKit's application runs on the main thread as the app's
 //! event loop does there, and what's played beside it.
-//! The headless harness (`screenshot`) draws offscreen and never presents, so what presenting costs shows only here.
+//! The headless renderer (`headless`) draws offscreen and never presents, so what presenting costs shows only here.
 //! What it plays is the inspector's requests, each at its `at`, ms from the round's start (a wheel's notch a `scroll`, the
-//! pointer's move a `hover`, a press a `tap` or a `drag`), as motion.js makes them of a motion. Each round is a window of
+//! pointer's move a `hover`, a press a `tap` or a `drag`), as animation.js makes them of a motion. Each round is a window of
 //! its own, opened afresh, as the app opens one: `--before` gives the inspector's requests run first, a second apart (a
 //! scene's `taps`, `{"op":"tap","name":"…"}`), after its first frame and its page's first answers.
 //! `--panel` opens it as a launcher's panel, summoned, its corners `<corner>` round: each pane of the system's glass its
@@ -84,7 +84,7 @@ fn played() -> anyhow::Result<bool> {
     let ui = flag("--ui").map(PathBuf::from);
     let before = flag("--before").map(std::fs::read_to_string).transpose()?.unwrap_or_default();
 
-    // Built beside the headless harness (`--example screenshot --features fake`), it would draw on the fake platform,
+    // Built beside the headless renderer (`--example headless --features fake`), it would draw on the fake platform,
     // offscreen, with no window: every frame presented in 0 ms at 30 Hz, which read as a window's.
     if cfg!(feature = "fake") {
         anyhow::bail!("this build has the fake platform, which has no real windows: build the window example without --features fake");
@@ -175,9 +175,9 @@ fn played() -> anyhow::Result<bool> {
 }
 
 /// The page in `folder` as a window's screen, its UI library from `ui` and what it asks answered
-/// from `answers`, as `screenshot` makes it: on the windows' thread, which a screen stays on.
+/// from `answers`, as `headless` makes it: on the windows' thread, which a screen stays on.
 fn screen(folder: PathBuf, ui: Option<PathBuf>, answers: Value, panel: Option<f32>) -> anyhow::Result<Screen> {
-    // The page's files at `file:///`, as its own folder, with the UI library's under /ui/client/, as `screenshot`.
+    // The page's files at `file:///`, as its own folder, with the UI library's under /ui/client/, as `headless`.
     let root = folder.clone();
     let mut files: Files = Box::new(move |url: &Url| {
         let path = url.path();
@@ -206,7 +206,7 @@ fn screen(folder: PathBuf, ui: Option<PathBuf>, answers: Value, panel: Option<f3
         }
     }
     let js = Thread::start(&page, files, None, Clock::real(), false)?;
-    // What the page asks its client, answered from `answers`, as `screenshot` answers it.
+    // What the page asks its client, answered from `answers`, as `headless` answers it.
     let asked: renderer::Asked = Box::new(move |message, _| {
         let id = message.get("id")?.clone();
         let (method, tool) = (message["method"].as_str().unwrap_or_default(), message["params"]["name"].as_str());

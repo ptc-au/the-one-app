@@ -17,7 +17,7 @@ impl Native {
     }
 
     /// Whether this device's windows are a phone's: each the whole screen, the Home Screen the root window under every
-    /// app's, closed only as its system closes it. The fake platform's are where the app harness says so (`ONE_PHONE`).
+    /// app's, closed only as its system closes it. The fake platform's are where `ONE_PHONE` says so.
     pub fn phone() -> bool {
         #[cfg(feature = "fake")]
         return phone_screen().is_some();
@@ -37,12 +37,12 @@ fn phone_screen() -> Option<Size<Pixels>> {
 use super::windows::start;
 
 /// The fake platform's windows for an app that asks for them as it would a system's, as the app does built with it
-/// (`clients/app`'s `fake`, the app harness): a thread of their own, as a host's, on real time, whose display refreshes
+/// (`clients/app`'s `fake`): a thread of their own, as a host's, on real time, whose display refreshes
 /// at 60 Hz while something moves, its pages' posts and its jobs taken in between, as each host's loop does. With a
 /// seed (`ONE_SEED`), it's as busy as a loaded device's: one job in four waits up to 2 s for the thread, as a Surface's
 /// launcher waited 4.5 s to be made as the app started (21 Nov). Its screen is a phone's where `ONE_PHONE` says so
-/// (`Native::phone`). A harness that drives them itself, frame by frame, has
-/// them by `Windows::fake` instead (`examples/screenshot/main.rs`). Where `ONE_NATIVE_FAILS` says why, they don't start,
+/// (`Native::phone`). A test that drives them itself, frame by frame, has
+/// them by `Windows::fake` instead (`examples/headless/main.rs`). Where `ONE_NATIVE_FAILS` says why, they don't start,
 /// as on a device whose graphics don't.
 #[cfg(feature = "fake")]
 fn start() -> anyhow::Result<Native> {

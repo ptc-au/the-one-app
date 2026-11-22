@@ -67,7 +67,7 @@ impl Scene {
         let mut primitive = primitive.into();
         // What it's cut to has its edges on whole device pixels, half up, as browsers snap a clip: a pixel is in it where
         // its middle is, and an edge through a row of middles (a list's at 674.5) kept or cut that row by how the GPU's
-        // arithmetic rounded, otherwise wherever it's moved (a generated scene, `motion.js --generated 1 --from 1`).
+        // arithmetic rounded, otherwise wherever it's moved (a generated scene, `animation.js --generated 1 --from 1`).
         let mask = primitive.content_mask_mut();
         let edge = |at: f32| ScaledPixels((at + 0.5).floor());
         let bounds = mask.bounds;
@@ -246,7 +246,7 @@ impl Scene {
     }
 
     /// It moved `by` device pixels, cut to its `width` by `height` there, as a window's frame is moved to be checked
-    /// against itself where it was (the harness's `Windows::moved`, the web's `moved`).
+    /// against itself where it was (the headless renderer's `Windows::moved`, the web's `moved`).
     pub fn moved(&self, by: [f32; 2], width: u32, height: u32) -> Scene {
         let at = Bounds { origin: crate::geometry::Point { x: ScaledPixels(by[0]), y: ScaledPixels(by[1]) }, size: crate::geometry::Size { width: ScaledPixels(width as f32), height: ScaledPixels(height as f32) } };
         let mut moved = Scene::default();

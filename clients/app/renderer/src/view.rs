@@ -1,6 +1,6 @@
 //! An app's screen: its tree laid out by Taffy and painted as a scene with the design tokens, and what the person
 //! does (a press, a key, a scroll) found on it and sent back to its JS as events. The window it's in (`platform`, or
-//! the headless harness) gives it the room, the scale and the input, and draws the scene it paints.
+//! the headless renderer) gives it the room, the scale and the input, and draws the scene it paints.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -75,9 +75,9 @@ pub fn fonts() -> anyhow::Result<Vec<Vec<u8>>> {
     Ok(vec![ttf])
 }
 
-/// The monospace the harness's text and the web's draw code in, as a device draws it in its system's (Menlo, Consolas,
+/// The monospace the headless renderer's text and the web's draw code in, as a device draws it in its system's (Menlo, Consolas,
 /// DejaVu Sans Mono): a browser lets a page's canvas draw its own faces but not read them, so it's bundled, and the
-/// harness has this same file, so both draw the same glyphs (fonts/DejaVuSansMono-LICENSE.txt).
+/// headless renderer has this same file, so both draw the same glyphs (fonts/DejaVuSansMono-LICENSE.txt).
 #[cfg(any(feature = "fake", target_arch = "wasm32"))]
 pub(crate) const MONOSPACE: (&str, &[u8]) = ("DejaVu Sans Mono", include_bytes!("../fonts/DejaVuSansMono.woff2"));
 
@@ -270,7 +270,7 @@ pub struct Screen {
     fetching: HashSet<String>,
     pub fetch: Option<Box<dyn FnMut(&str)>>,
     /// What a fetch brought back off the window's own turn, which it takes as its page's posts (`fetched`, as each
-    /// comes): a harness's, which reads its page's files as the page asks.
+    /// comes): a test's, which reads its page's files as the page asks.
     pub arrived: std::sync::Arc<std::sync::Mutex<Vec<(String, Option<String>)>>>,
     /// Where each node was drawn in the last frame, for the inspector, and the frame's size and scale.
     rects: Rects,
@@ -278,7 +278,7 @@ pub struct Screen {
     /// The time of the frame it last painted, which a picture of it afresh is painted at too (`paint_afresh`).
     painted_at: Option<web_time::Instant>,
     /// Where each node was drawn and how far what scrolls showed scrolled, with its stretch past an end, in the frame its
-    /// window last presented (`presented`), which a harness reads as what's on the screen: a frame laid out for input
+    /// window last presented (`presented`), which a test reads as what's on the screen: a frame laid out for input
     /// it took (`Windows::lay_out`) is shown only on the display's next refresh.
     #[cfg(feature = "fake")]
     shown: Option<(Rects, HashMap<Id, Point<f32>>, HashMap<Id, Point<f32>>)>,
@@ -298,7 +298,7 @@ pub struct Screen {
     layer: bool,
     /// The last error its JS threw, which is logged, as a browser's console has it, and the screen carries on.
     pub failed: Option<String>,
-    /// Its page's batches held back a few of the window's turns each, as its host's harness says (the fake platform's
+    /// Its page's batches held back a few of the window's turns each, as its host's headless renderer says (the fake platform's
     /// seed): a page slower than its window, the window drawing and telling it what it has meanwhile.
     pub late: Option<Late>,
     /// What its page made that this host refused (a mutation it can't apply), which its window says in
@@ -475,7 +475,7 @@ impl Screen {
     }
 
     /// Whether a picture it drew, or a frame's page did, is decoded and not yet drawn, once the decodes running in the
-    /// background are done: a harness draws again then. Asked while one still ran, it was so or not by how quick its
+    /// background are done: a test draws again then. Asked while one still ran, it was so or not by how quick its
     /// thread was, and a frame was drawn a refresh later on some runs and not on others.
     pub fn decoding(&self) -> bool {
         self.pictures.wait();
@@ -527,7 +527,7 @@ impl Screen {
         self.js.crashed()
     }
 
-    /// Waits for its app's JS, and each frame's, to run all it's been sent, applying none of what it posts: for a harness,
+    /// Waits for its app's JS, and each frame's, to run all it's been sent, applying none of what it posts: for a test,
     /// whose loop asks whether its page wants a frame (`framing`) of what it's run, never of how far its thread has got.
     #[cfg(feature = "fake")]
     pub fn ran(&self) {
@@ -538,7 +538,7 @@ impl Screen {
     }
 
     /// Waits for its app's JS to run all it's been sent, and what the host answers at once of what that asked, applying
-    /// what it posts: for a harness, which draws what a step left once it's done. → whether anything came.
+    /// what it posts: for a test, which draws what a step left once it's done. → whether anything came.
     pub fn idle(&mut self) -> bool {
         let mut came = false;
         loop {

@@ -1,6 +1,6 @@
 use super::*;
 
-/// What a harness drives the fake platform's windows by (`fake`), as GPUI's `TestAppContext` drives its test windows:
+/// What a test drives the fake platform's windows by (`fake`), as GPUI's `TestAppContext` drives its test windows:
 /// it owns them, on its own thread, and says when their pages have run, when the display shows a frame and what input
 /// comes, and the loop (`turn`) does the rest as it does on every host.
 #[cfg(feature = "fake")]
@@ -12,7 +12,7 @@ impl Windows {
         Self::made(Display::new(scale, hz), Context::new())
     }
 
-    /// Waits for the pipelines its windows draw with, compiled as it started (`Context::prepare`), as a harness that
+    /// Waits for the pipelines its windows draw with, compiled as it started (`Context::prepare`), as a test that
     /// turns its loop itself on a paused clock does, so its first frame is drawn on its first turn, as every run's is.
     #[cfg(feature = "fake")]
     pub fn prepared(&self) {

@@ -1,10 +1,10 @@
-//! Bugs we've had, each put back on purpose when it's asked for, so `tooling/mutants` can show the harness's checks
-//! catch it: a mutant, as cargo-mutants and Stryker call one. Only the harness's builds have them: the headless
-//! harness's and the app harness's (`fake`) and the web gate's frame (`mutants`, `bun clients/web/renderer/build.js
+//! Bugs we've had, each put back on purpose when it's asked for, so `tests/mutants.js` can show the renderer's tests
+//! catch it: a mutant, as cargo-mutants and Stryker call one. Only the tests' builds have them: the headless renderer's
+//! and the app's with `fake`, and the web gate's frame (`mutants`, `bun clients/web/renderer/build.js
 //! <out> --mutants`). Every other build's `mutant` is `false`, a constant the compiler takes the bug out by.
 //!
 //! The one asked for is `ONE_MUTANT`'s name natively, and on the web the frame's `?mutant=` (`set`). Each is named
-//! where it's planted, and listed with what plays it in `tooling/mutants`.
+//! where it's planted, and listed with what plays it in `tests/mutants.js`.
 
 #[cfg(feature = "mutants")]
 static ASKED: std::sync::OnceLock<String> = std::sync::OnceLock::new();

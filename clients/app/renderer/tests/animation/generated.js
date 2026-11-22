@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { here, out } from "./options.js"
 import { build, pageFolder } from "./pages.js"
-import { phone, run } from "./harness.js"
+import { phone, run } from "./headless.js"
 
 /// Mulberry32, as the page's own: a number from 0 to below 1, the same sequence for the same seed.
 const random = (seed) => {
@@ -50,8 +50,8 @@ export function played(seed) {
   return { touch, size, scale: touch ? pick([2, 3]) : pick([1, 2]), hz: pick([60, 120]), events }
 }
 
-/// Plays `count` seeds from `from`, their harnesses as many at once as `jobs`: each frame drawn on what was kept must be the one drawn whole, and
-/// drawn moved by whole device pixels the same (the harness's `replay`, `whole` and `moved`). → each line it says,
+/// Plays `count` seeds from `from`, their headless renderers as many at once as `jobs`: each frame drawn on what was kept must be the one drawn whole, and
+/// drawn moved by whole device pixels the same (the headless renderer's `replay`, `whole` and `moved`). → each line it says,
 /// and how many failed.
 export async function generated(count, from = 1) {
   const built = join(out, "generated", ".build")
@@ -71,7 +71,7 @@ export async function generated(count, from = 1) {
     const replay = done.answers[0]
     if (done.failed || replay?.error) {
       failed++
-      return `✗ ${shown}: the harness failed: ${replay?.error ?? done.said.split("\n").at(-1)}`
+      return `✗ ${shown}: the headless renderer failed: ${replay?.error ?? done.said.split("\n").at(-1)}`
     }
     const drawn = replay.result.frames
     frames += drawn.length

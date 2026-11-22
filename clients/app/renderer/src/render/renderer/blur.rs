@@ -78,7 +78,7 @@ impl Blur {
         let area = |[l, t, r, b]: [u32; 4]| u64::from(r.saturating_sub(l)) * u64::from(b.saturating_sub(t));
         // What changed is all outside the region (or nothing did), so there's nothing of it to take again in part: it's
         // blurred whole, where a region of none, right of its left, was blurred as billions of texels (a generated
-        // scene, `motion.js --generated 1 --from 3`).
+        // scene, `animation.js --generated 1 --from 3`).
         (area(take) > 0 && 2 * area(take) < area(self.whole)).then_some((take, keep))
     }
 

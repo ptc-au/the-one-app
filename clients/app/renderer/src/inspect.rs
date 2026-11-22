@@ -1,6 +1,6 @@
 //! The inspector: how an agent or a test reads a native window and acts on it, as Rune's inspector protocol has it
 //! (github.com/anomalyco/rune, PLAN.md §6). Every native window serves it on a local socket of its own
-//! (`clients/app/src/native.rs`), and the headless harness (`examples/screenshot/main.rs`) answers the same requests, so
+//! (`clients/app/src/native.rs`), and the headless renderer (`examples/headless/main.rs`) answers the same requests, so
 //! whatever drives one drives the other.
 //!
 //! # Protocol, version 1
@@ -42,7 +42,7 @@
 //! - `replay` (a selector, or a point, where a press goes down; `moves`, each `{dx, dy, ms}`, a stretch with neither
 //!   holding still; `lift`, true unless given; `hz`, the display's frames a second, 60 unless given; `input_hz`, its
 //!   moves a second, `hz` unless given; `after`, ms to keep drawing past its end, 2000 unless given, stopping once
-//!   nothing moves; `track`, a selector of the one node to follow (it fails, saying why, where nothing ever matches, or several do); `count`, a selector of nodes to count; `shows` and `holds`, ones whose nodes are counted the same way; `apart`, one whose nodes' rects are listed; `nodes`: true for every node of each frame, as `query` has them, each at the rect it's drawn at (the headless harness's); `snap`: true for
+//!   nothing moves; `track`, a selector of the one node to follow (it fails, saying why, where nothing ever matches, or several do); `count`, a selector of nodes to count; `shows` and `holds`, ones whose nodes are counted the same way; `apart`, one whose nodes' rects are listed; `nodes`: true for every node of each frame, as `query` has them, each at the rect it's drawn at (the headless renderer's); `snap`: true for
 //!   each frame's picture) → `{hz, budget_ms, over, frames, time, paused}`: the press played as `drag` plays it, each
 //!   move at its own time, and every frame of the display drawn as the window draws one, each with what `profile`'s
 //!   says, `at` (ms since it went down), where `track` was drawn (`x`, `y`), how many nodes `count` matches a person
@@ -54,9 +54,9 @@
 //! - `host` → `{ok, checks, paced, refresh_hz, ticks, presented, inputs}`, after a second and a half: whether its host
 //!   keeps the renderer's contract with it (`platform`'s), its window kept moving for a second, then still, each check
 //!   `{check, ok, said}`: a tick each refresh, a frame presented each tick, nothing while still, and inputs timed by
-//!   the device, in order. A native window answers it; the headless harness, which has no host, doesn't.
+//!   the device, in order. A native window answers it; the headless renderer, which has no host, doesn't.
 //! - `record` (`ms`, 5000 unless given) → `{events}`, after `ms`: every input the window got meanwhile, as it came, each
-//!   `{ms, kind, …}` from when it started (by the device's own time where it says), as the headless harness's `trace`
+//!   `{ms, kind, …}` from when it started (by the device's own time where it says), as the headless renderer's `trace`
 //!   plays them: `touch` (`phase`, `finger`, `x`, `y`), `move`, `down` and `up` (`x`, `y`, `button`), `wheel` (`x`,
 //!   `y`, `dx`, `dy`, a trackpad's `phase` and `momentum`) and `key` (`key` and its modifiers), so input a device took
 //!   is played headless as it came.
@@ -80,7 +80,7 @@
 //!   `shift`, `alt`, `ctrl`, `meta`) → `{node}`: pressed where the keyboard is. Tab moves it, Enter and Space press
 //!   what has it, what listens for `keydown` hears it, and an input edits by it as a Linux field does (Ctrl+C, X, V,
 //!   Z, Shift+Z, Y and A, Ctrl+arrows by word, Shift to select, Home and End), with a clipboard of the window's own
-//!   in the headless harness.
+//!   in the headless renderer.
 //! - `scroll` (`dx`, `dy` in CSS pixels, and a selector of what's in what scrolls, or a point; `phase`, a trackpad's fingers' by
 //!   AppKit's names, and `momentum`, as a Mac says them, `view::Phase`; or `notchesX`, `notchesY`, a mouse wheel's clicks
 //!   as it turns) → `{scrolled: {x, y}}`.
@@ -449,7 +449,7 @@ pub fn over(frames: &[Value], budget: f64) -> usize {
 
 /// Whether nothing's pending that ends by itself: no request unanswered, no frame due, nothing its page posted unapplied
 /// (`posted`), and, while the clock runs, no timer but intervals, its page not busy (`busy`) and nothing on its way. A
-/// paused clock (`paused`) holds what's on it, which a harness steps; a timer that isn't (`real`: a browser's) or frames that
+/// paused clock (`paused`) holds what's on it, which a test steps; a timer that isn't (`real`: a browser's) or frames that
 /// aren't (`browser`) are pending still.
 pub fn settled(pending: &[Value], paused: bool) -> bool {
     pending.iter().all(|pending| match pending["kind"].as_str() {

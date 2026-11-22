@@ -1,6 +1,6 @@
-//! A platform with nothing behind it, for a harness, as GPUI's `TestPlatform` and Flutter's test binding are: the same
+//! A platform with nothing behind it, for a test, as GPUI's `TestPlatform` and Flutter's test binding are: the same
 //! windows and the same loop (`Windows::turned`) as every host's, run against a stand-in for its display, whose
-//! input, display ticks and surfaces come from whoever drives it (`examples/screenshot/main.rs`), not from a system. Its
+//! input, display ticks and surfaces come from whoever drives it (`examples/headless/main.rs`), not from a system. Its
 //! windows draw offscreen, as a compositor would show them, and the picture last presented is read back from there.
 //! Built with the `fake` feature, in place of the system's platform.
 
@@ -485,8 +485,8 @@ impl Display {
 static TIME: std::sync::Mutex<Option<(web_time::Instant, crate::js::Clock)>> = std::sync::Mutex::new(None);
 
 /// Tells time by `clock` from now on.
-/// What a device a harness stands for takes to make what the fake platform makes at once, as a tier's `measured`
-/// costs say in core/ui/devices.json: its system's window and the renderer for it (`ONE_WINDOW_MS`), and the
+/// What a device a test stands for takes to make what the fake platform makes at once, as a tier's `measured`
+/// costs say in clients/app/renderer/tests/devices.json: its system's window and the renderer for it (`ONE_WINDOW_MS`), and the
 /// pipelines a kind of window draws with (`ONE_PIPELINES_MS`). None unless it's told.
 pub(crate) struct Costs {
     pub window: std::time::Duration,
@@ -524,8 +524,8 @@ pub fn now() -> web_time::Instant {
 }
 
 /// The faces a Linux device falls back to where Allo hasn't a character, a symbol's (⇧, ⋮) and an emoji's, from the
-/// harness's host (Debian's and Ubuntu's `fonts-dejavu-core` and `fonts-noto-color-emoji`), so it draws what a device
-/// does and not a gap; on a device it's sent to that hasn't them (`motion.js --ssh`, a Windows one), from beside it,
+/// headless renderer's host (Debian's and Ubuntu's `fonts-dejavu-core` and `fonts-noto-color-emoji`), so it draws what a device
+/// does and not a gap; on a device it's sent to that hasn't them (`animation.js --ssh`, a Windows one), from beside it,
 /// where they're sent with it, so it draws the same glyphs as here.
 pub fn fallback_fonts() -> anyhow::Result<Vec<Vec<u8>>> {
     let beside = |path: &str| Some(std::env::current_exe().ok()?.parent()?.join(std::path::Path::new(path).file_name()?));
@@ -534,12 +534,12 @@ pub fn fallback_fonts() -> anyhow::Result<Vec<Vec<u8>>> {
         .map(|path| {
             std::fs::read(path)
                 .or_else(|error| beside(path).map_or(Err(error), std::fs::read))
-                .map_err(|error| anyhow::anyhow!("the harness falls back to {path}, which it couldn't read (apt install fonts-dejavu-core fonts-noto-color-emoji): {error}"))
+                .map_err(|error| anyhow::anyhow!("the headless renderer falls back to {path}, which it couldn't read (apt install fonts-dejavu-core fonts-noto-color-emoji): {error}"))
         })
         .collect()
 }
 
-/// Whether the system is in Dark mode, which a harness says (`Windows::appearance`): Light until it does.
+/// Whether the system is in Dark mode, which a test says (`Windows::appearance`): Light until it does.
 static DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn appearance() -> crate::Appearance {
@@ -565,7 +565,7 @@ pub fn reduced_motion() -> bool {
     REDUCED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The harness's page keeps a clipboard of its own (`editing::Memory`).
+/// The headless renderer's page keeps a clipboard of its own (`editing::Memory`).
 pub fn clipboard() -> Option<Box<dyn crate::editing::Clipboard>> {
     None
 }

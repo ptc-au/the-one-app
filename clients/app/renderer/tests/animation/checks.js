@@ -5,13 +5,13 @@ import { PNG } from "pngjs"
 import { messages } from "../../../../../core/ui/src/words.ts"
 import { dark, only, out, seeds } from "./options.js"
 import { build, pageFolder } from "./pages.js"
-import { run, panelled, scenesOf } from "./harness.js"
+import { run, panelled, scenesOf } from "./headless.js"
 import { pressed } from "./gesture.js"
 import { requests, unlike, unmoved } from "./judges.js"
 import { legibility } from "./output.js"
 
 /// A page that threw while drawing shows `render`'s Problem, "Can't show this page", and nothing to press but Try Again,
-/// so what a check or the Tab walk finds there says nothing of the page; what it threw fails the harness's run (it's
+/// so what a check or the Tab walk finds there says nothing of the page; what it threw fails the headless renderer's run (it's
 /// logged, as Telemetry has it). The request that finds it at a run's end, and from its answer, whether it did.
 const crash = { op: "query" }
 const crashed = (answer) =>
@@ -32,7 +32,7 @@ async function check(built, scene, folder) {
       const done = await run(at, own, scene, [{ op: "clock", step: 1000 }, ...taps, ...ran.map(({ request }) => request), crash], seed)
       const answers = done.answers.slice(1 + taps.length)
       const failed = done.failed
-        ? `the harness failed: ${done.said.split("\n").at(-1)}`
+        ? `the headless renderer failed: ${done.said.split("\n").at(-1)}`
         : crashed(answers[ran.length]) ?? ran.map(({ judge, request, step }, n) => (answers[n]?.error ? `${step} (${request.op}): ${answers[n].error}` : judge && judge(answers[n]) ? `${step}: ${judge(answers[n])}` : undefined)).find(Boolean)
       return { name, seed, failed }
     }),
@@ -54,7 +54,7 @@ async function walk(built, scene, folder) {
   // Each picture two of the caret's blinks after the keyboard came, where a field's caret shows.
   const asked = [{ op: "clock", step: 1000 }, ...taps, ...look, ...Array.from({ length: STOPS }, () => [{ op: "key", key: "Tab" }, { op: "clock", step: 2400 }, ...look]).flat()]
   const done = await run(at, folder, scene, asked)
-  if (done.failed) return `the harness failed: ${done.said.split("\n").at(-1)}`
+  if (done.failed) return `the headless renderer failed: ${done.said.split("\n").at(-1)}`
   const answers = done.answers.slice(1 + taps.length)
   if (crashed(answers[0])) return crashed(answers[0])
   // Each stop: what had the keyboard, where it was drawn, and the picture.
@@ -112,7 +112,7 @@ async function agrees(built, scene, folder) {
   ]
   const asked = [{ op: "clock", step: 1000 }, ...taps, { op: "query", text: "" }, ...OVER.map((role) => ({ op: "query", role, descendants: true })), { op: "snap" }, rest, { op: "moved" }, ...changes.flatMap(([, ops]) => [...ops, rest, { op: "fresh" }]), crash]
   const done = await run(at, folder, scene, asked)
-  if (done.failed) return { fresh: `the harness failed: ${done.said.split("\n").at(-1)}` }
+  if (done.failed) return { fresh: `the headless renderer failed: ${done.said.split("\n").at(-1)}` }
   const answers = done.answers.slice(1 + taps.length)
   if (crashed(answers.at(-1))) return { fresh: crashed(answers.at(-1)) }
   const moved = unmoved(answers[3 + OVER.length], join(folder, "moved"))
@@ -154,7 +154,7 @@ function illegible(query, over, snap, points, folder) {
   return faint.length ? `its words can't be read: ${faint.slice(0, 3).map((text) => `"${text.name}" stands off what's behind it at ${text.contrast.toFixed(2)}:1, under ${LEGIBLE}:1`).join(", ")}${faint.length > 3 ? `, and ${faint.length - 3} more` : ""}` : undefined
 }
 
-/// Plays every check of `targets`' scenes, every target and scene at once, its harnesses as many at once as `jobs`.
+/// Plays every check of `targets`' scenes, every target and scene at once, its headless renderers as many at once as `jobs`.
 /// → each line it says, in the order of `targets` and their scenes, and how many failed.
 export async function checks(targets) {
   const played = await Promise.all(

@@ -75,7 +75,7 @@ pub(crate) fn asked_of(params: &Value) -> Option<String> {
     Some(format!("{} for {}", params["name"].as_str()?, params["_meta"]["subject"].as_str()?))
 }
 
-/// What a page's request is answered with from `answers` (`--answers`, as core/ui's scenes.js has them): a tool's answer
+/// What a page's request is answered with from `answers` (`--answers`, as screenshot.js has them): a tool's answer
 /// as its text, `{ "$error": "…" }` as the tool's refusal, and `{ "$image": "data:image/png;base64,…" }` as a picture,
 /// as a server answers one (MCP's `image`: Computer Use's screenshot); any other method by its result, or not at all.
 pub(crate) fn answered(answers: &Value, id: Value, method: &str, params: &Value) -> Value {

@@ -1,5 +1,5 @@
 //! A finger on a phone's screen, taken the same by every host that has one (an iPhone's, Android's, a phone's
-//! browser's, the fake platform's and the inspector's replays), so what the harness checks is what a phone does:
+//! browser's, the fake platform's and the inspector's replays), so what the headless renderer checks is what a phone does:
 //! - It presses what it lands on, but an input, which it gives the keyboard only as it lifts, as a phone's own fields
 //!   do, so one that lands there to scroll doesn't; and a fling, which it only stops.
 //! - Held still on an input (`Fingers::hold`), it selects the word there, and moved on, the words to where it is; two

@@ -18,10 +18,10 @@ path = "src/main.rs"
 # native, in tao's event loop (`computer`).
 [features]
 default = ["window"]
-# The app on the renderer's fake platform, its native windows drawn offscreen on a thread of their own, for the app
-# harness (`tooling/app-harness`), which drives them with the inspector.
+# The app on the renderer's fake platform, its native windows drawn offscreen on a thread of their own, which the
+# inspector drives.
 fake = ["window", "renderer/fake"]
-# A phone's app, Tauri's, its page in WebKitGTK, on Linux for the app harness (`tooling/app-harness --phone`), with its
+# A phone's app, Tauri's, its page in WebKitGTK, on Linux, with its
 # native windows on the fake platform: a phone's needs its Tauri, which `window` can't take, as a computer's has none.
 phone = ["fake", "dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-deep-link", "dep:webkit2gtk"]
 window = [
@@ -145,7 +145,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 tray-icon = { version = "0.25", optional = true, default-features = false, features = ["ksni"] }
 # The program's name and class, as GTK's windows have them (`computer::launcher`), and GTK's alert (`alert`).
 gtk = { version = "0.18", optional = true }
-# A phone's app's Tauri, for the app harness (`phone`).
+# A phone's app's Tauri (`phone`).
 tauri = { version = "2", features = ["custom-protocol"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-deep-link = { version = "2.6", optional = true }

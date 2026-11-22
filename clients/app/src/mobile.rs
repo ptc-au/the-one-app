@@ -108,7 +108,7 @@ impl Shell for Phone {
     /// A phone gives each app a folder of its own, which only the app is told. An iPhone's app keeps its client in
     /// the folder it shares with its notification extension instead, its App Group, which `main.mm` says as ONE_HOME
     /// when iOS gives it one, as it does only to an app signed with it, and otherwise in its own (`phone::home`). So
-    /// does Linux's, the app harness's.
+    /// does Linux's.
     fn home(&self) -> anyhow::Result<std::path::PathBuf> {
         #[cfg(target_os = "android")]
         return Ok(self.0.path().app_data_dir()?);
@@ -204,7 +204,7 @@ pub(crate) fn window(app: &AppHandle) -> Result<tauri::WebviewWindow, Box<dyn st
             }
         });
     let window = window.build()?;
-    // A page whose web process ended loads again, as Tauri has iOS's (`tauri-runtime-wry`): Linux's is the app harness's.
+    // A page whose web process ended loads again, as Tauri has iOS's (`tauri-runtime-wry`): Linux's (the `phone` feature).
     #[cfg(target_os = "linux")]
     window.with_webview(|webview| {
         use webkit2gtk::WebViewExt;

@@ -50,7 +50,7 @@
     ])
     await renderer.default({ module_or_path: await compiled.then((module) => (step("compiled"), module)) })
     step("renderer")
-    // The web gate's frame puts back a bug it's asked to (`renderer::mutants`, `tooling/mutants`); no other has `mutant`.
+    // The web gate's frame puts back a bug it's asked to (`renderer::mutants`, `clients/app/renderer/tests/mutants.js`); no other has `mutant`.
     renderer.mutant?.(new URLSearchParams(location.search).get("mutant") ?? "")
     // A page built with this renderer's own UI library (check/) names none.
     const needs = Number(new URLSearchParams(location.search).get("runtime"))
@@ -72,10 +72,10 @@
       host: { post: (/** @type {object} */ message) => renderer.post(JSON.stringify(message)), component: styled(page, renderer.component) },
     })
     // Its timers, as a native host's JS thread keeps them, and the frames it asks the browser for, as a frame's page asks
-    // its screen (`framing`), which a harness's `settle` waits for as it does natively: on a fast GPU a picture was taken
+    // its screen (`framing`), which a test's `settle` waits for as it does natively: on a fast GPU a picture was taken
     // before a row added had opened up, two frames on. The renderer's own timer and frames are the browser's.
-    // A harness opens the frame paused (`paused`), and then the page's timers are on the renderer's clock too: they run as
-    // the harness steps it (`inspector.clock`), where the browser's ran on real time, which a loaded machine moved
+    // A test opens the frame paused (`paused`), and then the page's timers are on the renderer's clock too: they run as
+    // the headless renderer steps it (`inspector.clock`), where the browser's ran on real time, which a loaded machine moved
     // seconds of a page's states (a live screen out of reach, or still loading) either side of a picture.
     const stepped = new URLSearchParams(location.search).has("paused")
     const browser = timed((timers) => renderer.timers(undefined, timers), stepped, (asking) => renderer.framing(asking))
@@ -146,7 +146,7 @@
       unopened,
     })
     step("opened")
-    // What a harness asks, as a native window's inspector answers: `settle` before it takes a picture, `query` of what's
+    // What a test asks, as a native window's inspector answers: `settle` before it takes a picture, `query` of what's
     // drawn, `clock` to pause its page's clock (and with it what moves by itself and a caret's blink) or resume it, and
     // `whole` to have its frame drawn again whole, beside the one drawn on what it kept, and `moved` to have it drawn whole
     // moved by whole device pixels, saying where it draws glass.
@@ -419,12 +419,12 @@ async function frame(page, pageHtml, framed) {
 /**
  * The page's timers that a picture waits for, as a native host's JS thread keeps them (`setTimeout`, and its clear):
  * each when it's due (`Date.now()`'s, the same in every frame), told to `told` as they change and once each has run,
- * which a harness's `settle` waits for (`Thread::timers`): on a fast GPU a picture was taken before a skeleton showed,
+ * which a test's `settle` waits for (`Thread::timers`): on a fast GPU a picture was taken before a skeleton showed,
  * a blink after it was made. Only those of a second or less, by which a page reveals or settles what it shows: a later
  * one is a state that comes in seconds (a toast going, a retry), which a scene waits for itself (`wait`), as the
- * browser's clock, unlike a native harness's, can't be stepped. → the browser's own timers and frames.
+ * browser's clock, unlike a headless renderer's, can't be stepped. → the browser's own timers and frames.
  * @param {(timers: number[]) => void} told
- * @param {boolean} stepped the page's timers and frames are on the renderer's clock, which a harness steps (`stepping`),
+ * @param {boolean} stepped the page's timers and frames are on the renderer's clock, which a test steps (`stepping`),
  * told to none of the timers
  * @param {(asking: boolean) => void} framing whether the page has asked for a frame that hasn't come, where it's stepped
  */
@@ -441,7 +441,7 @@ function timed(told, stepped = false, framing = (/** @type {boolean} */ _asking)
   if (stepped) {
     /** @type {Map<number, { at: number, callback: unknown, args: unknown[], every?: number }>} */
     const waiting = new Map()
-    /** The page's frames it's asked for, which come at each refresh of a 60 Hz display, on the clock, as the native harness's. */
+    /** The page's frames it's asked for, which come at each refresh of a 60 Hz display, on the clock, as the headless renderer's. */
     /** @type {Map<number, FrameRequestCallback>} */
     const frames = new Map()
     const refresh = 1000 / 60

@@ -2,7 +2,7 @@
 // glass over what scrolls, lists that scroll in it, things moved, grown, turned and faded, text), changed now and then
 // as its seed says, for a few seconds, as other people's apps will draw what the gallery's scenes don't. The same
 // seed is the same page and the same changes, at the same times on the page's clock, so what a frame of it shows wrong
-// is shown again from its seed. Its link says the seed (`#Generated/Random?seed=7`); `bun motion.js --generated`
+// is shown again from its seed. Its link says the seed (`#Generated/Random?seed=7`); `bun animation.js --generated`
 // plays many, each frame against the same drawn whole and moved by whole device pixels.
 import { createSignal, For, onCleanup, Show } from "solid-js"
 import { link, ScrollView, styles, Text, tokens, View, type Scenes } from "ui"
@@ -197,7 +197,7 @@ const asked = () => {
 const scene = { layout: "fullscreen", render: () => <Random {...asked()} /> } as const
 
 // Three of them still, each a scene of its own by its link's seed, which the scenes' runner draws natively and on the
-// web, and motion.js's checks draw the same however they came to be and moved.
+// web, and animation.js's checks draw the same however they came to be and moved.
 export default {
   "Generated/Random": scene,
   "Generated/Random?seed=2": scene,

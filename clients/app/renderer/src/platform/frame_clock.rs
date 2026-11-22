@@ -1,7 +1,7 @@
 //! The windows' one frame clock, as Chromium's begin-frame source and Core Animation's display link have it: the
 //! display's refreshes, each a whole refresh interval from the one its link last said a frame shows at (`tick`), and a
 //! frame begun at the start of each while something moves (`begin`). A frame is for the refresh it's shown at
-//! (`shows`), and what moves, by itself or as JS, Rust's springs or a harness move it, is drawn where it is at that
+//! (`shows`), and what moves, by itself or as JS, Rust's springs or a test move it, is drawn where it is at that
 //! frame's time (`time`). Each platform's link (CVDisplayLink, CADisplayLink, Choreographer, the compositor clock,
 //! Present, `requestAnimationFrame`, the fake display's) only says when the frame begun at its tick shows, and the
 //! refresh: where it hasn't ticked yet, is late, or has stopped, the refreshes go on as it last said, so nothing else
