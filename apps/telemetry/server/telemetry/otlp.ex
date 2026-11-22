@@ -2,7 +2,7 @@ defmodule Telemetry.Otlp do
   @moduledoc """
   OTLP as it's kept, read: an export request of traces, metrics or logs in OTLP's protobuf, decoded by the encoders
   OpenTelemetry's own exporter brings, and laid flat for `Telemetry.Read` and `Telemetry.Alerts`, each span, log
-  line and data point with its resource's attributes under its own, ids in hex and times in nanoseconds since 1970:
+  line and data point with its resource's attributes under its own, ids in hex and times in nanoseconds since 1970, none later than it's read:
 
   - a span: `traceId`, `spanId`, `parentSpanId`, `name`, `kind` (`server`, `client`, `internal`…), `start`, `end`,
     `attributes`, `status` (`code` `ok` or `error`, and `message`), `events` (`name`, `time`, `attributes`), and
@@ -70,13 +70,13 @@ defmodule Telemetry.Otlp do
         "parentSpanId" => if(span[:parent_span_id] in [nil, ""], do: nil, else: hex(span.parent_span_id)),
         "name" => span.name,
         "kind" => kind(span[:kind]),
-        "start" => span.start_time_unix_nano,
-        "end" => span.end_time_unix_nano,
+        "start" => past(span.start_time_unix_nano),
+        "end" => past(span.end_time_unix_nano),
         "attributes" => Map.merge(under, attributes(span[:attributes])),
         "status" => status(span[:status]),
         "events" =>
           for(event <- span[:events] || [],
-            do: %{"name" => event.name, "time" => event.time_unix_nano, "attributes" => attributes(event[:attributes])}
+            do: %{"name" => event.name, "time" => past(event.time_unix_nano), "attributes" => attributes(event[:attributes])}
           ),
         "server" => under["host.name"]
       }
@@ -91,6 +91,7 @@ defmodule Telemetry.Otlp do
       time = if log[:time_unix_nano] in [nil, 0], do: log[:observed_time_unix_nano], else: log.time_unix_nano
       # A log line the SDK made of what was logged here says when it was logged as when it was seen.
       time = if log[:observed_time_unix_nano] not in [nil, 0], do: min(time, log.observed_time_unix_nano), else: time
+      time = past(time)
 
       %{
         "time" => time,
@@ -120,8 +121,8 @@ defmodule Telemetry.Otlp do
     for p <- points do
       %{
         "attributes" => attributes(p[:attributes]),
-        "start" => p.start_time_unix_nano,
-        "time" => p.time_unix_nano,
+        "start" => past(p.start_time_unix_nano),
+        "time" => past(p.time_unix_nano),
         "count" => p.count,
         "sum" => p[:sum] || 0,
         "bounds" => p[:explicit_bounds] || [],
@@ -138,8 +139,8 @@ defmodule Telemetry.Otlp do
 
       %{
         "attributes" => attributes(p[:attributes]),
-        "start" => p[:start_time_unix_nano] || p.time_unix_nano,
-        "time" => p.time_unix_nano,
+        "start" => past(p[:start_time_unix_nano] || p.time_unix_nano),
+        "time" => past(p.time_unix_nano),
         "count" => round(value),
         "sum" => value
       }
@@ -186,6 +187,10 @@ defmodule Telemetry.Otlp do
       _ -> "INFO"
     end
   end
+
+  # What's said to have happened after it's read happened when it's read, which is when it arrived or soon after: a
+  # device's clock that's ahead, or a time that's wrong, never puts a span at the top of `errors` for days.
+  defp past(time), do: min(time, System.os_time(:nanosecond))
 
   defp hex(bytes), do: Base.encode16(bytes, case: :lower)
 end
