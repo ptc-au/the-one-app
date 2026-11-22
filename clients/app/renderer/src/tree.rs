@@ -2,7 +2,7 @@
 //! layer applies Fabric's, which the window draws and which is its semantic tree: each node's role, name, value,
 //! states and actions.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
@@ -118,22 +118,25 @@ impl Node {
 }
 
 
+/// Its sets are ordered by id, so what a window does with them (tells each node that listens for `layout` where it landed, in
+/// the order its page then creates what it makes of them) is the same on every run: in a hash set's order it was whichever
+/// the hasher chose, which made two nodes of one page's ids swap from run to run.
 pub struct Tree {
     pub nodes: HashMap<Id, Node>,
     /// What changed since the window last took it (`take_changed`): each node whose own props, style, text or
     /// children did, and each `text` whose words did, so only that's laid out and painted again.
     changed: HashSet<Id>,
     /// The inputs, and what says `autofocus` or listens for `layout`, found without going through every node.
-    inputs: HashSet<Id>,
-    autofocus: HashSet<Id>,
-    layout: HashSet<Id>,
+    inputs: BTreeSet<Id>,
+    autofocus: BTreeSet<Id>,
+    layout: BTreeSet<Id>,
     /// What's been taken out but is drawn going, as its `exiting` style moves it out (Motion's `AnimatePresence`, CSS's
     /// exit transitions), until the screen says it's gone (`left`): inert, read by nobody, as if gone. What in it
     /// the page has dropped meanwhile goes with it.
-    leaving: HashSet<Id>,
-    dropped: HashSet<Id>,
+    leaving: BTreeSet<Id>,
+    dropped: BTreeSet<Id>,
     /// What moves from where it was laid out to where it's laid out now as that changes (`layout`, `layoutId`).
-    moves_layout: HashSet<Id>,
+    moves_layout: BTreeSet<Id>,
 }
 
 impl Default for Tree {
@@ -141,12 +144,12 @@ impl Default for Tree {
         Tree {
             nodes: HashMap::from([(0, Node::new(Kind::Box, None))]),
             changed: HashSet::from([0]),
-            inputs: HashSet::new(),
-            autofocus: HashSet::new(),
-            layout: HashSet::new(),
-            leaving: HashSet::new(),
-            dropped: HashSet::new(),
-            moves_layout: HashSet::new(),
+            inputs: BTreeSet::new(),
+            autofocus: BTreeSet::new(),
+            layout: BTreeSet::new(),
+            leaving: BTreeSet::new(),
+            dropped: BTreeSet::new(),
+            moves_layout: BTreeSet::new(),
         }
     }
 }
