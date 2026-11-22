@@ -218,9 +218,13 @@ defmodule OneCore.Writes do
   @doc """
   Keeps what this request's write answered, `outcome` as MCP's `tools/call` ends (`{:ok, result}`, or a JSON-RPC
   error), where it claimed it, for a day, in the background: so the answer goes at once, and one asked again meanwhile
-  is told it's still running.
+  is told it's still running. A call made a task is answered by its task, once it ends.
   """
   def answered(nil, _outcome), do: :ok
+
+  # A task is the call's answer once it ends (`OneCore.Tasks`), not when it's made: the call goes on, and may be passed
+  # on to the server holding what it needs, which must not find it done.
+  def answered(_write, {:ok, %{"resultType" => "task"}}), do: :ok
 
   def answered(write, outcome) do
     with path when is_binary(path) <- path(write.subject, write.key) do

@@ -21,7 +21,7 @@ defmodule OneCore.Tasks do
   Its record names the task, and is moved by how the task ended (`over/1`), its server stopping included: so the one
   thing that says a run on a server was lost is here.
   """
-  alias OneCore.{Artifact, Call, Server, Servers, User}
+  alias OneCore.{Artifact, Call, Server, Servers, User, Writes}
   alias OneCore.Call.State
 
   # The extension, as a client says it takes it and a server says it has it.
@@ -83,7 +83,13 @@ defmodule OneCore.Tasks do
           end
 
         row = State.get(id)
-        if row.task, do: ended(row, outcome), else: send(requester, {__MODULE__, :ended, row, outcome})
+        if row.task do
+          ended(row, outcome)
+          Writes.answered(write, outcome)
+        else
+          send(requester, {__MODULE__, :ended, row, outcome})
+        end
+
         State.finish(id)
       end)
 
