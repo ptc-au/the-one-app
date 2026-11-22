@@ -92,15 +92,15 @@ impl Window {
         }
     }
 
-    /// → whether each of its parts was drawn, which isn't so where one had nothing to draw on (`missed`).
-    pub(super) fn arrange(&mut self, display: &Display, context: &Context, glass: &[Glass]) -> bool {
+    /// → what came of drawing its parts (`Draw`): missed where one had nothing to draw on (`missed`).
+    pub(super) fn arrange(&mut self, display: &Display, context: &Context, glass: &[Glass]) -> Draw {
         let whole = crate::geometry::Bounds { origin: crate::geometry::point(0.0, 0.0), size: Size { width: self.room().width.0, height: self.room().height.0 } };
         let corner = self.parts[0].radius;
         let mut boxes: Vec<(crate::geometry::Bounds<f32>, f32)> = match self.panel {
             true if !glass.is_empty() => glass.iter().map(|glass| (whole_points(glass.bounds), glass.radius)).collect(),
             _ => vec![(whole, if self.panel { corner } else { 0.0 })],
         };
-        let Some(renderer) = self.renderer.as_mut() else { return false };
+        let Some(renderer) = self.renderer.as_mut() else { return Draw::Missed };
         while self.panel && self.parts.len() < boxes.len() {
             let made = display.open_part(&self.parts[0].native, self.parts.len()).and_then(|native| {
                 also_on(renderer, context, &native)?;
@@ -126,7 +126,7 @@ impl Window {
         let scale = self.parts[0].native.scale();
         let placed: Vec<(Handle, crate::geometry::Bounds<f32>, f32)> = self.parts.iter().map(|part| (part.native.handle(), part.bounds, part.radius)).collect();
         let (parts, scene, panel) = (&self.parts, &self.scene, self.panel);
-        let mut drawn = true;
+        let mut drawn = Draw::Presented;
         let mut draw = || {
             for (at, part) in parts.iter().enumerate() {
                 // A panel's part is as big as it was just made (`Display::arrange`), which its window says later.

@@ -29,7 +29,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, OnceLock};
 
 use crate::geometry::{DevicePixels, Pixels, Point, Size};
-use crate::render::{atlas::Atlas, context::Context, renderer::Renderer};
+use crate::render::{atlas::Atlas, context::Context, renderer::{Draw, Renderer}};
 use crate::text::TextSystem;
 use crate::Screen;
 
@@ -391,8 +391,10 @@ struct Window {
     timing: frame_timing::Timing,
     /// The refresh its last frame shows at, which it draws no other for (`Windows::turned`).
     shows: Option<web_time::Instant>,
-    /// How many frames it's presented, all told.
+    /// How many frames it's drawn, all told, and how many of them it presented: one the same as the frame on the
+    /// screen (`Draw::Unchanged`) presents none.
     frames: u64,
+    presents: u64,
     /// What the person did that waits, in order, for its page to catch up with what they did before (`Windows::input`).
     waiting: VecDeque<Waiting>,
 }

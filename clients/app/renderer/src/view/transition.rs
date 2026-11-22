@@ -199,6 +199,8 @@ struct Moving {
     from: Value,
     to: Value,
     curve: Curve,
+    /// How near where it's going it has arrived (`near`).
+    near: f64,
 }
 
 /// How a property moves: eased from when it set off, on the screen's clock, over `duration` milliseconds; or by a
@@ -228,12 +230,15 @@ fn alike(a: &Value, b: &Value) -> bool {
     matches!((a, b), (Value::Number(_), Value::Number(_)) | (Value::Px(_), Value::Px(_)) | (Value::Percent(_), Value::Percent(_)))
 }
 
-/// Of a value this close to where it's going, and moving no faster than ten times this a second, a spring has arrived:
-/// a thousandth of a scale or an opacity, `NEAR` in points.
-fn near(value: &Value) -> f64 {
+/// Of `property` this close to where it's going, and moving no faster than ten times this a second, a spring has
+/// arrived: a thousandth of a scale or an opacity, a hundredth of a degree turned (`NEAR` 57 pt from where it turns
+/// about), `NEAR` in points. Within a thousandth of a degree, a text turned a quarter turn went on for 9 frames drawn
+/// the same to the pixel, each drawing its glyphs again.
+fn near(property: &str, value: &Value) -> f64 {
     match value {
         Value::Px(_) => NEAR,
         Value::Percent(_) => 0.01,
+        _ if property == "rotate" => 0.01,
         _ => 0.001,
     }
 }
@@ -303,7 +308,7 @@ impl Moving {
             Curve::Sprung { start, velocity, spring } => match (number(&self.from), number(&self.to)) {
                 (Some(_), Some(_)) if alike(&self.from, &self.to) => {
                     let (at, speed) = self.state(now);
-                    number(&at).zip(number(&self.to)).is_some_and(|(at, to)| Spring::arrived(f64::from(at - to), speed, near(&self.to)))
+                    number(&at).zip(number(&self.to)).is_some_and(|(at, to)| Spring::arrived(f64::from(at - to), speed, self.near))
                 }
                 // What a spring moves by how far it's gone has arrived where it has.
                 _ => {
@@ -508,7 +513,8 @@ impl Transitions {
                 }
                 None => Curve::Eased { start: since + f64::from(transition.delay), duration: transition.duration, easing: transition.easing },
             };
-            let moving = Moving { from, to, curve };
+            let near = near(property, &to);
+            let moving = Moving { from, to, curve, near };
             set(computed, property, moving.at(now));
             self.moving.insert(key, moving);
             self.ending.insert(id);
@@ -517,7 +523,7 @@ impl Transitions {
         let moved_in = entering.is_some_and(|entering| PROPERTIES.iter().any(|(property, moves)| *moves && get(entering, property) != get(computed, property)));
         if reduced && !unseen && moved_in && !self.moving.contains_key(&(id, "opacity")) {
             let curve = Curve::Eased { start: since, duration: transition.duration, easing: transition.easing };
-            let moving = Moving { from: Value::Number(0.0), to: Value::Number(computed.look.opacity), curve };
+            let moving = Moving { from: Value::Number(0.0), to: Value::Number(computed.look.opacity), curve, near: near("opacity", &Value::Number(0.0)) };
             set(computed, "opacity", moving.at(now));
             self.moving.insert((id, "opacity"), moving);
             self.ending.insert(id);

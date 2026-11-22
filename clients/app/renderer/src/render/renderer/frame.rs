@@ -56,21 +56,11 @@ impl Decided {
 }
 
 impl Renderer {
-    pub(super) fn draw_frame(&mut self, scene: &Scene, origins: &[[f32; 2]]) -> bool {
+    pub(super) fn draw_frame(&mut self, scene: &Scene, origins: &[[f32; 2]]) -> Draw {
         self.drew = crate::platform::now();
         self.draws.set(0);
         self.passes.set(0);
         self.work.set(Work::default());
-        if let Some(stamps) = &mut self.stamps {
-            stamps.begin();
-        }
-        let acquiring = web_time::Instant::now();
-        let images: Vec<Option<Image>> = self.targets.iter_mut().map(|target| target.acquire(&self.device)).collect();
-        self.acquired = acquiring.elapsed();
-        // None to draw on now (a window hidden or asleep, a surface lost): it's drawn on the next.
-        if images.iter().all(Option::is_none) {
-            return false;
-        }
 
         // The frame's data: the gamma, each batch's instances, then each target's globals and its backdrops' blurs'
         // parameters, each shadow tile's and each raster's.
@@ -171,12 +161,11 @@ impl Renderer {
             })
             .collect();
         let generation = self.atlas.generation();
-        let planned: Vec<Option<Planned>> = images
-            .iter()
+        let sizes: Vec<(u32, u32)> = self.targets.iter().map(|target| target.size).collect();
+        let planned: Vec<Planned> = sizes
+            .into_iter()
             .zip(origins)
-            .map(|(image, origin)| {
-                let image = image.as_ref()?;
-                let size = (image.texture.width(), image.texture.height());
+            .map(|(size, origin)| {
                 let globals = GlobalParams { viewport_size: [size.0 as f32, size.1 as f32], origin: *origin };
                 let globals = self.push(bytemuck::bytes_of(&globals));
                 // Only what reaches its box of the scene: a panel's pane of glass (`platform::Window::arrange`) draws a
@@ -261,12 +250,27 @@ impl Renderer {
                     })
                     .filter(|scroll| scroll.rect[0] < scroll.rect[2] && scroll.rect[1] < scroll.rect[3])
                     .collect();
-                Some(Planned { globals, batches: reaching, drawn, blurs, shown, origin: *origin })
+                Planned { globals, batches: reaching, drawn, blurs, shown, origin: *origin }
             })
             .collect();
+        // Each target's damage since the frame it drew last, which it's drawn again by where its canvas holds that.
+        let since: Vec<Option<Vec<damage::Rect>>> = self.targets.iter().zip(&planned).map(|(target, planned)| target.previous.as_ref().filter(|(over, _)| *over == planned.drawn.over).map(|(_, shown)| damage::damage(&shown.prints, &planned.shown.prints))).collect();
+        if new.is_empty() && since.iter().zip(&self.targets).all(|(since, target)| since.as_ref().is_some_and(|rects| damage::apart(rects.iter().copied(), target.size).is_empty())) {
+            return Draw::Unchanged;
+        }
+        if let Some(stamps) = &mut self.stamps {
+            stamps.begin();
+        }
+        let acquiring = web_time::Instant::now();
+        let images: Vec<Option<Image>> = self.targets.iter_mut().map(|target| target.acquire(&self.device)).collect();
+        self.acquired = acquiring.elapsed();
+        // None to draw on now (a window hidden or asleep, a surface lost): it's drawn on the next.
+        if images.iter().all(Option::is_none) {
+            return Draw::Missed;
+        }
         // The tiles of the frame's shadows that haven't one yet, each its box alone, blurred, in a frame of its own.
         let mut tiles: Vec<(TileKey, (u32, u32), (u64, u64), (u64, u64))> = Vec::new();
-        let drawn: std::collections::BTreeSet<usize> = planned.iter().flatten().flat_map(|planned| planned.batches.iter().copied()).collect();
+        let drawn: std::collections::BTreeSet<usize> = planned.iter().flat_map(|planned| planned.batches.iter().copied()).collect();
         for at in drawn {
             let PrimitiveBatch::Shadows(shadows) = &batches[at] else { continue };
             for shadow in shadows.iter() {
@@ -332,12 +336,12 @@ impl Renderer {
         // Then each target, in runs of batches, one pass each, broken at each backdrop that blurs what's drawn before
         // it afresh.
         let mut targets = std::mem::take(&mut self.targets);
-        for ((target, image), planned) in targets.iter_mut().zip(&images).zip(planned) {
-            let (Some(image), Some(planned)) = (image, planned) else { continue };
+        for (((target, image), planned), since) in targets.iter_mut().zip(&images).zip(planned).zip(since) {
+            let Some(image) = image else { continue };
             let globals = self.pipelines.layouts.globals(&buffer, planned.globals, gamma);
             let batches: Vec<PrimitiveBatch<'_>> = planned.batches.iter().map(|at| batches[*at]).collect();
             let instances = Instances { group: group.clone(), offsets: planned.batches.iter().map(|at| instances[*at].0 as u32).collect() };
-            self.draw_target(&mut encoder, target, image, &globals, &buffer, &batches, &instances, &planned.blurs, planned.drawn, planned.shown, planned.origin);
+            self.draw_target(&mut encoder, target, image, &globals, &buffer, &batches, &instances, &planned.blurs, planned.drawn, planned.shown, since, planned.origin);
         }
         self.targets = targets;
 
@@ -363,12 +367,12 @@ impl Renderer {
             stamps.submitted();
         }
         let presenting = web_time::Instant::now();
-        let mut drawn = true;
+        let mut drawn = Draw::Presented;
         for image in images {
             match image {
                 Some(Image { frame: Some(frame), .. }) => self.queue.present(frame),
                 Some(_) => {}
-                None => drawn = false,
+                None => drawn = Draw::Missed,
             }
         }
         self.presented = presenting.elapsed();
@@ -378,9 +382,9 @@ impl Renderer {
     /// Draws `target`'s batches into its `image`. Where little changed since its last frame (`damage`), only that is drawn again,
     /// on its last frame as it kept it (its canvas), which is then copied into its image, as a surface's images come
     /// back in no known order with what was drawn on them frames before; where most did, it's drawn whole in its
-    /// image, and the next frame that changes little draws whole into its canvas.
+    /// image, and the next frame that changes little draws whole into its canvas, as its first frame does.
     #[allow(clippy::too_many_arguments)]
-    fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn, shown: damage::Shown, origin: [f32; 2]) {
+    fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn, shown: damage::Shown, since: Option<Vec<Rect>>, origin: [f32; 2]) {
         let (texture, view) = (&image.texture, &image.view);
         let size = (texture.width(), texture.height());
         let whole = u64::from(size.0) * u64::from(size.1);
@@ -401,7 +405,9 @@ impl Renderer {
         let reads: Vec<Rect> = decided.reads(blurs).collect();
         let changed = |last: &damage::Shown| {
             let apart = |changed: Vec<Rect>| damage::apart(changed.into_iter().chain(reads.iter().copied()), size);
-            let still = apart(damage::damage(&last.prints, &shown.prints));
+            // Its damage since its last frame, found already where that's the frame it's drawn on.
+            let found = since.as_ref().filter(|_| target.previous.as_ref().is_some_and(|(_, previous)| previous.prints == last.prints));
+            let still = apart(found.cloned().unwrap_or_else(|| damage::damage(&last.prints, &shown.prints)));
             let scrolled = damage::scrolled(last, &shown).map(|(blit, was, is, more)| (apart(damage::damage(&was, &is).into_iter().chain(more).collect()), blit));
             match scrolled {
                 Some((rects, blit)) if damage::area(&rects) as f64 + COPIED * 2.0 * (damage::area(&[blit.from]) as f64) < damage::area(&still) as f64 => (rects, Some(blit)),
@@ -414,7 +420,10 @@ impl Renderer {
             .map(changed)
             .filter(|(rects, _)| little(rects))
             .map(|(rects, blit)| (Some(Clip::new(rects, origin)), blit))
-            .or_else(|| on(&target.previous, drawn.over).filter(|_| copies).map(changed).filter(|(rects, _)| little(rects)).map(|_| (None, None)));
+            .or_else(|| on(&target.previous, drawn.over).filter(|_| copies).map(changed).filter(|(rects, _)| little(rects)).map(|_| (None, None)))
+            // Its first frame, with none before it to tell what changes, is drawn whole on its canvas too, so the next,
+            // which most often changes little (a press, a hover), draws only that, where it drew all again.
+            .or_else(|| (copies && target.previous.is_none()).then_some((None, None)));
         let mut work = self.work.get();
         match plan {
             Some((clip, blit)) => {

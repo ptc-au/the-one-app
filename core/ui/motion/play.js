@@ -116,6 +116,13 @@ async function play(built, scene, name, motion, hz, folder) {
   const holding = (n) => where(n - 2) === where(n) && where(n) !== where(0) && [n - 2, n - 1].every((was) => JSON.stringify(frames[was].rect) === JSON.stringify(frames[n].rect))
   const redrawn = events || !motion.follow ? -1 : frames.findIndex((frame, n) => n > 1 && frame.at < end && holding(n) && frame.work?.damage > 0)
   if (redrawn >= 0) failed.push(`frame ${redrawn} (${frames[redrawn].at} ms) drew ${frames[redrawn].work.damage} pixels again while what the finger holds was held still`)
+  // A frame the same as the one before, with nothing on its way since (the harness's `arriving`), is drawn nothing and
+  // presents nothing new, as a compositor with no damage presents none: on 22 Nov 77 motions drew and presented frames
+  // the same as the one before, 797 of them, most at rest, where the frame at rest drew whole (23.7 ms on the Surface
+  // for the long Vault) for nothing. One on its way may change too little to see (a spring's last hundredth of a
+  // point, a page fading out under another), which its renderer can't know without drawing it.
+  const same = frames.filter((frame, n) => n > 0 && frame.drawn && !frames[n - 1].arriving && frame.png === frames[n - 1].png)
+  if (same.length) failed.push(`${same.length} frames the same as the one before were drawn and presented, the first frame ${frames.indexOf(same[0])} (${same[0].at} ms), ${same[0].work?.damage ?? 0} pixels drawn again`)
   const cutting = motion.reducedMotion && cut(lifting)
   if (cutting) failed.push(cutting)
   // And all of it at once, with no pause between its parts, as a folder's name and its apps' are dissolved with it.
@@ -134,9 +141,10 @@ async function play(built, scene, name, motion, hz, folder) {
     const short = there?.length ? arrives(frames, there) : `the full-motion run drew nothing: ${full.said.split("\n").at(-1)}`
     if (short) failed.push(short)
   }
-  // A refresh that drew nothing new (a busy device's) shows the frame drawn before it.
+  // A refresh that drew nothing new (a busy device's) shows the frame drawn before it, and one drawn only where it
+  // changed, none of the glass, its glass as it was: its glass is blurred where its blur was taken or kept.
   let blurs
-  const plain = motion.blurred && glass !== "tinted" ? frames.findIndex((frame, n) => ((blurs = frame.drawn === false ? blurs : frame.work?.backdrops), n > 0 && !blurs)) : -1
+  const plain = motion.blurred && glass !== "tinted" ? frames.findIndex((frame, n) => ((blurs = frame.drawn === false ? blurs : (frame.work?.blurs ?? 0) + (frame.work?.blurs_kept ?? 0)), n > 0 && !blurs)) : -1
   // What a swipe moves goes one way while it's under the fingers, a trace's till they lift: never back.
   const toward = Math.sign(values.at(-1) - values[0])
   const back = motion.steady ? values.findIndex((value, n) => n > 0 && frames[n].at <= end && (value - values[n - 1]) * toward < -1) : -1

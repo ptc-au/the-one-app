@@ -40,6 +40,17 @@ const IDLE: web_time::Duration = web_time::Duration::from_secs(2);
 /// let go of a page's raster as they take another of its size.
 const SPARE: usize = 2;
 
+/// What came of drawing a frame (`Renderer::draw`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Draw {
+    /// Drawn into every target and presented.
+    Presented,
+    /// Nothing any target draws changed since the frame it shows, so none was drawn or presented.
+    Unchanged,
+    /// A target had no image to draw on (a window hidden or asleep, a surface lost): it's drawn on the next.
+    Missed,
+}
+
 pub struct Renderer {
     /// When it last drew a frame, as the windows' loop tells the time (`platform::now`: on the fake platform its clock,
     /// so its harness lets go idle as a device would), by which it lets go of what it holds once idle (`idle`).
@@ -452,8 +463,8 @@ impl Renderer {
     }
 
     /// Draws into each target the box of `scene` as big as it whose top left is its origin of `origins`, in device
-    /// pixels, all in one submit. → whether each was drawn, which isn't so where one had no image to draw on.
-    pub fn draw(&mut self, scene: &Scene, origins: &[[f32; 2]]) -> bool {
+    /// pixels, all in one submit. → what came of it (`Draw`).
+    pub fn draw(&mut self, scene: &Scene, origins: &[[f32; 2]]) -> Draw {
         let (started, began) = (crate::platform::on_cpu(), web_time::Instant::now());
         // Mutant: the web's canvas drawn empty, its frames drawn with nothing in them.
         let empty;

@@ -458,7 +458,7 @@ impl Windows {
             if let Some(page) = page {
                 window.scene = page;
             }
-            if !arranged {
+            if arranged == Draw::Missed {
                 window.missed(&self.context, &self.atlas);
                 continue;
             }
@@ -466,6 +466,9 @@ impl Windows {
             window.missed = 0;
             window.shows = Some(self.clock.shows(now(), refresh));
             window.frames += 1;
+            // One that drew the same as the frame on the screen (`Draw::Unchanged`) is a frame of its own for the loop,
+            // presenting none.
+            window.presents += u64::from(arranged == Draw::Presented);
             #[cfg(feature = "fake")]
             if let Ok(screen) = &mut window.screen {
                 screen.presented();

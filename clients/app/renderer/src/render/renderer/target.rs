@@ -188,6 +188,8 @@ impl Target {
     /// Its window is going from the screen (`Renderer::put_away`).
     pub(super) fn put_away(&mut self, device: &wgpu::Device) {
         self.idle();
+        // What it shows as it's back isn't known to be its last frame: the next is drawn whole.
+        self.previous = None;
         match &mut self.output {
             Output::Surface { surface, .. } if cfg!(target_os = "macos") => {
                 if self.reserved.is_none()

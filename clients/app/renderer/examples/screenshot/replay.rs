@@ -92,7 +92,7 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
     windows.set_link(link.and_then(|link| link["starts"].as_u64()).unwrap_or(0) as u32, pauses);
     let refresh = 1000.0 / hz;
     let begun = renderer::platform::fake_time();
-    let (mut next, mut frames, mut drawn) = (0, Vec::new(), windows.frames(id));
+    let (mut next, mut frames, mut drawn, mut presents) = (0, Vec::new(), windows.frames(id), windows.presents(id));
     // Its first frame's cost is what's done from here.
     windows.cost(id);
     let elapsed = || renderer::platform::fake_time() - begun;
@@ -119,26 +119,31 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         let frames_drawn = windows.frames(id) - drawn;
         let drew = frames_drawn > 0;
         drawn = windows.frames(id);
+        // Drawn, and presented: one drawn the same as the frame on the screen presented none, and cost no GPU.
+        let presented = windows.presents(id) > presents;
+        presents = windows.presents(id);
         // What it cost since the frame before, every frame drawn meanwhile and its JS, which a frame that drew nothing
         // costs too.
         let mut frame = windows.cost(id).unwrap_or_default();
-        if !drew && let Some(frame) = frame.as_object_mut() {
+        if !presented && let Some(frame) = frame.as_object_mut() {
             frame.remove("gpu_ms");
             frame.remove("blur_ms");
         }
-        if !drew {
+        if !presented {
             frame["draws"] = json!(0);
             frame["work"] = json!({"quads": 0, "shadows": 0, "sprites": 0, "backdrops": 0, "rasters": 0, "copied": 0, "uploaded": 0, "blurred": 0, "blurs": 0, "blurs_kept": 0, "damage": 0});
         }
         frame["at"] = json!((tick * 100.0).round() / 100.0);
         frame["pressure"] = json!(windows.pressure());
-        frame["drawn"] = json!(drew);
+        frame["drawn"] = json!(presented);
         frame["frames_drawn"] = json!(frames_drawn);
         // A refresh that drew nothing while something on it is on its way somewhere shows the frame before again: a
         // frame the loop held, which a person sees as a stop and then a jump.
-        if !drew && windows.arriving(id) {
+        let arriving = windows.arriving(id);
+        if !drew && arriving {
             frame["held"] = json!(true);
         }
+        frame["arriving"] = json!(arriving);
         // What's tracked, where it's drawn, or that it's gone, as a page that's left takes it with it: the node the
         // selector first found, not another it finds once that's gone (an App Library's Notes, as Home's goes).
         if let Some(query) = &mut track {

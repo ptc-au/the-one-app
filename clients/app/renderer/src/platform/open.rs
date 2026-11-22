@@ -148,6 +148,7 @@ impl Windows {
                 uncovered: false,
                 shows: None,
                 frames: 0,
+                presents: 0,
                 timing: Default::default(),
                 waiting: VecDeque::new(),
             },

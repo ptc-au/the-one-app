@@ -34,7 +34,7 @@ export function modelled(measured, frame, pixels = 1) {
 /// draw call is the device's, not this machine's), and its JS's since the frame before, the frame dropped where any is
 /// longer than the tier's frame. Its JS counts only where the frame `waits` for it: what a wheel scrolls is drawn
 /// whatever its JS is doing. → each tier's name, the frames dropped of those drawn, the worst and why.
-export function judge(frames, hz, waits = true) {
+export function judge(frames, hz, waits = true, refreshes = frames.length) {
   // Drawn on the device itself, its own frames' times: the GPU's by its timestamps, its thread's painting and drawing.
   if (device) {
     if (device.hz !== hz) return []
@@ -66,7 +66,9 @@ export function judge(frames, hz, waits = true) {
         })
       const budget = 1000 / tier.hz
       const worst = times.reduce((worst, time) => (time.ms > worst.ms ? time : worst), { ms: 0, by: "" })
-      const gpu = times.map((time) => time.gpuMs).sort((a, b) => a - b)
+      // Over every refresh of the motion (`refreshes` of them), one that draws nothing costing its GPU nothing: of
+      // those drawn alone, a frame the same as the one before that's no longer drawn (a cheap one) moved the median up.
+      const gpu = [...times.map((time) => time.gpuMs), ...Array(Math.max(0, refreshes - times.length)).fill(0)].sort((a, b) => a - b)
       return { tier: tier.name, dropped: times.filter((time) => time.ms > budget).length, drawn: times.length, worst, gpu: { median: gpu[Math.floor(gpu.length / 2)] ?? 0, worst: gpu.at(-1) ?? 0 } }
     })
 }
@@ -77,8 +79,10 @@ export function judge(frames, hz, waits = true) {
 /// or takes more passes shows here, where a device's own timestamps move with its clock and its heat.
 export function costlier(frames, before, hz) {
   if (device) return []
-  const was = Object.fromEntries(judge(before, hz).map((judged) => [judged.tier, judged.gpu]))
-  return judge(frames, hz).flatMap(({ tier, gpu }) =>
+  // Each over as many refreshes, the longer's: one that comes to rest sooner draws nothing after.
+  const refreshes = Math.max(frames.length, before.length)
+  const was = Object.fromEntries(judge(before, hz, true, refreshes).map((judged) => [judged.tier, judged.gpu]))
+  return judge(frames, hz, true, refreshes).flatMap(({ tier, gpu }) =>
     ["median", "worst"].filter((which) => was[tier] && gpu[which] > was[tier][which] * 1.02 + 0.05).map((which) => `${tier}'s ${which} frame takes its GPU ${gpu[which].toFixed(2)} ms, ${was[tier][which].toFixed(2)} before`),
   )
 }

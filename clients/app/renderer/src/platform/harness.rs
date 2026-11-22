@@ -534,9 +534,14 @@ impl Windows {
         self.windows.get(&id).is_some_and(|window| window.dirty && window.on_screen())
     }
 
-    /// How many frames window `id` has presented, all told.
+    /// How many frames window `id` has drawn, all told.
     pub fn frames(&self, id: WindowId) -> u64 {
         self.windows.get(&id).map_or(0, |window| window.frames)
+    }
+
+    /// How many of window `id`'s frames it presented (`Window::presents`).
+    pub fn presents(&self, id: WindowId) -> u64 {
+        self.windows.get(&id).map_or(0, |window| window.presents)
     }
 
     /// Whether something on window `id` is on its way somewhere it'll arrive at (`Screen::arriving`): moving, but not
