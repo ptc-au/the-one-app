@@ -14,7 +14,7 @@ defmodule Telemetry.Alerts do
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
   | `open` | The median of an app's last 5 opens on a device (at least 3) took over its 300 ms budget, from being asked to open to its page's first frame (`one.client.native.open`, which a client says of each open, with each step's time; one that lasted across the device's sleep isn't told) | Its median is within its budget there, or it hasn't opened there for a day |
   | `backup` | A destination's last backup is older than its schedule and a day, or its last backup failed, as Backups last said (`one.backup`, which it says each hour and as each backup ends) | Backups says it's backed up, or that the destination is gone |
-  | `behind` | A server or a desktop client has said for over an hour, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), and something of it arrived in the last day | It says it's on the latest, or nothing of it arrives for a day |
+  | `behind` | A server or a desktop client has last said, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), which has been the latest for over an hour, while the network isn't updating its servers, and something of it arrived in the last day | It says it's on the latest, a newer build comes out (its hour begins again), or nothing of it arrives for a day |
   | `memory` | A device's app held more than its budget in a state (`background`, `launcher`, `windows`) the last time it measured it there (`one.client.memory.over`, which the app says as it measures over budget, beside `one.client.memory` each time) | It measures that state within its budget there, or nothing of it arrives for a day |
   | `frames` | A device's share of long frames (shown twice or more, `one.client.native.frames.long` of `one.client.native.frames`, which a client says of each motion) passed 5% of at least 600 frames over the last hour of real use: those it drew while its system wasn't busy (`one.system.busy`) | The share is back under 5%, or under 600 frames: the hour moves on |
   | `access` | A server that acts for someone lacks the keys of something encrypted for them, or one that doesn't act for them has them, as Encryption last said (`one.encryption.access`, which it says every 10 minutes) | Encryption says every server that should hold its keys does, and no other |
@@ -98,7 +98,10 @@ defmodule Telemetry.Alerts do
     "create table frames (device text not null, minute integer not null, name text, frames integer not null default 0, long integer not null default 0, primary key (device, minute)) without rowid",
     # Each app's window's last opens on each device, not only the last: the `open` alert reads their median.
     "drop table opens",
-    "create table opens (device text not null, view text not null, name text, at integer not null, took integer not null, steps text, primary key (device, view, at)) without rowid"
+    "create table opens (device text not null, view text not null, name text, at integer not null, took integer not null, steps text, primary key (device, view, at)) without rowid",
+    # Since when each latest build is the latest of its name (`OneCore.Builds.latest/0`): a machine is behind from then.
+    "alter table builds drop column behind",
+    "create table newest (name text primary key, build text not null, since integer not null) without rowid"
   ]
 
   @kinds %{
@@ -111,7 +114,7 @@ defmodule Telemetry.Alerts do
     "backup" => "A backup isn't made within its schedule and a day, or the last one failed",
     "open" => "The median of an app's last 5 opens on a device took over 300 ms to show its page",
     "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can",
-    "behind" => "A server or a desktop client has been on an older build than the latest for over an hour",
+    "behind" => "A server or a desktop client is on an older build than the latest, which has been out for over an hour",
     "memory" => "A device's app held more memory than its budget the last time it measured it",
     "frames" => "Over 5% of the frames a device drew in the last hour were long"
   }
@@ -191,7 +194,7 @@ defmodule Telemetry.Alerts do
         # Another evaluation read them already, as one that ran long overlapping the next does.
         if looked == (query(db, "select at from looked", []) != []) and not read?(db, names) do
           keep(db, signals, not looked, now)
-          behind(db, asked.latest, now)
+          newest(db, asked.latest, now)
           for name <- names, do: query(db, "insert into batches (name, at) values (?, ?)", [name, now])
           query(db, "delete from batches where at < ?", [now - 2 * @gap])
           # Said once: a minute that read nothing writes nothing, so it adds nothing to the database's log.
@@ -245,7 +248,7 @@ defmodule Telemetry.Alerts do
     fn
       {"server", server} -> asked.presence[server] == :unknown
       {"update", _key} -> asked.update == :unknown or under_way?(asked.update)
-      {"behind", _key} -> asked.latest == :unknown
+      {"behind", _key} -> asked.latest == :unknown or under_way?(asked.update)
       _ -> false
     end
   end
@@ -564,25 +567,26 @@ defmodule Telemetry.Alerts do
     query(db, "delete from alerts where ended < ?", [now - 7 * 86_400_000])
   end
 
-  # Marks since when each server and client has been on an older build than the latest of its kind, by its builds'
-  # count of commits (`OneCore.Builds.count/1`), as the latest is now, and clears it once it isn't.
-  defp behind(_db, :unknown, _now), do: :ok
+  # Marks since when each latest build has been the latest of its name, as it's first seen to be: a machine is behind
+  # it from then, however long it's been on the build before.
+  defp newest(_db, :unknown, _now), do: :ok
 
-  defp behind(db, latest, now) do
-    for row <- query(db, "select * from builds", []), newest = latest_of(latest, row["kind"]) do
-      older = OneCore.Builds.count(row["build"]) < OneCore.Builds.count(newest)
-
-      cond do
-        older and row["behind"] == nil -> query(db, "update builds set behind = ? where key = ?", [now, row["key"]])
-        not older and row["behind"] != nil -> query(db, "update builds set behind = null where key = ?", [row["key"]])
-        true -> :ok
-      end
+  defp newest(db, latest, now) do
+    for {name, build} <- latest do
+      query(
+        db,
+        """
+        insert into newest (name, build, since) values (?, ?, ?)
+        on conflict (name) do update set build = excluded.build, since = excluded.since where newest.build != excluded.build
+        """,
+        [name, build, now]
+      )
     end
   end
 
-  # The latest build of a kind: `server-code`, or a client's `one/<system>` whichever its machine.
-  defp latest_of(latest, "server-code"), do: latest["server-code"]
-  defp latest_of(latest, "one/" <> _ = kind), do: Enum.find_value(latest, fn {name, build} -> if String.starts_with?(name, kind <> "-"), do: build end)
+  # The latest build of a kind, with its name: `server-code`, or a client's `one/<system>` whichever its machine.
+  defp latest_of(latest, "server-code"), do: Enum.find(latest, &match?({"server-code", _}, &1))
+  defp latest_of(latest, "one/" <> _ = kind), do: Enum.find(latest, fn {name, _build} -> String.starts_with?(name, kind <> "-") end)
 
   ## Rules
 
@@ -707,18 +711,21 @@ defmodule Telemetry.Alerts do
         {{"access", row["artifact"]}, %{title: "A server is waiting for a key to #{row["artifact"]}", text: row["problem"]}}
       end
 
+    # Not while the network is updating its servers: that's how a machine comes to the build.
     behind =
-      for row <- query(db, "select * from builds where behind < ?", [now - 60 * @minute]),
-          asked.latest != :unknown,
-          newest = latest_of(asked.latest, row["kind"]),
+      for row <- query(db, "select * from builds", []),
+          asked.latest != :unknown and not under_way?(asked.update),
+          {name, newest} <- [latest_of(asked.latest, row["kind"])],
+          apart = OneCore.Builds.count(newest) - OneCore.Builds.count(row["build"]),
+          apart > 0,
+          %{"since" => since} <- query(db, "select since from newest where name = ? and build = ? and since < ?", [name, newest, now - 60 * @minute]),
           into: %{} do
-        apart = OneCore.Builds.count(newest) - OneCore.Builds.count(row["build"])
-        hours = div(now - row["behind"], 3_600_000)
+        hours = div(now - since, 3_600_000)
 
         {{"behind", row["key"]},
          %{
            title: "#{row["name"] || "A device"} is behind, on #{version(row["build"])}",
-           text: "It's #{apart} #{if apart == 1, do: "build", else: "builds"} behind #{version(newest)}, and has said so for over #{hours} #{if hours == 1, do: "hour", else: "hours"}."
+           text: "It's #{apart} #{if apart == 1, do: "build", else: "builds"} behind #{version(newest)}, and #{version(newest)} has been out for over #{hours} #{if hours == 1, do: "hour", else: "hours"}."
          }}
       end
 
