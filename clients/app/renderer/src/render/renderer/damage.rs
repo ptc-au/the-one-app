@@ -218,8 +218,9 @@ pub(super) fn scrolled(last: &Shown, now: &Shown) -> Option<(Blit, Prints, Print
         }
     }
     // Of a thing that didn't scroll with it, what of it moving changed: none of a box of one colour where it's the same
-    // all along the way it moved, else its rows (or columns) that aren't, where they were and where they're moved to;
-    // all of anything else.
+    // all along the way it moved, else its rows and columns that aren't, where they were and where they're moved to (its
+    // edges across the way it moved too, as what scrolled under them shows through their antialiasing); all of anything
+    // else.
     let uneven = |place: &Rect, even: &Option<Even>| -> Vec<Rect> {
         let all = vec![overlap(*place, to), moved(overlap(*place, from), by)];
         let Some(even) = even else { return all };
@@ -227,12 +228,11 @@ pub(super) fn scrolled(last: &Shown, now: &Shown) -> Option<(Blit, Prints, Print
             let cut = |a: u32, b: u32| if down { [place[0], a, place[2], b] } else { [a, place[1], b, place[3]] };
             [cut(start, first.min(end).max(start)), cut(last.max(start).min(end), end)]
         };
-        let around = match by {
-            [0, _] => strips(even.rows, place[1], place[3], true),
-            [_, 0] => strips(even.columns, place[0], place[2], false),
-            _ => return all,
-        };
-        around.into_iter().flat_map(|strip| [overlap(strip, to), moved(overlap(strip, from), by)]).collect()
+        if by[0] != 0 && by[1] != 0 {
+            return all;
+        }
+        let around = [strips(even.rows, place[1], place[3], true), strips(even.columns, place[0], place[2], false)];
+        around.into_iter().flatten().flat_map(|strip| [overlap(strip, to), moved(overlap(strip, from), by)]).collect()
     };
     // What's in it by where it is, but drawn the same in the same place in both frames (its own background), stayed put.
     let (before, after): (std::collections::HashSet<_>, std::collections::HashSet<_>) = (last.prints.iter().collect(), now.prints.iter().collect());
