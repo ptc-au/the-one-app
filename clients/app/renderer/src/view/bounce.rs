@@ -102,20 +102,22 @@ impl Screen {
         Some(id)
     }
 
-    /// The finger on what scrolls at `at` lifted going `velocity` points a second (as a scroll goes): stretched, it
-    /// springs back from the speed its stretch was going, which gives less the further it's pulled, as UIScrollView's
-    /// does (at the finger's, it sped up as it was let go: 2.8 pt a refresh, then 5.1); otherwise, fast enough, it's
-    /// flung.
-    pub fn release_scroll(&mut self, at: Point<f32>, velocity: Point<f32>) {
+    /// The finger that scrolled `id` lifted going `velocity` points a second (as a scroll goes): stretched, it springs
+    /// back from the speed its stretch was going, which gives less the further it's pulled, as UIScrollView's does (at
+    /// the finger's, it sped up as it was let go: 2.8 pt a refresh, then 5.1); otherwise, fast enough, it's flung. What
+    /// goes on is what the finger scrolled, as a browser's fling and UIScrollView's deceleration do, not what's innermost
+    /// under it: a page's own scroll as tall as its content, under a finger that scrolled the window, took the fling
+    /// and stopped it dead.
+    pub fn release_scroll(&mut self, id: Option<Id>, velocity: Point<f32>) {
+        let Some((id, (_, _, along))) = id.and_then(|id| Some((id, self.placed(id)?.scroll?))) else { return };
         let now = self.js.clock().now();
-        if let Some(id) = self.under(at).into_iter().find(|id| self.coasts.get(id).is_some_and(|coast| coast.held)) {
+        if self.coasts.get(&id).is_some_and(|coast| coast.held) {
             let size = self.placed(id).map_or(0.0, |placed| if self.coasts[&id].along { placed.shown.size.width } else { placed.shown.size.height });
             let coast = self.coasts.get_mut(&id).expect("it's held");
             coast.velocity = rubber_band_slope(coast.pulled, size, ELASTIC) * if coast.along { velocity.x } else { velocity.y };
             (coast.held, coast.stepped) = (false, now);
             return self.changed();
         }
-        let Some((id, along, _, _, _)) = self.scroller(at, velocity) else { return };
         let speed = if along { velocity.x } else { velocity.y };
         if speed.abs() > FLUNG {
             self.coasts.insert(id, Coast { along, held: false, flung: true, pulled: 0.0, stretch: 0.0, velocity: speed, stepped: now, aim: None });

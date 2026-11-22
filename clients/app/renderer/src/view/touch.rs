@@ -19,6 +19,7 @@ use super::Screen;
 use super::text_selection::End;
 use crate::geometry::{Point, point};
 use crate::motion::Velocity;
+use crate::tree::Id;
 
 /// How far a finger moves before it pans rather than presses, in points: UIScrollView's.
 pub const SLOP: f32 = 10.0;
@@ -96,6 +97,9 @@ pub(super) struct Finger {
     /// It's moved past the slop, so it's decided whether it pans or is what it's on's.
     moved: bool,
     panning: bool,
+    /// What its moves scrolled last, which it goes on scrolling as it lifts, as a browser's fling goes on in the scroll
+    /// its gesture latched to, not whatever is innermost under where it landed.
+    scrolled: Option<Id>,
     on_input: bool,
     stopped: bool,
     swipe: Option<Swipe>,
@@ -191,7 +195,7 @@ impl Screen {
             let mut velocity = Velocity::default();
             velocity.add(at, time);
             #[rustfmt::skip]
-            let finger = Finger { id, start: at, last: at, landed: time, hold: fingers.hold, held: false, handle, menu, moved: false, panning: false, on_input: false, stopped: false, swipe: None, velocity };
+            let finger = Finger { id, start: at, last: at, landed: time, hold: fingers.hold, held: false, handle, menu, moved: false, panning: false, scrolled: None, on_input: false, stopped: false, swipe: None, velocity };
             self.finger = Some(finger);
             return Touched::Done;
         }
@@ -208,7 +212,7 @@ impl Screen {
         let mut velocity = Velocity::default();
         velocity.add(at, time);
         #[rustfmt::skip]
-        let finger = Finger { id, start: point(at.x - slid, at.y), last: at, landed: time, hold: fingers.hold, held: false, handle: None, menu, moved: false, panning: false, on_input, stopped, swipe, velocity };
+        let finger = Finger { id, start: point(at.x - slid, at.y), last: at, landed: time, hold: fingers.hold, held: false, handle: None, menu, moved: false, panning: false, scrolled: None, on_input, stopped, swipe, velocity };
         self.finger = Some(finger);
         if swipe.is_none() && !on_input && !stopped {
             self.pointer_down(at, 0, false);
@@ -253,7 +257,7 @@ impl Screen {
         if finger.panning {
             match fingers.flings {
                 true => drop(self.pan(finger.start, step)),
-                false => drop(self.drag_scroll(finger.start, step)),
+                false => finger.scrolled = self.drag_scroll(finger.start, step).or(finger.scrolled),
             }
             return Touched::Panning;
         }
@@ -296,7 +300,7 @@ impl Screen {
             if fingers.flings {
                 return Touched::Panning;
             }
-            self.release_scroll(finger.start, point(-going.x, -going.y));
+            self.release_scroll(finger.scrolled, point(-going.x, -going.y));
             return Touched::Done;
         }
         if finger.stopped {
@@ -328,7 +332,7 @@ impl Screen {
         } else if finger.panning {
             self.show_text_menu(finger.menu);
             if !fingers.flings {
-                self.release_scroll(finger.start, point(0.0, 0.0));
+                self.release_scroll(finger.scrolled, point(0.0, 0.0));
             }
         } else if !finger.on_input && !finger.stopped {
             self.pointer_cancel(at);
