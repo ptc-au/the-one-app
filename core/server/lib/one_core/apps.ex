@@ -149,8 +149,9 @@ defmodule OneCore.Apps do
   def version(artifact), do: ask({:version, artifact})
 
   @doc """
-  Every app this server has looked at that has scheduled jobs: who it was installed for, its name there, the jobs,
-  whether it's trusted, and whose its own artifact is (`OneCore.Apps.Calls.whose/3`).
+  Every app running here that has scheduled jobs: who it was installed for, its name there, the jobs, whether it's
+  trusted, and whose its own artifact is (`OneCore.Apps.Calls.whose/3`). One only described here has its jobs made
+  where it's loaded.
   """
   def scheduled, do: ask(:scheduled)
 
@@ -384,7 +385,7 @@ defmodule OneCore.Apps do
     looked = Enum.uniq(Map.values(installed)) -- (known ++ here)
     {looked, told} = if only == :all, do: {looked, %{}}, else: {Enum.filter(looked, &is_map_key(only, &1)), Map.reject(only, &is_nil(elem(&1, 1)))}
     newer = Store.newer(looked, latest, runs, told)
-    {changed, any} = ask({:looked, owner, installed, loaded ++ newer, Map.keys(latest) ++ here})
+    {changed, any} = ask({:looked, owner, runs, installed, loaded ++ newer, Map.keys(latest) ++ here})
     # A process waiting for a sync, as one whose own code brought the newer version in does, can't follow until it ends.
     waiting = ask(:waiting)
     LoadedVersion.release(for {_artifact, _number, {:ok, version}} <- newer, do: version)
@@ -459,7 +460,7 @@ defmodule OneCore.Apps do
              try do
                installed = Installed.running(owner)
                newer = Store.newer(Enum.uniq(Map.values(installed)), state.latest)
-               {state, _changed, _any} = took_over(state, owner, installed, newer)
+               {state, _changed, _any} = took_over(state, owner, true, installed, newer)
                LoadedVersion.release(for {_artifact, _number, {:ok, version}} <- newer, do: version)
                state
              rescue
@@ -508,8 +509,8 @@ defmodule OneCore.Apps do
 
   # An app the sync took to be here already, `here`, that another owner's sync dropped meanwhile, isn't running:
   # the owner is out of sync, and the next sync reads it.
-  def handle_call({:looked, owner, installed, loaded, here}, _from, state) do
-    {state, changed, any} = took_over(state, owner, installed, loaded)
+  def handle_call({:looked, owner, loads, installed, loaded, here}, _from, state) do
+    {state, changed, any} = took_over(state, owner, loads, installed, loaded)
 
     gone =
       for artifact <- Map.values(installed), artifact in here, not is_map_key(state.running, artifact), do: artifact
@@ -552,7 +553,7 @@ defmodule OneCore.Apps do
     scheduled =
       for {owner, installed} <- state.installed,
           {name, artifact} <- installed,
-          %Version{jobs: [_ | _] = jobs, trusted: trusted, own: own} <- [state.running[artifact]],
+          %Version{jobs: [_ | _] = jobs, trusted: trusted, own: own} <- [loaded(state.running[artifact])],
           do: {owner, name, jobs, trusted, own}
 
     {:reply, scheduled, state}
@@ -645,19 +646,20 @@ defmodule OneCore.Apps do
   end
 
   # What's installed for `owner` is `installed` now, and each version in `loaded` takes over from its app's if it's
-  # newer: deploys that finish out of order still leave the one with the highest number, as the bucket has it. A
-  # version that doesn't compile here leaves the one before it running. An app that's installed for nobody this
-  # server has looked at no longer runs here. Each owner's versions are installed for them
-  # (`OneCore.Apps.LoadedVersion.installed/1`), which lets go of what they no longer run. Gives the apps whose
-  # version changed, and whether anything did.
-  defp took_over(state, owner, installed, loaded) do
+  # newer: deploys that finish out of order still leave the one with the highest number, as the bucket has it. Where
+  # this server `loads` the owner's apps, a version described takes over too: it's one that waits here for this
+  # server's update (`OneCore.Apps.Store.loaded/2`), and one that loads nowhere leaves none, as a stale copy never runs
+  # in place of the latest. An app that's installed for nobody this server has looked at no longer runs here. Each
+  # owner's versions are installed for them (`OneCore.Apps.LoadedVersion.installed/1`), which lets go of what they no
+  # longer run. Gives the apps whose version changed, and whether anything did.
+  defp took_over(state, owner, loads, installed, loaded) do
     {state, changed} =
       Enum.reduce(loaded, {state, []}, fn {artifact, number, loaded}, {state, changed} ->
         version = with {:ok, version} <- loaded, do: version
-        # A version described is kept apart from the ones loaded, which it never takes over from. An untrusted
-        # one runs here as one loaded does.
+        # A version described for an owner whose apps run elsewhere is kept apart from the ones loaded, which it never
+        # takes over from. An untrusted one runs here as one loaded does.
         numbers =
-          if runs(version) == :elsewhere, do: :described, else: :latest
+          if runs(version) == :elsewhere and not loads, do: :described, else: :latest
 
         cond do
           numbers == :described and is_map_key(state.latest, artifact) ->
@@ -667,7 +669,8 @@ defmodule OneCore.Apps do
             {state, changed}
 
           version == :error ->
-            {put_in(state.latest[artifact], number), changed}
+            {%{state | latest: Map.put(state.latest, artifact, number), running: Map.delete(state.running, artifact)},
+             [artifact | changed]}
 
           true ->
             state = Map.update!(state, numbers, &Map.put(&1, artifact, number))
@@ -678,6 +681,9 @@ defmodule OneCore.Apps do
 
     any = changed != [] or state.installed[owner] != installed
     state = %{state | installed: Map.put(state.installed, owner, installed)}
+    {state, waiting} = waiting(state, [])
+    changed = Enum.uniq(changed ++ Enum.map(waiting, & &1.artifact))
+    any = any or waiting != []
     state = put_in(state.reloaded[owner], System.monotonic_time(:millisecond))
 
     artifacts =
@@ -697,6 +703,9 @@ defmodule OneCore.Apps do
           into: %{},
           do: {at, for({_name, artifact} <- installed, %Version{} = version <- [running[artifact]], do: version)}
     )
+
+    # What's installed for them holds what began to wait now.
+    LoadedVersion.release(waiting)
 
     changed = Enum.uniq(changed ++ Map.keys(dropped))
 
@@ -723,6 +732,49 @@ defmodule OneCore.Apps do
     end
 
     {state, changed, any}
+  end
+
+  # Each app whose code runs here and runs the code of an app that waits here (`waits?/3`) waits too, as it's
+  # described: it would run without it. Gives the state, and the versions described that began to wait, held by this.
+  # One waits until its app's next version, or this server's next start, which an update is.
+  defp waiting(state, waited) do
+    waits =
+      for {at, installed} <- state.installed,
+          {_name, artifact} <- installed,
+          %Version{} = version <- [state.running[artifact]],
+          runs(version) == :here,
+          Enum.any?(Map.keys(version.requires), &waits?(state, at, &1)),
+          uniq: true,
+          do: version
+
+    case waits do
+      [] ->
+        {state, waited}
+
+      waits ->
+        described = for version <- waits, do: described(version)
+        state = Enum.reduce(described, state, &put_in(&2.running[&1.artifact], &1))
+        waiting(state, waited ++ described)
+    end
+  end
+
+  # Whether the app `name`, as whoever it's installed for, `at`, finds it, waits here: its code runs inside the apps
+  # that require it, and it's only described, as one whose version this server loads but can't run.
+  defp waits?(state, at, name) do
+    with {_at, artifact} <- found(state, [at, @network], name),
+         %Version{exports: [_ | _]} = version <- state.running[artifact] do
+      runs(version) == :elsewhere and is_map_key(state.latest, artifact)
+    else
+      _ -> false
+    end
+  end
+
+  # A version loaded here as it describes itself, held by this: it runs where it's loaded.
+  defp described(%Version{under: under, artifact: artifact, code: code} = version) do
+    Logger.info("#{artifact} waits here for this server's update, as an app whose code runs inside it does")
+    described = %{version | under: {:described, artifact, code}, app: nil}
+    :ok = LoadedVersion.described(described, LoadedVersion.kept(under))
+    described
   end
 
   # A version that runs here, or `nil` for one only described.

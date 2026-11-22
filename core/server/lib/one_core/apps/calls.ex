@@ -507,13 +507,15 @@ defmodule OneCore.Apps.Calls do
   # the narrowest server that's up of those that allow the app's code and act for whose data it keeps (`Apps.runs?/3`,
   # `Apps.first?/3`): this one, or one that it's passed on to, which runs it if it may, and passes it on no further.
   # Up is what the relay last said, which may be from before a narrower one froze or began to restart: where none of
-  # those answers, this one runs it, as it may.
+  # those answers, this one runs it, as it may. One whose app waits here for this server's update, only described
+  # (`OneCore.Apps.Store.loaded/2`), runs where it's loaded: passed on to this one, it says it would pass it on, so
+  # whoever passed it asks the next.
   defp called(at, name, versions, ask, {_actor, subject} = principal, forwarded) do
     call = new_call(at, name, versions, ask, principal, forwarded)
     {trusted, whose} = {versions[name].trusted, whose(at, versions[name], subject)}
 
     cond do
-      not Apps.runs?(at, trusted, whose) ->
+      not Apps.runs?(at, trusted, whose) or Version.runs(versions[name]) == :elsewhere ->
         Call.run_elsewhere(call, Apps.servers(at, trusted, whose))
 
       forwarded != false or Apps.first?(at, trusted, whose) ->

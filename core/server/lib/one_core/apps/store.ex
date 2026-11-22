@@ -261,9 +261,9 @@ defmodule OneCore.Apps.Store do
 
   @doc """
   The versions in the bucket of the apps `artifacts` that are newer than the ones in `latest`: each one's
-  app, its number, and the version loaded, which is `:error` for one this server can't compile, or with `load`
-  false the version described (`described/2`), leaving out one not described yet. An untrusted one is never
-  loaded here, only described. Read and loaded at once: a bucket at an address is asked for each over the
+  app, its number, and the version loaded (`loaded/2`), which is the version described for one that waits here and
+  `:error` for one that loads nowhere, or with `load` false the version described (`described/2`), leaving out one
+  not described yet. An untrusted one is never loaded here, only described. Read and loaded at once: a bucket at an address is asked for each over the
   internet, and a version loaded may be compiled.
 
   One that couldn't be read or loaded, as when the bucket didn't give its blobs or refused them, is left out, as one
@@ -312,6 +312,17 @@ defmodule OneCore.Apps.Store do
   def version(artifact, code, true, true), do: loaded(artifact, code)
   def version(artifact, code, false, true), do: held(artifact, code)
 
+  # An untrusted version runs here, in its sandbox, only on a build it runs on: one that waits is let go of.
+  defp runs(version) do
+    if why = Version.waiting(Path.basename(version.artifact), version) do
+      Logger.info(why)
+      LoadedVersion.release([version])
+      :error
+    else
+      :ok
+    end
+  end
+
   @doc """
   The set of the app `artifact`'s files named `code` as it described itself where it was loaded, without its
   code, to read what it says: `{:ok, version}`, or `:error` while no server that loads it has said. It isn't held,
@@ -351,17 +362,6 @@ defmodule OneCore.Apps.Store do
     end
 
     :ok
-  end
-
-  # A version this server can't run, for its `core`, is let go of and said in telemetry (`OneCore.Apps.Version.platform/1`).
-  defp runs(version) do
-    if why = Version.waiting(Path.basename(version.artifact), version) do
-      Logger.warning(why)
-      LoadedVersion.release([version])
-      :error
-    else
-      :ok
-    end
   end
 
   @doc """
@@ -430,16 +430,36 @@ defmodule OneCore.Apps.Store do
   end
 
   @doc """
-  Loads the set of the app `artifact`'s files named `code`, held by the caller: `{:ok, version}`, or `:error` if it doesn't compile
-  here, or doesn't run on this server's build (`OneCore.Apps.Version`).
+  Loads the set of the app `artifact`'s files named `code`, held by the caller: `{:ok, version}`, or `:error` if it
+  loads nowhere. One that doesn't run on this server's build (`OneCore.Apps.Version.platform/1`), or doesn't load
+  here where a server that runs it described it, as a server days behind finds, waits here: it's the version as that
+  server described it, which runs where it's loaded (`OneCore.Apps.Version.runs/1`), and never the version before it.
   """
   def loaded(artifact, code) do
     case LoadedVersion.load(artifact, code, &Compile.compile(artifact, files(artifact, code), &1)) do
       {:ok, version, _warnings} ->
-        describe(version)
-        with :ok <- runs(version), do: {:ok, version}
+        if why = Version.waiting(Path.basename(artifact), version) do
+          LoadedVersion.release([version])
+          waits(artifact, code, why)
+        else
+          describe(version)
+          {:ok, version}
+        end
 
       {:error, why} ->
+        waits(artifact, code, "its latest version doesn't load here:\n#{why}")
+    end
+  end
+
+  # Being behind is how a server is until it's updated, so it's no error: it's said in the log, and its calls go
+  # where the app runs. One no server has described loads nowhere, which is.
+  defp waits(artifact, code, why) do
+    case held(artifact, code) do
+      {:ok, version} ->
+        Logger.info("#{artifact} waits here for this server's update, and runs where it's loaded: #{why}")
+        {:ok, version}
+
+      :error ->
         Logger.error("#{artifact} isn't updated here, because its latest version doesn't load:\n#{why}")
         :error
     end

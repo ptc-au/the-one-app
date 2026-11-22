@@ -219,6 +219,10 @@ defmodule OneCore.Services do
     case Enum.find(stages, fn {_service, stage} ->
            match?({:running, _, ^monitor, _}, stage) or match?({:removing, ^monitor}, stage)
          end) do
+      # Its app no longer runs it here, as one that waits for this server's update doesn't: it starts as its app does.
+      {service, {:running, _instance, _monitor, _at}} when why == {:shutdown, :removed} ->
+        {:next_state, Map.put(stages, service, :starting), nil}
+
       {{app, name} = service, {:running, _instance, _monitor, at}} ->
         Logger.warning(
           "#{app}'s #{name} stopped, and is started again: #{explained(app, OneCore.Redact.redact(why))}"
