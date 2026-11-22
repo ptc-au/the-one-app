@@ -49,12 +49,12 @@ client sent a `traceparent`.
   before ended, an error where it didn't start, with its last lines), `one.server.stop` (an error where nobody
   asked), `one.server.crash_loop` and `one.server.update` (`one.update.outcome`: `took`,
   `went_back` or `stayed`, with why). Each says `one.server`, the server's key. The network's update is
-  `network update` on the edge, an error while it's held. A database's lease moving to a server is
+  `network update` on the edge, an error while a server is behind it. A database's lease moving to a server is
   `one.database.lease.moves` (`one.reason`), a call kept waiting by its holder `one.database.lease.wait`
   (`one.outcome` `not_answered`, warned of, or `gone`), and an app not answering a hook in time
   `one.hook.timeouts`, each by `one.app`.
 - Telemetry keeps what needs a person as alerts, and tells no one: a server not running or restarting over and over,
-  the update held, a kind of error not seen in 14 days, an app's tools failing, an app not answering, an app's
+  a server the network's update left behind or an edge that couldn't update itself, a kind of error not seen in 14 days, an app's tools failing, an app not answering, an app's
   deploys slow to show in its window (over 500 ms, `one.client.deploy.window`), a server that acts for someone unable to
   open what's encrypted for them, or one that doesn't able to (`one.encryption.access`). `alerts`
   lists them, the open ones and those resolved in the last `hours` (a day if not said), and each kind with what fires it; they're on

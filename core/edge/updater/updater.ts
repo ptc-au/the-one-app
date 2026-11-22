@@ -441,7 +441,7 @@ function alarmAt(state: State): number | null {
 /**
  * Says what the update is now, as it changes, in the line Telemetry's Tail Worker keeps as a span
  * (`apps/telemetry/edge/worker.ts`): `network update`, from when its build was published to now, with its status,
- * build and how far it is, and as an error, which servers are behind and why, so Telemetry raises an alert.
+ * build and how far it is, and as an error, which servers are behind and why. Telemetry's `update` alert reads the status itself (`OneCore.Servers.network/0`).
  */
 function said(state: State, status: ReturnType<NetworkUpdater["status"]>) {
   const wentBack = status.went_back.length ? status.went_back.map(({ name, why }) => `${name}: ${why}`).join("; ") : null;

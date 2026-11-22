@@ -7,7 +7,7 @@ defmodule Telemetry.Alerts do
   | Kind | Fires when | Clears when |
   | --- | --- | --- |
   | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`) | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and it hasn't looped for 10 min |
-  | `update` | The network's update (`core/edge/updater/updater.ts`) is held: a server went back, or didn't finish in time | The update is under way again, or done |
+  | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater no longer says so, once an update or the edge's deploy under way has ended |
   | `error` | A kind of error logged that wasn't in the last 14 days: its first line, numbers and ids aside. A fault, a crash or a client's exception, not a tool refusing (a `RuntimeError`) | It isn't logged for 10 min, or it stops being new an hour after it was first |
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
   | `unanswered` | An app didn't answer, in 2 or more of the last 5 minutes: a hook it didn't answer in time (`one.hook.timeouts`), or its database's server kept a call waiting without running it (`one.database.lease.wait`, `not_answered`) | 5 min without |
@@ -25,7 +25,7 @@ defmodule Telemetry.Alerts do
   so one kept late is read all the same, and it keeps of that only what its rules need: each server's last start and
   failure, each kind of error and when it was first and last seen, and per app per minute its calls, its failures and
   how often it didn't answer, what Backups last said of each destination, and what Encryption last said of each encrypted artifact. Its first look reads the last 14 days for the kinds of error there were, and has no alert for
-  any of them. Whether a server is one of the network's and ready, and whether the update is held, it asks of the relay
+  any of them. Whether a server is one of the network's and ready, and how the network's update is, it asks of the relay
   as it looks (`OneCore.Servers.presence/1`, `OneCore.Servers.network/0`): where the relay doesn't answer, what it
   would have said of stays as it was.
   """
@@ -82,7 +82,7 @@ defmodule Telemetry.Alerts do
 
   @kinds %{
     "server" => "A server isn't running for 5 minutes, or keeps restarting",
-    "update" => "The network's update is held",
+    "update" => "A server didn't take the network's update, or the edge couldn't update itself",
     "error" => "A kind of error not seen in the last 14 days",
     "failing" => "Half or more of an app's tool calls fail, of 10 or more in 10 minutes",
     "unanswered" => "An app doesn't answer for more than a minute",
@@ -196,11 +196,13 @@ defmodule Telemetry.Alerts do
     end
   end
 
-  # The alerts whose symptom couldn't be asked of the relay this time, which stay as they are, by kind and key.
+  # The alerts whose symptom couldn't be asked of the relay this time, which stay as they are, by kind and key: an
+  # update's too while an update or the edge's deploy is under way, which takes back what it said went wrong
+  # (`went_back`, `edge_update`) until it says again how it went.
   defp unknown(asked) do
     fn
       {"server", server} -> asked.presence[server] == :unknown
-      {"update", _build} -> asked.update == :unknown
+      {"update", _key} -> asked.update == :unknown or under_way?(asked.update)
       _ -> false
     end
   end
@@ -433,16 +435,7 @@ defmodule Telemetry.Alerts do
       end)
       |> Map.new()
 
-    update =
-      case asked.update do
-        %{"network_update_status" => "held", "build" => build, "held" => held} ->
-          version = String.split(build || "", "+") |> hd()
-          why = Enum.join(Enum.reject([held["name"] || held["server"], held["why"]], &is_nil/1), ": ")
-          %{{"update", build || ""} => %{title: "The update to #{version} is held", text: why}}
-
-        _ ->
-          %{}
-      end
+    update = went_wrong(asked.update)
 
     errors =
       for row <- query(db, "select * from seen where new = 1 and first > ? and last > ?", [now - 60 * @minute, now - @recovery]), into: %{} do
@@ -535,6 +528,37 @@ defmodule Telemetry.Alerts do
 
     Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access], &Map.merge/2)
   end
+
+  # What the network's updater says went wrong: each server behind, which went back from the build or didn't take it
+  # in time (its alarm's deadline, `until`), and the edge, where it needs setting up to update itself or its deploy
+  # failed.
+  defp went_wrong(%{} = update) do
+    servers =
+      for %{"server" => server, "why" => why} = behind <- update["went_back"] || [], into: %{} do
+        {{"update", server}, %{title: "#{behind["name"] || "A server"} didn't update to #{version(update["build"])}", text: why}}
+      end
+
+    case update["edge_update"] do
+      %{"status" => "needs_setup", "why" => why} ->
+        Map.put(servers, {"update", "edge"}, %{title: "The edge needs setting up to update itself", text: why})
+
+      %{"status" => "failed", "build" => build, "why" => why} ->
+        Map.put(servers, {"update", "edge"}, %{title: "The edge didn't update to #{version(build)}", text: why})
+
+      _ ->
+        servers
+    end
+  end
+
+  defp went_wrong(:unknown), do: %{}
+
+  defp under_way?(%{} = update),
+    do: update["network_update_status"] in ["preparing", "restarting"] or match?(%{"status" => "deploying"}, update["edge_update"])
+
+  defp under_way?(_update), do: false
+
+  # A build as a person reads it, its version: `0.34.363`.
+  defp version(build), do: (build || "") |> String.split("+") |> hd()
 
   # When the last backup was, as a person says it.
   defp last_backup(0, _now), do: "It hasn't been backed up yet."
