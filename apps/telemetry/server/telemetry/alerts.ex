@@ -8,7 +8,7 @@ defmodule Telemetry.Alerts do
   | --- | --- | --- |
   | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`), heard in the last 10 min | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and no loop has been heard of for 10 min |
   | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater hasn't said so for 10 min, while no update or edge deploy is under way: the edge's deploy begins a few minutes after the servers' update ends |
-  | `error` | A kind of error that wasn't in the last 14 days, as `errors` lists them: a span that failed, and an error logged outside one, by its first line, numbers and ids aside. A fault, a crash, a call that failed or a client's exception, not a call refused for what it was given or who asked (`one.outcome` `refused`, whose span isn't an error) | None arrives for 10 min, or it stops being new an hour after it first arrived |
+  | `error` | A kind of error that wasn't in the last 14 days on the device or server it's on, as `errors` lists them: a span that failed, and an error logged outside one, by its first line, numbers and ids aside. A fault, a crash, a call that failed or a client's exception, not a call refused for what it was given or who asked (`one.outcome` `refused`, whose span isn't an error) | None arrives for 10 min, or it stops being new an hour after it first arrived |
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
   | `unanswered` | An app didn't answer, in 2 or more of the last 5 minutes: a hook it didn't answer in time (`one.hook.timeouts`), or its database's server kept a call waiting without running it (`one.database.lease.wait`, `not_answered`) | 5 min without |
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
@@ -88,13 +88,17 @@ defmodule Telemetry.Alerts do
     # that's been older than the latest of its kind.
     "create table builds (key text primary key, name text, build text not null, kind text not null, at integer not null, behind integer) without rowid",
     # Each device's app's last memory over budget in each state, and its last measure there (`one.client.memory`).
-    "create table memory (device text not null, state text not null, name text, over integer, said text, measured integer, gpu real, graphics real, heap real, at integer not null, primary key (device, state)) without rowid"
+    "create table memory (device text not null, state text not null, name text, over integer, said text, measured integer, gpu real, graphics real, heap real, at integer not null, primary key (device, state)) without rowid",
+    # Each kind of error on each device or server it's on: the next look reads the last 14 days again for them.
+    "drop table seen",
+    "create table seen (kind text not null, device text not null, place text, message text, first integer, last integer, new integer, primary key (kind, device)) without rowid",
+    "delete from looked"
   ]
 
   @kinds %{
     "server" => "A server isn't running for 5 minutes, or keeps restarting",
     "update" => "A server didn't take the network's update, or the edge couldn't update itself",
-    "error" => "A kind of error not seen in the last 14 days",
+    "error" => "A kind of error not seen on its device or server in the last 14 days",
     "failing" => "Half or more of an app's tool calls fail, of 10 or more in 10 minutes",
     "unanswered" => "An app doesn't answer for more than a minute",
     "deploy" => "An app's deploys take over 500 ms to show in its window, in 2 or more of the last 10 minutes",
@@ -279,7 +283,7 @@ defmodule Telemetry.Alerts do
   defp span(%{"status" => %{"code" => "error", "message" => message}, "attributes" => a} = span) when is_binary(message) do
     if a["one.forwarded"] == true or a["one.reached"] not in [nil, "none"],
       do: [],
-      else: [{:error, Read.kind(message), place(span), first_line(message)}]
+      else: [{:error, Read.kind(message), device(span), place(span), first_line(message)}]
   end
 
   defp span(_span), do: []
@@ -305,7 +309,7 @@ defmodule Telemetry.Alerts do
 
   # What's logged during a call is its span's, which is the error where it failed.
   defp log(%{"severity" => "ERROR", "body" => body, "spanId" => nil} = log) when is_binary(body),
-    do: [{:error, Read.kind(body), place(log), first_line(body)}]
+    do: [{:error, Read.kind(body), device(log), place(log), first_line(body)}]
 
   defp log(_log), do: []
 
@@ -329,6 +333,9 @@ defmodule Telemetry.Alerts do
 
   defp metric(_point), do: []
 
+  # The device or server an error was on: a client's, as its request proved it is, a server's machine, or the edge.
+  defp device(record), do: record["attributes"]["one.device"] || record["server"] || record["attributes"]["service.name"] || ""
+
   # Where an error was, as a person reads it: the span, or what logged it if it said, on the server or client it was on.
   defp place(record) do
     on = Read.from(record) || record["server"]
@@ -338,7 +345,7 @@ defmodule Telemetry.Alerts do
   # Keeps what the rules need of `signals`. Its first look keeps only the kinds of error there were, as seen, and
   # none is new.
   defp keep(db, signals, true, now) do
-    signals = for {:error, _kind, _place, _message} = error <- signals, do: error
+    signals = for {:error, _kind, _device, _place, _message} = error <- signals, do: error
     keep(db, signals, false, now)
     query(db, "update seen set new = 0", [])
   end
@@ -367,14 +374,14 @@ defmodule Telemetry.Alerts do
       )
     end
 
-    for {:error, kind, place, message} <- signals do
+    for {:error, kind, device, place, message} <- signals do
       query(
         db,
         """
-        insert into seen (kind, place, message, first, last, new) values (?, ?, ?, ?, ?, ?)
-        on conflict (kind) do update set last = excluded.last
+        insert into seen (kind, device, place, message, first, last, new) values (?, ?, ?, ?, ?, ?, ?)
+        on conflict (kind, device) do update set last = excluded.last
         """,
-        [kind, place, message, now, now, 1]
+        [kind, device, place, message, now, now, 1]
       )
     end
 
@@ -546,7 +553,7 @@ defmodule Telemetry.Alerts do
 
     errors =
       for row <- query(db, "select * from seen where new = 1 and first > ? and last > ?", [now - 60 * @minute, now - @recovery]), into: %{} do
-        {{"error", row["kind"]}, %{title: "New error: #{String.slice(row["message"], 0, 100)}", text: row["place"]}}
+        {{"error", "#{row["device"]}|#{row["kind"]}"}, %{title: "New error: #{String.slice(row["message"], 0, 100)}", text: row["place"]}}
       end
 
     failing =
