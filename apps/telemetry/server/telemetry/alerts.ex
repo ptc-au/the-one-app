@@ -12,7 +12,7 @@ defmodule Telemetry.Alerts do
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
   | `unanswered` | An app didn't answer, in 2 or more of the last 5 minutes: a hook it didn't answer in time (`one.hook.timeouts`), or its database's server kept a call waiting without running it (`one.database.lease.wait`, `not_answered`) | 5 min without |
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
-  | `open` | An app's window took over its 300 ms budget, from being asked to open to its page's first frame, the last time it opened on a device (`one.client.native.open`, which a client says of each open, with each step's time) | It opens within its budget there, or hasn't opened there for a day |
+  | `open` | The median of an app's last 5 opens on a device (at least 3) took over its 300 ms budget, from being asked to open to its page's first frame (`one.client.native.open`, which a client says of each open, with each step's time; one that lasted across the device's sleep isn't told) | Its median is within its budget there, or it hasn't opened there for a day |
   | `backup` | A destination's last backup is older than its schedule and a day, or its last backup failed, as Backups last said (`one.backup`, which it says each hour and as each backup ends) | Backups says it's backed up, or that the destination is gone |
   | `behind` | A server or a desktop client has said for over an hour, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), and something of it arrived in the last day | It says it's on the latest, or nothing of it arrives for a day |
   | `memory` | A device's app held more than its budget in a state (`background`, `launcher`, `windows`) the last time it measured it there (`one.client.memory.over`, which the app says as it measures over budget, beside `one.client.memory` each time) | It measures that state within its budget there, or nothing of it arrives for a day |
@@ -95,7 +95,10 @@ defmodule Telemetry.Alerts do
     "create table seen (kind text not null, device text not null, place text, message text, first integer, last integer, new integer, primary key (kind, device)) without rowid",
     "delete from looked",
     # Each device's frames and long frames in each minute it drew some (`one.client.native.frames`).
-    "create table frames (device text not null, minute integer not null, name text, frames integer not null default 0, long integer not null default 0, primary key (device, minute)) without rowid"
+    "create table frames (device text not null, minute integer not null, name text, frames integer not null default 0, long integer not null default 0, primary key (device, minute)) without rowid",
+    # Each app's window's last opens on each device, not only the last: the `open` alert reads their median.
+    "drop table opens",
+    "create table opens (device text not null, view text not null, name text, at integer not null, took integer not null, steps text, primary key (device, view, at)) without rowid"
   ]
 
   @kinds %{
@@ -106,7 +109,7 @@ defmodule Telemetry.Alerts do
     "unanswered" => "An app doesn't answer for more than a minute",
     "deploy" => "An app's deploys take over 500 ms to show in its window, in 2 or more of the last 10 minutes",
     "backup" => "A backup isn't made within its schedule and a day, or the last one failed",
-    "open" => "An app's window took over 300 ms to show its page the last time it opened on a device",
+    "open" => "The median of an app's last 5 opens on a device took over 300 ms to show its page",
     "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can",
     "behind" => "A server or a desktop client has been on an older build than the latest for over an hour",
     "memory" => "A device's app held more memory than its budget the last time it measured it",
@@ -118,6 +121,10 @@ defmodule Telemetry.Alerts do
   # How long an app's window has to show its page, from being asked to open, in milliseconds: a cached app's should
   # feel instant.
   @open_budget 300
+  # How many of a device's last opens of an app the `open` alert reads, and how few it needs: one slow open, as one
+  # that lasted across a device's sleep was, fires nothing.
+  @opens_kept 5
+  @opens_least 3
   # What a device's frames in the last hour may have long, as a percentage, of at least this many: ten seconds of
   # motion at 60 Hz.
   @long_share 5
@@ -532,8 +539,7 @@ defmodule Telemetry.Alerts do
         db,
         """
         insert into opens (device, view, name, at, took, steps) values (?, ?, ?, ?, ?, ?)
-        on conflict (device, view) do update set name = excluded.name, at = excluded.at, took = excluded.took,
-          steps = excluded.steps where excluded.at >= opens.at
+        on conflict (device, view, at) do nothing
         """,
         [device, view, from, at, took, steps]
       )
@@ -543,6 +549,13 @@ defmodule Telemetry.Alerts do
     query(db, "delete from minutes where minute < ?", [now - 15 * @minute])
     query(db, "delete from deploys where minute < ?", [now - 15 * @minute])
     query(db, "delete from opens where at < ?", [now - @day])
+
+    query(
+      db,
+      "delete from opens where (select count(*) from opens o where o.device = opens.device and o.view = opens.view and o.at > opens.at) >= ?",
+      [@opens_kept]
+    )
+
     query(db, "delete from builds where at < ?", [now - @day])
     query(db, "delete from memory where at < ?", [now - @day])
     query(db, "delete from frames where minute < ?", [now - 60 * @minute])
@@ -658,11 +671,21 @@ defmodule Telemetry.Alerts do
       end
 
     opens =
-      for row <- query(db, "select * from opens where took > ?", [@open_budget]), into: %{} do
-        {{"open", "#{row["device"]}|#{row["view"]}"},
+      for {{device, view}, rows} <-
+            Enum.group_by(query(db, "select * from opens order by at desc", []), &{&1["device"], &1["view"]}),
+          rows = Enum.take(rows, @opens_kept),
+          length(rows) >= @opens_least,
+          median = rows |> Enum.map(& &1["took"]) |> Enum.sort() |> Enum.at(div(length(rows), 2)),
+          median > @open_budget,
+          into: %{} do
+        [last | _] = rows
+
+        {{"open", "#{device}|#{view}"},
          %{
-           title: "#{called.(row["view"])} is slow to open#{String.replace_prefix(row["name"] || "", "App", "")}",
-           text: "It took #{row["took"]} ms to show its page, over its #{@open_budget} ms budget: #{row["steps"]}."
+           title: "#{called.(view)} is slow to open#{String.replace_prefix(last["name"] || "", "App", "")}",
+           text:
+             "The median of its last #{length(rows)} opens is #{median} ms to show its page, over its " <>
+               "#{@open_budget} ms budget; the last took #{last["took"]} ms: #{last["steps"]}."
          }}
       end
 
