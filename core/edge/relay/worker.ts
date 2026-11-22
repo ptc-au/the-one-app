@@ -18,10 +18,13 @@
 // A server holds one more connection here (`/relay/outside`), down which the edge passes it a call that came in at
 // the address over the web, and tells every server what a piece there has to say (`relay.ts`).
 //
-// And it knows who's here: a server or a device is connected while it's connected here, through any run of its
-// client, and otherwise was last seen when its last connection ended, which the Durable Object keeps. A connection
-// that says nothing for longer than iroh's pings allow has ended, as a machine that sleeps or loses its network says
-// nothing. A server says what it is as that changes (`OneCore.Release`), through the edge: its `server_membership`,
+// And it knows who's here: a device is connected while it's connected here, through any run of its client, and a
+// server while it's connected and answers, and otherwise each was last seen when it last was, which the Durable Object
+// keeps. A connection that says nothing for longer than iroh's pings allow has ended, as a machine that sleeps or loses
+// its network says nothing. But a server's iroh runs beside its Elixir, and answers iroh's pings while its Elixir is
+// stuck (the Surface on 22 Nov: connected for 9 h, answering nothing), so the relay asks each server too, over its
+// calls' connection, as a WebSocket server sends heartbeats: one that hasn't answered within `SILENT` is closed, and
+// gone until it answers again. A server says what it is as that changes (`OneCore.Release`), through the edge: its `server_membership`,
 // whether it's one of the network's servers, and its `server_daemon_status`, whether its program is starting, running
 // or stopping. It's ready once it's active and running, and connected. Servers are told when one of them comes or goes
 // (`notifications/one/seen`), and the network's updater in the edge (`updater/updater.ts`, bound as UPDATER) is told
@@ -55,6 +58,12 @@ const PING = 9;
 const PONG = 10;
 /** How long an endpoint may say nothing before it's taken as gone: iroh pings its relay every 15 seconds. */
 const SILENT = 45_000;
+/**
+ * What the relay asks each server every `SILENT / 3`, over its calls' connection, which its Elixir answers (with
+ * nothing, as it does every notification, by the call it came with): a notification, so a server that has stepped
+ * aside, which answers no request, answers it too.
+ */
+const HEARTBEAT = JSON.stringify({ call: "heartbeat", message: JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/heartbeat" }) });
 /** What a server is told when one of the network's servers comes or goes: to ask who's on again. */
 const SEEN = JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/seen" });
 /**
@@ -84,6 +93,9 @@ interface Attachment {
   device?: string;
   server?: boolean;
   outside?: string;
+  /** When a server's calls' connection opened, and when it last answered the relay's heartbeat (`HEARTBEAT`). */
+  since?: number;
+  answered?: number;
   call?: string;
   to?: string;
 }
@@ -196,6 +208,8 @@ export class Relay extends DurableObject<RelayEnv> {
   constructor(ctx: DurableObjectState, env: RelayEnv) {
     super(ctx, env);
     console.log(JSON.stringify({ relay: "woke", connections: ctx.getWebSockets().length }));
+    // Its heartbeats go on as it wakes, as an alarm set by code before them never was.
+    ctx.blockConcurrencyWhile(async () => void ((await ctx.storage.getAlarm()) ?? (await ctx.storage.setAlarm(Date.now()))));
   }
 
   async fetch(request: Request) {
@@ -217,10 +231,7 @@ export class Relay extends DurableObject<RelayEnv> {
     const [theirs, ours] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(ours, [`endpoint ${key}`, `on ${device}`]);
     ours.serializeAttachment({ key, device, server });
-    if (server) {
-      this.notify(SEEN);
-      await this.updated({ seen: key! });
-    }
+    await this.moved(device!, server);
     return new Response(null, { status: 101, webSocket: theirs });
   }
 
@@ -264,7 +275,7 @@ export class Relay extends DurableObject<RelayEnv> {
     const heard = (key: string) => Math.max(left.get(`seen ${key}`) ?? 0, said.get(`presence ${key}`)?.at ?? 0);
     const gone = new Set(keys.filter((key) => !this.on(key) && Date.now() - heard(key) > REAP));
     for (let at = 0; at < gone.size; at += 32) {
-      await this.ctx.storage.delete([...gone].slice(at, at + 32).flatMap((key) => [`version ${key}`, `protocol ${key}`, `presence ${key}`, `seen ${key}`]));
+      await this.ctx.storage.delete([...gone].slice(at, at + 32).flatMap((key) => [`version ${key}`, `protocol ${key}`, `presence ${key}`, `seen ${key}`, `here ${key}`]));
     }
     return keys.filter((key) => !gone.has(key));
   }
@@ -305,9 +316,55 @@ export class Relay extends DurableObject<RelayEnv> {
     return Object.fromEntries(keys.map((key) => [key, presence(key)]));
   }
 
-  /** Whether `device` has a connection here, other than `leaving`. */
+  /**
+   * Whether `device` is here, leaving out the connection `leaving`: it has a connection here, and a server's has
+   * answered the relay's heartbeat within `SILENT` too.
+   */
   on(device: string, leaving?: WebSocket) {
-    return this.ctx.getWebSockets(`on ${device}`).some((ws) => ws !== leaving);
+    const endpoints = this.ctx.getWebSockets(`on ${device}`).filter((ws) => ws !== leaving);
+    if (!endpoints.some((ws) => (ws.deserializeAttachment() as Attachment | null)?.server)) return endpoints.length > 0;
+    return this.ctx.getWebSockets(`outside ${device}`).some((ws) => {
+      const { answered }: Attachment = ws.deserializeAttachment() ?? {};
+      return ws !== leaving && ws.readyState === WebSocket.OPEN && answered !== undefined && Date.now() - answered < SILENT;
+    });
+  }
+
+  /**
+   * Keeps whether `device` is here as something changed (`on`), leaving out `leaving`. Once it's gone it was last
+   * seen `at`, and a server's coming or going is told to every server and the network's updater.
+   */
+  async moved(device: string, server: boolean, at = Date.now(), leaving?: WebSocket) {
+    const here = this.on(device, leaving);
+    // Not known before this was kept: as it was before, a connection that comes is coming, and one that goes is going.
+    const was = (await this.ctx.storage.get<boolean>(`here ${device}`)) ?? !here;
+    if (here === was) return;
+    await this.ctx.storage.put({ [`here ${device}`]: here, ...(!here && { [`seen ${device}`]: at }) });
+    if (!server) return;
+    this.notify(SEEN);
+    await this.updated({ seen: device });
+  }
+
+  /**
+   * Every `SILENT / 3` while a server is connected for calls: each server's connection that hasn't answered the
+   * heartbeat within `SILENT` is closed, and its server gone since it last did; the rest are asked again.
+   */
+  async alarm() {
+    let open = false;
+    for (const ws of this.ctx.getWebSockets()) {
+      const attachment: Attachment = ws.deserializeAttachment() ?? {};
+      const { outside, since = Date.now(), answered } = attachment;
+      if (!outside || ws.readyState !== WebSocket.OPEN) continue;
+      // One opened by code before heartbeats is asked as if it had just opened.
+      if (attachment.since === undefined) ws.serializeAttachment({ ...attachment, since });
+      if (Date.now() - (answered ?? since) < SILENT) {
+        ws.send(HEARTBEAT);
+        open = true;
+        continue;
+      }
+      ws.close(1001, "It didn't answer");
+      await this.moved(outside, true, answered ?? since, ws);
+    }
+    if (open) await this.ctx.storage.setAlarm(Date.now() + SILENT / 3);
   }
 
   /** A server connects to hear outsiders' calls, which the Worker admitted by its key. */
@@ -315,10 +372,13 @@ export class Relay extends DurableObject<RelayEnv> {
     for (const before of this.ctx.getWebSockets(`outside ${key}`)) before.close(1000, "It connected again");
     const [theirs, ours] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(ours, [`outside ${key}`]);
-    ours.serializeAttachment({ outside: key });
+    ours.serializeAttachment({ outside: key, since: Date.now() });
     // It's told where the network's update is as it connects, as what it missed while it was away, and says again
     // what it is in turn (`OneCore.Release.instructed/2`).
-    const told = this.updated({ status: true }).then((status) => {
+    // And it's asked whether it answers at once, as it's here only once it has.
+    const told = this.updated({ status: true }).then(async (status) => {
+      if (ours.readyState === WebSocket.OPEN) ours.send(HEARTBEAT);
+      if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + SILENT / 3);
       const said = { jsonrpc: "2.0", method: "notifications/one/update", params: status };
       if (status && ours.readyState === WebSocket.OPEN) ours.send(JSON.stringify({ message: JSON.stringify(said) }));
     });
@@ -356,6 +416,10 @@ export class Relay extends DurableObject<RelayEnv> {
     }
     if (attachment.outside) {
       const { call, answer } = JSON.parse(message as string);
+      if (call === "heartbeat") {
+        ws.serializeAttachment({ ...attachment, answered: Date.now() });
+        return this.moved(attachment.outside, true);
+      }
       open(this.ctx.getWebSockets(`call ${call}`))?.send(answer);
       return;
     }
@@ -374,14 +438,8 @@ export class Relay extends DurableObject<RelayEnv> {
 
   async webSocketClose(ws: WebSocket) {
     const { outside, device, server }: Attachment = ws.deserializeAttachment() ?? {};
-    // The last connection a device or server had here ends, so it was last seen now.
-    if (device && !this.on(device, ws)) {
-      await this.ctx.storage.put(`seen ${device}`, Date.now());
-      if (server) {
-        this.notify(SEEN);
-        await this.updated({ seen: device });
-      }
-    }
+    // A device's or server's connection ends, so it may have gone.
+    if (device ?? outside) await this.moved((device ?? outside)!, !!(server || outside), Date.now(), ws);
     // A server that left answers nothing, so the calls waiting on it are told.
     if (!outside || this.ctx.getWebSockets(`outside ${outside}`).some((other) => other !== ws)) return;
     for (const waiting of this.ctx.getWebSockets()) {
