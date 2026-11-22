@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Builds a program of the workspace once for everything it's built from, on this machine, and says where it's kept:
+#
+#     tooling/cached-build <crate's folder> [cargo build's options]
+#     tooling/cached-build clients/app/renderer --example headless --features fake --profile headless
+#
+# A build is kept by what it's built from (`tooling/input-hash`, with the same options), outside any worktree, so any
+# worktree whose program would be built from the same is given the one built before, and only one builds it at a time.
+# A build reads files outside its crates' folders too (one's `include_bytes!` of the UI library's font, a build
+# script's `rerun-if-changed`), which Cargo's dep-info lists: a kept build is given only where each of those is as it
+# was. One it builds is built here, in this worktree's `target/`, as `cargo build` builds it, and then kept. A program
+# built from a file outside the repo (`core/client` names its build from git's HEAD) isn't kept: it's this worktree's.
+# The least recently used go once they're over 20 GB.
+set -euo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+folder=$(realpath --relative-to="$root" "$1")
+shift
+cd "$root"
+target=$(rustc -vV | sed -n 's/^host: //p')
+options=("$@")
+for at in "${!options[@]}"; do [[ ${options[at - 1]-} != --target ]] || target=${options[at]}; done
+store=${XDG_CACHE_HOME:-$HOME/.cache}/the-one-app/builds
+mkdir -p "$store"
+key=$(tooling/input-hash "$folder" "$target" "$@")
+kept=$store/$key
+
+# Whether it's kept, and each file it was built from outside its crates is as it was.
+kept() { [[ -e $kept/inputs ]] && sha256sum --check --status "$kept/inputs" && touch "$kept"; }
+exec {lock}>"$kept.lock"
+if ! kept; then
+  flock "$lock"
+  if ! kept; then
+    # One cargo-xwin build on a machine at a time, as `tooling/nifs` says.
+    case $target in
+      *-windows-msvc) cargo=(flock -o "${XDG_CACHE_HOME:-$HOME/.cache}/cargo-xwin.lock" cargo xwin build) ;;
+      *) cargo=(cargo build) ;;
+    esac
+    # Its program, as Cargo says it built it: the last of its own crate's (an example comes after its library).
+    program=$(nice -n 10 "${cargo[@]}" -p "$(cargo metadata --locked -q --no-deps --format-version 1 |
+      jq -r --arg manifest "$root/$folder/Cargo.toml" '.packages[] | select(.manifest_path == $manifest) | .name')" \
+      -j "${CARGO_BUILD_JOBS:-4}" --message-format json-render-diagnostics "$@" |
+      jq -r --arg manifest "$root/$folder/Cargo.toml" 'select(.reason == "compiler-artifact" and .manifest_path == $manifest and .target.kind != ["custom-build"])
+        | .executable // (.filenames[] | select(test("\\.(rlib|rmeta)$") | not))' | tail -1)
+    # Cargo's dep-info, beside its program: `<program>: <file> <file>…`, a space in a name escaped, where a folder is
+    # every file in it (a build script's `rerun-if-changed`). What a build script made (its `OUT_DIR`) is made from the
+    # rest.
+    name=$(basename "$program") && depinfo=$(dirname "$program")/${name%.*}.d
+    built=$(realpath -m --relative-to="$root" "${CARGO_TARGET_DIR:-$root/target}")
+    inputs=$(sed -e 's/^[^:]*: //' -e 's/\\ /\x00/g' "$depinfo" | tr ' ' '\n' | tr '\0' ' ' | grep -v '^$' |
+      xargs -d '\n' realpath -ms --relative-to="$root" | grep -v "^$built/" | xargs -d '\n' -I{} find {} -type f | LC_ALL=C sort -u)
+    if grep -q '^\.\./' <<<"$inputs"; then
+      echo "$program"
+      exit
+    fi
+    trap 'rm -rf "$kept.$$"' EXIT
+    rm -rf "$kept" && mkdir "$kept.$$"
+    cp --reflink=auto "$program" "$kept.$$/"
+    xargs -d '\n' sha256sum <<<"$inputs" >"$kept.$$/inputs"
+    mv "$kept.$$" "$kept"
+    # Least recently used first, while over 20 GB.
+    ls -dt "$store"/*/ | grep -v '\.[0-9]*/$' | xargs du -s --block-size=1M | awk '{ total += $1 } total > 20480 { print $2 }' | while read -r old; do rm -rf "$old" "${old%/}.lock"; done
+  fi
+fi
+echo "$kept/$(ls "$kept" | grep -vx inputs)"

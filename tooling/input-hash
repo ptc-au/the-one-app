@@ -7,22 +7,52 @@
 # checksum. It's the same on every machine. A NIF is named for it (`OneCore.Nif`), and `tooling/nifs` keeps a build
 # by it.
 #
-#     tooling/input-hash <crate's folder> <target triple>
+#     tooling/input-hash <crate's folder> <target triple> [cargo build's options]
+#
+# Given Cargo's options for a build (`--profile <name>` or `--release`, `--features`, `--no-default-features`,
+# `--example <name>`), it's that build's: the profile they name and the ones it inherits, the features, an example's
+# dev-dependencies, and the options themselves (`tooling/cached-build`).
 set -euo pipefail
 
+manifest=$(realpath "$1")/Cargo.toml
+target=$2
+shift 2
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
-editions=$(cargo metadata --locked -q --no-deps --format-version 1 | jq -r '.packages[] | "\(.manifest_path | rtrimstr("/Cargo.toml")) \(.edition)"')
+metadata=$(cargo metadata --locked -q --no-deps --format-version 1)
+editions=$(jq -r '.packages[] | "\(.manifest_path | rtrimstr("/Cargo.toml")) \(.edition)"' <<<"$metadata")
+package=$(jq -r --arg manifest "$manifest" '.packages[] | select(.manifest_path == $manifest) | .name' <<<"$metadata")
+profile=release edges=normal,build features=()
+options=("$@")
+for at in "${!options[@]}"; do
+  case ${options[at]} in
+    --release) profile=release ;;
+    --profile) profile=${options[at + 1]} ;;
+    --features | --no-default-features | --all-features) features+=("${options[at]}") ;;
+    --example) edges+=,dev ;;
+  esac
+  [[ ${options[at - 1]-} != --features ]] || features+=("${options[at]}")
+done
+# A profile's settings are its table's and those of the profile it inherits.
+profiles=$profile
+while inherits=$(awk -v table="[profile.${profiles##* }]" '/^\[/ { on = $0 == table } on && /^inherits *=/' Cargo.toml | cut -d'"' -f2) && [[ -n $inherits ]]; do
+  profiles+=" $inherits"
+done
 {
-  echo "$2" && rustc -V
+  echo "$target" && rustc -V
+  ((${#options[@]} == 0)) || echo "${options[*]}"
   # Only these tables; the rest of either file (other profiles, other targets, comments) builds nothing here.
-  awk -v target="[target.$2]" '/^\[/ { on = /^\[profile\.release[].]/ || $0 == target || $0 == "[env]" || $0 == "[build]" } on && !/^[[:space:]]*(#|$)/' Cargo.toml .cargo/config.toml
-  cargo tree --locked -q -p "$(basename "$1")" --target "$2" -e normal,build --prefix none -f '{p} {f}' | sed 's/ (\*)$//' | LC_ALL=C sort -u |
+  awk -v profiles="$profiles" -v target="[target.$target]" '
+    /^\[/ { on = $0 == target || $0 == "[env]" || $0 == "[build]"; n = split(profiles, p, " "); for (i = 1; i <= n; i++) on = on || index($0, "[profile." p[i] "]") == 1 || index($0, "[profile." p[i] ".") == 1 }
+    on && !/^[[:space:]]*(#|$)/' Cargo.toml .cargo/config.toml
+  cargo tree --locked -q -p "$package" --target "$target" "${features[@]}" -e "$edges" --prefix none -f '{p} {f}' | sed 's/ (\*)$//' | LC_ALL=C sort -u |
     while read -r package; do
       echo "${package/"$root/"/}"
       [[ $package == *"($root/"* ]] || continue
       dir=${package#*"($root/"} && dir=${dir%%)*}
       grep -F "$root/$dir " <<<"$editions" | cut -d' ' -f2
-      git ls-files -co --exclude-standard -z -- "$dir" | xargs -0r sha256sum
+      # A folder in it with a package.json of its own is JS (the renderer's checks), which Cargo builds nothing from.
+      git ls-files -co --exclude-standard -z -- "$dir" $(git ls-files -co --exclude-standard -- "$dir/*/package.json" |
+        sed 's|/package.json$||; s|^|:(exclude)|') | xargs -0r sha256sum
     done
 } | sha256sum | cut -d' ' -f1
