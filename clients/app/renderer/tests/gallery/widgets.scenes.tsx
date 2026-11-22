@@ -89,6 +89,28 @@ export default {
       { part: "row", parts: [{ part: "switch", label: "Keep Awake", on: true, tool: "set", inputs: { mac: "mac-mini" } }, { part: "button", label: "Sleep Now", tool: "sleep", inputs: { mac: "mac-mini" } }] },
     ],
   }),
+  "Widgets/A list of rows to tick, 4x4": {
+    render: cell("4x4", "Dev Builds", {
+      part: "column",
+      title: false,
+      gap: 4,
+      parts: [
+        { part: "row", parts: [{ part: "text", text: "Dev Builds", weight: "bold", grow: true }, { part: "text", text: "2 of 5", size: "sm", tone: "muted" }] },
+        { part: "item", title: "iPhone", subtitle: "Online", on: true, tool: "set_dev_build", inputs: { device: "a" } },
+        { part: "item", title: "MacBook Air", subtitle: "Online", on: true, tool: "set_dev_build", inputs: { device: "b" } },
+        { part: "item", title: "Surface", subtitle: "Seen 3 days ago", on: false, tool: "set_dev_build", inputs: { device: "c" } },
+        { part: "item", title: "van TV", subtitle: "Seen 3 days ago", on: false, tool: "set_dev_build", inputs: { device: "d" } },
+        { part: "item", title: "Linux", subtitle: "Online", on: false, tool: "set_dev_build", inputs: { device: "e" } },
+      ],
+    }),
+    // A row says whether it's ticked, as a checkbox does, and is a button of its own.
+    checks: {
+      "Its rows are checkboxes, ticked or not": [
+        { expect: { states: { of: { role: "checkbox", name: "iPhone" }, is: { checked: true } } } },
+        { expect: { states: { of: { role: "checkbox", name: "Surface" }, is: { checked: false } } } },
+      ],
+    },
+  },
   "Widgets/Everything else, 4x4": cell("4x4", "Devices", {
     part: "column",
     gap: 8,

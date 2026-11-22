@@ -514,7 +514,8 @@ defmodule OneCore.App do
     `progress` a bar, each filled to `value`, from 0 to 1, with a `label`. `spark` is a small line of `values`
     up to `max`, and `chart` is bars of `values` over their `labels`, or with `kind: "line"` a line.
   - `item` is a row of a list: its `title`, a grey `subtitle`, and what it ends with, `trailing` text or a time
-    `at`. `divider` is a line between parts.
+    `at`. With `on` it has a circle at its start, checked or not, and with a `tool` it's pressed to switch: it calls
+    `tool` with `inputs` and the new `on`, and the widget is asked for again after. `divider` is a line between parts.
   - `icon` is drawn from an SVG `path` in a box of 24, with a `badge`, another path, at its corner: a brand's
     real logo, never a generic glyph. `image` shows a picture by its `url`, a `data:` address, `width` by
     `height`, `round` for a face.

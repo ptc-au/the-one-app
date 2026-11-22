@@ -88,6 +88,10 @@ const look = styles({
   // A row of a list, a hairline above it but the first.
   item: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2], minWidth: 0, paddingBlock: tokens.grid[1], borderTopWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   first: { borderTopWidth: 0 },
+  // A row that's pressed.
+  pressable: { cursor: "pointer", boxShadow: { focused: tokens.shadow.focus } },
+  // A checked circle is the label's colour.
+  ticked: { color: tokens.colour.label },
   words: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
   end: { flexShrink: 0, color: tokens.colour.secondaryLabel },
   image: { flexShrink: 0, borderRadius: tokens.radius.small, backgroundColor: tokens.colour.quinaryLabel },
@@ -400,6 +404,56 @@ function Flip(props: { part: Layout }) {
   )
 }
 
+/// A circle that's checked or not, as iOS's Reminders and Mail draw a row's selection: a ring, or a disc with a tick
+/// cut out of it, wound the other way.
+function Check(props: { on: boolean }) {
+  return (
+    <View aria-hidden="true" style={[look.icon, look.square(20)]}>
+      <Svg viewBox="0 0 20 20" style={[look.over, props.on ? look.ticked : look.track]}>
+        <Path d={props.on ? `${circle(10, 10, 10)}${band([[14.5, 7], [8.6, 13.6], [5.5, 10.5]], 1.75)}` : `${circle(10, 10, 10)}${circle(10, 10, 8.75, true)}`} />
+      </Svg>
+    </View>
+  )
+}
+
+/// A row of a list. One that says `on` has a circle at its start, checked or not, and with a `tool` it's a button
+/// pressed to switch: it calls the tool with its `inputs` and the new `on`, and shows that it's under way until the
+/// widget is drawn again.
+function Item(props: { part: Layout; first?: boolean }) {
+  const [busy, act, took] = acts(props)
+  const on = () => (typeof props.part.on === "boolean" ? props.part.on : undefined)
+  const words = (
+    <>
+      <Show when={on() !== undefined}>
+        <Check on={!!on()} />
+      </Show>
+      <View style={look.words}>
+        <Text style={look.line}>{props.part.title || ""}</Text>
+        <Show when={props.part.subtitle}>
+          <Text style={look.small}>{props.part.subtitle}</Text>
+        </Show>
+      </View>
+      <Show when={props.part.at || props.part.trailing}>
+        <Text style={look.end}>{props.part.at ? time(props.part.at) : props.part.trailing}</Text>
+      </Show>
+    </>
+  )
+  return (
+    <Show when={props.part.tool} fallback={<View style={[look.item, props.first && look.first, ...room(props.part)]}>{words}</View>}>
+      <Pressable
+        role="checkbox"
+        aria-checked={on() === undefined ? undefined : on()}
+        aria-label={props.part.title}
+        aria-busy={busy() ? "true" : undefined}
+        onPress={(event: Located) => (took(event), !busy() && act({ ...(props.part.inputs ?? {}), on: !on() }))}
+        style={[look.item, look.pressable, props.first && look.first, busy() && look.dim, ...room(props.part)]}
+      >
+        {words}
+      </Pressable>
+    </Show>
+  )
+}
+
 /// One part of a layout. A part the UI library doesn't have draws nothing. A widget's tool answers its whole layout
 /// anew each time it's asked, so parts are kept by where they are, not by which object answered them: each stays, and
 /// only what changed in it is drawn again. `row` says it's in a row, where words keep to one line; `first`, that it's
@@ -464,17 +518,7 @@ function Part(props: { part: Layout; root?: boolean; row?: boolean; first?: bool
         <Chart part={part()} />
       </Match>
       <Match when={part().part === "item"}>
-        <View style={[look.item, props.first && look.first, ...room(part())]}>
-          <View style={look.words}>
-            <Text style={look.line}>{part().title || ""}</Text>
-            <Show when={part().subtitle}>
-              <Text style={look.small}>{part().subtitle}</Text>
-            </Show>
-          </View>
-          <Show when={part().at || part().trailing}>
-            <Text style={look.end}>{part().at ? time(part().at) : part().trailing}</Text>
-          </Show>
-        </View>
+        <Item part={part()} first={props.first} />
       </Match>
       <Match when={part().part === "image"}>
         <Show
