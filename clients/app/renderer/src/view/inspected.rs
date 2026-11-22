@@ -388,6 +388,17 @@ impl Screen {
         }
     }
 
+    /// What a press at each point of a grid over the window reaches, as a person's there would (`under`, `pressed_in`), as
+    /// the last frame placed it: its rows, `step` points apart from half a step in, and what each node reached is called,
+    /// which a check compares with that frame's pixels (a `snap`'s `reaches`, core/ui's `hits`).
+    pub fn reaches(&self, step: f32) -> Value {
+        let (size, _) = self.painted;
+        let at = |column: usize, row: usize| crate::geometry::point((column as f32 + 0.5) * step, (row as f32 + 0.5) * step);
+        let rows: Vec<Vec<Option<Id>>> = (0..(size.height / step) as usize).map(|row| (0..(size.width / step) as usize).map(|column| self.pressed_in(&self.under(at(column, row)))).collect()).collect();
+        let names: serde_json::Map<String, Value> = rows.iter().flatten().flatten().filter_map(|id| Some((id.to_string(), json!(self.tree.nodes.get(id)?.str("aria-label"))))).collect();
+        json!({"step": step, "reached": rows, "names": names})
+    }
+
     /// What a person sees of `id` as the last frame drew it: how opaque it's drawn, with what it's in, and how much of
     /// its box is in the window, not clipped away. → nothing where it wasn't drawn.
     fn sight(&self, id: Id) -> Option<(f32, f32)> {

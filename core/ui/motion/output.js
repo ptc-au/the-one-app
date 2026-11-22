@@ -214,6 +214,36 @@ export function legibility(png, points, box) {
   return most
 }
 
+/// Where what a press reaches isn't what's drawn there, in a picture (`png`) of a window `points` wide and what the
+/// inspector says a press at each point of a grid over it reaches (`reaches`): wherever a pressable is drawn solid (the
+/// same colour a few pixels each way), a press there reaches it, and wherever a press reaches it, it's drawn. A
+/// pressable's colour is the one most of the points that reach it show, so each pressable is drawn in a colour of its
+/// own, square, and nothing in another colour is drawn over it that a press passes through. → why, or nothing.
+export function wrongHits(png, points, { step, reached, names }) {
+  const { data, width, height } = PNG.sync.read(Buffer.from(png, "base64"))
+  const scale = width / points
+  const near = Math.ceil(2 * scale)
+  const colour = (x, y) => [0, 1, 2].map((channel) => data[(y * width + x) * 4 + channel])
+  const same = (a, b) => a.every((channel, at) => Math.abs(channel - b[at]) <= 3)
+  const around = [-near, 0, near].flatMap((dx) => [-near, 0, near].map((dy) => [dx, dy]))
+  const solid = (x, y) => around.every(([dx, dy]) => x + dx >= 0 && y + dy >= 0 && x + dx < width && y + dy < height && same(colour(x + dx, y + dy), colour(x, y))) && colour(x, y)
+  const probes = reached.flatMap((row, y) => row.map((node, x) => ({ at: [(x + 0.5) * step, (y + 0.5) * step], node })))
+  for (const probe of probes) probe.colour = solid(Math.floor(probe.at[0] * scale), Math.floor(probe.at[1] * scale))
+  const counts = new Map()
+  for (const { node, colour } of probes.filter((probe) => probe.node !== null && probe.colour)) {
+    const of = counts.get(node) ?? new Map()
+    of.set(colour.join(), (of.get(colour.join()) ?? 0) + 1)
+    counts.set(node, of)
+  }
+  const colours = new Map([...counts].map(([node, of]) => [node, [...of].sort((a, b) => b[1] - a[1])[0][0].split(",").map(Number)]))
+  const name = (node) => (node === null ? "nothing" : names[node] ? `"${names[node]}"` : `node ${node}`)
+  for (const { at, node, colour } of probes.filter((probe) => probe.colour)) {
+    if (node !== null && !same(colour, colours.get(node))) return `a press at ${at} reaches ${name(node)}, drawn rgb(${colours.get(node)}), where rgb(${colour}) is drawn`
+    const drawn = [...colours].filter(([, of]) => same(of, colour)).map(([node]) => node)
+    if (drawn.length === 1 && drawn[0] !== node) return `${name(drawn[0])} is drawn at ${at}, where a press reaches ${name(node)}`
+  }
+}
+
 /// How sharp a text's glyphs are drawn in `box` of a picture (`png`, of a window `points` wide): the steepest tenth of the
 /// steps in light between pixels beside each other across its edges, against all the light there is between its ink and
 /// what's behind it. A glyph drawn where it is has its edges a pixel or two across, about 0.9; a picture of it grown or

@@ -124,6 +124,7 @@ impl Windows {
         let mut scene = crate::render::scene::Scene::default();
         let (text, atlas) = (&mut self.text, &self.atlas);
         let snaps = crate::inspect::snaps(&request);
+        let reaches = request.f32("reaches").map(|step| step.max(1.0));
         let mut afresh = true;
         let mut draw = |screen: &mut Screen| -> anyhow::Result<serde_json::Value> {
             if std::mem::take(&mut afresh) {
@@ -139,6 +140,10 @@ impl Windows {
                 for (name, value) in crate::inspect::png(width, height, rgba)?.as_object().into_iter().flatten() {
                     frame[name] = value.clone();
                 }
+            }
+            // What a press at each point reaches in the frame it pictures, `reaches` points apart (`Screen::reaches`).
+            if let Some(step) = reaches {
+                frame["reaches"] = screen.reaches(step);
             }
             Ok(frame)
         };

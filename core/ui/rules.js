@@ -299,6 +299,7 @@ export function corners(nodes, file, [width, height]) {
 /// Scenes a rule doesn't hold for, by `<folder> · <scene>` or a whole folder, each with why.
 const EXCEPT = {
   "gallery · Styling/Painting order": { apart: "its boxes overlap to show which of them paints over which" },
+  "gallery · Styling/Hit areas": { apart: "its squares overlap to show a press reaches the one drawn on top", marks: "each square is a plain fill, told apart by its colour alone, which a press is judged by" },
   // Its scenes draw a component alone in the window, not in a screen's column, which an app's are.
   gallery: { centred: "a component drawn alone sits where the gallery puts it, at the window's start" },
 }

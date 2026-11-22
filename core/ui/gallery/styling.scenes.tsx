@@ -36,6 +36,77 @@ const look = styles({
   words: { width: "100%", height: "100%", font: tokens.type.title, color: tokens.colour.onAccent, backgroundColor: tokens.colour.blue },
 })
 
+/** Pressables for `hits`, each square and in a colour of its own: a press reaches what's drawn where it lands. */
+const hit = styles({
+  page: { gap: tokens.grid[4] },
+  row: { flexDirection: "row", gap: tokens.grid[6], minHeight: 72, alignItems: "center" },
+  square: (colour: `#${string}`, size: number) => ({ width: size, height: size, flexShrink: 0, backgroundColor: colour }),
+  moved: { translateX: 20, translateY: 10 },
+  grown: { scale: 1.4 },
+  around: { scale: 1.3, translateX: 16 },
+  shrunk: { scale: 0.7, translateY: -6 },
+  clip: { width: 64, height: 48, overflow: "hidden", backgroundColor: tokens.colour.quinaryLabel },
+  half: { marginStart: 40 },
+  stack: { position: "relative", width: 120, height: 72 },
+  under: { position: "absolute", top: 0, start: 0 },
+  over: { position: "relative", top: 12, start: 24, zIndex: 1 },
+  top: { position: "absolute", top: 24, start: 56, zIndex: 2 },
+  scroller: { width: 120, height: 120, backgroundColor: tokens.colour.quinaryLabel },
+  flies: (translateX: number, translateY: number, scale: number) => ({ translateX, translateY, scale, transitionProperty: ["translateX", "translateY", "scale"], transition: tokens.motion.smooth }),
+  carrier: (translateX: number, scale: number) => ({ padding: 8, backgroundColor: tokens.colour.quinaryLabel, translateX, scale, transitionProperty: ["translateX", "scale"], transition: tokens.motion.smooth }),
+  fades: (opacity: number) => ({ opacity, transitionProperty: ["opacity"], transition: tokens.motion.smooth }),
+  ready: { willChange: ["translateX", "scale"] },
+})
+
+/** A pressable that does nothing but take a press, named, square and `colour`. */
+const Square = (props: { name: string; colour: `#${string}`; style?: Styles; size?: number }) => (
+  <Pressable role="button" aria-label={props.name} onPress={() => undefined} style={[hit.square(props.colour, props.size ?? 48), props.style ?? {}]} />
+)
+
+const HitAreas = () => {
+  const [away, go] = createSignal(false)
+  return (
+    <View style={hit.page}>
+      <View style={hit.row}>
+        <Square name="Plain" colour="#e5484d" />
+        <Square name="Moved" colour="#30a46c" style={hit.moved} />
+        <Square name="Grown" colour="#0091ff" style={hit.grown} />
+        <View style={hit.around}>
+          <Square name="In a grown box" colour="#f76b15" style={hit.shrunk} />
+        </View>
+      </View>
+      <View style={hit.row}>
+        <View style={hit.clip}>
+          <Square name="Clipped" colour="#8e4ec6" style={hit.half} />
+        </View>
+        <View style={hit.stack}>
+          <Square name="Under" colour="#ffc53d" style={hit.under} />
+          <Square name="Over" colour="#12a594" style={hit.over} />
+          <Square name="Top" colour="#d6409f" style={hit.top} />
+        </View>
+      </View>
+      <View style={hit.row}>
+        <ScrollView aria-label="Rows" style={hit.scroller}>
+          <For each={["#3e63dd", "#e54666", "#46a758", "#ad7f58", "#7c66dc"] as const}>{(colour, at) => <Square name={`Row ${at() + 1}`} colour={colour} size={56} />}</For>
+        </ScrollView>
+        <Square name="Ready" colour="#bdee63" style={hit.ready} />
+        <View style={hit.fades(away() ? 0.4 : 1)}>
+          <Square name="Fades" colour="#a18072" size={40} />
+        </View>
+      </View>
+      <View style={hit.row}>
+        <Pressable role="button" aria-label="Go" onPress={() => go(!away())} style={hit.square("#5b5bd6", 40)} />
+        <Square name="Flies" colour="#00a2c7" style={away() ? hit.flies(140, 12, 1.5) : hit.flies(0, 0, 1)} />
+      </View>
+      <View style={hit.row}>
+        <View style={away() ? hit.carrier(120, 0.8) : hit.carrier(0, 1)}>
+          <Square name="Carried" colour="#e93d82" />
+        </View>
+      </View>
+    </View>
+  )
+}
+
 /// A square of one colour, as a photo reaching its box's every corner is.
 const square = (fill: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${fill}"/></svg>`)}`
 
@@ -167,6 +238,27 @@ export default {
     checks: {
       "Nothing in a rounded box shows past its corners": cases.map((name) => ({ expect: { rounded: { of: name, radius: 18 } } })),
       "Nor as its card slides": [{ role: "button", name: "Slide" }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }],
+    },
+  },
+  "Styling/Hit areas": {
+    render: () => <HitAreas />,
+    // A press reaches what's drawn where it lands, everywhere in the window: what's moved, grown, in what's grown,
+    // clipped, stacked, scrolled, about to move, flying, carried by what flies and fading, as each moves and at rest.
+    checks: {
+      "A press reaches what's drawn there": [{ expect: { hits: true } }],
+      "And once its rows have scrolled": [{ trace: "traces/wheel-down.json" }, { expect: { hits: true } }],
+      "And as what's pressed flies and comes back": [
+        { role: "button", name: "Go" },
+        { wait: 60 },
+        { expect: { hits: true } },
+        { wait: 150 },
+        { expect: { hits: true } },
+        { wait: 1000 },
+        { expect: { hits: true } },
+        { role: "button", name: "Go" },
+        { wait: 100 },
+        { expect: { hits: true } },
+      ],
     },
   },
 } satisfies Scenes

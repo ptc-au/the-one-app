@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
 import { pressed, selector, single } from "./gesture.js"
-import { rect, strayInk } from "./output.js"
+import { rect, strayInk, wrongHits } from "./output.js"
 
 /// The roles a layer over the page has, which a check's end finds drawn whole in the window wherever it's open.
 const LAYERS = ["menu", "listbox", "dialog", "alertdialog"]
@@ -73,7 +73,7 @@ export function requests(steps, folder, answers = {}) {
     else if (step.trace) out.push({ request: { op: "trace", events: JSON.parse(readFileSync(join(folder, step.trace), "utf8")) } })
     else if (!step.expect) out.push({ request: pressed(step) })
     else {
-      const { shown, gone, focused, text, states, drawn, blur, keyboard, margins, tall, whole, unbroken, monospace, unclipped, apart, bleeds, aligned, centred, widest, contrast, inked, located, textMenu, handles, magnifier, dimmed, js, asked, rounded, even } = step.expect
+      const { shown, gone, focused, text, states, drawn, blur, keyboard, margins, tall, whole, unbroken, monospace, unclipped, apart, bleeds, aligned, centred, widest, contrast, inked, located, textMenu, handles, magnifier, dimmed, js, asked, rounded, even, hits } = step.expect
       // Whether `settle` says it's settled, waiting a moment, as a check after it reads the page: never while an answer
       // it waits on is on its way (Playwright's network idle).
       if (step.expect.settled !== undefined) out.push({ request: { op: "settle", deadline: 300 }, judge: (answer) => answer?.result?.settled !== step.expect.settled && (step.expect.settled ? `it hadn't settled: ${JSON.stringify(answer?.result?.pending)}` : "it said it had settled, with what it waits for on its way") })
@@ -374,6 +374,13 @@ export function requests(steps, folder, answers = {}) {
             return why && `${named(tap)}: ${why}`
           },
         })
+      }
+      // What a press reaches is what's drawn there, wherever each pressable is drawn, however it's moved, grown,
+      // scrolled, clipped or stacked (`wrongHits`).
+      if (hits) {
+        let points
+        out.push({ request: { op: "window" }, judge: (answer) => void (points = answer?.result?.width) })
+        out.push({ request: { op: "snap", reaches: 3 }, judge: (answer) => (answer?.result?.reaches ? wrongHits(answer.result.png, points, answer.result.reaches) : "it didn't say what a press reaches") })
       }
       // What's over the page dims it: the window's corner, which no layer over it covers, is darker than it was.
       if (dimmed)
