@@ -7,7 +7,7 @@
 # app's window is built on.
 #
 # It builds what isn't built, then starts the network's server in the folder, which is where everything the network
-# keeps goes: its bucket, each server's home, a client's home and the logs. A new network has every app of this
+# keeps goes but its bucket: each server's home, its edge's, a client's home and the logs. A new network has every app of this
 # repo deployed for it, and installs the ones a network starts with (`OneCore.Apps.Lifecycle.make_first_owner/1`); after that,
 # deploy an app you change into it. Starting again in the same folder carries on with what's there, on the same
 # ports. Its PID is in the folder's `pid`, and `kill $(cat <folder>/pid)` (or Ctrl-C) stops all of it. Each server's
@@ -19,8 +19,8 @@
 # Another device signs in at its address by the code it shows, which `one sign-in approve` approves as whoever ONE_AS
 # names.
 #
-# Its edge runs here too (`core/edge/`), as every network has one: its Workers in `wrangler dev`, with a local S3
-# store as the bucket. Servers keep their blobs through the presigner there, people sign in at its address, and
+# Its edge runs here too (`core/edge/`), as every network has one: its Workers in `wrangler dev`, with a bucket in
+# the machine's S3 store, which every network here shares, in `~/.local/state/one-networks`. Servers keep their blobs through the presigner there, people sign in at its address, and
 # whoever holds a sharing link has a way in.
 #
 # --standby starts a second server, which takes over when the first stops. Each server is called after its folder,
@@ -84,19 +84,6 @@ random() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
 # Each app's edge function's packages too, in its own folder, which `bun edge.js dev` copies with them: the ones
 # `tooling/copy-build` copied from a worktree beside this one may be another commit's.
 for edge in "$root"/apps/*/edge/; do (cd "$edge" && bun install --frozen-lockfile); done
-# The bucket's credentials are made up for this network, and only the presigner is given them, with the secret a
-# network's first server shows. They're kept in the folder with its ports, so started again it's at the same
-# address, which a server installed with `one serve on` still reaches.
-[[ -s $folder/edge.env ]] || (umask 077 && echo "access=$(random 8) secret=$(random 24) first=$(random 16)" \
-  "bucket=127.0.0.1:$(free_port) gateway=$(free_port)" >"$folder/edge.env")
-source "$folder/edge.env"
-mkdir -p "$folder/bucket"
-# A bucket on one folder has nothing to heal from, and nothing here asks what it holds, so its scanner and healing
-# don't run: they read the folder over and over even when nothing is asked of it, and on a busy machine their
-# listings time out and start again.
-RUSTFS_ENABLE_SCANNER=false RUSTFS_ENABLE_HEAL=false \
-  RUSTFS_ACCESS_KEY=$access RUSTFS_SECRET_KEY=$secret rustfs server --address "$bucket" "$folder/bucket" >"$folder/bucket.log" 2>&1 &
-started+=($!)
 # Waits until `$2` answers, however long the process `$1` that serves it takes to start on a busy machine, and stops
 # if that process exits first, saying where its log `$3` is.
 answers() {
@@ -105,14 +92,51 @@ answers() {
     sleep 1
   done
 }
-answers "$!" "http://$bucket/" "$folder/bucket.log"
-(cd "$root/core/edge" && ACCESS=$access SECRET=$secret BUCKET=http://$bucket/network bun -e '
+# The network's bucket is one of the machine's bucket store: an S3 store (rustfs) that every network started here
+# keeps its bucket in, as an R2 account holds many, started by the first network that needs it and stopped once the
+# last of them has, with its data in a folder of its own. A network's bucket is named in its folder's `edge.env`, made
+# up once, so a new network in a folder used before has a new one; and one whose folder has gone, or names another, is
+# removed. Its edge alone is given the store's keys, with the secret a network's first server shows. They're kept with
+# its port, so started again it's at the same address, which a server installed with `one serve on` still reaches.
+[[ ! -d $folder/bucket ]] || { echo "$folder keeps its bucket in the folder, as a network did before it was one of the machine's bucket store's: start it in a new folder." >&2 && exit 1; }
+[[ -s $folder/edge.env ]] || (umask 077 && echo "name=network-$(random 8) first=$(random 16) gateway=$(free_port)" >"$folder/edge.env")
+source "$folder/edge.env"
+store=${XDG_STATE_HOME:-$HOME/.local/state}/one-networks
+mkdir -p "$store/networks" "$store/bucket"
+# Each of a network's processes holds this lock, shared, from its start, so the store is stopped once none of any
+# network's is left: what started it waits to hold the lock alone.
+exec {using}>>"$store/using"
+flock -s "$using"
+{
+  flock -x 9
+  for named in "$store"/networks/*; do
+    [[ -L $named ]] || continue
+    [[ $(grep -so "name=[^ ]*" "$(readlink "$named")/edge.env") == "name=${named##*/}" ]] && continue
+    rm -rf "$store/bucket/${named##*/}" "$store/bucket/.rustfs.sys/buckets/${named##*/}" "$named"
+  done
+  ln -sfn "$folder" "$store/networks/$name"
+  [[ -s $store/keys ]] || (umask 077 && echo "access=$(random 8) secret=$(random 24)" >"$store/keys")
+  source "$store/keys"
+  if ! { [[ -s $store/address ]] && curl -s -o /dev/null "http://$(cat "$store/address")/"; }; then
+    echo "127.0.0.1:$(free_port)" >"$store/address" && rm -f "$store/pid"
+    # A bucket on one folder has nothing to heal from, and nothing here asks what it holds, so its scanner and
+    # healing don't run: they read the folder over and over even when nothing is asked of it, and on a busy machine
+    # their listings time out and start again.
+    RUSTFS_ENABLE_SCANNER=false RUSTFS_ENABLE_HEAL=false RUSTFS_ACCESS_KEY=$access RUSTFS_SECRET_KEY=$secret setsid sh -c \
+      '"$@" & echo $! >"$0/pid"; flock -x "$0/using" kill $!; wait' "$store" rustfs server --address "$(cat "$store/address")" \
+      "$store/bucket" </dev/null >"$store/bucket.log" 2>&1 {using}>&- 9>&- &
+    until [[ -s $store/pid ]]; do sleep 0.1; done
+    answers "$(cat "$store/pid")" "http://$(cat "$store/address")/" "$store/bucket.log"
+  fi
+} 9>"$store/lock"
+bucket=$(cat "$store/address")
+(cd "$root/core/edge" && ACCESS=$access SECRET=$secret BUCKET=http://$bucket/$name bun -e '
   import { AwsClient } from "aws4fetch";
   const { ACCESS: accessKeyId, SECRET: secretAccessKey, BUCKET } = process.env;
   const response = await new AwsClient({ accessKeyId, secretAccessKey, service: "s3", region: "auto" }).fetch(BUCKET, { method: "PUT" });
   if (!response.ok && response.status !== 409) throw new Error(`the bucket answered ${response.status}`);')
 # `wrangler dev` gives the presigner its secrets from the environment.
-(cd "$root/core/edge" && BUCKET=http://$bucket/network ACCESS_KEY_ID=$access SECRET_ACCESS_KEY=$secret FIRST_SERVER=$first \
+(cd "$root/core/edge" && BUCKET=http://$bucket/$name ACCESS_KEY_ID=$access SECRET_ACCESS_KEY=$secret FIRST_SERVER=$first \
   WRANGLER_SEND_METRICS=false exec bun run dev --port "$gateway" \
   --inspector-port "$(free_port)" --persist-to "$folder/edge") >"$folder/edge.log" 2>&1 &
 started+=($!)

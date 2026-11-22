@@ -94,8 +94,12 @@ app is faulted the same way, by its own PID.
 
 ## Logs and stopping
 
-Everything is in the folder: `server.log`, `reloader.log`, `edge.log`, `bucket.log` (and `standby.log` with that flag), the
-bucket, and the client's home. Starting again in the same folder carries on with what's there.
+Everything is in the folder: `server.log`, `reloader.log`, `edge.log` (and `standby.log` with that flag), the servers'
+and the edge's state, and the client's home; but the bucket, which is one of the machine's bucket store's, kept in
+`~/.local/state/one-networks` with its `bucket.log`, its bucket named in the folder's `edge.env`. Starting again in the
+same folder carries on with what's there; a new network in a folder you emptied has a new bucket, and the old one is
+removed. The store is started by the first network that needs it and stops once the last one has: never stop it
+yourself, as other agents' networks are in it.
 
 Start it in the background, however you like (`setsid`, `mise exec`); its PID is then in `<folder>/pid`.
 Stop it with `kill $(cat <folder>/pid)`, which stops all of it. Started again in the same folder it keeps its ports,
