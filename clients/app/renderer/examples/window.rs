@@ -2,16 +2,18 @@
 //! motion played on it, and each motion's frames as the app's log says them (`Event::Frames`), as JSON lines: how long
 //! apart they came, and each part of a frame's 95th percentile, its painting, drawing, waiting for an image,
 //! submitting and presenting; and on stderr what the GPU holds at its end (`memory`). It exits 1 where a motion's
-//! frames took longer than a refresh of a `--hz` display (60 unless it says) at their 95th percentile: this thread's
+//! frames took longer than a refresh of its display (as the display says it) at their 95th percentile: this thread's
 //! painting and drawing, or the GPU's. How far apart they came isn't judged: a wheel's notches each move it at once, so
 //! its frames come as often as the notches do.
 //!
 //!     cargo run -p renderer --example window -- <page's built folder> --play <requests.json> \
 //!       [--ui core/ui/dist/client] [--answers answers.json] [--size 1100x720] [--rounds 3] [--panel <corner>]
-//!       [--before <requests.jsonl>] [--hz 60]
+//!       [--before <requests.jsonl>]
 //!
-//! on a desktop: X11 (`xvfb-run -a` where there's none), or Windows in its person's session (over ssh, a scheduled
-//! task's `/IT`, as the qa skill starts the app), where Direct3D 12 presents through DirectComposition as the app does.
+//! on a desktop: X11 (`xvfb-run -a` where there's none), Windows in its person's session (over ssh, a scheduled task's
+//! `/IT`, as the qa skill starts the app), where Direct3D 12 presents through DirectComposition as the app does, or a
+//! Mac, from its person's own login (over ssh too), where AppKit's application runs on the main thread as the app's
+//! event loop does there, and what's played beside it.
 //! The headless harness (`screenshot`) draws offscreen and never presents, so what presenting costs shows only here.
 //! What it plays is the inspector's requests, each at its `at`, ms from the round's start (a wheel's notch a `scroll`, the
 //! pointer's move a `hover`, a press a `tap` or a `drag`), as motion.js makes them of a motion. Each round is a window of
@@ -31,6 +33,25 @@ use serde_json::{Value, json};
 use url::Url;
 
 fn main() -> anyhow::Result<()> {
+    // A Mac's windows are AppKit's, which takes their every call on the main thread (`dispatch2::run_on_main`).
+    #[cfg(target_os = "macos")]
+    {
+        std::thread::spawn(|| match played() {
+            Ok(long) => std::process::exit(i32::from(long)),
+            Err(error) => {
+                eprintln!("Error: {error:#}");
+                std::process::exit(1)
+            }
+        });
+        objc2_app_kit::NSApplication::sharedApplication(objc2::MainThreadMarker::new().ok_or_else(|| anyhow::anyhow!("main isn't on the main thread"))?).run();
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    std::process::exit(i32::from(played()?))
+}
+
+/// Plays it. → whether a motion's frames took longer than a refresh.
+fn played() -> anyhow::Result<bool> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let flag = |name: &str| args.iter().position(|arg| arg == name).and_then(|at| args.get(at + 1)).cloned();
     let folder = std::fs::canonicalize(args.first().ok_or_else(|| anyhow::anyhow!("window <page's built folder> --play <requests.json> …"))?)?;
@@ -38,7 +59,6 @@ fn main() -> anyhow::Result<()> {
     let (width, height) = flag("--size").and_then(|size| size.split_once('x').map(|(w, h)| (w.parse().unwrap_or(1100.0), h.parse().unwrap_or(720.0)))).unwrap_or((1100.0, 720.0));
     let rounds: usize = flag("--rounds").and_then(|rounds| rounds.parse().ok()).unwrap_or(3);
     let panel: Option<f32> = flag("--panel").and_then(|corner| corner.parse().ok());
-    let budget = 1000.0 / flag("--hz").and_then(|hz| hz.parse::<f64>().ok()).unwrap_or(60.0);
     let answers: Value = match flag("--answers") {
         Some(answers) => serde_json::from_str(&std::fs::read_to_string(answers)?)?,
         None => json!({}),
@@ -92,6 +112,10 @@ fn main() -> anyhow::Result<()> {
             let _ = opened_to.send(id.map_err(|error| format!("{error:#}")));
         });
         let id = opened.recv()?.map_err(anyhow::Error::msg)?;
+        // A Mac's window is in front of its person's, as it must be to be drawn at its display's pace, without taking
+        // their keyboard from the app they're in: one started from their login over ssh isn't made active, so it opens behind.
+        #[cfg(target_os = "macos")]
+        dispatch2::run_on_main(|main| objc2_app_kit::NSApplication::sharedApplication(main).windows().iter().for_each(|window| window.orderFrontRegardless()));
         // Its first frame, then its page's first answers settled, before anything's played; and what's to be done first.
         quiet(&said);
         for line in before.lines().filter(|line| !line.trim().is_empty()) {
@@ -123,12 +147,12 @@ fn main() -> anyhow::Result<()> {
     for report in &reports {
         println!("{report}");
         let ms = |part: &str| report[part].as_f64().unwrap_or(0.0);
-        long |= ms("paint_ms") + ms("draw_ms") > budget || ms("gpu_ms") > budget;
+        long |= ms("paint_ms") + ms("draw_ms") > ms("refresh_ms") || ms("gpu_ms") > ms("refresh_ms");
     }
     if reports.is_empty() {
         anyhow::bail!("no motion was said: nothing it played moved anything");
     }
-    std::process::exit(i32::from(long));
+    Ok(long)
 }
 
 /// The page in `folder` as a window's screen, its UI library from `ui` and what it asks answered

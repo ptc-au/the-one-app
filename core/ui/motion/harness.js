@@ -6,6 +6,15 @@ import { COMPONENTS, library, pageFolder } from "./pages.js"
 import { device, devices, hostScore } from "./tiers.js"
 
 
+/// Whether `--ssh`'s device is a Mac, whose shell is sh, where a Windows PC's is cmd.
+export const mac = Boolean(ssh) && Bun.spawnSync(["ssh", ssh, "uname -s"]).stdout.toString().trim() === "Darwin"
+/// What a path joins with there, and what the harness is called there.
+const sep = mac ? "/" : "\\"
+const exe = mac ? "screenshot" : "screenshot.exe"
+/// `args` quoted for the shell there: sh's, each in single quotes, or cmd's, each in double quotes as Windows' C runtime
+/// reads them, a quote in one escaped (an `--errors` list's).
+const quoted = (args) => args.map((arg) => (mac ? `'${arg.replaceAll("'", "'\\''")}'` : `"${arg.replaceAll('"', '\\"')}"`)).join(" ")
+
 /// The folder on `--ssh`'s device that each run there is in, with the UI library and the harness beside them, made
 /// as the first run needs it and taken away as this ends.
 let remote
@@ -16,15 +25,15 @@ function onDevice() {
     if (ran.exitCode !== 0) throw new Error(`${ssh}: ${command}: ${ran.stderr.toString().trim()}`)
     return ran.stdout.toString().trim()
   }
-  remote = `${said("echo %TEMP%")}\\one-motion-${process.pid}`
+  remote = mac ? said("mktemp -d -t one-motion") : `${said("echo %TEMP%")}\\one-motion-${process.pid}`
   const staged = join(out, ".device")
   rmSync(staged, { recursive: true, force: true })
   cpSync(library("client"), join(staged, "ui"), { recursive: true, dereference: true })
-  cpSync(harness, join(staged, "screenshot.exe"))
+  cpSync(harness, join(staged, exe))
   for (const face of FACES) cpSync(face, join(staged, basename(face)))
-  const sent = Bun.spawnSync(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} 'mkdir "${remote}" && tar -xf - -C "${remote}"'`], { stdout: "pipe", stderr: "pipe" })
+  const sent = Bun.spawnSync(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${mac ? "" : `mkdir "${remote}" && `}tar -xf - -C "${remote}"'`], { stdout: "pipe", stderr: "pipe" })
   if (sent.exitCode !== 0) throw new Error(`${ssh}: the harness didn't go there: ${sent.stderr.toString().trim()}`)
-  process.on("exit", () => Bun.spawnSync(["ssh", ssh, `rmdir /s /q "${remote}"`]))
+  process.on("exit", () => Bun.spawnSync(["ssh", ssh, mac ? `rm -rf "${remote}"` : `rmdir /s /q "${remote}"`]))
   return remote
 }
 
@@ -32,16 +41,17 @@ function onDevice() {
 /// its requests. → what it said on stdout and stderr, and whether it failed; its `end.json` back in `folder`.
 export async function runThere(at, folder, args, lines) {
   const base = onDevice()
-  const run = `${base}\\${basename(folder)}-${Math.random().toString(36).slice(2, 8)}`
+  const run = `${base}${sep}${basename(folder)}-${Math.random().toString(36).slice(2, 8)}`
   const staged = join(folder, ".device")
   rmSync(staged, { recursive: true, force: true })
   cpSync(at, join(staged, "page"), { recursive: true, dereference: true })
   cpSync(join(folder, "answers.json"), join(staged, "answers.json"))
   writeFileSync(join(staged, "requests.jsonl"), lines)
-  const there = args.map((arg) => (arg === at ? `${run}\\page` : arg === join(folder, "answers.json") ? `${run}\\answers.json` : arg === "-" ? `${run}\\requests.jsonl` : arg.startsWith(folder) ? `${run}\\${basename(arg)}` : arg === library("client") ? `${base}\\ui` : arg))
-  // Each argument quoted as Windows' C runtime reads one, a quote in it escaped (an `--errors` list's), and the whole
-  // quoted for the shell here.
-  const command = `mkdir "${run}" && tar -xf - -C "${run}" && "${base}\\screenshot.exe" ${there.map((arg) => `"${arg.replaceAll('"', '\\"')}"`).join(" ")} & type "${run}\\end.json" 1>&2 & rmdir /s /q "${run}"`
+  const there = args.map((arg) => (arg === at ? `${run}${sep}page` : arg === join(folder, "answers.json") ? `${run}${sep}answers.json` : arg === "-" ? `${run}${sep}requests.jsonl` : arg.startsWith(folder) ? `${run}${sep}${basename(arg)}` : arg === library("client") ? `${base}${sep}ui` : arg))
+  // Its tree after what it said, whether it drew or not, and its folder taken away; the whole quoted for the shell here.
+  const command = mac
+    ? `mkdir "${run}" && tar -xf - -C "${run}" && "${base}/${exe}" ${quoted(there)}; cat "${run}/end.json" 1>&2; rm -rf "${run}"`
+    : `mkdir "${run}" && tar -xf - -C "${run}" && "${base}\\${exe}" ${quoted(there)} & type "${run}\\end.json" 1>&2 & rmdir /s /q "${run}"`
   const ran = Bun.spawn(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${command.replaceAll("'", "'\\''")}'`], { stdout: "pipe", stderr: "pipe" })
   const [stdout, stderr] = await Promise.all([new Response(ran.stdout).text(), new Response(ran.stderr).text(), ran.exited])
   rmSync(staged, { recursive: true, force: true })
@@ -53,22 +63,30 @@ export async function runThere(at, folder, args, lines) {
 
 /// A motion played in a real window on `--ssh`'s device, in its person's session, by the `window` example
 /// (`--present`): the inspector's requests it's `played`, each at its time, after the scene's `taps`, in a window
-/// opened afresh for each of three rounds. A scheduled task runs it there, and says it's done on a named pipe, which is
-/// every session's, that this waits on there, five minutes at most. → what it said of each motion's frames, as JSON
-/// lines, and whether it failed.
+/// opened afresh for each of three rounds. On Windows a scheduled task runs it there, and says it's done on a named pipe,
+/// which is every session's, that this waits on there, five minutes at most; a Mac's person's session takes a window
+/// from their own ssh login as it is. → what it said of each motion's frames, as JSON lines, and whether it failed.
 export async function presentThere(at, folder, scene, played, taps) {
   // A locked screen's windows are drawn but not shown, so presenting costs nothing there.
-  if (Bun.spawnSync(["ssh", ssh, 'tasklist /FI "IMAGENAME eq LogonUI.exe" /NH']).stdout.toString().includes("LogonUI")) return { said: [], stderr: `${ssh}'s screen is locked, so a window there isn't shown: unlock it first`, failed: true }
+  const locked = mac ? ["ioreg -n Root -d1", 'CGSSessionScreenIsLocked"=Yes'] : ['tasklist /FI "IMAGENAME eq LogonUI.exe" /NH', "LogonUI"]
+  if (Bun.spawnSync(["ssh", ssh, locked[0]]).stdout.toString().includes(locked[1])) return { said: [], stderr: `${ssh}'s screen is locked, so a window there isn't shown: unlock it first`, failed: true }
   const base = onDevice()
   const name = `${basename(folder)}-${Math.random().toString(36).slice(2, 8)}`.replace(/[^\w-]/g, "")
-  const run = `${base}\\${name}`
+  const run = `${base}${sep}${name}`
   const staged = join(folder, ".device")
   rmSync(staged, { recursive: true, force: true })
   cpSync(at, join(staged, "page"), { recursive: true, dereference: true })
   cpSync(join(folder, "answers.json"), join(staged, "answers.json"))
   writeFileSync(join(staged, "played.json"), JSON.stringify(played))
   writeFileSync(join(staged, "before.jsonl"), taps.map((tap, id) => JSON.stringify({ v: 1, id: id + 1, ...tap })).join("\n"))
-  const args = ["page", "--play", "played.json", "--before", "before.jsonl", "--ui", `${base}\\ui`, "--answers", "answers.json", "--size", `${scene.size[0]}x${scene.size[1]}`, "--rounds", "3", ...panel(scene)]
+  const args = ["page", "--play", "played.json", "--before", "before.jsonl", "--ui", `${base}${sep}ui`, "--answers", "answers.json", "--size", `${scene.size[0]}x${scene.size[1]}`, "--rounds", "3", ...panel(scene)]
+  if (mac) {
+    const command = `mkdir "${run}" && tar -xf - -C "${run}" && cd "${run}" && { "${base}/${exe}" ${quoted(args)} > said.txt 2> err.txt; echo $?; cat said.txt; cat err.txt 1>&2; }; rm -rf "${run}"`
+    const ran = Bun.spawn(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${command.replaceAll("'", "'\\''")}'`], { stdout: "pipe", stderr: "pipe" })
+    const [stdout, stderr] = await Promise.all([new Response(ran.stdout).text(), new Response(ran.stderr).text(), ran.exited])
+    rmSync(staged, { recursive: true, force: true })
+    return saidThere(stdout, stderr)
+  }
   writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, `start "" /b /wait "${base}\\screenshot.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
   writeFileSync(
     join(staged, "wait.ps1"),
@@ -93,6 +111,11 @@ export async function presentThere(at, folder, scene, played, taps) {
   const task = `powershell -NoProfile -ExecutionPolicy Bypass -File "${run}\\wait.ps1" & type "${run}\\exit.txt" & type "${run}\\said.txt" & type "${run}\\err.txt" 1>&2 & rmdir /s /q "${run}"`
   const ran = Bun.spawn(["ssh", ssh, task], { stdout: "pipe", stderr: "pipe" })
   const [stdout, stderr] = await Promise.all([new Response(ran.stdout).text(), new Response(ran.stderr).text(), ran.exited])
+  return saidThere(stdout, stderr)
+}
+
+/// What a window said there: its exit status, then a JSON line for each motion.
+const saidThere = (stdout, stderr) => {
   const [exit, ...said] = stdout.split("\n")
   return { said: said.filter((line) => line.trim().startsWith("{")).map((line) => JSON.parse(line)), stderr, failed: exit.trim() !== "0" }
 }

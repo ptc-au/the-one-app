@@ -24,7 +24,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { FACES, moves, pageFolder, scenesOf, selector } from "./motion.js"
+import { FACES, mac, moves, pageFolder, scenesOf, selector } from "./motion.js"
 import { modelled, SHADED } from "./motion/tiers.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
@@ -82,6 +82,8 @@ const make = Bun.spawnSync(["bun", here("dist/build/app.js"), gallery, built])
 if (make.exitCode !== 0) throw new Error(`The gallery didn't build: ${make.stderr}`)
 const scenes = await scenesOf(gallery, built, join(out, "listing"), true)
 const lines = []
+// A Mac's shell is sh, a Windows PC's cmd.
+const [sep, exe] = mac ? ["/", "screenshot"] : ["\\", "screenshot.exe"]
 scenes.forEach((scene, n) => {
   const folder = join(batch, `${n}`)
   const page = pageFolder(built, scene.page, join(out, "pages", `${n}`))
@@ -91,12 +93,13 @@ scenes.forEach((scene, n) => {
   const played = Object.values(scene.motions ?? {}).map((motion) => ({ op: "replay", ...selector(motion.from), ...moves(motion.gesture), hz: 60, after: 600 }))
   const requests = [{ op: "clock", step: 1000 }, ...taps, { op: "profile", at: [0, 17, 33, 50], snap: false }, ...played]
   writeFileSync(join(folder, "requests.jsonl"), requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n"))
-  lines.push(`screenshot.exe ${n}\\page ${n}\\end.png ${n}\\end.json --ui ui --answers ${n}\\answers.json --size ${scene.size[0]}x${scene.size[1]} --scale 2 ${scene.touch ? "--touch " : ""}--requests ${n}\\requests.jsonl > ${n}\\answers.jsonl 2> ${n}\\said.txt`)
+  lines.push(`${mac ? "./" : ""}${exe} ${n}${sep}page ${n}${sep}end.png ${n}${sep}end.json --ui ui --answers ${n}${sep}answers.json --size ${scene.size[0]}x${scene.size[1]} --scale 2 ${scene.touch ? "--touch " : ""}--requests ${n}${sep}requests.jsonl > ${n}${sep}answers.jsonl 2> ${n}${sep}said.txt`)
 })
 cpSync(here("dist/client"), join(batch, "ui"), { recursive: true, dereference: true })
-cpSync(harness, join(batch, "screenshot.exe"))
+cpSync(harness, join(batch, exe))
 for (const face of FACES) cpSync(face, join(batch, basename(face)))
-writeFileSync(join(batch, "run.cmd"), ["@echo off", "cd /d %~dp0", ...lines].join("\r\n"))
+const script = mac ? "run.sh" : "run.cmd"
+writeFileSync(join(batch, script), mac ? ['cd "$(dirname "$0")"', ...lines].join("\n") : ["@echo off", "cd /d %~dp0", ...lines].join("\r\n"))
 
 // There, and back.
 const started = performance.now()
@@ -105,14 +108,14 @@ const say = (command) => {
   if (ran.exitCode !== 0) throw new Error(`${command.join(" ")}: ${ran.stderr.toString().trim()}`)
   return ran.stdout.toString().trim()
 }
-const temp = say(["ssh", host, "echo %TEMP%"])
-const remote = `${temp}\\one-calibrate`
-say(["ssh", host, `if exist "${remote}" rmdir /s /q "${remote}"`])
+const remote = mac ? `${say(["ssh", host, "echo $TMPDIR"]).replace(/\/$/, "")}/one-calibrate` : `${say(["ssh", host, "echo %TEMP%"])}\\one-calibrate`
+const gone = mac ? `rm -rf "${remote}"` : `rmdir /s /q "${remote}"`
+say(["ssh", host, mac ? gone : `if exist "${remote}" ${gone}`])
 say(["scp", "-rq", batch, `${host}:${remote.replaceAll("\\", "/")}`])
-say(["ssh", host, `"${remote}\\run.cmd"`])
+say(["ssh", host, mac ? `sh "${remote}/${script}"` : `"${remote}\\${script}"`])
 rmSync(join(out, "back"), { recursive: true, force: true })
 say(["scp", "-rq", `${host}:${remote.replaceAll("\\", "/")}`, join(out, "back")])
-say(["ssh", host, `rmdir /s /q "${remote}"`])
+say(["ssh", host, gone])
 console.log(`${scenes.length} scenes drawn on ${name} in ${Math.round((performance.now() - started) / 1000)} s`)
 
 // The apps' motions that keep a tier, played there as motion.js plays them (and with `--window`, in a real window), each

@@ -63,6 +63,19 @@
       "sources": [
         "https://www.pcworld.com/article/393635/clickbait-warning-uls-wild-life-benchmark-makes-pc-vs-iphone-comparisons-way-too-easy.html"
       ]
+    },
+    {
+      "name": "Apple silicon laptop",
+      "like": "a MacBook Air (M3, 10-core GPU) driving a 27-inch 144 Hz display (AOC U27G4XM, 2560x1440 at 2x), its lid shut",
+      "hz": 144,
+      "scale": 2,
+      "cpu": 3080,
+      "gpu": 372,
+      "measured": "mac",
+      "sources": [
+        "https://browser.geekbench.com/mac-benchmarks",
+        "https://www.notebookcheck.net/Apple-M3-10-Core-GPU-Benchmarks-and-Specs.765636.0.html"
+      ]
     }
   ],
   "hosts": {
