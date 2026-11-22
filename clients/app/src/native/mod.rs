@@ -434,6 +434,14 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 crate::memory::changed();
             }
             Event::Live => Opening::live(&opening_view),
+            // The GPU hung on its frame, which the system may never say: Telemetry hears what the frame was, and the
+            // window's drawn again on a new device.
+            Event::Hung(frame) => {
+                eprintln!("the GPU hung drawing {app}: {frame}");
+                if let Ok(views) = crate::views() {
+                    views.client.report(json!({"name": "one.client.native.gpu.hang", "error": "a frame wasn't done 2 s after it was given the GPU", "attributes": {"one.view": app, "one.gpu.frame": frame.to_string()}}));
+                }
+            }
             Event::Frames(frames) => frames_reported(&app, &frames),
             Event::PutAway => {
                 let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": false}}));

@@ -262,7 +262,9 @@ impl Renderer {
             stamps.begin();
         }
         let acquiring = web_time::Instant::now();
+        let calling = super::super::watchdog::calling("taking an image to draw on");
         let images: Vec<Option<Image>> = self.targets.iter_mut().map(|target| target.acquire(&self.device)).collect();
+        drop(calling);
         self.acquired = acquiring.elapsed();
         // None to draw on now (a window hidden or asleep, a surface lost): it's drawn on the next.
         if images.iter().all(Option::is_none) {
@@ -350,23 +352,35 @@ impl Renderer {
         }
         self.belt.finish_and_recall_on_submit(&encoder);
         let submitting = web_time::Instant::now();
+        let calling = super::super::watchdog::calling("submitting a frame");
         self.queue.submit([encoder.finish()]);
-        // The browser says when (a promise), and its windows' loop is woken; natively the surface's next image waits for
-        // it, and wgpu would say only as it's polled.
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.frames += 1;
-            let (finished, frame) = (self.finished.clone(), self.frames);
+        drop(calling);
+        // The browser says when (a promise), and its windows' loop is woken; natively wgpu says as it's polled, as each
+        // submit does, and a frame it hasn't said is done a while after is a GPU that hung (`hung`).
+        self.frames += 1;
+        let (finished, frame) = (self.finished.clone(), self.frames);
+        // Mutant: a fence that never signals, the GPU hung.
+        if !(crate::mutants::mutant("gpu-hang") && crate::mutants::planted(&self.hung)) {
             self.queue.on_submitted_work_done(move || {
                 finished.fetch_max(frame, std::sync::atomic::Ordering::Release);
+                #[cfg(target_arch = "wasm32")]
                 crate::platform::web::soon();
             });
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        self.given.push_back(super::Given { frame, at: crate::platform::now(), work: self.work.get(), passes: self.passes.get(), draws: self.draws.get() });
         self.submitted = submitting.elapsed();
         if let Some(stamps) = &mut self.stamps {
             stamps.submitted();
         }
         let presenting = web_time::Instant::now();
+        let _calling = super::super::watchdog::calling("presenting a frame");
+        // Mutant: a present that never returns, the GPU's driver hung.
+        if crate::mutants::mutant("present-hang") {
+            loop {
+                std::thread::park();
+            }
+        }
         let mut drawn = Draw::Presented;
         for image in images {
             match image {

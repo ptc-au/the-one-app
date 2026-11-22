@@ -261,9 +261,20 @@ impl Windows {
 
     /// What window `id` last presented, as its compositor shows it: its width, height and pixels (`composed`).
     pub fn presented(&mut self, id: WindowId) -> Option<(u32, u32, Vec<u8>)> {
+        // A GPU that hung as it's read is made again, and the window drawn on the new one, as on a device.
+        let mut drawn = Vec::new();
+        for _ in 0..2 {
+            if self.context.hung() {
+                self.turned();
+                self.run(1000.0 / 60.0);
+            }
+            let window = self.windows.get_mut(&id)?;
+            drawn = (0..window.parts.len()).map(|at| window.renderer.as_mut().and_then(|renderer| renderer.read(at))).collect();
+            if !self.context.hung() {
+                break;
+            }
+        }
         let window = self.windows.get_mut(&id)?;
-        let parts = window.parts.len();
-        let drawn: Vec<_> = (0..parts).map(|at| window.renderer.as_mut().and_then(|renderer| renderer.read(at))).collect();
         // A panel's part is masked to its rounded corners on a Mac and on Windows, and isn't on X11, so what it draws
         // outside them is lost on one and a square box on the other.
         for (part, drawn) in window.parts.iter().zip(&drawn).filter(|_| window.panel) {

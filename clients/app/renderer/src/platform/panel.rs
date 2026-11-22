@@ -114,6 +114,13 @@ impl Windows {
         }
     }
 
+    /// Closes every window, as the app ends.
+    pub fn close_all(&mut self) {
+        for id in self.windows.keys().copied().collect::<Vec<_>>() {
+            self.close(id);
+        }
+    }
+
     /// Keeps window `id`'s frame as its snapshot (`WindowOptions::snapshot`), drawn afresh offscreen as it is now,
     /// where it shows what its page drew: not its snapshot, nor a page still starting.
     pub(crate) fn keep_snapshot(&mut self, id: WindowId) {
@@ -136,7 +143,7 @@ impl Windows {
 
     /// Lets go of a window's parts: its renderer, then their native windows, the children first.
     pub(super) fn let_go(&self, renderer: Option<Renderer>, parts: Vec<Part>) {
-        if let Some(mut renderer) = renderer {
+        if let Some(renderer) = renderer {
             renderer.destroy();
         }
         for part in parts.into_iter().rev() {

@@ -26,3 +26,18 @@ pub fn mutant(_: &str) -> bool {
 pub fn set(name: &str) {
     let _ = ASKED.set(name.to_owned());
 }
+
+/// Whether `context` is the one a mutant is planted on, by what it holds (`Context::hung`): the first it's asked of,
+/// so the context made in its place, as a lost one's is (`Windows::recover`), is well.
+#[cfg(feature = "mutants")]
+pub fn planted<T>(context: &std::sync::Arc<T>) -> bool {
+    static PLANTED: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    let at = std::sync::Arc::as_ptr(context) as *const () as usize;
+    *PLANTED.get_or_init(|| at) == at
+}
+
+#[cfg(not(feature = "mutants"))]
+#[inline(always)]
+pub fn planted<T>(_: &std::sync::Arc<T>) -> bool {
+    false
+}

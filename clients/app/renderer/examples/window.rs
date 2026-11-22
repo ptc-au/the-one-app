@@ -9,6 +9,12 @@
 //!     cargo run -p renderer --example window -- <page's built folder> --play <requests.json> \
 //!       [--ui core/ui/dist/client] [--answers answers.json] [--size 1100x720] [--rounds 3] [--panel <corner>]
 //!       [--before <requests.jsonl>]
+//!     cargo run -p renderer --example window -- --gpu
+//!
+//! `--gpu` starts a device on the GPU, says which, and exits: 3 where none starts in five times `HANG`, as a driver
+//! that hung and failed its reset hangs every program that asks it for one (a Surface's Intel, 22 Nov), which
+//! motion.js's `--present` checks before each run. A window's thread stuck in the driver ends it with 3 too, saying why
+//! (`renderer::render::watchdog`).
 //!
 //! on a desktop: X11 (`xvfb-run -a` where there's none), Windows in its person's session (over ssh, a scheduled task's
 //! `/IT`, as the qa skill starts the app), where Direct3D 12 presents through DirectComposition as the app does, or a
@@ -53,6 +59,18 @@ fn main() -> anyhow::Result<()> {
 /// Plays it. → whether a motion's frames took longer than a refresh.
 fn played() -> anyhow::Result<bool> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--gpu") {
+        let (started_to, started) = mpsc::channel();
+        std::thread::spawn(move || started_to.send(renderer::render::context::Context::new().map(|context| context.gpu())));
+        match started.recv_timeout(5 * renderer::render::renderer::HANG) {
+            Ok(gpu) => println!("{}", gpu?),
+            Err(_) => {
+                eprintln!("no GPU device started in {} s: its driver may have hung", (5 * renderer::render::renderer::HANG).as_secs());
+                std::process::exit(3)
+            }
+        }
+        return Ok(false);
+    }
     let flag = |name: &str| args.iter().position(|arg| arg == name).and_then(|at| args.get(at + 1)).cloned();
     let folder = std::fs::canonicalize(args.first().ok_or_else(|| anyhow::anyhow!("window <page's built folder> --play <requests.json> …"))?)?;
     let played: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(flag("--play").ok_or_else(|| anyhow::anyhow!("say what to play: --play"))?)?)?;
@@ -104,6 +122,7 @@ fn played() -> anyhow::Result<bool> {
                     });
                     let _ = to.send(Some(said));
                 }
+                Event::Hung(frame) => eprintln!("the GPU hung: {frame}"),
                 _ => {}
             });
             if let (Ok(id), Some(_)) = (&id, panel) {

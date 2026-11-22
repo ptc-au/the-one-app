@@ -83,7 +83,7 @@ impl Window {
             return;
         }
         self.missed = 0;
-        if let Some(mut renderer) = self.renderer.take() {
+        if let Some(renderer) = self.renderer.take() {
             renderer.destroy();
         }
         match draws_on(context, atlas.clone(), &self.parts) {

@@ -36,6 +36,11 @@ pub(crate) const OFFSCREEN_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg
 /// (`Renderer::idle`).
 const IDLE: web_time::Duration = web_time::Duration::from_secs(2);
 
+/// How long the GPU may take over a frame, or a wait for what it was given, before it's taken as hung, as Windows takes
+/// a GPU (its TDR's 2 s) where it says so. On 22 Nov a Surface's Intel driver timed out (0x141) and failed its reset, and
+/// every wait for its GPU, wgpu's own with no limit too, never ended.
+pub const HANG: web_time::Duration = web_time::Duration::from_secs(2);
+
 /// How many textures a renderer keeps that its frames let go of (`Renderer::spare`): a launcher's pages a wheel turns
 /// let go of a page's raster as they take another of its size.
 const SPARE: usize = 2;
@@ -111,12 +116,25 @@ pub struct Renderer {
     /// How many frames it's submitted, and how many of them the GPU has finished (`Queue::on_submitted_work_done`).
     frames: u64,
     finished: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Its context's GPU hung (`Context::hung`), which a wait of its own that ran out says.
+    hung: Arc<std::sync::atomic::AtomicBool>,
+    /// Each frame it gave the GPU that it hasn't said it's done, oldest first (`hung`).
+    given: std::collections::VecDeque<Given>,
     /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`), and how
     /// many times its atlas had let tiles go then (`Atlas::evictions`).
     #[cfg(feature = "fake")]
     scene: Option<(Scene, u64)>,
 }
 
+
+/// A frame given the GPU: its number, when, as the windows' loop tells the time, and what it was (`Renderer::hung`).
+struct Given {
+    frame: u64,
+    at: web_time::Instant,
+    work: Work,
+    passes: u32,
+    draws: u32,
+}
 
 /// The frame's batches' instances: the bind group of its data, and each batch's offset in it.
 struct Instances {
@@ -195,10 +213,37 @@ impl Renderer {
         self.targets.push(Target::offscreen(&context.device, extent(size)));
     }
 
-    /// Lets go of its last target, a panel's part's, waiting for what's drawn on it, before its window goes.
+    /// Lets go of its last target, a panel's part's, once the GPU's done what it was given, before its window goes.
     pub fn remove(&mut self) {
-        self.targets.pop();
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let target = self.targets.pop();
+        if !self.wait(HANG) {
+            // A surface waits for its GPU with no limit as it goes (wgpu-hal's Direct3D 12 `unconfigure`).
+            return std::mem::forget(target);
+        }
+        let _calling = super::watchdog::calling("letting go of a surface");
+        drop(target);
+    }
+
+    /// Waits for the GPU to finish what it was given, `HANG` at most: past that it hung, and its context is lost
+    /// (`Context::hung`), made again on a new device as one the system said was lost. → whether it finished.
+    fn wait(&self, timeout: web_time::Duration) -> bool {
+        use std::sync::atomic::Ordering;
+        if self.hung.load(Ordering::Relaxed) {
+            return false;
+        }
+        // Mutant: a fence that never signals, the GPU hung.
+        if crate::mutants::mutant("gpu-hang") && crate::mutants::planted(&self.hung) {
+            self.hung.store(true, Ordering::Relaxed);
+            return false;
+        }
+        match self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(timeout) }) {
+            Err(wgpu::PollError::Timeout) => {
+                log::error!("the GPU hung: what it was given wasn't done in {timeout:?}");
+                self.hung.store(true, Ordering::Relaxed);
+                false
+            }
+            _ => true,
+        }
     }
 
     /// A renderer that draws offscreen, `size` device pixels, read back by `read`.
@@ -244,6 +289,8 @@ impl Renderer {
             presented: Default::default(),
             frames: 0,
             finished: Default::default(),
+            hung: context.hung.clone(),
+            given: Default::default(),
             #[cfg(feature = "fake")]
             scene: None,
         }
@@ -251,6 +298,11 @@ impl Renderer {
 
     /// Its target `at`'s new size, in device pixels: its window's, or a panel's part's.
     pub fn update_drawable_size(&mut self, at: usize, size: Size<DevicePixels>) {
+        // Configured again, a surface waits for its GPU with no limit (wgpu-core's `configure_surface`).
+        if self.targets[at].resizes(extent(size)) && !self.wait(HANG) {
+            return;
+        }
+        let _calling = super::watchdog::calling("configuring a surface");
         self.targets[at].resize(&self.device, extent(size));
     }
 
@@ -265,6 +317,11 @@ impl Renderer {
     /// it keeps its images; Android's view destroys its surface as it's hidden.
     pub fn put_away(&mut self) {
         self.idle();
+        // Configured again, a surface waits for its GPU with no limit (wgpu-core's `configure_surface`).
+        if self.targets.iter().any(Target::configures_away) && !self.wait(HANG) {
+            return;
+        }
+        let _calling = super::watchdog::calling("putting a surface away");
         for target in &mut self.targets {
             target.put_away(&self.device);
         }
@@ -299,7 +356,9 @@ impl Renderer {
     /// Waits until the GPU has done all it was given, and reads its timestamps of the frame it last drew, which `gpu`
     /// then says.
     pub fn finish(&mut self) {
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        if !self.wait(HANG) {
+            return;
+        }
         if let Some(stamps) = &mut self.stamps {
             stamps.read();
         }
@@ -356,21 +415,45 @@ impl Renderer {
     /// What the last frame's GPU did, the same on any GPU, as the inspector's `profile` and `replay` say it: how many
     /// device pixels each kind of thing it drew covered, what it copied of the frames before, and the bytes it uploaded.
     pub fn work(&self) -> serde_json::Value {
-        let work = self.work.get();
-        let px = |area: f64| area.round() as u64;
-        serde_json::json!({
-            "quads": px(work.quads),
-            "shadows": px(work.shadows),
-            "sprites": px(work.sprites),
-            "backdrops": px(work.backdrops),
-            "rasters": px(work.rasters),
-            "copied": px(work.copied),
-            "uploaded": work.uploaded,
-            "blurred": px(work.blurred),
-            "blurs": work.blurs,
-            "blurs_kept": work.blurs_kept,
-            "damage": px(work.damage),
-        })
+        said(self.work.get())
+    }
+
+    /// How long until the frames it gave the GPU are waited for, once it's given none for a while (`hung`): by the
+    /// windows' loop's clock alone, never by when the GPU says it's done, so a harness's loop turns at the same times
+    /// each run. The browser has its own watchdog, which loses the device.
+    pub fn hang_in(&self) -> Option<web_time::Duration> {
+        let last = self.given.back()?;
+        Some((HANG / 2).saturating_sub(crate::platform::now().saturating_duration_since(last.at)))
+    }
+
+    /// Whether the GPU hung on a frame it was given: the oldest it hasn't said is done was given half of `HANG` ago, by
+    /// the windows' loop's clock, or none was given since, and waited for as long again, it's still not done. The
+    /// system may never say (a Surface's Intel driver that failed its reset, 22 Nov): its context is then lost
+    /// (`Context::hung`). → the frame, as Telemetry hears it: how long ago it was given, what it drew (`work`), its
+    /// passes and draw calls, and how many surfaces it drew on.
+    pub fn hung(&mut self) -> Option<serde_json::Value> {
+        let now = crate::platform::now();
+        let quiet = now.saturating_duration_since(self.given.back()?.at) >= HANG / 2;
+        // Those done go, but the last given, which says when it's next waited for (`hang_in`).
+        let finished = self.finished();
+        while self.given.len() > 1 && self.given.front().is_some_and(|given| given.frame <= finished) {
+            self.given.pop_front();
+        }
+        let given = self.given.front().filter(|given| given.frame > finished);
+        if (!quiet && given.is_none_or(|given| now.saturating_duration_since(given.at) < HANG / 2)) || self.wait(HANG / 2) {
+            if quiet {
+                self.given.clear();
+            }
+            return None;
+        }
+        let given = self.given.front()?;
+        Some(serde_json::json!({
+            "ms": (now.saturating_duration_since(given.at) + HANG / 2).as_millis() as u64,
+            "work": said(given.work),
+            "passes": given.passes,
+            "draws": given.draws,
+            "surfaces": self.targets.len(),
+        }))
     }
 
     /// The device pixels batch `batch` covers, each thing in it cut to what it's drawn inside, and to `clip` where
@@ -439,12 +522,17 @@ impl Renderer {
         }
     }
 
-    /// Lets go of its surfaces' images, waiting for what's drawn on them, before its window goes.
-    pub fn destroy(&mut self) {
+    /// Lets go of it, and its surfaces once the GPU's done what it was given, before its window goes.
+    pub fn destroy(mut self) {
         for target in &mut self.targets {
             target.reserved = None;
         }
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        if !self.wait(HANG) {
+            // Its surfaces wait for their GPU with no limit as they go (wgpu-hal's Direct3D 12 `unconfigure`).
+            return std::mem::forget(self);
+        }
+        let _calling = super::watchdog::calling("letting go of a surface");
+        drop(self);
     }
 
     /// Adds `bytes` to the frame's data, at the next multiple of the alignment, and says where.
@@ -522,7 +610,7 @@ impl Renderer {
     /// each frame a GPU slower than the display is given (the web's on a CPU, SwiftShader's, had a page that moves for
     /// good pile up frames till a screenshot waited forever). A native surface's next image already waits for it.
     pub fn working(&self) -> bool {
-        self.finished() < self.frames
+        cfg!(target_arch = "wasm32") && self.finished() < self.frames
     }
 
     /// How many frames it's submitted, and how many of them the GPU has finished, which the web's settle waits for
@@ -585,8 +673,28 @@ impl Renderer {
 
     /// The last frame its target `at` drew offscreen, as RGBA rows, top first.
     pub fn read(&mut self, at: usize) -> Option<(u32, u32, Vec<u8>)> {
-        self.targets[at].read(&self.device, &self.queue)
+        self.targets[at].copy_out(&self.device, &self.queue)?;
+        self.wait(HANG).then(|| self.targets[at].read())?
     }
+}
+
+/// What a frame's GPU did (`Work`), as the inspector and Telemetry hear it: how many device pixels each kind of thing it
+/// drew covered, what it copied of the frames before, and the bytes it uploaded.
+fn said(work: Work) -> serde_json::Value {
+    let px = |area: f64| area.round() as u64;
+    serde_json::json!({
+        "quads": px(work.quads),
+        "shadows": px(work.shadows),
+        "sprites": px(work.sprites),
+        "backdrops": px(work.backdrops),
+        "rasters": px(work.rasters),
+        "copied": px(work.copied),
+        "uploaded": work.uploaded,
+        "blurred": px(work.blurred),
+        "blurs": work.blurs,
+        "blurs_kept": work.blurs_kept,
+        "damage": px(work.damage),
+    })
 }
 
 /// The bytes of GPU memory `texture` holds.

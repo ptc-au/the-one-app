@@ -167,6 +167,11 @@ impl Target {
         }
     }
 
+    /// Whether its window's new size, in device pixels, configures its surface again (`resize`).
+    pub(super) fn resizes(&self, size: (u32, u32)) -> bool {
+        matches!(&self.output, Output::Surface { config, .. } if (config.width, config.height) != size)
+    }
+
     /// Its window's new size, in device pixels.
     pub(super) fn resize(&mut self, device: &wgpu::Device, size: (u32, u32)) {
         match &mut self.output {
@@ -198,7 +203,7 @@ impl Target {
                     self.reserved = Some(frame);
                 }
             }
-            Output::Surface { surface, config } if cfg!(any(windows, target_os = "ios")) && (config.width, config.height) != (1, 1) => {
+            Output::Surface { surface, config } if shrinks_away(config) => {
                 (config.width, config.height) = (1, 1);
                 surface.configure(device, config);
                 self.size = (1, 1);
@@ -209,6 +214,11 @@ impl Target {
             }
             _ => {}
         }
+    }
+
+    /// Whether going from the screen configures its surface again, as small as a surface is (`put_away`).
+    pub(super) fn configures_away(&self) -> bool {
+        matches!(&self.output, Output::Surface { config, .. } if shrinks_away(config))
     }
 
     /// Whether it holds what it lets go of when idle (`idle`).
@@ -248,8 +258,8 @@ impl Target {
         }
     }
 
-    /// Its last frame, if it's drawn offscreen, as RGBA rows, top first.
-    pub(super) fn read(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Option<(u32, u32, Vec<u8>)> {
+    /// Copies its last frame out to be read, if it's drawn offscreen (`read`, once the GPU's done it).
+    pub(super) fn copy_out(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Option<()> {
         let Output::Offscreen { texture, readback, row, .. } = &self.output else { return None };
         let (width, height) = self.size;
         // Copied out only as it's read, so a frame that isn't costs no copy.
@@ -261,7 +271,13 @@ impl Target {
         );
         queue.submit([encoder.finish()]);
         readback.map_async(wgpu::MapMode::Read, .., |_| {});
-        device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+        Some(())
+    }
+
+    /// Its last frame, copied out (`copy_out`), as RGBA rows, top first.
+    pub(super) fn read(&self) -> Option<(u32, u32, Vec<u8>)> {
+        let Output::Offscreen { readback, row, .. } = &self.output else { return None };
+        let (width, height) = self.size;
         let mapped = readback.get_mapped_range(..).ok()?;
         let mut rgba = Vec::with_capacity((width * height * 4) as usize);
         for line in mapped.chunks(*row as usize).take(height as usize) {
@@ -271,4 +287,10 @@ impl Target {
         readback.unmap();
         Some((width, height, rgba))
     }
+}
+
+/// Whether a surface configured as `config` is configured again as small as a surface is as its window goes from the
+/// screen (`Renderer::put_away`): on Windows and an iPhone.
+fn shrinks_away(config: &wgpu::SurfaceConfiguration) -> bool {
+    cfg!(any(windows, target_os = "ios")) && (config.width, config.height) != (1, 1)
 }

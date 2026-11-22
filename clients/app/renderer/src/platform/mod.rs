@@ -145,6 +145,9 @@ pub enum Event {
     Unfocused,
     /// Its person asked to quit the app from it: Ctrl-Q on Linux.
     Quit,
+    /// The GPU hung: a frame of its wasn't done a while after it was given (`Renderer::hung`), or a wait for the GPU
+    /// ran out, and every window's drawn again on a new device. What the frame was, where it was one of its.
+    Hung(serde_json::Value),
 }
 
 /// Where an app's window was left on the screen and how big, in device pixels, and whether it was maximized, as its

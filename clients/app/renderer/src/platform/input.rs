@@ -63,7 +63,7 @@ impl Windows {
             // A part's surface came, or a new one did: drawn on from now, by a renderer made again for all of its parts,
             // the one for those it had let go first.
             Input::Surface => {
-                if let Some(mut renderer) = window.renderer.take() {
+                if let Some(renderer) = window.renderer.take() {
                     renderer.destroy();
                 }
                 if !background && window.parts.iter().all(|part| part.native.has_surface()) {
@@ -75,7 +75,7 @@ impl Windows {
                 return;
             }
             Input::SurfaceLost => {
-                if let Some(mut renderer) = window.renderer.take() {
+                if let Some(renderer) = window.renderer.take() {
                     renderer.destroy();
                 }
                 return;

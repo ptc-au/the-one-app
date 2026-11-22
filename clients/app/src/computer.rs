@@ -72,6 +72,8 @@ pub(crate) enum Told {
     Open(String),
     Restart,
     Quit,
+    /// Every native window closed as it quits (`closing`): it ends.
+    Closed,
 }
 
 static PROXY: OnceLock<Mutex<EventLoopProxy<Told>>> = OnceLock::new();
@@ -196,6 +198,28 @@ fn on_native(job: impl FnOnce(&mut renderer::platform::Windows) + Send + 'static
     }
 }
 
+/// Closes every native window, each once the GPU's done its frames (`Windows::close`), then does `then`, as the app
+/// ends: a swap chain let go with its frames still queued may hang a GPU's driver (a Surface's Intel, 22 Nov). Where
+/// the windows' thread is stuck in its driver it's done anyway, twice `HANG` on.
+fn closing(then: impl Fn() + Send + Sync + 'static) {
+    let Some(native) = renderer::platform::Native::started() else { return then() };
+    let once = Arc::new((AtomicBool::new(false), then));
+    let after = once.clone();
+    fn done(once: &(AtomicBool, impl Fn())) {
+        if !once.0.swap(true, Ordering::Relaxed) {
+            (once.1)()
+        }
+    }
+    native.run(move |windows| {
+        windows.close_all();
+        done(&once)
+    });
+    std::thread::spawn(move || {
+        std::thread::sleep(2 * renderer::render::renderer::HANG);
+        done(&after)
+    });
+}
+
 /// The runtime the app's client and its channel run on.
 pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
@@ -252,6 +276,15 @@ impl crate::Shell for Computer {
 /// until it's quit.
 pub fn run() {
     let started = std::time::Instant::now();
+    // The windows' thread stuck in the GPU's driver (`renderer::render::watchdog`) draws nothing again: Telemetry
+    // hears why, and the app starts again.
+    renderer::render::watchdog::when_stuck(|said| {
+        eprintln!("{said}");
+        if let Ok(views) = crate::views() {
+            views.client.report(json!({"name": "one.client.native.gpu.hang", "error": said, "attributes": {}}));
+        }
+        restart(false);
+    });
     // Linux and Windows open a `one:` link with this program, by giving it as the only argument; a Mac tells the
     // program running (`Event::Opened`).
     let link = std::env::args().nth(1).filter(|arg| arg.starts_with("one:"));
@@ -587,14 +620,15 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 Some(id) => on_native(move |windows| restart(windows.showing(id))),
                 None => restart(false),
             },
-            Event::UserEvent(Told::Quit) => *flow = ControlFlow::Exit,
+            Event::UserEvent(Told::Quit) => closing(|| tell(Told::Closed)),
+            Event::UserEvent(Told::Closed) => *flow = ControlFlow::Exit,
             // The shortcut is let go of before it ends, which the system has done once this returns, so the new
             // program, which takes it as this one ends, finds it free.
             Event::UserEvent(Told::Ending) => {
                 if let Some((keeper, key)) = _shortcut.take() {
                     let _ = keeper.unregister(key);
                 }
-                std::process::exit(0)
+                closing(|| std::process::exit(0))
             }
             Event::UserEvent(Told::Shortcut(asked)) => _shortcut = shortcut(&home, asked),
             _ => {}

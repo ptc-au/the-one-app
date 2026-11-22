@@ -16,7 +16,8 @@ impl Windows {
         let frame = self.drawing().then(|| self.clock.due(now(), self.refresh()));
         let check = self.check.as_ref().map(conformance::Check::due).into_iter().chain(self.recording.as_ref().map(|recording| recording.until.saturating_duration_since(now()))).min();
         let idle = self.renderers().filter_map(Renderer::idle_in);
-        screens.chain(showing).chain(blank).chain(frame).chain(check).chain(idle).min()
+        let hang = self.renderers().filter_map(Renderer::hang_in);
+        screens.chain(showing).chain(blank).chain(frame).chain(check).chain(idle).chain(hang).min()
     }
 
     /// Whether its windows are a phone's: each the whole screen, an app's over the Home Screen, which it opens out of.
@@ -86,8 +87,15 @@ impl Windows {
             Ok(made) => made,
             Err(error) => return log::error!("no GPU to draw with again yet: {error:#}"),
         };
+        // What a GPU that hung holds is never let go: wgpu waits for it with no limit as a surface goes (wgpu-hal's
+        // Direct3D 12 `unconfigure`), and as its queue does (wgpu-core's `Queue::drop`).
+        let hung = self.context.hung();
         for window in self.windows.values_mut() {
-            window.renderer = None;
+            if let Some(renderer) = window.renderer.take()
+                && hung
+            {
+                std::mem::forget(renderer);
+            }
             if !self.background && window.parts.iter().all(|part| part.native.has_surface()) {
                 match draws_on(&context, atlas.clone(), &window.parts) {
                     Ok(renderer) => window.renderer = Some(renderer),
@@ -97,9 +105,14 @@ impl Windows {
             if let Ok(screen) = &mut window.screen {
                 screen.gpu_lost();
             }
-            window.dirty = true;
+            // Its new surface shows nothing yet, though nothing it paints changed.
+            (window.dirty, window.unshown) = (true, true);
         }
-        (self.context, self.atlas) = (context, atlas);
+        let old = std::mem::replace(&mut self.context, context);
+        if hung {
+            std::mem::forget(old);
+        }
+        self.atlas = atlas;
         log::info!("drawing again on a new GPU device");
     }
 
@@ -118,6 +131,22 @@ impl Windows {
         // The fake platform's loop has turned for what woke it (`Windows::run`).
         #[cfg(feature = "fake")]
         self.display.turned();
+        // A frame the GPU hasn't done a while after it was given, or a wait for it that ran out: it hung, which the
+        // system may never say. It's told once, by the window whose frame it is, or any.
+        let frame = self.windows.iter_mut().find_map(|(id, window)| {
+            let mut frame = window.renderer.as_mut()?.hung()?;
+            frame["moving"] = (window.moving || window.slide.is_some() || window.screen.as_ref().is_ok_and(Screen::framing)).into();
+            Some((*id, frame))
+        });
+        if self.context.hung()
+            && let Some((id, frame)) = frame.or_else(|| Some((*self.windows.keys().next()?, serde_json::json!({}))))
+            && let Some(window) = self.windows.get_mut(&id)
+        {
+            log::error!("the GPU hung drawing {}: {frame}", window.title);
+            #[cfg(feature = "fake")]
+            self.display.wrong(format!("the GPU hung drawing {}", window.title));
+            (window.on_event)(Event::Hung(frame));
+        }
         if self.context.lost() {
             self.recover();
         }

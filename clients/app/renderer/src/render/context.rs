@@ -19,6 +19,10 @@ pub struct Context {
     /// Its device was lost (its GPU was reset, as a Windows driver's TDR resets it, or went), so nothing drawn with
     /// it draws again: what draws makes everything again, on a new one (`Windows::recover`).
     lost: Arc<AtomicBool>,
+    /// Its GPU hung: a wait for it, or a frame, ran past `HANG` with no word from the system (`Renderer::wait`), as
+    /// on a Surface's Intel driver that failed its reset (22 Nov). It's lost too, and what it holds is never let go:
+    /// wgpu waits for the GPU with no limit as a surface or its queue goes (`Windows::recovered`).
+    pub(crate) hung: Arc<AtomicBool>,
     /// Glass is a plain tint on this GPU, not a blur (`weak`), decided once, as it's chosen.
     tinted: bool,
 }
@@ -137,7 +141,7 @@ impl Context {
             Ok("blurred") => false,
             _ => weak(&adapter.get_info()),
         };
-        Ok(Self { instance, adapter, device, queue, pipelines: Default::default(), lost, tinted })
+        Ok(Self { instance, adapter, device, queue, pipelines: Default::default(), lost, hung: Default::default(), tinted })
     }
 
     /// The GPU memory its allocator has taken from the system (`reserved`) and what it's given out of that
@@ -176,9 +180,20 @@ impl Context {
         self.tinted
     }
 
-    /// Whether its device was lost (`lost`).
+    /// Whether its device was lost (`lost`), or hung (`hung`).
     pub fn lost(&self) -> bool {
-        self.lost.load(Ordering::Relaxed)
+        self.lost.load(Ordering::Relaxed) || self.hung()
+    }
+
+    /// Whether its GPU hung (`hung`).
+    pub fn hung(&self) -> bool {
+        self.hung.load(Ordering::Relaxed)
+    }
+
+    /// Its GPU, as wgpu names it, and the API it's drawn with.
+    pub fn gpu(&self) -> String {
+        let info = self.adapter.get_info();
+        format!("{} ({:?})", info.name, info.backend)
     }
 }
 

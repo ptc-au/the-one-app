@@ -8,6 +8,7 @@ mod bounds_tree;
 pub mod context;
 pub mod renderer;
 pub mod scene;
+pub mod watchdog;
 
 /// What a renderer draws into, as its platform gives it: a native window's raw handles, or on the web, its canvas.
 #[cfg(not(target_arch = "wasm32"))]
