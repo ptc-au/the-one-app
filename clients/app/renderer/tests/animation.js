@@ -80,6 +80,7 @@ import { cpuName, hostScore } from "./animation/tiers.js"
 // What screenshot.js and calibrate.js import from here.
 export { built, env, FACES, glass, headless, jobs, lavapipe, pLimit, setHeadless, slot } from "./animation/options.js"
 export { stopped, work } from "./animation/workers.js"
+export { decoded, differs } from "./animation/output.js"
 export { moves, selector } from "./animation/gesture.js"
 export { monospaced } from "./animation/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animation/headless.js"

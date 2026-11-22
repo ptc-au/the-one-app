@@ -48,12 +48,11 @@ import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright-core"
 import { PNG } from "pngjs"
-import pixelmatch from "pixelmatch"
 import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, built, COMPONENTS, copied, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
+import { build, built, COMPONENTS, decoded, differs, copied, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -633,21 +632,11 @@ async function onDevice(drawn, folder) {
 const timings = ({ first_frame_ms, first_content_ms, worst_paint_ms, idle_ms, typing_ms, scrolling_ms, memory_mb, window_mb }) =>
   [`first frame ${first_frame_ms} ms`, first_content_ms != null && `first content ${first_content_ms} ms`, `worst frame ${worst_paint_ms} ms on its thread`, `frame ${idle_ms} ms idle`, typing_ms != null && `${typing_ms} ms typing`, scrolling_ms != null && `${scrolling_ms} ms scrolling`, `${memory_mb} MB`, `${window_mb} MB a window more`].filter(Boolean).join(", ")
 
-/// How much of two pictures differs, from 0 to 1, where they're the same size, with where in `diff`.
-function differs(one, other, diff) {
-  const [a, b] = [one, other].map((file) => PNG.sync.read(readFileSync(file)))
-  if (a.width !== b.width || a.height !== b.height) return undefined
-  const marked = new PNG({ width: a.width, height: a.height })
-  const changed = pixelmatch(a.data, b.data, marked.data, a.width, a.height, { threshold: 0.1 })
-  writeFileSync(diff, PNG.sync.write(marked))
-  return changed / (a.width * a.height)
-}
-
 /// How many pixels of a picture are drawn: those that aren't its background's, its most common colour (to within a rounding
 /// of a channel or two). A picture that drew nothing, or only its background, has none, however big its window and small
 /// what's in it (a button in a computer's window).
 function inked(file) {
-  const { data } = PNG.sync.read(readFileSync(file))
+  const { data } = decoded(file)
   const counts = new Map()
   for (let at = 0; at < data.length; at += 4) counts.set(data.readUInt32BE(at), (counts.get(data.readUInt32BE(at)) ?? 0) + 1)
   const [background] = [...counts].reduce((most, one) => (one[1] > most[1] ? one : most))
@@ -660,7 +649,7 @@ function inked(file) {
 /// How many pixels of two pictures of a size differ by more than a level in a channel, and by how much at most, or
 /// nothing where none does.
 function levels(one, other) {
-  const [a, b] = [one, other].map((file) => PNG.sync.read(readFileSync(file)))
+  const [a, b] = [one, other].map(decoded)
   let [differ, most] = [0, 0]
   for (let at = 0; at < a.data.length; at += 4) {
     const by = Math.max(...[0, 1, 2, 3].map((channel) => Math.abs(a.data[at + channel] - b.data[at + channel])))
@@ -706,7 +695,7 @@ const WEB_MOVED = [[1, 0], [0, 1], [37, 23]]
 /// but near the canvas's edges, where what it reads beyond them is cut off otherwise moved. → how many pixels differ,
 /// by how much at most and where, or nothing.
 function unmoved(here, moved, [dx, dy], glass) {
-  const [a, b] = [here, moved].map((file) => PNG.sync.read(readFileSync(file)))
+  const [a, b] = [here, moved].map(decoded)
   const rects = Array.from({ length: glass.length / 4 }, (_, n) => glass.slice(n * 4, n * 4 + 4))
   // How far a blur reads round its glass, at most: twice three of its widest sigma, 30 points at 2x.
   const REACH = 360

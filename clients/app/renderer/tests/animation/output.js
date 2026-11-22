@@ -1,5 +1,5 @@
 // What a motion keeps: its curve, filmstrip and contact sheet, and how two of them differ.
-import { readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { PNG } from "pngjs"
 import pixelmatch from "pixelmatch"
@@ -273,13 +273,31 @@ export function sharpness(png, points, box) {
   return steepest.reduce((sum, step) => sum + step, 0) / steepest.length / contrast
 }
 
-/// How much of two pictures differs, from 0 to 1, where they're the same size, with where in `diff`.
+/// The pictures a pass read last, by their files, each kept while its file is as it was.
+const read = new Map()
+/// A PNG file's picture, read once for everything a pass judges of it (its rules, whether it's blank, what changed).
+export function decoded(file) {
+  const { mtimeMs, size } = statSync(file)
+  const kept = read.get(file)
+  if (kept?.mtimeMs === mtimeMs && kept.size === size) return kept.png
+  const png = PNG.sync.read(readFileSync(file))
+  read.delete(file)
+  read.set(file, { mtimeMs, size, png })
+  if (read.size > 16) read.delete(read.keys().next().value)
+  return png
+}
+
+/// How much of two pictures differs, from 0 to 1, where they're the same size, with where in `diff`, which is drawn only
+/// where some does.
 export function differs(one, other, diff) {
-  const [a, b] = [one, other].map((file) => PNG.sync.read(readFileSync(file)))
+  rmSync(diff, { force: true })
+  // The same bytes are the same picture: almost every one, where a change changed little.
+  if (readFileSync(one).equals(readFileSync(other))) return 0
+  const [a, b] = [one, other].map(decoded)
   if (a.width !== b.width || a.height !== b.height) return undefined
   const marked = new PNG({ width: a.width, height: a.height })
   const changed = pixelmatch(a.data, b.data, marked.data, a.width, a.height, { threshold: 0.1 })
-  writeFileSync(diff, PNG.sync.write(marked))
+  if (changed) writeFileSync(diff, PNG.sync.write(marked))
   return changed / (a.width * a.height)
 }
 

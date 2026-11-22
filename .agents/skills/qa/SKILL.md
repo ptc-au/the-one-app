@@ -71,7 +71,7 @@ GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once 
 not every time. Compare only runs made on the same GPU. With `--web` it draws by our renderer on the web too, in headless Chromium
 (Playwright's, which `bunx playwright-core install chromium` fetches where it's missing; its WebGPU on SwiftShader,
 which draws on the CPU: `web.png`, compared with `native.png`, the web gate below). What counts is **what changed since `--against`** on our renderer
-(`changed.png`): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
+(`changed.png`, drawn where they differ): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
 in the commit; one that isn't is fixed. Our renderer is the reference, judged against DESIGN.md (Raycast-inspired), not
 the browser: it draws the web too. A native host that hasn't the runtime version the UI library needs draws nothing, which it says.
 Every scene and preview is held to the same rules too, whatever its page (`rules.js`, and `core/ui/lint-tokens.js` for the colours

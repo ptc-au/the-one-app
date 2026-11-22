@@ -4,7 +4,7 @@
 // had found it in that scene alone. screenshot.js runs them on every scene; a rule that fails says which node and why, a
 // line each. An exception is a node a rule can't judge, named in the rule with why.
 import { readFileSync } from "node:fs"
-import { PNG } from "pngjs"
+import { decoded } from "./animation/output.js"
 
 /// WCAG's relative luminance of an sRGB colour, and its contrast ratio of two.
 const linear = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
@@ -24,7 +24,7 @@ const length = (value) => (typeof value === "number" ? value : typeof value === 
 
 /// A picture of the window, read once: its colour at a device pixel, and how many of them a point is.
 function picture(file, points) {
-  const { data, width, height } = PNG.sync.read(readFileSync(file))
+  const { data, width, height } = decoded(file)
   const scale = width / points
   const at = (x, y) => {
     const [column, row] = [Math.min(width - 1, Math.max(0, Math.round(x))), Math.min(height - 1, Math.max(0, Math.round(y)))]
