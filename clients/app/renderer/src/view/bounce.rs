@@ -46,10 +46,12 @@ pub(super) struct Coast {
 }
 
 /// Where a wheel's notches send a scroll (`to`), and each notch still easing there: when it turned (ms on the screen's
-/// clock) and how far it sends it.
+/// clock) and how far it sends it; and as of the frame before, where their easing had it, how far it went then, and
+/// how far it was drawn going on whole points (`last`).
 pub(super) struct Aim {
     to: f32,
     notches: Vec<(f64, f32)>,
+    last: Option<(f64, f64, f32)>,
 }
 
 impl Screen {
@@ -156,9 +158,26 @@ impl Screen {
                 // Short of where it's going by what its notches have still to go, on whole points, as a browser's
                 // compositor puts a scroll on whole pixels, so its words are drawn as they were, not rasterized again
                 // at each new fraction of a point.
+                // Each step on whole points speeds up and slows down as the easing does, where that keeps it within a
+                // point of it: rounded alone, a slowing easing's last steps went 2, 1, 2, 0, 1 pt a refresh. Its last
+                // step puts it where its notches send it.
                 let left: f64 = aim.notches.iter().map(|(turned, by)| f64::from(*by) * (1.0 - eased((now - turned) / NOTCH_MS))).sum();
                 aim.notches.retain(|(turned, _)| now < turned + NOTCH_MS);
-                let (along, to) = (coast.along, aim.to - (left as f32).round());
+                let along = coast.along;
+                let easing = f64::from(aim.to) - left;
+                let shown = self.scrolled.get(&id).map_or(0.0, |at| if along { at.x } else { at.y });
+                let mut step = easing.round() as f32 - shown;
+                if seconds > 0.0 {
+                    let (was, went, stepped) = aim.last.unwrap_or((f64::from(shown), 0.0, step));
+                    let going = easing - was;
+                    let near = (easing - f64::from(shown + stepped)).abs() < 1.0;
+                    let against = (going.abs() < went.abs() && step.abs() > stepped.abs()) || (going.abs() > went.abs() && step.abs() < stepped.abs());
+                    if near && against && !aim.notches.is_empty() {
+                        step = stepped;
+                    }
+                    aim.last = Some((easing, going, step));
+                }
+                let to = shown + step;
                 if aim.notches.is_empty() {
                     self.coasts.remove(&id);
                 }
@@ -224,7 +243,7 @@ impl Screen {
                 aim.notches.push((now, to - aim.to));
                 aim.to = to;
             }
-            _ => drop(self.coasts.insert(id, Coast { along, held: false, flung: false, pulled: 0.0, stretch: 0.0, velocity: 0.0, stepped: now, aim: Some(Aim { to, notches: vec![(now, to - from)] }) })),
+            _ => drop(self.coasts.insert(id, Coast { along, held: false, flung: false, pulled: 0.0, stretch: 0.0, velocity: 0.0, stepped: now, aim: Some(Aim { to, notches: vec![(now, to - from)], last: None }) })),
         }
         self.changed();
         Some(id)
