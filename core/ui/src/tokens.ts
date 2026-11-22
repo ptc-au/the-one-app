@@ -172,11 +172,12 @@ const motions = {
   quick: motion(120, out),
   settle: motion(200, out),
   travel: motion({ default: 300, reducedMotion: 200 }, { default: [0.32, 0.72, 0, 1], reducedMotion: out }),
-  /** Springs, by SwiftUI's names and with its values (`Animation.snappy`, `.smooth`: half a second). Snappy: what
-   * changes size or place and can be turned back midway, a little past where it goes. Smooth: what fades or settles
-   * beside it, with no bounce. */
-  snappy: spring(500, 0.15),
-  smooth: spring(500, 0),
+  /** Springs, by SwiftUI's names and bounces (`Animation.snappy`, `.smooth`), quicker than its half a second: at rest
+   * within a pixel 0.4 s after they're let go from 200 or 300 points, as Material 3 Expressive's spatial springs are,
+   * where SwiftUI's took 0.7 (Andre likes snappy motion, 22 Nov). Snappy: what changes size or place and can be turned
+   * back midway, a little past where it goes. Smooth: what fades or settles beside it, with no bounce. */
+  snappy: spring(300, 0.15),
+  smooth: spring(300, 0),
   /** Pages settling where a swipe let them go, as UIScrollView's paging, SpringBoard's pages', does: its curve recorded
    * on iOS 26's simulator and fitted, a spring from the finger's speed (a stiffness of 420 and damping of 39.5), at
    * rest in a third of a second. */
