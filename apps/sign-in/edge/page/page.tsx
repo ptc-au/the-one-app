@@ -235,15 +235,17 @@ async function answered(result: Answered, prf: Uint8Array | undefined | null) {
   shownCode = key ? await code(key) : undefined
 }
 
-/// Signs in with Google, which brings them back to this page, as it was opened, to carry on: someone joining to Home,
-/// with their invitation and the name they typed, if they did. Back here, they're signed in, as of just now.
+/// Signs in with Google, which brings them back to this page, as it was opened, to carry on: someone joining or just
+/// signing in to Home, as a passkey does, with their invitation and the name they typed, if they did. Back here,
+/// they're signed in, as of just now. A plain sign-in came back to this page, where nothing carries on, and showed
+/// Sign in again to someone signed in (22 Nov).
 async function withGoogle() {
   const back = new URL(location.href)
   back.searchParams.delete("error")
   back.searchParams.delete("error_description")
   const { error } = await auth.signIn.social({
     provider: "google",
-    callbackURL: flow.flow === "join" ? "/" : back.href,
+    callbackURL: flow.flow === "join" || flow.flow === "signIn" ? "/" : back.href,
     errorCallbackURL: back.href,
     ...(flow.flow === "join" && { additionalData: { invite: flow.invite, called: called().trim() } }),
   })
