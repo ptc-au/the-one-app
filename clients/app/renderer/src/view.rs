@@ -216,9 +216,11 @@ pub struct Screen {
     /// The finger it follows, as a phone's host hands it each touch (`touch`).
     finger: Option<touch::Finger>,
     /// Its window has the rail's home line over its page, as a phone's app window has (DESIGN.md, The rail), and
-    /// whether a finger's pulling it home, which takes the line with it.
+    /// whether the window moves (`moving`): growing out of its icon, pulled home by a finger, or springing home or back,
+    /// while which the line is away, as iOS's home indicator is while its app's card moves, or it reads as a scroll bar
+    /// drawn on the card.
     pub rail: bool,
-    pub pulled: bool,
+    pub moving: bool,
     /// The node a pointer's press went down on, which its moves and its end go to, wherever it goes.
     captured: Option<Id>,
     /// What the press drags, if it's on a node that does.
@@ -389,7 +391,7 @@ impl Screen {
             happened: None,
             finger: None,
             rail: false,
-            pulled: false,
+            moving: false,
             captured: None,
             placed: Vec::new(),
             layers: HashMap::new(),

@@ -35,8 +35,8 @@ impl Windows {
                     rail::Pulled::Kept(Some(moved)) => {
                         self.display.set_moved(&window.parts[0].native, moved);
                         if !was {
-                            // Its line goes with it, and its page is the card's, which no other window shows behind.
-                            screen.pulled = true;
+                            // Its line goes as it moves, and its page is the card's, which no other window shows behind.
+                            screen.moving = true;
                             window.dirty = true;
                             for (_, other) in self.windows.iter().filter(|(other, under)| **other != id && !under.root) {
                                 self.display.set_moved(&other.parts[0].native, rail::Moved::HIDDEN);
@@ -167,7 +167,7 @@ impl Windows {
                 Some(_) => {
                     window.pull = None;
                     if let Ok(screen) = &mut window.screen {
-                        screen.pulled = false;
+                        screen.moving = false;
                     }
                     window.dirty = true;
                     back = true;

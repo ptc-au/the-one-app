@@ -347,6 +347,9 @@ impl Windows {
                     let (moved, _) = opening.step(Size { width: room.width.0, height: room.height.0 }, window.icon, reduced, time);
                     self.display.set_moved(&window.parts[0].native, moved);
                     window.pull = Some(opening);
+                    if let Ok(screen) = &mut window.screen {
+                        screen.moving = true;
+                    }
                 }
                 // A panel shows as it's summoned.
                 if !window.panel {
