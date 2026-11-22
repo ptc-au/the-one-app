@@ -19,7 +19,7 @@ defmodule Backups.Run do
 
   A backup under way is a row of `runs`, written before anything is sent, so every app and agent sees it, and a second
   one to the same destination, as the hourly job and Back Up Now at once, is refused. It goes when the backup is done
-  or has failed, and a failure is kept as the destination's problem. Its server writes `beat` every 30 seconds while
+  or has failed, and a failure is kept as the destination's problem. Its server writes `beat` every 15 seconds while
   it runs: a row whose `beat` is older than `@stale` was cut short, as by its server restarting, and the next backup
   takes its place, sending only what the cut-short one didn't. Each blob read is kept in `listed` as it's sent, so
   the next one reads only what the cut-short one didn't either. A timer has `due` called every few minutes while a
@@ -42,8 +42,8 @@ defmodule Backups.Run do
   @uploads 16
   @kept_at 8_000_000
   # How often a backup under way says it still is, and how long after it last did it's taken to have been cut short.
-  @beat 30_000
-  @stale 120_000
+  @beat 15_000
+  @stale 60_000
   # How much older than the backup that's pruning an object no backup holds has to be to be an orphan of a backup
   # that's over: one cut short sends no more within minutes (`@stale`), as its next transaction fails.
   @orphaned 3_600_000
