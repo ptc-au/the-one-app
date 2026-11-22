@@ -56,8 +56,15 @@ is needed to see either. A change that makes a screen, or a state of one, adds i
 expectations of its own: the renderer's tests run over every one. Every change to how something looks runs, in
 `clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
 
-    bun screenshot.js --release --out <scratch>/before          # on main, before the change (or an earlier run)
+    bun screenshot.js --release --out <scratch>/after [<folder>…]                    # on your branch: says its folders
+    bun screenshot.js --release --out <scratch>/before <its folders>                 # on main, the same folders
     bun screenshot.js --release --out <scratch>/after --against <scratch>/before [<folder>…]
+
+Without folders named, a pass (here and in animation.js) draws only the folders what changed since your branch left
+main can draw differently (`git diff` from their merge base, uncommitted too, `animation/changed.js`): every one for a
+change to the renderer, its tests or the UI library (and to `clients/web` on the web), else the gallery's or an app's
+client's own; it says which on stderr, and `--all` draws every one. Main's pictures are kept for the machine, so a
+pass of main another agent made costs little.
 
 It draws every scene and preview, or those of the folders named, on a native host by the headless renderer, which it
 builds, or takes the one any worktree on the machine built from the same (`tooling/cached-build`; `--release` for a

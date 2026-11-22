@@ -71,6 +71,7 @@
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs"
 import { join } from "node:path"
 import { checks } from "./animation/checks.js"
+import { changed } from "./animation/changed.js"
 import { built, checking, firstSeed, flag, folders, generating, headless, here, out, root, setHeadless, ssh, ui } from "./animation/options.js"
 import { generated } from "./animation/generated.js"
 import { copied, stale } from "./animation/pages.js"
@@ -83,13 +84,16 @@ export { stopped, work } from "./animation/workers.js"
 export { decoded, differs } from "./animation/output.js"
 export { machine } from "./animation/machine.js"
 export { cached } from "./animation/cache.js"
+export { changed } from "./animation/changed.js"
 export { moves, selector } from "./animation/gesture.js"
 export { monospaced } from "./animation/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animation/headless.js"
 export { build, COMPONENTS, copied, library, pageFolder, stale, usedFolder } from "./animation/pages.js"
 
 /// Every folder with motions, or with `--checks` every folder with scenes: the gallery, and each app's.
-const everything = () => [here("gallery"), ...(checking ? readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json"))) : [])]
+const every = () => [here("gallery"), ...(checking ? readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json"))) : [])]
+/// Of those, the ones what changed since main draws differently (`changed`).
+const everything = () => changed(every())
 
 // Run, rather than imported for what it shares (calibrate.js).
 if (import.meta.main) {
@@ -115,7 +119,7 @@ if (import.meta.main) {
 
   if (flag("--watch")) {
     // What changed, played again: the UI library's own source rebuilds it first and plays everything.
-    const watched = folders.length ? folders : everything()
+    const watched = folders.length ? folders : every()
     let pending
     const changed = new Set()
     const again = async () => {
