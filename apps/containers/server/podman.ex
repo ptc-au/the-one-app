@@ -513,12 +513,12 @@ defmodule Containers.Podman do
   # Enables Podman's `podman-restart` user service, which starts containers whose policy is `always` as the machine
   # starts, and lingering, so the user's services start with the machine rather than once they sign in.
   defp start_after_reboot! do
-    with {_, 0} <- System.cmd("systemctl", ["--user", "enable", "podman-restart.service"], stderr_to_stdout: true),
-         {_, 0} <- System.cmd("loginctl", ["enable-linger"], stderr_to_stdout: true) do
+    with %{exit: 0} <- OneCore.Command.run(["systemctl", "--user", "enable", "podman-restart.service"], 60),
+         %{exit: 0} <- OneCore.Command.run(["loginctl", "enable-linger"], 60) do
       :ok
     else
-      {why, _} ->
-        raise "This machine can't start a container again after a reboot: #{String.trim(why)}\n\n" <>
+      %{stdout: said, stderr: errors} ->
+        raise "This machine can't start a container again after a reboot: #{String.trim(said <> errors)}\n\n" <>
                 "It needs Podman's podman-restart user service enabled (systemctl --user enable podman-restart.service) " <>
                 "and the user lingering (loginctl enable-linger)."
     end

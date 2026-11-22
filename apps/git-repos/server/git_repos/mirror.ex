@@ -21,6 +21,9 @@ defmodule GitRepos.Mirror do
   alias OneCore.Artifact
 
   @zero String.duplicate("0", 40)
+  # How long git is given: a clone's or a push's pack over a slow link takes minutes, and one that stops answering is
+  # ended.
+  @timeout 600
   # How many packs a repo keeps before the newest are merged, as git's geometric repack merges them: each pack at
   # least twice the size of all the newer ones together, so a merge rewrites mostly what's new.
   @packs 8
@@ -215,8 +218,8 @@ defmodule GitRepos.Mirror do
   """
   def git!(folder, args, options \\ []) do
     case git(folder, args, options) do
-      {out, 0} -> out
-      {out, _} -> raise "git #{hd(args)} failed: #{String.trim(out)}"
+      %{exit: 0, stdout: out} -> out
+      %{stdout: out, stderr: errors} -> raise "git #{hd(args)} failed: #{String.trim(out <> errors)}"
     end
   end
 
@@ -226,22 +229,21 @@ defmodule GitRepos.Mirror do
       raise "This server can't find git, which Git Repos needs. Ask your network's admin to install it.\n\nInstall git, then run `one serve on` again on its machine."
   end
 
-  @doc "Runs git as `git!/3` does, and gives what it printed and how it ended."
+  @doc "Runs git as `git!/3` does, and gives what it printed, and what it wrote as errors, through `OneCore.Command`."
   def git(folder, args, options \\ []) do
     env = [{"GIT_CONFIG_NOSYSTEM", "1"}, {"GIT_CONFIG_GLOBAL", "/dev/null"}, {"GIT_TERMINAL_PROMPT", "0"}]
     env = env ++ Keyword.get(options, :env, [])
 
     case {options[:input], options[:from]} do
       {nil, nil} ->
-        System.cmd(git_program(), args, cd: folder, env: env, stderr_to_stdout: !options[:binary])
+        OneCore.Command.run([git_program() | args], @timeout, cd: folder, env: env, binary: options[:binary])
 
       {input, from} ->
         file = from || Path.join(System.tmp_dir!(), "git-repos-" <> Base.encode16(:crypto.strong_rand_bytes(8)))
         if input, do: File.write!(file, input)
-        redirect = if options[:binary], do: "", else: " 2>&1"
 
         try do
-          System.cmd("sh", ["-c", ~s(exec "#{git_program()}" "$@" < "$0"#{redirect}), file | args], cd: folder, env: env)
+          OneCore.Command.run([git_program() | args], @timeout, cd: folder, env: env, in: file)
         after
           if input, do: File.rm(file)
         end

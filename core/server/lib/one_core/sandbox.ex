@@ -39,7 +39,7 @@ defmodule OneCore.Sandbox do
   """
   @behaviour :gen_statem
   require Logger
-  alias OneCore.{Artifact, Bucket, Builds, Call, Apps, Server, User}
+  alias OneCore.{Artifact, Bucket, Builds, Call, Command, Apps, Server, User}
   alias OneCore.Call.State
   alias OneCore.Apps.{Store, Version}
 
@@ -115,8 +115,8 @@ defmodule OneCore.Sandbox do
   defp kill(port) do
     with {:os_pid, pid} <- Port.info(port, :os_pid) do
       case :os.type() do
-        {:win32, _} -> System.cmd("taskkill", ["/F", "/PID", to_string(pid)], stderr_to_stdout: true)
-        _ -> System.cmd("kill", ["-KILL", to_string(pid)])
+        {:win32, _} -> Command.run(["taskkill", "/F", "/PID", to_string(pid)], 10)
+        _ -> Command.run(["kill", "-KILL", to_string(pid)], 10)
       end
     end
   end

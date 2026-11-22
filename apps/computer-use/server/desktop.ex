@@ -195,10 +195,10 @@ defmodule ComputerUse.Desktop do
           %{stdout: sdp, stderr: why} = OneCore.Command.run([sender, file], 30, env: session())
           {sdp, why}
 
-        # Windows has no sh for OneCore.Command; the sender answers within seconds or says why.
+        # The sender answers within seconds or says why.
         {:win32, _} ->
-          {said, _} = System.cmd(sender, [file], stderr_to_stdout: true)
-          if String.starts_with?(said, "v=0"), do: {said, ""}, else: {"", said}
+          ran = OneCore.Command.run([sender, file], 30)
+          if String.starts_with?(ran.stdout, "v=0"), do: {ran.stdout, ""}, else: {"", ran.stdout <> ran.stderr}
       end
 
     if String.starts_with?(answer, "v=0"), do: answer, else: raise("Couldn't stream its screen: #{String.trim(why)}")
@@ -206,7 +206,7 @@ defmodule ComputerUse.Desktop do
 
   # The graphical session's display, as systemd keeps it for the person's programs: this server's own may have none.
   defp session do
-    {said, 0} = System.cmd("systemctl", ["--user", "show-environment"])
+    %{exit: 0, stdout: said} = OneCore.Command.run(["systemctl", "--user", "show-environment"], 10)
     display = for line <- String.split(said, "\n"), [name, value] <- [String.split(line, "=", parts: 2)], name in ~w(DISPLAY XAUTHORITY), do: {name, value}
     if List.keymember?(display, "DISPLAY", 0), do: display, else: raise("This computer's person has no X display signed in")
   end
@@ -460,7 +460,8 @@ defmodule ComputerUse.Desktop do
   end
 
   defp secure_input?(service) do
-    {answer, 0} = System.cmd(Path.join([GenServer.call(service, :helper), "Contents", "MacOS", "helper"]), ["secure-input"])
+    helper = Path.join([GenServer.call(service, :helper), "Contents", "MacOS", "helper"])
+    %{exit: 0, stdout: answer} = OneCore.Command.run([helper, "secure-input"], 10)
     String.trim(answer) == "true"
   end
 
@@ -537,8 +538,8 @@ defmodule ComputerUse.Desktop do
       restarted(state)
       {:reply, :before, state}
     else
-      System.cmd("open", ["-n", "-g", state.helper, "--args", "ask", permission])
-      {_, opened} = System.cmd("open", [@links[permission]])
+      OneCore.Command.run(["open", "-n", "-g", state.helper, "--args", "ask", permission], 10)
+      %{exit: opened} = OneCore.Command.run(["open", @links[permission]], 10)
       {:reply, if(opened == 0, do: :opened, else: :before), %{state | asked: MapSet.put(state.asked, permission)}}
     end
   end
@@ -599,10 +600,10 @@ defmodule ComputerUse.Desktop do
     # each minute beside this: it goes, as each Windows server runs this once.
     old = "the One App Computer Use #{key()}"
 
-    if match?({:win32, _}, :os.type()) and match?({_, 0}, System.cmd("schtasks", ["/query", "/tn", old], stderr_to_stdout: true)) do
+    if match?({:win32, _}, :os.type()) and match?(%{exit: 0}, OneCore.Command.run(["schtasks", "/query", "/tn", old], 30)) do
       stopped(driver)
-      System.cmd("schtasks", ["/end", "/tn", old], stderr_to_stdout: true)
-      System.cmd("schtasks", ["/delete", "/tn", old, "/f"], stderr_to_stdout: true)
+      OneCore.Command.run(["schtasks", "/end", "/tn", old], 30)
+      OneCore.Command.run(["schtasks", "/delete", "/tn", old, "/f"], 30)
     end
 
     if OneCore.System.install(program) or new?, do: restarted(state), else: OneCore.System.start(program)
@@ -618,7 +619,7 @@ defmodule ComputerUse.Desktop do
   end
 
   defp stopped(nil), do: :ok
-  defp stopped(driver), do: System.cmd(driver, ["stop", "--socket", socket()], stderr_to_stdout: true)
+  defp stopped(driver), do: OneCore.Command.run([driver, "stop", "--socket", socket()], 30)
 
   # The loopback port Cua Driver's MCP endpoint listens on, one the system gave free the first time, and the token it
   # takes, both kept in the service's folder.
@@ -710,7 +711,7 @@ defmodule ComputerUse.Desktop do
       writing = helper <> ".writing"
       File.rm_rf!(writing)
       File.mkdir_p!(writing)
-      {_, 0} = System.cmd("tar", ["-xzf", build, "-C", writing])
+      %{exit: 0} = OneCore.Command.run(["tar", "-xzf", build, "-C", writing], 300)
       File.rm_rf!(helper)
       File.rename!(Path.join(writing, @helper), helper)
       File.rm_rf!(writing)

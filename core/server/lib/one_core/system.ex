@@ -10,6 +10,7 @@ defmodule OneCore.System do
   (`desktop`), and `start_within` (nil, as it doesn't say it's running) and `stop_within`, in milliseconds. What the
   system won't do is raised.
   """
+  alias OneCore.Command
 
   @doc "Writes how the system runs `program`, which takes effect from its next start, where it isn't that already. Says whether it changed."
   def install(program), do: one(["install", json(program)]) == "true"
@@ -30,9 +31,9 @@ defmodule OneCore.System do
   defp one(arguments) do
     one = System.get_env("ONE_PROGRAM") || raise "This server says no `one` runs it (ONE_PROGRAM), which keeps what the system runs"
 
-    case System.cmd(one, ["system" | arguments], stderr_to_stdout: true) do
-      {said, 0} -> said |> String.trim() |> String.split("\n") |> List.last()
-      {said, _} -> raise String.trim(said)
+    case Command.run([one, "system" | arguments], 60) do
+      %{exit: 0, stdout: said} -> said |> String.trim() |> String.split("\n") |> List.last()
+      %{stdout: said, stderr: errors} -> raise String.trim(said <> errors)
     end
   end
 end

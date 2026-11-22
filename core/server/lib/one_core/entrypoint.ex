@@ -11,12 +11,15 @@ defmodule OneCore.Entrypoint do
   An app that names packages of its own in `client/package.json` has them installed as it's built; one that names none
   installs nothing.
   """
-  alias OneCore.{BuildCache, Server, Skills}
+  alias OneCore.{BuildCache, Command, Server, Skills}
   alias OneCore.Apps.Version
 
   @client "client/"
   @ui "client/ui"
   @build "build/"
+
+  # An app's page is checked and built in minutes, and one that stops answering is ended.
+  @timeout 600
 
   @doc """
   The UI library this server ships with, as it's built: its `files` by their paths, its `code`, which names them, and
@@ -153,9 +156,9 @@ defmodule OneCore.Entrypoint do
   end
 
   defp checked(bun, builder, source, true) do
-    case System.cmd(bun, [Path.join(builder, "lint-app.js"), source], stderr_to_stdout: true, env: runtime()) do
-      {said, 0} -> {:ok, String.trim(said)}
-      {said, _} -> {:error, not_checked(said)}
+    case Command.run([bun, Path.join(builder, "lint-app.js"), source], @timeout, env: runtime()) do
+      %{exit: 0, stdout: said} -> {:ok, String.trim(said)}
+      %{stdout: said, stderr: errors} -> {:error, not_checked(said <> errors)}
     end
   end
 
@@ -276,9 +279,9 @@ defmodule OneCore.Entrypoint do
   end
 
   defp run(bun, args, failed, folder) do
-    case System.cmd(bun, args, stderr_to_stdout: true, cd: folder, env: runtime()) do
-      {_, 0} -> :ok
-      {said, _} -> {:error, "#{failed}:\n#{String.trim(said)}"}
+    case Command.run([bun | args], @timeout, cd: folder, env: runtime()) do
+      %{exit: 0} -> :ok
+      %{stdout: said, stderr: errors} -> {:error, "#{failed}:\n#{String.trim(said <> errors)}"}
     end
   end
 

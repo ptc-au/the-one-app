@@ -32,7 +32,7 @@ defmodule GitRepos.Wire do
       {"GIT_PROTOCOL", protocol || ""}
     ]
 
-    {out, 0} = Mirror.git(Path.dirname(folder), ["http-backend"], env: env, input: body || "", binary: true)
+    %{exit: 0, stdout: out} = Mirror.git(Path.dirname(folder), ["http-backend"], env: env, input: body || "")
     [head, body] = String.split(out, ~r/\r?\n\r?\n/, parts: 2)
     type = Regex.run(~r/^Content-Type: *(.*?)\r?$/mi, head, capture: :all_but_first) || ["text/plain"]
 

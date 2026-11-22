@@ -8,10 +8,13 @@ defmodule OneCore.Apps.Git do
   an empty `credential.helper`): what the machine's user may reach isn't the app's. What's named after an option
   (`--`, `--end-of-options`) is never taken as one.
   """
-  alias OneCore.{Programs, Server}
+  alias OneCore.{Command, Programs, Server}
 
   # How git is run for an untrusted app: over https alone, signed in as nobody.
   @untrusted ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "credential.helper="]
+
+  # A clone or a fetch of a repo takes minutes, and one that stops answering is ended.
+  @timeout 600
 
   @doc """
   Fetches `source` (a URL, `owner/repo` on GitHub, or for a trusted app a path), for an app that's `trusted` or not:
@@ -90,9 +93,9 @@ defmodule OneCore.Apps.Git do
   defp git(folder, args, trim \\ true) do
     with {:ok, git} <- Programs.path(:git) do
       # An archive is its output alone; anything else is said with what git says.
-      case System.cmd(git, ["-C", folder | args], stderr_to_stdout: trim, env: [{"GIT_TERMINAL_PROMPT", "0"}]) do
-        {out, 0} -> {:ok, if(trim, do: String.trim(out), else: out)}
-        {out, _} -> {:error, "git #{hd(args -- @untrusted)} said: #{String.trim(out)}"}
+      case Command.run([git, "-C", folder | args], @timeout, env: [{"GIT_TERMINAL_PROMPT", "0"}], binary: !trim) do
+        %{exit: 0, stdout: out} -> {:ok, if(trim, do: String.trim(out), else: out)}
+        %{stdout: out, stderr: errors} -> {:error, "git #{hd(args -- @untrusted)} said: #{String.trim(out <> errors)}"}
       end
     end
   end

@@ -32,7 +32,7 @@ defmodule GitRepos do
   def icon, do: "client/icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.32.167"}
+  def requires, do: %{"core" => ">= 0.34.403"}
 
   # Every repo is listed in one index, the network's, which a call reads and writes whoever it's for, so what it
   # keeps is whoever Git Repos is installed for's, and it runs on their servers.
@@ -721,22 +721,22 @@ defmodule GitRepos do
   defp ref?(_folder, "refs/pull/" <> name), do: name =~ ~r/^[a-z0-9][a-z0-9_-]*$/
 
   defp ref?(folder, ref),
-    do: ref =~ ~r{^refs/(heads|tags)/} and elem(Mirror.git(folder, ["check-ref-format", ref]), 1) == 0
+    do: ref =~ ~r{^refs/(heads|tags)/} and match?(%{exit: 0}, Mirror.git(folder, ["check-ref-format", ref]))
 
   defp connected?(folder, sha),
-    do: elem(Mirror.git(folder, ["rev-list", "--objects", "--quiet", sha, "--not", "--all"]), 1) == 0
+    do: match?(%{exit: 0}, Mirror.git(folder, ["rev-list", "--objects", "--quiet", sha, "--not", "--all"]))
 
-  defp ancestor?(folder, base, tip), do: elem(Mirror.git(folder, ["merge-base", "--is-ancestor", base, tip]), 1) == 0
+  defp ancestor?(folder, base, tip), do: match?(%{exit: 0}, Mirror.git(folder, ["merge-base", "--is-ancestor", base, tip]))
 
   # A merge of `tip` into `base` that git makes without a working tree, as its own pack. Gives the merge and the
   # pack, or raises with the files that conflict.
   defp merge(folder, base, tip, message, person, by) do
     tree =
       case Mirror.git(folder, ["merge-tree", "--write-tree", "--name-only", "--no-messages", base, tip]) do
-        {out, 0} ->
+        %{exit: 0, stdout: out} ->
           String.trim(out)
 
-        {out, 1} ->
+        %{exit: 1, stdout: out} ->
           [_tree | files] = lines(out)
 
           raise "It doesn't merge cleanly: #{Enum.join(files, ", ")} changed on both sides. Its author fetches, " <>

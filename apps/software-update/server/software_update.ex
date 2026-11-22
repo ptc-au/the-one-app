@@ -18,7 +18,7 @@ defmodule SoftwareUpdate do
   def icon, do: "icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.299", "vault" => "to deploy your network's edge with its Cloudflare token"}
+  def requires, do: %{"core" => ">= 0.34.403", "vault" => "to deploy your network's edge with its Cloudflare token"}
 
   @impl true
   def hooks, do: ["edge"]
@@ -58,13 +58,14 @@ defmodule SoftwareUpdate do
       File.cp_r!(from, folder)
       env = [{"CLOUDFLARE_API_TOKEN", token}]
 
-      with {_, 0} <- System.cmd(bun, ["install", "--frozen-lockfile"], cd: folder, stderr_to_stdout: true),
-           {said, 0} <- System.cmd(bun, ["deploy.js", address], cd: folder, env: env, stderr_to_stdout: true) do
+      with %{exit: 0} <- OneCore.Command.run([bun, "install", "--frozen-lockfile"], 300, cd: folder),
+           %{exit: 0, stdout: said} <- OneCore.Command.run([bun, "deploy.js", address], 600, cd: folder, env: env) do
         Logger.info(String.trim(said))
         File.rm_rf(folder)
         :ok
       else
-        {said, _status} ->
+        %{stdout: said, stderr: errors} ->
+          said = said <> errors
           Logger.error("The edge wasn't deployed: #{said}")
           {:error, said |> String.trim() |> String.split("\n") |> List.last()}
       end

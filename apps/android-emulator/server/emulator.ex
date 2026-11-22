@@ -305,7 +305,7 @@ defmodule AndroidEmulator.Emulator do
       case processes()[id] do
         %{emulator: pid} when is_integer(pid) ->
           GenServer.cast(service, {:watch, id, pid})
-          System.cmd("kill", ["-TERM", "#{pid}"])
+          OneCore.Command.run(["kill", "-TERM", "#{pid}"], 10)
 
         _ ->
           step(service, id, "exited")
@@ -503,7 +503,7 @@ defmodule AndroidEmulator.Emulator do
   # Each running emulator here, by its AVD: its processes (the emulator's, and on Linux its pasta and scope), which
   # of them is the emulator itself (QEMU, which the SDK's `emulator` becomes), and its console port.
   defp processes do
-    {ps, 0} = System.cmd("ps", ["-axo", "pid=,args="])
+    %{exit: 0, stdout: ps} = OneCore.Command.run(["ps", "-axo", "pid=,args="], 10)
 
     # By its words, as a pattern of the whole line backtracks past its limit on the long ones some programs have.
     for line <- String.split(ps, "\n", trim: true),
@@ -533,8 +533,8 @@ defmodule AndroidEmulator.Emulator do
   # processes, by their PIDs.
   defp kill(id) do
     case :os.type() do
-      {:unix, :linux} -> System.cmd("systemctl", ["--user", "kill", "--signal=KILL", scope(id) <> ".scope"], stderr_to_stdout: true)
-      _ -> with %{pids: pids} <- processes()[id], do: System.cmd("kill", ["-KILL" | Enum.map(pids, &to_string/1)])
+      {:unix, :linux} -> OneCore.Command.run(["systemctl", "--user", "kill", "--signal=KILL", scope(id) <> ".scope"], 30)
+      _ -> with %{pids: pids} <- processes()[id], do: OneCore.Command.run(["kill", "-KILL" | Enum.map(pids, &to_string/1)], 30)
     end
   end
 
@@ -583,7 +583,7 @@ defmodule AndroidEmulator.Emulator do
   # first, 5554, to whoever runs one by hand. Its adb port is the one after it.
   defp port do
     taken =
-      for line <- String.split(elem(System.cmd("ps", ["-axo", "args="]), 0), "\n"),
+      for line <- String.split(OneCore.Command.run(["ps", "-axo", "args="], 10).stdout, "\n"),
           [_, port] <- [Regex.run(~r/\s-port\s(\d+)/, line)],
           do: String.to_integer(port)
 
