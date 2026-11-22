@@ -317,6 +317,8 @@ pub struct Client {
     /// Said by its person trying again, so a network that didn't answer is asked now rather than when it next would
     /// (`reconnecting`).
     again: Arc<tokio::sync::Notify>,
+    /// Said by whatever tells it its person approved it, so a device showing a code asks at once (`approved`).
+    approval: Arc<tokio::sync::Notify>,
     /// Its endpoint, its network and whose device it is, which are made again with each new token (`relink`).
     link: std::sync::RwLock<Link>,
     reach: Mutex<Reach>,
@@ -415,7 +417,7 @@ impl Client {
         let address = config.map(|config| config.address);
         let client = Arc::new_cyclic(|me| Self {
             home, key, address, state: watch::Sender::new(state), admitting: Mutex::default(),
-            again: Arc::default(), link, reach, notifications, says, watching, resolvers, tools,
+            again: Arc::default(), approval: Arc::default(), link, reach, notifications, says, watching, resolvers, tools,
             listed, listing, resource, telemetry: Arc::default(), sending: Mutex::default(), unanswered: std::sync::Mutex::default(),
             me: me.clone(), runtime: tokio::runtime::Handle::current(),
         });

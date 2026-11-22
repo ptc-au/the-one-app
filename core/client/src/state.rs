@@ -275,6 +275,13 @@ impl Client {
         }
     }
 
+    /// Has a device that shows a code ask now whether its person approved it, as it would when told so by a push, rather
+    /// than when its next ask is due (`DeviceAuthorization::wait_for_approval` asks every few seconds). Its network
+    /// tells a device that asks too soon to slow down, so this is for when it's known to have been approved.
+    pub fn approved(&self) {
+        self.approval.notify_one();
+    }
+
     /// Asks its network again now, as its person does by trying again: where it didn't answer, and where a server
     /// refused it for being behind (`Connection::Behind`), where it's reconnecting until a server answers, which may
     /// talk with it now, updated or rolled back since. What it asks is the list of its files, as itself, which a

@@ -52,6 +52,9 @@ open it, and it shows a code. Then, as whoever it's to be, one step:
 
     ONE_AS=alice one sign-in approve --code WDJB-MJHT
 
+The device asks every 5 s whether it's approved, and at once if its `one` is sent SIGUSR1 after the approval
+(`kill -USR1 <its pid>`), as a push would tell a phone.
+
 On a network being built anyone may be named, the owner too, with no `--owner` and no passkey. For an emulator,
 `adb reverse tcp:<port> tcp:<port>` first, `adb shell run-as app.theone.client sh -c 'cat > network'` writes its
 `network`, and `adb shell pm grant app.theone.client android.permission.POST_NOTIFICATIONS` skips Android's question.

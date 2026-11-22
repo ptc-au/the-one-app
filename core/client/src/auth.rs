@@ -179,12 +179,17 @@ impl DeviceAuthorization {
     }
 
     /// Waits for this device's person to answer, asking the network's authorization server as often as it allows,
-    /// and again after an ask that wasn't answered, as a phone that's offline for a moment asks: `Ok` once they
-    /// approved it, or why it isn't, if they stopped it or its code ended first.
-    async fn wait_for_approval(&self) -> Result<(), NotApproved> {
+    /// and at once when told it's approved (`Client::approved`), and again after an ask that wasn't answered, as a
+    /// phone that's offline for a moment asks: `Ok` once they approved it, or why it isn't, if they stopped it or its
+    /// code ended first.
+    async fn wait_for_approval(&self, told: &tokio::sync::Notify) -> Result<(), NotApproved> {
         let mut interval = self.interval;
         loop {
-            sleep(interval).await;
+            tokio::select! {
+                _ = sleep(interval) => {}
+                // Told it's approved (`Client::approved`).
+                _ = told.notified() => {}
+            }
             if Instant::now() > self.expires {
                 return Err(NotApproved::Expired);
             }
@@ -430,9 +435,10 @@ pub(crate) async fn sessions(client: std::sync::Weak<Client>) {
                 renews = Some(open.renew(&now).await);
             }
             State::SignIn { code, .. } => {
+                let approval = open.approval.clone();
                 drop(open);
                 let answered = tokio::select! {
-                    answered = code.wait_for_approval() => answered,
+                    answered = code.wait_for_approval(&approval) => answered,
                     changed = state.wait_for(moved) => if changed.is_err() { return } else { continue },
                 };
                 let Some(open) = client.upgrade() else { return };

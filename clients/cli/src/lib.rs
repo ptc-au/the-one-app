@@ -146,9 +146,13 @@ async fn run(args: Vec<String>) -> Result<ExitCode> {
 
 /// Waits until this device is in its network. One that isn't says its code and where it's let in, and carries on
 /// once it is; one whose code was denied or ended, or that's opening while its network doesn't answer, says so and
-/// stops.
+/// stops. Where its person approved it, and whatever they did that on tells this program so with SIGUSR1, as
+/// `tooling/network` does for the device it signs in, it asks at once and doesn't wait out its next ask
+/// (`Client::approved`).
 async fn signed_in(client: &Client) -> Result<()> {
     let mut state = client.state();
+    #[cfg(unix)]
+    let mut approved = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())?;
     loop {
         match &*state.borrow_and_update() {
             State::SignedIn { .. } => return Ok(()),
@@ -157,7 +161,15 @@ async fn signed_in(client: &Client) -> Result<()> {
             out @ State::SignIn { why: Some(NotApproved::Denied | NotApproved::Expired), .. } => bail!("{out}"),
             out @ State::SignIn { .. } => eprintln!("{out}"),
         }
-        state.changed().await?;
+        loop {
+            #[cfg(unix)]
+            tokio::select! {
+                changed = state.changed() => break changed?,
+                _ = approved.recv() => client.approved(),
+            }
+            #[cfg(not(unix))]
+            break state.changed().await?;
+        }
     }
 }
 
