@@ -1,6 +1,8 @@
 // What a run is asked (the command line), where it runs, and the most a harness may use.
 import { fileURLToPath } from "node:url"
+import { availableParallelism } from "node:os"
 import { join, resolve } from "node:path"
+import pLimit from "p-limit"
 
 /// `path` in core/ui, where motion.js is, whichever file of motion/ asks.
 export const here = (path) => fileURLToPath(new URL(`../${path}`, import.meta.url))
@@ -24,11 +26,21 @@ export const seeds = Number(option("--seeds") ?? 3)
 /// How many generated scenes to play (`--generated`), from which seed (`--from`).
 export const generating = option("--generated") && Number(option("--generated"))
 export const firstSeed = Number(option("--from") ?? 1)
-export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass", "--generated", "--from"].includes(args[at - 1])).map((folder) => resolve(folder))
+export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass", "--generated", "--from", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
 // On a device of devices.json's tiers over ssh (the one whose `measured` it is), with a harness built for it, its own
 // GPU and CPU draw each frame, as calibrate.js has them, and its tier is judged by the times it took there.
 export const ssh = option("--ssh")
 export const present = flag("--present")
+/// How many agents usually share a machine, each running a pass: its cores are theirs between them.
+const AGENTS = 4
+/// How many harnesses a pass runs at once (`--jobs`): twice this machine's share of its cores, as a harness waits for
+/// about half of its run (the Surface's pipelines compiling, `ONE_PIPELINES_MS`, and its GPU), or on `--ssh`'s device
+/// one, whose GPU each frame's time is of. Every harness and build a pass starts, here and in scenes.js, takes
+/// one (`slot`).
+export const jobs = ssh ? 1 : Number(option("--jobs") ?? Math.max(2, Math.floor((2 * availableParallelism()) / AGENTS)))
+export const slot = pLimit(jobs)
+// For tooling/mutants, which runs passes a few at once, and has no packages of its own.
+export { pLimit }
 export let harness = ssh ? option("--harness") && resolve(option("--harness")) : join(root, `target/${flag("--release") ? "release" : "debug"}/examples/screenshot`)
 /// Where every harness draws, here and in scenes.js: on the machine's GPU, the one wgpu prefers (Vulkan, or lavapipe
 /// where there's none), or with `--lavapipe` on Mesa's software Vulkan, which draws on the CPU with 2 threads rather

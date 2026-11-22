@@ -53,7 +53,7 @@ import { outline } from "./src/drawing-primitives/outline.ts"
 import { messages } from "./src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "./lint-tokens.js"
-import { build, capped, COMPONENTS, copied, env, glass, lavapipe, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
+import { build, capped, COMPONENTS, copied, env, glass, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, slot, stale, stopped, usedFolder } from "./motion.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as motion.js's checks mark theirs.
@@ -76,7 +76,7 @@ const against = option("--against") && resolve(option("--against"))
 const ssh = option("--ssh")
 // Only the scenes whose names have these words, as motion.js's `--scene`.
 const only = option("--scene")?.toLowerCase()
-const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--harness", "--scene", "--glass"].includes(args[at - 1])).map((folder) => resolve(folder))
+const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--harness", "--scene", "--glass", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
 const targets = folders.length ? folders : [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")))]
 let harness = join(root, `target/${flag("--release") ? "release" : "debug"}/examples/screenshot`)
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
@@ -248,7 +248,10 @@ async function web(browser, serve, key, scene, folder) {
     problems.push(failing(text))
   }
   page.on("pageerror", (error) => logged(String(error)))
-  page.on("console", (message) => message.type() === "warning" && !message.text().includes("preferred by this device") && logged(message.text()))
+  // Warnings that aren't the page's: a preload Chrome saw unused within a few seconds of the page's load, as long as a
+  // busy machine's Chromium takes to start the frame's renderer, which does use it.
+  const notThePage = ["preferred by this device", "preloaded using link preload but not used within a few seconds"]
+  page.on("console", (message) => message.type() === "warning" && !notThePage.some((words) => message.text().includes(words)) && logged(message.text()))
   await page.clock.setFixedTime(new Date(Date.UTC(2026, 0, 1)))
   // The first fetch of each picture file fails on the network, as a loaded or flaky connection's does: a picture is tried
   // again, and drawn when it comes, never left broken for a failure that passed.
@@ -444,8 +447,17 @@ const { tools, kept } = (() => {
   return { tools, kept: [...kept] }
 })()
 
+/// The native harness run with `asked`, and `requests` on its stdin, once a slot of `jobs` is free (motion.js's
+/// `--jobs`). → its exit status, stdout and stderr.
+const harnessed = (asked, requests) =>
+  slot(async () => {
+    const run = Bun.spawn(capped([harness, ...asked]), { stdin: new TextEncoder().encode(requests), stdout: "pipe", stderr: "pipe", env })
+    const [stdout, stderr] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited])
+    return { exitCode: run.exitCode, stdout, stderr }
+  })
+
 /// A scene drawn by a native host's headless harness, or nothing where it hasn't been built or can't draw the page.
-function native(built, scene, folder, used) {
+async function native(built, scene, folder) {
   if (!existsSync(harness)) return { missing: "the native harness isn't built (`cargo build -p renderer --example screenshot --features fake`)" }
   if (hosted < needed) return { missing: `the native host's runtime version is ${hosted}, the UI library needs ${needed}: nothing to compare until it's ${needed}` }
   const at = pageFolder(built, scene.page, folder, scene.uses)
@@ -458,8 +470,8 @@ function native(built, scene, folder, used) {
   const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query" }, { op: "query", frames: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", "-", ...panel(scene)]
-  const run = Bun.spawnSync(capped([harness, ...asked]), { stdin: new TextEncoder().encode(requests), env })
-  if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.toString().trim().split("\n").at(-1) || "the harness drew nothing") }
+  const run = await harnessed(asked, requests)
+  if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the harness drew nothing") }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))
   // Its tree: each node's role, name and what it is (its states, by ARIA's names, beside them), and its words.
   const semantic = ({ id, role, name, children = [], actions, states = {}, ...more }) =>
@@ -467,8 +479,8 @@ function native(built, scene, folder, used) {
   const tree = outline({ states: {}, children: (Array.isArray(nodes) ? nodes : [nodes]).map(semantic) })
   writeFileSync(join(folder, "native.txt"), tree)
   writeFileSync(join(folder, "native-answers.jsonl"), run.stdout)
-  const measured = run.stderr.toString().match(/^measured (.*)$/m)
-  const said = answered(run.stdout.toString())
+  const measured = run.stderr.match(/^measured (.*)$/m)
+  const said = answered(run.stdout)
   const after = ssh ? DRAWN.length : 0
   const drew = glass === "tinted" ? said.at(-after - 3)?.result?.frames?.[0]?.work : undefined
   const blurring = drew && (drew.backdrops > 0 || drew.blurs > 0 || drew.blurred > 0) ? `glass drawn tinted still blurs: ${drew.backdrops} backdrop pixels, ${drew.blurs} blur passes` : undefined
@@ -505,12 +517,12 @@ function native(built, scene, folder, used) {
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
 /// which is what the web's tab is: the web has no system glass, so its page draws its own glass and shadows, as a native
 /// window does. → that picture (`native.png` where the scene is a window already), or why it isn't drawn.
-function windowed(drawn, scene, folder) {
+async function windowed(drawn, scene, folder) {
   const flags = panel(scene)
   if (!flags.length) return { picture: join(folder, "native.png") }
   const asked = [drawn.asked[0], join(folder, "window.png"), join(folder, "window.json"), ...drawn.asked.slice(3, -flags.length).filter((flag) => flag !== "--measure")]
-  const run = Bun.spawnSync(capped([harness, ...asked]), { stdin: new TextEncoder().encode(drawn.requests), env })
-  if (run.exitCode !== 0 || !existsSync(join(folder, "window.png"))) return { missing: stopped(run.exitCode) ?? (run.stderr.toString().trim().split("\n").at(-1) || "the harness drew nothing") }
+  const run = await harnessed(asked, drawn.requests)
+  if (run.exitCode !== 0 || !existsSync(join(folder, "window.png"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the harness drew nothing") }
   return { picture: join(folder, "window.png") }
 }
 
@@ -605,7 +617,7 @@ const answered = (stdout) => stdout.split("\n").filter(Boolean).map((line) => JS
 /// A scene drawn on `--ssh`'s device by its own GPU, as here: where each node is laid out there and here, and how much
 /// of the two pictures differs, beyond what one GPU's rounding does differently from another's. → what it says.
 async function onDevice(drawn, folder) {
-  const there = await runThere(drawn.at, folder, drawn.asked, drawn.requests)
+  const there = await slot(() => runThere(drawn.at, folder, drawn.asked, drawn.requests))
   const theirs = answered(there.stdout)
   if (there.failed || theirs.length < DRAWN.length) return [`  device: it drew nothing: ${there.stderr.trim().split("\n").at(-1)}`]
   const [[, ours, mine], [, its, picture]] = [drawn.answers, theirs].map((answers) => answers.slice(-DRAWN.length))
@@ -757,16 +769,43 @@ const WEB_DIFFERS = {}
 // Our renderer on the web, on WebGPU, in Chrome on the machine's GPU through Vulkan (as the native harness draws), at a
 // phone's two pixels a point; with `--lavapipe`, on SwiftShader's, which draws every frame on the CPU, the second GPU whose
 // pictures must agree: its canvas is put on the page only when the page is composited on the GPU too (ANGLE on
-// SwiftShader). One that hangs is started again, so it takes no other scene with it.
+// SwiftShader).
 const webgpuArgs = lavapipe
   ? ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--enable-gpu", "--use-gl=angle", "--use-angle=swiftshader", "--use-webgpu-adapter=opengles", "--force-device-scale-factor=2"]
   : ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-gpu", "--use-angle=vulkan", "--enable-features=Vulkan", "--ignore-gpu-blocklist", "--force-device-scale-factor=2"]
-let webgpu = onTheWeb && (await chromium.launch({ args: webgpuArgs }))
+// Each page drawn at once has a browser of its own, so one that hangs or fails (its GPU process starved) is closed and
+// started again for the next, taking no other scene with it.
+const browsers = []
+/// How many pages it draws on the web at once: a page's JS, layout and compositing are on the CPU, where a native
+/// harness waits for half its run, so half as many as harnesses (`--jobs`), and a quarter with `--lavapipe`, whose
+/// SwiftShader draws each on about two cores more: 16 of those at once, light and dark side by side, took the Linux
+/// machine's load to 120.
+const pages = pLimit(Math.max(1, Math.floor(jobs / (lavapipe ? 4 : 2))))
+/// `scene` drawn on the web on a browser no other page is on, once one of `pages` is free.
+const webDrawn = (serve, key, scene, folder) =>
+  pages(async () => {
+    const browser = browsers.pop() ?? (await chromium.launch({ args: webgpuArgs }))
+    // A page that never answers (a browser whose GPU process starved) fails the scene, saying so, where it held the run for ever.
+    const hung = Symbol()
+    let timer
+    const gone = new Promise((resolve) => (timer = setTimeout(resolve, WEB_HANGS_AFTER_MS, hung)))
+    const result = await Promise.race([web(browser, serve, key, scene, folder), gone]).catch((error) => ({ failed: String(error) }))
+    clearTimeout(timer)
+    if (result !== hung && !result.failed) {
+      browsers.push(browser)
+      return result
+    }
+    process.exitCode = 1
+    browser.close().catch(() => {})
+    return { missing: result === hung ? `it hung for ${WEB_HANGS_AFTER_MS / 60000} minutes` : result.failed }
+  })
 // The renderer's frame, built once for every scene drawn on the web (clients/web/renderer/build.js).
 const rendererFrame = join(out, "renderer")
-// With a bug put back (`ONE_MUTANT`, tooling/mutants), the frame that can put it back, told which by its address.
+// The gate's own, which can put a bug back (`renderer::mutants`) when its address names one: `ONE_MUTANT`'s, from
+// tooling/mutants. Always that one, as the native harness always is, so a run with a mutant and one without build the
+// same and Cargo doesn't build it again for each (27 s).
 const mutant = process.env.ONE_MUTANT
-const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame, ...(mutant ? ["--mutants"] : [])])
+const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame, "--mutants"])
 if (framed && framed.exitCode !== 0) throw new Error(`The renderer's frame didn't build: ${framed.stderr}`)
 const report = []
 // A token pair that can't be read is found where it's written, before any scene draws it.
@@ -774,44 +813,25 @@ for (const line of lint()) {
   report.push(`tokens: ${line}`)
   process.exitCode = 1
 }
-for (const target of targets) {
+// Every target and scene at once, their harnesses and pages as many at once as `jobs`, each said in their order.
+const drawnTargets = await Promise.all(targets.map(async (target) => {
   const name = basename(target)
   const built = join(out, name, "build")
   const scenes = existsSync(join(target, "client/scenes.json")) ? JSON.parse(readFileSync(join(target, "client/scenes.json"), "utf8")) : {}
-  const unbuilt = build(target, built)
-  if (unbuilt) {
-    report.push(`${name}: ${unbuilt}`)
-    continue
-  }
-  // The apps whose components its scenes draw, each built once and kept in `out`.
-  const used = new Map()
-  for (const app of new Set(Object.values(scenes).flatMap((scene) => scene.uses ?? []))) used.set(app, usedApp(app, out))
+  const unbuilt = await build(target, built)
+  if (unbuilt) return [`${name}: ${unbuilt}`]
+  // The apps whose components its scenes draw, which its build built.
+  const used = new Map([...new Set(Object.values(scenes).flatMap((scene) => scene.uses ?? []))].map((app) => [app, usedFolder(built, app)]))
   const serve = server(built, target, used)
-  for (const scene of (await scenesOf(target, built)).filter((scene) => !only || scene.name.toLowerCase().includes(only))) {
+  const drawnScenes = await Promise.all((await scenesOf(target, built)).filter((scene) => !only || scene.name.toLowerCase().includes(only)).map(async (scene) => {
     const folder = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
     mkdirSync(folder, { recursive: true })
-    // Each scene is drawn twice, on a harness (and a browser page) of its own each, in `again`: the second is only
-    // compared, and any difference between the two fails the scene.
+    // Each scene is drawn twice, on a harness (and a browser page) of its own each, side by side, in `again`: the second
+    // is only compared, and any difference between the two fails the scene.
     const again = join(folder, "again")
     mkdirSync(again, { recursive: true })
-    const drawn = native(built, scene, folder, used)
-    const drawnAgain = native(built, scene, again, used)
-    const onWebs = []
-    for (const where of onTheWeb ? [folder, again] : []) {
-      // A page that never answers (a browser whose GPU process starved) fails the scene, saying so, where it held the run for ever.
-      const hung = Symbol()
-      let timer
-      const gone = new Promise((resolve) => (timer = setTimeout(resolve, WEB_HANGS_AFTER_MS, hung)))
-      const result = await Promise.race([web(webgpu, serve, `${name}/${scene.name}`, scene, where), gone]).catch((error) => ({ failed: String(error) }))
-      clearTimeout(timer)
-      if (result === hung || result.failed) {
-        process.exitCode = 1
-        webgpu.close().catch(() => {})
-        webgpu = await chromium.launch({ args: webgpuArgs })
-      }
-      onWebs.push(result === hung ? { missing: `it hung for ${WEB_HANGS_AFTER_MS / 60000} minutes` } : result.failed ? { missing: result.failed } : result)
-    }
-    const [onWeb = {}, onWebAgain] = onWebs
+    const [drawn, drawnAgain] = await Promise.all([native(built, scene, folder), native(built, scene, again)])
+    const [onWeb = {}, onWebAgain] = await Promise.all((onTheWeb ? [folder, again] : []).map((where) => webDrawn(serve, `${name}/${scene.name}`, scene, where)))
     const said = [`${name} · ${scene.name}`]
     // The web's pictures are drawn by Chrome's GPU, whose blends and blurs round a level apart from one run to the next
   // (5 pixels of an open select's shadow), as a picture drawn whole is compared within a level (`levels`); native's are exact.
@@ -892,7 +912,7 @@ for (const target of targets) {
       }
     }
     const excused = WEB_DIFFERS[`${name} · ${scene.name}`]
-    const asWindow = onTheWeb && !onWeb.missing && !drawn.missing && windowed(drawn, scene, folder)
+    const asWindow = onTheWeb && !onWeb.missing && !drawn.missing && (await windowed(drawn, scene, folder))
     if (onWeb.missing) said.push(`  web: ${onWeb.missing}`)
     else if (asWindow?.missing) {
       said.push(failing(`  native, as a window: ${asWindow.missing}`))
@@ -908,9 +928,11 @@ for (const target of targets) {
     } else if (before && existsSync(join(before, "native.png"))) compared(said, "before and now", readFileSync(join(before, "native.txt"), "utf8"), drawn.tree, join(before, "native.png"), join(folder, "native.png"), join(folder, "changed.png"))
     else if (before) said.push("  before and now: no scene of this name before")
     said.push(`  ${folder}`)
-    report.push(said.join("\n"))
-  }
+    return said.join("\n")
+  }))
   serve.stop()
-}
-if (webgpu) await webgpu.close()
+  return drawnScenes
+}))
+report.push(...drawnTargets.flat())
+for (const browser of browsers) await browser.close()
 console.log(report.join("\n"))

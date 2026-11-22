@@ -65,7 +65,6 @@ async function play(built, scene, name, motion, hz, folder) {
   // Where what it opens should first be drawn: what `opensFrom` names, before the press.
   const origin = motion.opensFrom && { op: "query", ...selector(motion.opensFrom) }
   const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.named ? { named: { ...selector(motion.named), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), ...(ssh ? {} : { whole: true, nodes: true }), link: link(hz) }
-  const started = performance.now()
   const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), replay])
   const answer = ran.answers.at(-1)
   if (ran.failed || !answer?.result) {
@@ -91,7 +90,7 @@ async function play(built, scene, name, motion, hz, folder) {
   const worst = Math.max(...frames.map((frame) => frame.paint_ms))
   const script = Math.max(...frames.map((frame) => frame.script_ms ?? 0))
   const rest = frames.at(-1).at
-  const said = [`  ${hz} Hz: ${way} ${Math.round(Math.max(...values.map(Math.abs)))} pt, at rest after ${Math.round(rest)} ms (${frames.length} frames${motion.frameMs ? `, one each ${motion.frameMs} ms` : ""}), ${over} over its ${budget} ms budget, the worst ${worst} ms painting and ${script} ms of JS, in ${Math.round(performance.now() - started)} ms`]
+  const said = [`  ${hz} Hz: ${way} ${Math.round(Math.max(...values.map(Math.abs)))} pt, at rest after ${Math.round(rest)} ms (${frames.length} frames${motion.frameMs ? `, one each ${motion.frameMs} ms` : ""}), ${over} over its ${budget} ms budget, the worst ${worst} ms painting and ${script} ms of JS, in ${Math.round(ran.ms)} ms`]
   // What fails it: anything it took out still drawn once it's settled, and glass it should keep blurred drawn plain.
   const failed = []
   if (leaving) failed.push(`${leaving} taken out still drawn going once it settled`)
@@ -452,39 +451,32 @@ function differently(first, again) {
 /// Every motion played, by its folder, for the contact sheet: a round that plays some keeps the rest.
 const rows = new Map()
 
-/// Plays every motion of `targets`. → each line it says.
+/// Plays every motion of `targets`, every target at once, its harnesses as many at once as `jobs`. → each line it
+/// says, in the order of `targets`.
 export async function round(targets) {
-  const said = []
-  for (const target of targets) {
+  const played = await Promise.all(targets.map(async (target) => {
     const name = basename(target)
     const built = join(out, name, ".build")
-    const unbuilt = build(target, built)
-    if (unbuilt) {
-      said.push(`${name}: ${unbuilt}`)
-      continue
-    }
+    const unbuilt = await build(target, built)
+    if (unbuilt) return { said: [`${name}: ${unbuilt}`], results: [] }
     const scenes = (await scenesOf(target, built, join(out, name, ".scenes"))).filter((scene) => !only || scene.name.toLowerCase().includes(only))
     // A trace a motion plays is beside its scenes.
     for (const scene of scenes) scene.from = target.endsWith("core/ui/gallery") ? target : join(target, "client")
-    // Each motion at each rate on a harness of its own, a few at once.
+    // Each motion at each rate on a harness of its own.
     const jobs = scenes.flatMap((scene) => Object.entries(scene.motions).filter(([, played]) => !keeping || played.keeps).flatMap(([motion, played]) => rates.map((hz) => ({ scene, motion, played, hz }))))
     const folderOf = ({ scene, motion, hz, again }) => join(out, name, scene.name.replace(/[^\w.-]+/g, "-"), motion.replace(/[^\w.-]+/g, "-"), `${hz}hz${again ? "-again" : ""}`)
     // The harness draws the same frames for the same build each time, however busy the machine: the first motion is
-    // played again, on a harness of its own beside the others, and any frame it draws otherwise fails the round, as a
-    // frame clock or input that went by the wall clock does (the App Library's category opening, at 60 Hz, drew the icon
-    // flying at y 547.40 or 543.75 in its 6th frame, by how busy the machine was).
-    if (jobs.length && !present) jobs.push({ ...jobs[0], again: true })
-    const results = []
-    // One at a time on a device, whose GPU each frame's time is of.
-    const together = ssh ? 1 : 4
-    for (let at = 0; at < jobs.length; at += together)
-      results.push(...(await Promise.all(jobs.slice(at, at + together).map((job) => play(built, job.scene, job.motion, job.played, job.hz, folderOf(job)).then((result) => ({ ...job, ...result }))))))
+    // played again, on a harness of its own beside it and the others, and any frame it draws otherwise fails the round,
+    // as a frame clock or input that went by the wall clock does (the App Library's category opening, at 60 Hz, drew the
+    // icon flying at y 547.40 or 543.75 in its 6th frame, by how busy the machine was).
+    if (jobs.length && !present) jobs.splice(1, 0, { ...jobs[0], again: true })
+    const results = await Promise.all(jobs.map((job) => play(built, job.scene, job.motion, job.played, job.hz, folderOf(job)).then((result) => ({ ...job, ...result }))))
+    const said = []
     let heading
     for (const result of results.filter((result) => !result.again)) {
       const title = `${name} · ${result.scene.name} · ${result.motion}`
       if (title !== heading) said.push((heading = title))
       said.push(result.said)
-      if (result.row) rows.set(result.row.folder, result.row)
     }
     const again = results.find((result) => result.again)
     const otherwise = again?.row && results[0].row && differently(folderOf(results[0]), folderOf(again))
@@ -493,7 +485,10 @@ export async function round(targets) {
       process.exitCode = 1
       said.push(`${name} · ${again.scene.name} · ${again.motion}, ${again.hz} Hz, played twice, FAILS: ${otherwise}`)
     }
-  }
+    return { said, results }
+  }))
+  for (const { results } of played) for (const result of results.filter((result) => !result.again && result.row)) rows.set(result.row.folder, result.row)
+  const said = played.flatMap((target) => target.said)
   contactSheet([...rows.values()])
   said.push(join(out, "index.html"))
   return said

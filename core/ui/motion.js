@@ -73,11 +73,11 @@ import { round } from "./motion/play.js"
 import { cpuName, hostScore } from "./motion/tiers.js"
 
 // What scenes.js and calibrate.js import from here.
-export { capped, env, FACES, glass, lavapipe, stopped } from "./motion/options.js"
+export { capped, env, FACES, glass, jobs, lavapipe, pLimit, slot, stopped } from "./motion/options.js"
 export { moves, selector } from "./motion/gesture.js"
 export { monospaced } from "./motion/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./motion/harness.js"
-export { build, COMPONENTS, copied, library, pageFolder, stale, usedApp } from "./motion/pages.js"
+export { build, COMPONENTS, copied, library, pageFolder, stale, usedFolder } from "./motion/pages.js"
 
 /// Every folder with motions, or with `--checks` every folder with scenes: the gallery, and each app's.
 const everything = () => [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")) && (checking || readFileSync(join(app, "client/scenes.json"), "utf8").includes('"motions"')))]

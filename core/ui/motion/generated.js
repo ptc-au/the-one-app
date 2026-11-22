@@ -50,52 +50,49 @@ export function played(seed) {
   return { touch, size, scale: touch ? pick([2, 3]) : pick([1, 2]), hz: pick([60, 120]), events }
 }
 
-/// Plays `count` seeds from `from`, four at a time: each frame drawn on what was kept must be the one drawn whole, and
+/// Plays `count` seeds from `from`, their harnesses as many at once as `jobs`: each frame drawn on what was kept must be the one drawn whole, and
 /// drawn moved by whole device pixels the same (the harness's `replay`, `whole` and `moved`). → each line it says,
 /// and how many failed.
 export async function generated(count, from = 1) {
   const built = join(out, "generated", ".build")
-  const unbuilt = build(here("gallery"), built)
+  const unbuilt = await build(here("gallery"), built)
   if (unbuilt) return { said: [`generated: ${unbuilt}`], failed: 1 }
-  const said = []
   let [failed, frames] = [0, 0]
   const seeds = Array.from({ length: count }, (_, n) => from + n)
-  for (let at = 0; at < seeds.length; at += 4)
-    for (const line of await Promise.all(seeds.slice(at, at + 4).map(async (seed) => {
-      const { touch, size, scale, hz, events } = played(seed)
-      const folder = join(out, "generated", String(seed))
-      mkdirSync(folder, { recursive: true })
-      const link = `Generated/Random?seed=${seed}&seconds=${SECONDS}`
-      const scene = phone({ name: link, page: "index.html", link, answers: {}, taps: [], size, touch, scale })
-      const page = pageFolder(built, "index.html", folder)
-      const done = await run(page, folder, scene, [{ op: "replay", events, hz, whole: true, moved: true, after: 1000 }], seed)
-      const shown = `seed ${seed}: ${size.join("×")} pt at ${scale}× and ${hz} Hz, ${touch ? "a finger" : "a wheel"}`
-      const replay = done.answers[0]
-      if (done.failed || replay?.error) {
-        failed++
-        return `✗ ${shown}: the harness failed: ${replay?.error ?? done.said.split("\n").at(-1)}`
-      }
-      const drawn = replay.result.frames
-      frames += drawn.length
-      // Each frame that's wrong, with its pictures: as it was presented, drawn whole, and drawn where it is and moved.
-      const wrong = drawn.flatMap((frame, n) => [
-        ...(frame.unlike_whole ?? []).map(({ whole, presented, window, differ, most, box }) => {
-          writeFileSync(join(folder, `${n}-whole.png`), Buffer.from(whole, "base64"))
-          if (presented) writeFileSync(join(folder, `${n}-presented.png`), Buffer.from(presented, "base64"))
-          return `frame ${n} (${frame.at} ms) differs from the same drawn whole in ${differ} pixels of window ${window}, by up to ${most} levels, from ${box.x},${box.y} ${box.width}×${box.height} px`
-        }),
-        ...(frame.unlike_moved ?? []).map(({ by, here, moved, differ, most, box }) => {
-          writeFileSync(join(folder, `${n}-here.png`), Buffer.from(here, "base64"))
-          writeFileSync(join(folder, `${n}-moved-${by.join(",")}.png`), Buffer.from(moved, "base64"))
-          return `frame ${n} (${frame.at} ms) drawn moved by ${by.join(",")} px differs in ${differ} pixels, by up to ${most} levels, from ${box.x},${box.y} ${box.width}×${box.height} px`
-        }),
-      ])
-      if (!wrong.length) return `✓ ${shown}: ${drawn.length} frames`
+  const said = await Promise.all(seeds.map(async (seed) => {
+    const { touch, size, scale, hz, events } = played(seed)
+    const folder = join(out, "generated", String(seed))
+    mkdirSync(folder, { recursive: true })
+    const link = `Generated/Random?seed=${seed}&seconds=${SECONDS}`
+    const scene = phone({ name: link, page: "index.html", link, answers: {}, taps: [], size, touch, scale })
+    const page = pageFolder(built, "index.html", folder)
+    const done = await run(page, folder, scene, [{ op: "replay", events, hz, whole: true, moved: true, after: 1000 }], seed)
+    const shown = `seed ${seed}: ${size.join("×")} pt at ${scale}× and ${hz} Hz, ${touch ? "a finger" : "a wheel"}`
+    const replay = done.answers[0]
+    if (done.failed || replay?.error) {
       failed++
-      writeFileSync(join(folder, "wrong.txt"), wrong.join("\n"))
-      return `✗ ${shown}: ${wrong.length} wrong of ${drawn.length} frames, the first ${wrong[0]} (${folder})`
-    })))
-      said.push(line)
+      return `✗ ${shown}: the harness failed: ${replay?.error ?? done.said.split("\n").at(-1)}`
+    }
+    const drawn = replay.result.frames
+    frames += drawn.length
+    // Each frame that's wrong, with its pictures: as it was presented, drawn whole, and drawn where it is and moved.
+    const wrong = drawn.flatMap((frame, n) => [
+      ...(frame.unlike_whole ?? []).map(({ whole, presented, window, differ, most, box }) => {
+        writeFileSync(join(folder, `${n}-whole.png`), Buffer.from(whole, "base64"))
+        if (presented) writeFileSync(join(folder, `${n}-presented.png`), Buffer.from(presented, "base64"))
+        return `frame ${n} (${frame.at} ms) differs from the same drawn whole in ${differ} pixels of window ${window}, by up to ${most} levels, from ${box.x},${box.y} ${box.width}×${box.height} px`
+      }),
+      ...(frame.unlike_moved ?? []).map(({ by, here, moved, differ, most, box }) => {
+        writeFileSync(join(folder, `${n}-here.png`), Buffer.from(here, "base64"))
+        writeFileSync(join(folder, `${n}-moved-${by.join(",")}.png`), Buffer.from(moved, "base64"))
+        return `frame ${n} (${frame.at} ms) drawn moved by ${by.join(",")} px differs in ${differ} pixels, by up to ${most} levels, from ${box.x},${box.y} ${box.width}×${box.height} px`
+      }),
+    ])
+    if (!wrong.length) return `✓ ${shown}: ${drawn.length} frames`
+    failed++
+    writeFileSync(join(folder, "wrong.txt"), wrong.join("\n"))
+    return `✗ ${shown}: ${wrong.length} wrong of ${drawn.length} frames, the first ${wrong[0]} (${folder})`
+  }))
   said.push(`${count - failed} seeds passed, ${failed} failed, ${frames} frames`)
   return { said, failed }
 }

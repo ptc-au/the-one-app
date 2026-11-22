@@ -53,12 +53,14 @@ A screen's states are scenes, with what they show beside them, so no network is 
 header). A change that makes a screen, or a state of one, adds its scene. Every change to how something looks runs,
 in core/ui, after `bun build.js`:
 
-    bun scenes.js --out <scratch>/before          # on main, before the change (or an earlier run)
-    bun scenes.js --out <scratch>/after --against <scratch>/before [<folder>…]
+    bun scenes.js --release --out <scratch>/before          # on main, before the change (or an earlier run)
+    bun scenes.js --release --out <scratch>/after --against <scratch>/before [<folder>…]
 
 It draws every scene, or those of the folders named, on a native host by its headless harness (`cargo build -p
-renderer --example screenshot --features fake`), on the machine's GPU (the Linux machine's RTX 5070 Ti; lavapipe where
-there's none), every scene in about 2½ minutes. `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
+renderer --example screenshot --features fake --release`: a debug build draws several times slower), on the machine's
+GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every scene in about a minute. Like motion.js, it
+runs harnesses side by side, twice its share of the cores (8 on the Linux machine, shared by about 4 agents), and says
+what it found in the same order whatever finished first; `--jobs <n>` sets how many. `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
 not every time. Compare only runs made on the same GPU. With `--web` it draws by our renderer on the web too, in headless Chromium
 (Playwright's, which `bunx playwright-core install chromium` fetches where it's missing; its WebGPU on SwiftShader,
@@ -73,13 +75,14 @@ check of that scene alone.
 ### Checks: every change to the UI library or the renderer
 
 A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in core/ui, after `bun
-build.js` and `cargo build -p renderer --example screenshot --features fake` (about 13 minutes for all 500, each in
-turn, on the GPU or on lavapipe alike, so name the folders your change can touch):
+build.js` and `cargo build -p renderer --example screenshot --features fake --release` (about 6 minutes for all 500 on
+the Linux machine at a load of 20, 8 harnesses at once; a debug build takes about 20, so name the folders your change
+can touch while you work):
 
-    bun motion.js --checks [<folder>…]
-    bun motion.js --checks --dark [<folder>…]
-    bun motion.js --generated 4
-    bun motion.js --generated 4 --dark
+    bun motion.js --checks --release [<folder>…]
+    bun motion.js --checks --release --dark [<folder>…]
+    bun motion.js --generated 4 --release
+    bun motion.js --generated 4 --release --dark
 
 A scene's `checks` (the `CheckStep` type in `core/ui/src/types/ui.d.ts`) are what people do with it and what must
 hold, as the UI SDK's own tests have them, played on the headless harness's window, a fake platform's under the loop
@@ -128,10 +131,10 @@ it springs is played headless, through the real gesture and spring code, on a pa
 few seconds: give the scene that shows it `motions` (the `Motion` type in `core/ui/src/types/ui.d.ts`), then, in
 core/ui, after `bun build.js`:
 
-    bun motion.js --out <scratch>/before [<folder>…]          # on main, before the change
-    bun motion.js --out <scratch>/after --against <scratch>/before [<folder>…] [--watch]
+    bun motion.js --release --out <scratch>/before [<folder>…]          # on main, before the change
+    bun motion.js --release --out <scratch>/after --against <scratch>/before [<folder>…] [--watch]
 
-and the same again with `--dark` (an `--out` of its own): a frame drawn on what was kept is checked against the same
+(every motion in about 2 minutes, where a debug build takes 7) and the same again with `--dark` (an `--out` of its own): a frame drawn on what was kept is checked against the same
 drawn whole, and a light card on a near-white page leaves little to be wrong by, so on 22 Nov partial redraws that
 passed in light failed 4 motions in dark.
 

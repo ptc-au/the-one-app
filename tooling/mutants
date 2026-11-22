@@ -2,7 +2,7 @@
 // Mutation testing for the harness: puts back each bug we've had (a mutant, as cargo-mutants and Stryker call one),
 // one at a time, runs the checks that could show it, and says which caught it, by which check, and which it missed:
 //
-//     tooling/mutants [<mutant>…] [--light | --dark] [--out <dir>] [--list]
+//     tooling/mutants [<mutant>…] [--light | --dark] [--out <dir>] [--jobs <n>] [--list]
 //
 // Each mutant is planted where its bug was (`renderer::mutants`, `ONE_MUTANT=<name>`, in the harness's builds alone:
 // the headless harness's and the web gate's frame) and plays only the scenes, motions and checks
@@ -12,12 +12,14 @@
 // said), `<mutant>/<light|dark>/<play>.log`.
 //
 // It builds what it plays first: core/ui (`bun build.js`) and the headless harness (`cargo build -p renderer --example
-// screenshot --features fake`); scenes.js builds the web's frame.
+// screenshot --features fake --release`, which plays them several times faster than a debug build); scenes.js builds
+// the web's frame.
 //
 // A mutant for a bug a device found and the harness missed is added here with the check that now catches it: the check
 // is the fix's, the mutant shows it stays caught.
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
+import { jobs as harnesses, pLimit } from "../core/ui/motion/options.js"
 
 const root = resolve(import.meta.dir, "..")
 const ui = join(root, "core/ui")
@@ -60,7 +62,7 @@ if (args.includes("--list")) {
   for (const [name, { bug, plays }] of Object.entries(MUTANTS)) console.log(`${name}: ${bug} (${plays.map(said).join("; ")})`)
   process.exit(0)
 }
-const asked = args.filter((arg, at) => !arg.startsWith("--") && args[at - 1] !== "--out")
+const asked = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--jobs"].includes(args[at - 1]))
 const unknown = asked.filter((name) => !MUTANTS[name])
 if (unknown.length) throw new Error(`no mutant ${unknown.join(", ")}: \`tooling/mutants --list\` lists them`)
 const chosen = asked.length ? asked : Object.keys(MUTANTS)
@@ -73,7 +75,7 @@ function said(play) {
 
 /// The command a play runs, in light or dark, its output in `folder`.
 function command(play, dark, folder) {
-  const theme = dark ? ["--dark"] : []
+  const theme = ["--release", ...(dark ? ["--dark"] : [])]
   if (play.tool === "motion") return { cwd: ui, argv: ["bun", "motion.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
   if (play.tool === "checks") return { cwd: ui, argv: ["bun", "motion.js", "--checks", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
   return { cwd: ui, argv: ["bun", "scenes.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...(play.tool === "web" ? ["--web"] : []), ...theme] }
@@ -101,7 +103,7 @@ async function run(play, mutant, dark) {
   const folder = join(out, mutant ?? "baseline", dark ? "dark" : "light", said(play).replace(/[^\w.-]+/g, "-"))
   mkdirSync(folder, { recursive: true })
   const { cwd, argv } = command(play, dark, folder)
-  const ran = Bun.spawn(argv, { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, ONE_MUTANT: mutant ?? "" } })
+  const ran = Bun.spawn([...argv, "--jobs", "2"], { cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, ONE_MUTANT: mutant ?? "" } })
   const [stdout, stderr] = await Promise.all([new Response(ran.stdout).text(), new Response(ran.stderr).text(), ran.exited])
   writeFileSync(`${folder}.log`, `${argv.join(" ")}\n\n${stdout}\n${stderr}`)
   const lines = failures(stdout)
@@ -115,18 +117,15 @@ const started = performance.now()
 const minutes = () => `${((performance.now() - started) / 60000).toFixed(1)} min`
 for (const [what, argv, cwd] of [
   ["core/ui", ["bun", "build.js"], ui],
-  ["the headless harness", ["nice", "-n", "10", "cargo", "build", "-p", "renderer", "--example", "screenshot", "--features", "fake", "-j", "4"], root],
+  ["the headless harness", ["nice", "-n", "10", "cargo", "build", "-p", "renderer", "--example", "screenshot", "--features", "fake", "--release", "-j", "4"], root],
 ]) {
   const built = Bun.spawnSync(argv, { cwd, stdout: "pipe", stderr: "pipe" })
   if (built.exitCode !== 0) throw new Error(`${what} didn't build: ${built.stderr.toString().trim().split("\n").slice(-5).join("\n")}`)
 }
 
-// Two at a time: each runs a few harnesses at once itself.
-async function each(jobs, work) {
-  const results = []
-  for (let at = 0; at < jobs.length; at += 2) results.push(...(await Promise.all(jobs.slice(at, at + 2).map(work))))
-  return results
-}
+// Half as many plays at once as a pass runs harnesses (`--jobs`, motion.js's default unless said), each running two.
+const together = pLimit(Math.max(1, Math.floor(harnesses / 2)))
+const each = (plays, work) => Promise.all(plays.map((play) => together(() => work(play))))
 
 // The baseline: each play once with no mutant, in each appearance it's played in.
 const plays = [...new Map(chosen.flatMap((name) => MUTANTS[name].plays.flatMap((play) => appearances.filter((theme) => !MUTANTS[name].only || MUTANTS[name].only === theme).map((theme) => [`${said(play)} ${theme}`, { play, theme }])))).values()]

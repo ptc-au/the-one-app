@@ -24,24 +24,19 @@ async function check(built, scene, folder) {
   const played = Object.entries(scene.checks).flatMap(([name, steps]) =>
     [0, ...Array.from({ length: seeds }, (_, n) => n + 1), ...(scene.seeds ?? [])].map((seed) => ({ name, steps, seed })),
   )
-  const results = []
-  for (let from = 0; from < played.length; from += 4)
-    results.push(
-      ...(await Promise.all(
-        played.slice(from, from + 4).map(async ({ name, steps, seed }) => {
-          const ran = requests(steps, scene.from, scene.answers)
-          const own = join(folder, name.replace(/[^\w.-]+/g, "-"), String(seed))
-          mkdirSync(own, { recursive: true })
-          const done = await run(at, own, scene, [{ op: "clock", step: 1000 }, ...taps, ...ran.map(({ request }) => request), crash], seed)
-          const answers = done.answers.slice(1 + taps.length)
-          const failed = done.failed
-            ? `the harness failed: ${done.said.split("\n").at(-1)}`
-            : crashed(answers[ran.length]) ?? ran.map(({ judge, request, step }, n) => (answers[n]?.error ? `${step} (${request.op}): ${answers[n].error}` : judge && judge(answers[n]) ? `${step}: ${judge(answers[n])}` : undefined)).find(Boolean)
-          return { name, seed, failed }
-        }),
-      )),
-    )
-  return results
+  return Promise.all(
+    played.map(async ({ name, steps, seed }) => {
+      const ran = requests(steps, scene.from, scene.answers)
+      const own = join(folder, name.replace(/[^\w.-]+/g, "-"), String(seed))
+      mkdirSync(own, { recursive: true })
+      const done = await run(at, own, scene, [{ op: "clock", step: 1000 }, ...taps, ...ran.map(({ request }) => request), crash], seed)
+      const answers = done.answers.slice(1 + taps.length)
+      const failed = done.failed
+        ? `the harness failed: ${done.said.split("\n").at(-1)}`
+        : crashed(answers[ran.length]) ?? ran.map(({ judge, request, step }, n) => (answers[n]?.error ? `${step} (${request.op}): ${answers[n].error}` : judge && judge(answers[n]) ? `${step}: ${judge(answers[n])}` : undefined)).find(Boolean)
+      return { name, seed, failed }
+    }),
+  )
 }
 
 /// How many times a scene's keyboard is moved on by Tab, at most, as `walk` goes round it.
@@ -159,39 +154,40 @@ function illegible(query, over, snap, points, folder) {
   return faint.length ? `its words can't be read: ${faint.slice(0, 3).map((text) => `"${text.name}" stands off what's behind it at ${text.contrast.toFixed(2)}:1, under ${LEGIBLE}:1`).join(", ")}${faint.length > 3 ? `, and ${faint.length - 3} more` : ""}` : undefined
 }
 
-/// Plays every check of `targets`' scenes. → each line it says, and how many failed.
+/// Plays every check of `targets`' scenes, every target and scene at once, its harnesses as many at once as `jobs`.
+/// → each line it says, in the order of `targets` and their scenes, and how many failed.
 export async function checks(targets) {
-  const said = []
-  let failed = 0
-  let passed = 0
-  for (const target of targets) {
-    const name = target.endsWith("core/ui/gallery") ? "gallery" : target.split("/").at(-1)
-    const built = join(out, name, ".build")
-    const unbuilt = build(target, built)
-    if (unbuilt) {
-      said.push(`${name}: ${unbuilt}`)
-      failed++
-      continue
-    }
-    // Every scene is drawn the same however it came to be, each on a computer walked by Tab too, and those with checks
-    // played.
-    const scenes = (await scenesOf(target, built, join(out, name, ".scenes"), true)).filter((scene) => !only || scene.name.toLowerCase().includes(only))
-    for (const scene of scenes) {
-      // A trace a check plays is beside its scenes: the gallery's, or an app's client.
-      scene.from = target.endsWith("core/ui/gallery") ? target : join(target, "client")
-      const own = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
-      const results = scene.checks ? await check(built, scene, own) : []
-      if (!scene.touch) results.push({ name: "Tab shows where the keyboard is", seed: 0, failed: await walk(built, scene, join(own, "tab")) })
-      const { fresh, moved } = await agrees(built, scene, join(own, "fresh"))
-      results.push({ name: "Drawn the same however it came to be", seed: 0, failed: fresh }, { name: "Drawn the same moved by whole device pixels", seed: 0, failed: moved })
-      for (const [check, runs] of Object.entries(Object.groupBy(results, (result) => result.name))) {
-        const bad = runs.filter((run) => run.failed)
-        bad.length ? failed++ : passed++
-        said.push(`${bad.length ? "✗" : "✓"} ${name} · ${scene.name} · ${check}${bad.length ? "" : ` (${runs.length} runs)`}`)
-        for (const run of bad) said.push(`    ${run.seed ? `seed ${run.seed}` : "as it is"}: ${run.failed}`)
-      }
-    }
-  }
-  said.push(`${passed} checks passed, ${failed} failed`)
-  return { said, failed }
+  const played = await Promise.all(
+    targets.map(async (target) => {
+      const name = target.endsWith("core/ui/gallery") ? "gallery" : target.split("/").at(-1)
+      const built = join(out, name, ".build")
+      const unbuilt = await build(target, built)
+      if (unbuilt) return [{ said: [`${name}: ${unbuilt}`], failed: 1, passed: 0 }]
+      // Every scene is drawn the same however it came to be, each on a computer walked by Tab too, and those with checks
+      // played.
+      const scenes = (await scenesOf(target, built, join(out, name, ".scenes"), true)).filter((scene) => !only || scene.name.toLowerCase().includes(only))
+      return Promise.all(
+        scenes.map(async (scene) => {
+          // A trace a check plays is beside its scenes: the gallery's, or an app's client.
+          scene.from = target.endsWith("core/ui/gallery") ? target : join(target, "client")
+          const own = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
+          const [results, tab, { fresh, moved }] = await Promise.all([scene.checks ? check(built, scene, own) : [], scene.touch ? undefined : walk(built, scene, join(own, "tab")), agrees(built, scene, join(own, "fresh"))])
+          if (!scene.touch) results.push({ name: "Tab shows where the keyboard is", seed: 0, failed: tab })
+          results.push({ name: "Drawn the same however it came to be", seed: 0, failed: fresh }, { name: "Drawn the same moved by whole device pixels", seed: 0, failed: moved })
+          const said = []
+          let [failed, passed] = [0, 0]
+          for (const [check, runs] of Object.entries(Object.groupBy(results, (result) => result.name))) {
+            const bad = runs.filter((run) => run.failed)
+            bad.length ? failed++ : passed++
+            said.push(`${bad.length ? "✗" : "✓"} ${name} · ${scene.name} · ${check}${bad.length ? "" : ` (${runs.length} runs)`}`)
+            for (const run of bad) said.push(`    ${run.seed ? `seed ${run.seed}` : "as it is"}: ${run.failed}`)
+          }
+          return { said, failed, passed }
+        }),
+      )
+    }),
+  )
+  const all = played.flat()
+  const [failed, passed] = [all.reduce((sum, scene) => sum + scene.failed, 0), all.reduce((sum, scene) => sum + scene.passed, 0)]
+  return { said: [...all.flatMap((scene) => scene.said), `${passed} checks passed, ${failed} failed`], failed }
 }

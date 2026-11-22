@@ -1,7 +1,7 @@
 // The harness process: here, or on `--ssh`'s device, and the scenes it lists and draws.
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
-import { capped, checking, dark, env, FACES, glass, harness, out, ssh, stopped } from "./options.js"
+import { capped, checking, dark, env, FACES, glass, harness, out, slot, ssh, stopped } from "./options.js"
 import { COMPONENTS, library, pageFolder } from "./pages.js"
 import { device, devices, hostScore } from "./tiers.js"
 
@@ -66,7 +66,9 @@ export async function runThere(at, folder, args, lines) {
 /// opened afresh for each of three rounds. On Windows a scheduled task runs it there, and says it's done on a named pipe,
 /// which is every session's, that this waits on there, five minutes at most; a Mac's person's session takes a window
 /// from their own ssh login as it is. → what it said of each motion's frames, as JSON lines, and whether it failed.
-export async function presentThere(at, folder, scene, played, taps) {
+export const presentThere = (at, folder, scene, played, taps) => slot(() => presented(at, folder, scene, played, taps))
+
+async function presented(at, folder, scene, played, taps) {
   // A locked screen's windows are drawn but not shown, so presenting costs nothing there.
   const locked = mac ? ["ioreg -n Root -d1", 'CGSSessionScreenIsLocked"=Yes'] : ['tasklist /FI "IMAGENAME eq LogonUI.exe" /NH', "LogonUI"]
   if (Bun.spawnSync(["ssh", ssh, locked[0]]).stdout.toString().includes(locked[1])) return { said: [], stderr: `${ssh}'s screen is locked, so a window there isn't shown: unlock it first`, failed: true }
@@ -132,8 +134,15 @@ export const panelled = (scene) => {
 /// 18 pt (clients/app/src/computer.rs `CORNER`), over the system's glass, in every harness alike.
 export const panel = (scene) => (panelled(scene) ? ["--panel", "18"] : [])
 
-/// The harness run on a scene, with `requests`: each answer, and its stderr. → `{ answers, said }`.
-export async function run(at, folder, scene, requests, seed = 0) {
+/// The harness run on a scene, with `requests`, once a slot of `jobs` is free: each answer, its stderr, and how long it
+/// ran. → `{ answers, said, failed, ms }`.
+export const run = (at, folder, scene, requests, seed = 0) =>
+  slot(async () => {
+    const started = performance.now()
+    return { ...(await harnessed(at, folder, scene, requests, seed)), ms: performance.now() - started }
+  })
+
+async function harnessed(at, folder, scene, requests, seed) {
   const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
   writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
   const lines = requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n")

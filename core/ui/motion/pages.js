@@ -1,7 +1,7 @@
 // Building a folder into what the harness loads: the UI library, an app's client and its page.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
-import { here, out, root } from "./options.js"
+import { here, root, slot } from "./options.js"
 
 /// When a file under `paths` last changed, the latest.
 const changed = (...paths) => Math.max(...paths.map((path) => (statSync(path).isDirectory() ? Math.max(0, ...readdirSync(path, { recursive: true }).map((file) => statSync(join(path, file)).mtimeMs)) : statSync(path).mtimeMs)))
@@ -46,7 +46,7 @@ export function pageFolder(built, page, folder, uses = []) {
   }
   for (const app of uses) {
     mkdirSync(join(at, app))
-    symlinkSync(usedApp(app, out), join(at, app, "client"))
+    symlinkSync(usedFolder(built, app), join(at, app, "client"))
   }
   if (existsSync(join(built, dirname(page), "styles.json"))) cpSync(join(built, dirname(page), "styles.json"), join(at, "styles.json"))
   return at
@@ -73,35 +73,47 @@ export function beside(from, at) {
 /// (`component`) rather than a page: the component alone, drawn in grouped cards, as Settings draws its sections.
 export const COMPONENTS = "components"
 
+/// `argv` run in `cwd` once a slot of `jobs` is free. → its exit status and stderr.
+const spawned = (argv, cwd) =>
+  slot(async () => {
+    const made = Bun.spawn(argv, { cwd, stdout: "ignore", stderr: "pipe" })
+    const [stderr] = await Promise.all([new Response(made.stderr).text(), made.exited])
+    return { exitCode: made.exitCode, stderr }
+  })
+
 /// An app's own packages, which its client's package.json names, as a server installs them before it builds the app.
 /// → why they didn't install, if they didn't.
-function install(client) {
+async function install(client) {
   const manifest = join(client, "package.json")
   if (!existsSync(manifest)) return
   const about = JSON.parse(readFileSync(manifest, "utf8"))
   if (!Object.keys({ ...about.dependencies, ...about.devDependencies }).length) return
-  const made = Bun.spawnSync(["bun", "install", "--frozen-lockfile", "--ignore-scripts"], { cwd: client })
-  if (made.exitCode !== 0) return made.stderr.toString().trim()
+  const made = await spawned(["bun", "install", "--frozen-lockfile", "--ignore-scripts"], client)
+  if (made.exitCode !== 0) return made.stderr.trim()
 }
 
 /// Builds `target` into `built` as a server builds an app: its packages, its page where one of its scenes draws a page
 /// (an app whose scenes are all of components has none, and may have no page at all), what it keeps as it is, and its
 /// client into COMPONENTS, with a page beside each module a scene names, that draws it. → why it didn't build, if it didn't.
-export function build(target, built) {
-  const packages = install(join(target, "client"))
+export async function build(target, built) {
+  const packages = await install(join(target, "client"))
   if (packages) return `its packages didn't install\n${packages}`
   const scenes = existsSync(join(target, "client/scenes.json")) ? JSON.parse(readFileSync(join(target, "client/scenes.json"), "utf8")) : {}
   const ofComponent = (scene) => !!scene && (scene.component || ofComponent(scenes[scene.like]))
   if (!Object.keys(scenes).length || Object.values(scenes).some((scene) => !ofComponent(scene))) {
-    const made = Bun.spawnSync(["bun", library("build/app.js"), target, built, relative(root, target)])
+    const made = await spawned(["bun", library("build/app.js"), target, built, relative(root, target)])
     servedAsIs(target, built)
-    if (made.exitCode !== 0) return `didn't build\n${made.stderr.toString().trim()}`
+    if (made.exitCode !== 0) return `didn't build\n${made.stderr.trim()}`
+  }
+  for (const app of new Set(Object.values(scenes).flatMap((scene) => scene.uses ?? []))) {
+    const unbuilt = await usedApp(app, built)
+    if (unbuilt) return unbuilt
   }
   const named = [...new Set(Object.values(scenes).map((scene) => scene.component).filter(Boolean))]
   if (!named.length) return
   const at = join(built, COMPONENTS)
-  const made = Bun.spawnSync(["bun", library("build/app.js"), join(target, "client"), at, relative(root, join(target, "client"))])
-  if (made.exitCode !== 0) return `its components didn't build\n${made.stderr.toString().trim()}`
+  const made = await spawned(["bun", library("build/app.js"), join(target, "client"), at, relative(root, join(target, "client"))])
+  if (made.exitCode !== 0) return `its components didn't build\n${made.stderr.trim()}`
   for (const component of named) {
     writeFileSync(join(at, `${component}.scene.js`), `import { ListStyle, render } from "/ui/client/ui.js"
 import Shown from "./${component}.js"
@@ -116,18 +128,23 @@ render(() => ListStyle({ value: "insetGrouped", get children() { return Shown({}
   }
 }
 
-/// An app another's page uses, its client built once a run, in `out`'s `.uses`. → where.
+/// Where an app another's page uses is built, its client, in the pass's folder beside `built` (`.uses`), once a pass.
+export const usedFolder = (built, app) => join(dirname(dirname(built)), ".uses", app)
 const usedApps = new Map()
-export function usedApp(app, out) {
-  if (!usedApps.has(app)) {
-    const folder = join(out, ".uses", app)
-    rmSync(folder, { recursive: true, force: true })
-    const client = join(root, "apps", app, "client")
-    const packages = install(client)
-    if (packages) throw new Error(`${app}'s packages didn't install: ${packages}`)
-    const made = Bun.spawnSync(["bun", library("build/app.js"), client, folder, relative(root, client)])
-    if (made.exitCode !== 0) throw new Error(`${app}'s components didn't build: ${made.stderr}`)
-    usedApps.set(app, folder)
-  }
-  return usedApps.get(app)
+/// Builds an app another's page uses into `usedFolder`, once a pass. → why it didn't build, if it didn't.
+function usedApp(app, built) {
+  const folder = usedFolder(built, app)
+  if (!usedApps.has(folder))
+    usedApps.set(
+      folder,
+      (async () => {
+        rmSync(folder, { recursive: true, force: true })
+        const client = join(root, "apps", app, "client")
+        const packages = await install(client)
+        if (packages) return `${app}'s packages didn't install: ${packages}`
+        const made = await spawned(["bun", library("build/app.js"), client, folder, relative(root, client)])
+        if (made.exitCode !== 0) return `${app}'s components didn't build: ${made.stderr.trim()}`
+      })(),
+    )
+  return usedApps.get(folder)
 }
