@@ -63,6 +63,9 @@ which draws on the CPU: `web.png`, compared with `native.png`, the web gate belo
 (`changed.png`): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
 in the commit; one that isn't is fixed. Our renderer is the reference, judged against DESIGN.md (Raycast-inspired), not
 the browser: it draws the web too. A native host that hasn't the runtime version the UI library needs draws nothing, which it says.
+Every scene is held to the same rules too, whatever its page (`core/ui/rules.js`, and `lint-tokens.js` for the colours
+styles give words): a kind of bug found once in one scene gets a rule there, with any exception named and why, not a
+check of that scene alone.
 
 ### Checks: every change to the UI library or the renderer
 

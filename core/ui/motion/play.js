@@ -356,7 +356,10 @@ async function play(built, scene, name, motion, hz, folder) {
       for (let y = Math.max(top, 0); y < Math.min(bottom, height); y++)
         for (let x = Math.max(left, 0); x < Math.min(right, width); x++) {
           const at = (y * width + x) * 4
-          if (data[at] > 200 && data[at + 1] < 110 && data[at + 2] < 110) [min, max] = [Math.min(min, x), Math.max(max, x)]
+          // Red by its hue, whatever the red token's value, light or dark: far more red than green and blue, which are
+          // about alike (an orange's green isn't).
+          const [r, g, b] = [data[at], data[at + 1], data[at + 2]]
+          if (r > 150 && r - Math.max(g, b) > 100 && Math.abs(g - b) < 60) [min, max] = [Math.min(min, x), Math.max(max, x)]
         }
       return max < min ? [] : [{ n, width: (max - min + 1) / k }]
     })

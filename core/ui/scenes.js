@@ -38,14 +38,21 @@
 // A scene a phone's width (under COMPACT) is a phone's: under a finger, in a window whose top and bottom the device keeps
 // for itself (IPHONE's, unless it says its own `safeArea`), so words or a control drawn under its status bar, or under its
 // home indicator but for what scrolls there, fail it. A narrow computer's window is a scene of its own, `touch: false`.
+//
+// Every scene is held to the rules every screen must meet (rules.js: words 4.5:1 against what's drawn behind them, a
+// control's mark 3:1, nothing over anything else, rows' end controls in a column, a readable column in the middle,
+// nothing cut short with room beside it, a date or a size never broken, nothing past a rounded clip), and first, the
+// colours its styles give words against what they're drawn on (lint-tokens.js): a rule broken fails it, saying where.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
-import { basename, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright-core"
 import { PNG } from "pngjs"
 import pixelmatch from "pixelmatch"
 import { outline } from "./src/drawing-primitives/outline.ts"
 import { messages } from "./src/words.ts"
+import { rules } from "./rules.js"
+import { lint } from "./lint-tokens.js"
 import { build, capped, COMPONENTS, copied, env, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
@@ -417,6 +424,9 @@ function native(built, scene, folder, used) {
   const unsafe = scene.safeArea && underTheDevice(said.at(-after - 1)?.result?.nodes ?? [], scene.size[1], insets(scene.safeArea))
   const squeezed = squeezedWords(queried, scene.size[0])
   const overflowing = overflowingWords(queried, scene.size[0])
+  const allNodes = said.at(-after - 1)?.result?.nodes ?? []
+  writeFileSync(join(folder, "native-nodes.json"), JSON.stringify(allNodes))
+  const broken = existsSync(join(folder, "native.png")) ? rules(allNodes, join(folder, "native.png"), scene.size, `${basename(dirname(folder))} · ${scene.name}`) : []
   // The words in sight, as the last frame drew them: each text and name of the semantic tree whose node, or the nearest
   // above it the inspector knows (a text in a line, a page in a frame), has some of its box in the window and isn't
   // see-through.
@@ -437,7 +447,7 @@ function native(built, scene, folder, used) {
   const every = (list) => list.flatMap((node) => [...(node.name ? [node.name] : []), ...every(node.children ?? [])])
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
-  return { tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, answers: said, at, asked, requests }
+  return { tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, answers: said, at, asked, requests }
 }
 
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
@@ -637,6 +647,11 @@ const mutant = process.env.ONE_MUTANT
 const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame, ...(mutant ? ["--mutants"] : [])])
 if (framed && framed.exitCode !== 0) throw new Error(`The renderer's frame didn't build: ${framed.stderr}`)
 const report = []
+// A token pair that can't be read is found where it's written, before any scene draws it.
+for (const line of lint()) {
+  report.push(`tokens: ${line}`)
+  process.exitCode = 1
+}
 for (const target of targets) {
   const name = basename(target)
   const built = join(out, name, "build")
@@ -681,6 +696,10 @@ for (const target of targets) {
     }
     for (const line of drawn.overflowing ?? []) {
       said.push(failing(`  words run past their side: ${line}`))
+    }
+    for (const line of drawn.broken ?? []) {
+      said.push(`  breaks a rule: ${line}`)
+      process.exitCode = 1
     }
     if (drawn.missing) said.push(`  native: ${drawn.missing}`)
     if (drawn.measured) said.push(`  native: ${timings(drawn.measured)}`)
