@@ -214,7 +214,7 @@ async function press(frame, name) {
     // The browser says it scrolled in its next frame, which the renderer then reveals, and the tree's drawn where it's
     // revealed to a frame or two later: it's pressed once it's there and settled, as Playwright's click waits for what
     // it clicks to be in view.
-    const frames = () => frame.evaluate(() => new Promise((shown) => requestAnimationFrame(() => requestAnimationFrame(shown))))
+    const frames = () => frame.evaluate(() => new Promise((shown) => /** @type {any} */ (globalThis).inspector.frame(() => /** @type {any} */ (globalThis).inspector.frame(shown))))
     await found.scrollIntoViewIfNeeded({ timeout: 5000 })
     for (let tries = 0; box && out(box) && tries < 60; tries++) {
       await frames()
@@ -272,7 +272,7 @@ async function web(browser, serve, key, scene, folder) {
     if (!settled) {
       problems.push(failing(`it hadn't settled after ${HANGS_AFTER_MS} ms: ${JSON.stringify(pending)}`))
     }
-    await frame.evaluate(() => new Promise((shown) => requestAnimationFrame(() => requestAnimationFrame(shown))))
+    await frame.evaluate(() => new Promise((shown) => /** @type {any} */ (globalThis).inspector.frame(() => /** @type {any} */ (globalThis).inspector.frame(shown))))
   }
   // Its clock is paused at 0 as it opens (`paused`), and stepped a second after it's drawn and after each tap, as the
   // native harness's is, so what moves by itself (a spinner, a caret's blink) is where the same steps put it on every
@@ -378,7 +378,7 @@ async function web(browser, serve, key, scene, folder) {
     problems.push(failing(jumped))
   }
   await page.close()
-  return drawn ? { problems, internal: internalWords(names.join("\n")), words, all: names } : { missing: `it drew nothing${problems.length ? `: ${problems.join("; ")}` : ""}` }
+  return drawn ? { problems, internal: internalWords(names.join("\n")), words, all: names } : { missing: `it drew nothing${problems.length ? `: ${problems.join("; ")}` : ""}`, error: true }
 }
 
 /// A mouse wheel's notch turned at `at`, as Chrome gives one (CDP's: pixels, marked a notch only by its legacy
@@ -407,9 +407,9 @@ async function notched(page, frame, at) {
             const by = [...now].reduce((most, [node, y]) => (before.has(node) && Math.abs(y - before.get(node)) > Math.abs(most) ? y - before.get(node) : most), 0)
             if (by) moves.push({ after: at - turned, by })
             before = now
-            at - since < 1000 ? requestAnimationFrame(frame) : done({ moves, frames })
+            at - since < 1000 ? /** @type {any} */ (globalThis).inspector.frame(frame) : done({ moves, frames })
           }
-          requestAnimationFrame(frame)
+          /** @type {any} */ (globalThis).inspector.frame(frame)
         }),
     )
     await page.mouse.wheel(0, 100)
@@ -458,7 +458,7 @@ const harnessed = (asked, requests) =>
 
 /// A scene drawn by a native host's headless harness, or nothing where it hasn't been built or can't draw the page.
 async function native(built, scene, folder) {
-  if (!existsSync(harness)) return { missing: "the native harness isn't built (`cargo build -p renderer --example screenshot --features fake`)" }
+  if (!existsSync(harness)) return { missing: "the native harness isn't built (`cargo build -p renderer --example screenshot --features fake`)", error: true }
   if (hosted < needed) return { missing: `the native host's runtime version is ${hosted}, the UI library needs ${needed}: nothing to compare until it's ${needed}` }
   const at = pageFolder(built, scene.page, folder, scene.uses)
   const answers = { ...scene.answers, "ui/initialize": scene.answers["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
@@ -471,7 +471,7 @@ async function native(built, scene, folder) {
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", "-", ...panel(scene)]
   const run = await harnessed(asked, requests)
-  if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the harness drew nothing") }
+  if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the harness drew nothing"), error: true }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))
   // Its tree: each node's role, name and what it is (its states, by ARIA's names, beside them), and its words.
   const semantic = ({ id, role, name, children = [], actions, states = {}, ...more }) =>
@@ -874,7 +874,8 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
       said.push(`  breaks a rule: ${line}`)
       process.exitCode = 1
     }
-    if (drawn.missing) said.push(`  native: ${drawn.missing}`)
+    // A scene the harness errored on fails the run, where one a host too old for the UI library can't draw only says so.
+    if (drawn.missing) said.push(drawn.error ? failing(`  native: ${drawn.missing}`) : `  native: ${drawn.missing}`)
     if (drawn.measured) said.push(`  native: ${timings(drawn.measured)}`)
     if (drawn.measured?.first_content_ms > OPENS_WITHIN_MS) {
       said.push(failing(`  opens slowly: its first content came ${drawn.measured.first_content_ms} ms after it opened, over ${OPENS_WITHIN_MS} ms, with each answer a client doesn't keep ${LATENCY_MS} ms away`))
@@ -913,7 +914,7 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
     }
     const excused = WEB_DIFFERS[`${name} · ${scene.name}`]
     const asWindow = onTheWeb && !onWeb.missing && !drawn.missing && (await windowed(drawn, scene, folder))
-    if (onWeb.missing) said.push(`  web: ${onWeb.missing}`)
+    if (onWeb.missing) said.push(failing(`  web: ${onWeb.missing}`))
     else if (asWindow?.missing) {
       said.push(failing(`  native, as a window: ${asWindow.missing}`))
     } else if (asWindow) {

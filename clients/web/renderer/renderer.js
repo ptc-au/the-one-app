@@ -78,10 +78,10 @@
     // the harness steps it (`inspector.clock`), where the browser's ran on real time, which a loaded machine moved
     // seconds of a page's states (a live screen out of reach, or still loading) either side of a picture.
     const stepped = new URLSearchParams(location.search).has("paused")
-    const browser = timed((timers) => renderer.timers(undefined, timers), stepped)
+    const browser = timed((timers) => renderer.timers(undefined, timers), stepped, (asking) => renderer.framing(asking))
     /** @type {Set<number>} */
     const asked = new Set()
-    Object.assign(globalThis, {
+    if (!stepped) Object.assign(globalThis, {
       requestAnimationFrame: (/** @type {FrameRequestCallback} */ callback) => {
         const id = browser.requestAnimationFrame((time) => {
           asked.delete(id)
@@ -151,7 +151,7 @@
     // `whole` to have its frame drawn again whole, beside the one drawn on what it kept, and `moved` to have it drawn whole
     // moved by whole device pixels, saying where it draws glass.
     const inspect = (/** @type {object} */ request) => renderer.inspect(JSON.stringify({ v: 1, id: 0, ...request }))
-    Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), clock: stepped ? stepping(inspect, browser) : (/** @type {object} */ request) => inspect({ op: "clock", ...request }), whole: () => renderer.whole(), moved: (/** @type {number} */ dx, /** @type {number} */ dy) => [...renderer.moved(dx, dy)] } })
+    Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), clock: stepped ? stepping(inspect, browser) : (/** @type {object} */ request) => inspect({ op: "clock", ...request }), whole: () => renderer.whole(), frame: (/** @type {FrameRequestCallback} */ callback) => browser.requestAnimationFrame(callback), moved: (/** @type {number} */ dx, /** @type {number} */ dy) => [...renderer.moved(dx, dy)] } })
     addEventListener("message", ({ source, data }) => source === parent && !answered(data) && renderer.message(data))
     // The canvas as the DOM says it is, in device pixels, and how many to a CSS pixel (the display's and the zoom),
     // and what happens on it.
@@ -424,9 +424,11 @@ async function frame(page, pageHtml, framed) {
  * one is a state that comes in seconds (a toast going, a retry), which a scene waits for itself (`wait`), as the
  * browser's clock, unlike a native harness's, can't be stepped. → the browser's own timers and frames.
  * @param {(timers: number[]) => void} told
- * @param {boolean} stepped the page's timers are on the renderer's clock, which a harness steps (`stepping`), told to none
+ * @param {boolean} stepped the page's timers and frames are on the renderer's clock, which a harness steps (`stepping`),
+ * told to none of the timers
+ * @param {(asking: boolean) => void} framing whether the page has asked for a frame that hasn't come, where it's stepped
  */
-function timed(told, stepped = false) {
+function timed(told, stepped = false, framing = (/** @type {boolean} */ _asking) => {}) {
   const browser = {
     setTimeout: setTimeout.bind(globalThis),
     clearTimeout: clearTimeout.bind(globalThis),
@@ -439,8 +441,14 @@ function timed(told, stepped = false) {
   if (stepped) {
     /** @type {Map<number, { at: number, callback: unknown, args: unknown[], every?: number }>} */
     const waiting = new Map()
-    let [now, handles] = [0, 0]
+    /** The page's frames it's asked for, which come at each refresh of a 60 Hz display, on the clock, as the native harness's. */
+    /** @type {Map<number, FrameRequestCallback>} */
+    const frames = new Map()
+    const refresh = 1000 / 60
+    let [now, handles, framed] = [0, 0, -1]
     Object.assign(globalThis, {
+      requestAnimationFrame: (/** @type {FrameRequestCallback} */ callback) => (frames.set(++handles, callback), framing(true), handles),
+      cancelAnimationFrame: (/** @type {number} */ handle) => (frames.delete(handle), framing(frames.size > 0)),
       setTimeout: (/** @type {unknown} */ callback, /** @type {unknown} */ delay, /** @type {unknown[]} */ ...args) => (waiting.set(++handles, { at: now + Math.max(0, Number(delay) || 0), callback, args }), handles),
       clearTimeout: (/** @type {number} */ handle) => void waiting.delete(handle),
       setInterval: (/** @type {unknown} */ callback, /** @type {unknown} */ delay, /** @type {unknown[]} */ ...args) => {
@@ -451,15 +459,36 @@ function timed(told, stepped = false) {
     })
     return {
       ...browser,
-      /** In how many ms the next timer is due. */
-      next: () => Math.min(Infinity, ...[...waiting.values()].map((timer) => timer.at - now)),
+      /** In how many ms the next timer or frame is due. */
+      next: () => {
+        const frame = frames.size ? refresh - (now % refresh) : Infinity
+        return Math.min(frame < 0.001 ? frame + refresh : frame, ...[...waiting.values()].map((timer) => timer.at - now))
+      },
       /** The page's clock moves on `ms`, each timer due running at its own time, and `settled` before the next, so what it
        * asked of its client is answered, as it is natively, where the client's answer came by a real round trip. */
       move: async (/** @type {number} */ ms, /** @type {() => Promise<unknown>} */ settled) => {
         now += ms
         for (;;) {
           const due = [...waiting].filter(([, timer]) => timer.at <= now).sort((a, b) => a[1].at - b[1].at)[0]
-          if (!due) return
+          if (!due) {
+            // At a refresh, the frames the page asked for run, each given the time, and what they ask is the next's.
+            const refreshed = Math.round(now / refresh)
+            if (!frames.size || Math.abs(now - refreshed * refresh) > 0.001 || refreshed === framed) return
+            framed = refreshed
+            const asked = [...frames]
+            frames.clear()
+            for (const [, callback] of asked) {
+              try {
+                callback(now)
+              } catch (error) {
+                reportError(error)
+              }
+            }
+            framing(frames.size > 0)
+            await new Promise((done) => browser.setTimeout(done, 0))
+            await settled()
+            continue
+          }
           if (due[1].every) due[1].at += due[1].every
           else waiting.delete(due[0])
           try {

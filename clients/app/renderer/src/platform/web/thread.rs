@@ -220,9 +220,10 @@ impl Thread {
         self.frame.is_none() && STEPPED.get()
     }
 
-    /// Its page's frames are the browser's, which come as it shows them, whatever its clock says.
+    /// Whether its page's frames come as its clock is moved: the frame's own page, opened paused (renderer.js's `timed`,
+    /// `stepped`). A frame's page's are the browser's, which come as it shows them, whatever its clock says.
     pub fn frames_on_clock(&self) -> bool {
-        false
+        self.frame.is_none() && STEPPED.get()
     }
 }
 
