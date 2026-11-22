@@ -57,7 +57,10 @@ in core/ui, after `bun build.js`:
     bun scenes.js --out <scratch>/after --against <scratch>/before [<folder>…]
 
 It draws every scene, or those of the folders named, on a native host by its headless harness (`cargo build -p
-renderer --example screenshot --features fake`), and with `--web` by our renderer on the web too, in headless Chromium
+renderer --example screenshot --features fake`), on the machine's GPU (the Linux machine's RTX 5070 Ti; lavapipe where
+there's none), every scene in about 2½ minutes. `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
+GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
+not every time. Compare only runs made on the same GPU. With `--web` it draws by our renderer on the web too, in headless Chromium
 (Playwright's, which `bunx playwright-core install chromium` fetches where it's missing; its WebGPU on SwiftShader,
 which draws on the CPU: `web.png`, compared with `native.png`, the web gate below). What counts is **what changed since `--against`** on our renderer
 (`changed.png`): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
@@ -70,7 +73,8 @@ check of that scene alone.
 ### Checks: every change to the UI library or the renderer
 
 A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in core/ui, after `bun
-build.js` and `cargo build -p renderer --example screenshot --features fake` (about 20 s for the gallery):
+build.js` and `cargo build -p renderer --example screenshot --features fake` (about 13 minutes for all 500, each in
+turn, on the GPU or on lavapipe alike, so name the folders your change can touch):
 
     bun motion.js --checks [<folder>…]
     bun motion.js --checks --dark [<folder>…]
@@ -93,8 +97,9 @@ fake --release`:
     bun scenes.js --web --release --dark --out <scratch>/web-dark
 
 Each must exit 0: a web picture more than 1% from its native one, a word on one and not the other, a blank picture or
-an error the scene doesn't say it logs fails it. The two run side by side in about 15 minutes on the Linux machine's
-SwiftShader (238 scenes each, 22 Nov), so start them as you start checking, not at the end. A difference that's meant
+an error the scene doesn't say it logs fails it. The two run side by side in about 12 minutes on the Linux machine's
+SwiftShader (240 scenes each, idle, 22 Nov), so start them as you start checking, not at the end. Chromium on its GPU
+took 8, but its pictures, under load, were taken before what a page does on the browser's own clock had settled. A difference that's meant
 goes in `WEB_DIFFERS` with why; the gate isn't widened. On 21 Nov a change to how the launcher's scenes are drawn
 natively failed 13 of them on the web, unnoticed for five hours, as it ran without `--web`.
 
