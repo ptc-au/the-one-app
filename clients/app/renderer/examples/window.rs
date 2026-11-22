@@ -46,6 +46,11 @@ fn main() -> anyhow::Result<()> {
     let ui = flag("--ui").map(PathBuf::from);
     let before = flag("--before").map(std::fs::read_to_string).transpose()?.unwrap_or_default();
 
+    // Built beside the headless harness (`--example screenshot --features fake`), it would draw on the fake platform,
+    // offscreen, with no window: every frame presented in 0 ms at 30 Hz, which read as a window's.
+    if cfg!(feature = "fake") {
+        anyhow::bail!("this build has the fake platform, which has no real windows: build the window example without --features fake");
+    }
     let native = Native::get()?;
     let (said_to, said) = mpsc::channel::<Option<Value>>();
     // Settled is two seconds with nothing said, ten at most, as a page that moves by itself draws on.

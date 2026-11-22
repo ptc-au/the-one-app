@@ -69,7 +69,7 @@ export async function presentThere(at, folder, scene, played, taps) {
   writeFileSync(join(staged, "played.json"), JSON.stringify(played))
   writeFileSync(join(staged, "before.jsonl"), taps.map((tap, id) => JSON.stringify({ v: 1, id: id + 1, ...tap })).join("\n"))
   const args = ["page", "--play", "played.json", "--before", "before.jsonl", "--ui", `${base}\\ui`, "--answers", "answers.json", "--size", `${scene.size[0]}x${scene.size[1]}`, "--rounds", "3", ...panel(scene)]
-  writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, `"${base}\\screenshot.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
+  writeFileSync(join(staged, "run.cmd"), ["@echo off", `cd /d "${run}"`, `start "" /b /wait "${base}\\screenshot.exe" ${args.map((arg) => `"${arg}"`).join(" ")} > said.txt 2> err.txt`, "echo %errorlevel% > exit.txt", `echo done> \\\\.\\pipe\\${name}`].join("\r\n"))
   writeFileSync(
     join(staged, "wait.ps1"),
     [
@@ -77,7 +77,10 @@ export async function presentThere(at, folder, scene, played, taps) {
       "$security = New-Object System.IO.Pipes.PipeSecurity",
       "$security.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule([System.Security.Principal.WindowsIdentity]::GetCurrent().User, 'ReadWrite', 'Allow')))",
       `$pipe = New-Object System.IO.Pipes.NamedPipeServerStream('${name}', 'In', 1, 'Byte', 'None', 0, 0, $security)`,
-      `schtasks /Create /F /SC ONCE /ST 23:59 /TN ${name} /TR '"${run}\\run.cmd"' /IT | Out-Null`,
+      // Through a console host with no window of its own: a console's window (Windows Terminal's, on Windows 11) took the
+      // foreground over the window being measured. Its window is started shown (`start`), as a window's first
+      // ShowWindow takes how it was started, and the console host's is hidden.
+      `schtasks /Create /F /SC ONCE /ST 23:59 /TN ${name} /TR 'conhost.exe --headless cmd.exe /c "${run}\\run.cmd"' /IT | Out-Null`,
       `schtasks /Run /TN ${name} | Out-Null`,
       "$null = $pipe.WaitForConnectionAsync().Wait(300000)",
       "$pipe.Dispose()",
