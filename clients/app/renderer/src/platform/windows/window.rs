@@ -49,8 +49,8 @@ pub struct Display {
     queue: Queue,
     cursors: RefCell<HashMap<Cursor, HCURSOR>>,
     frames: std::sync::Arc<Frames>,
-    /// The display's refresh interval, as the compositor says (`DwmGetCompositionTimingInfo`).
-    refresh: std::time::Duration,
+    /// The display's refresh interval, as the compositor last said (`dwm_refresh`).
+    refresh: Cell<std::time::Duration>,
     /// Windows' visual layer, which a panel's glass and page are in (`glass`), on this thread's dispatcher queue.
     compositor: Compositor,
     _queue: windows::System::DispatcherQueueController,
@@ -62,8 +62,27 @@ pub struct Display {
 struct Frames {
     wanted: std::sync::Mutex<bool>,
     told: std::sync::Condvar,
-    /// When the frame begun at the compositor's last frame shows.
-    shown: std::sync::Mutex<Option<std::time::Instant>>,
+    /// When the frame begun at the compositor's last frame shows, and its refresh interval then.
+    shown: std::sync::Mutex<Option<(std::time::Instant, std::time::Duration)>>,
+}
+
+/// The compositor's refresh interval now, as Chromium takes it each vsync (`VSyncProviderWin`,
+/// ui/gl/vsync_provider_win.cc): DWM's own measure of it (`qpcRefreshPeriod`, in the performance counter's ticks), or
+/// its rate (`rateRefresh`) where that measure is under 1 ms or half the rate. Each is the compositor's now, not the
+/// display mode's: a Surface's said 16.68 ms as it drew and 16.95 (59 Hz) after 10 s at rest, so one taken as the app
+/// started, at rest, counted its frames against a refresh it didn't have.
+fn dwm_refresh() -> Option<std::time::Duration> {
+    use std::time::Duration;
+    let mut timing = windows::Win32::Graphics::Dwm::DWM_TIMING_INFO { cbSize: size_of::<windows::Win32::Graphics::Dwm::DWM_TIMING_INFO>() as u32, ..Default::default() };
+    unsafe { windows::Win32::Graphics::Dwm::DwmGetCompositionTimingInfo(HWND::default(), &mut timing) }.ok()?;
+    let rate = (timing.rateRefresh.uiNumerator > 0).then(|| Duration::from_secs_f64(f64::from(timing.rateRefresh.uiDenominator) / f64::from(timing.rateRefresh.uiNumerator)));
+    let mut frequency = 0;
+    let measured = unsafe { windows::Win32::System::Performance::QueryPerformanceFrequency(&mut frequency) }.ok().filter(|()| frequency > 0).map(|()| Duration::from_secs_f64(timing.qpcRefreshPeriod as f64 / frequency as f64));
+    match (measured, rate) {
+        (Some(measured), Some(rate)) if measured < Duration::from_millis(1) || measured < rate / 2 => Some(rate),
+        (Some(measured), _) if measured >= Duration::from_millis(1) => Some(measured),
+        (_, rate) => rate,
+    }
 }
 
 pub struct NativeWindow {
@@ -203,12 +222,12 @@ impl Display {
         unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
         register_window_class();
         let frames = std::sync::Arc::new(Frames::default());
-        // The compositor's refresh, which on Windows 8.1 and later it's asked for with no window.
-        let mut timing = windows::Win32::Graphics::Dwm::DWM_TIMING_INFO { cbSize: size_of::<windows::Win32::Graphics::Dwm::DWM_TIMING_INFO>() as u32, ..Default::default() };
-        let said = unsafe { windows::Win32::Graphics::Dwm::DwmGetCompositionTimingInfo(HWND::default(), &mut timing) }.is_ok() && timing.rateRefresh.uiNumerator > 0;
-        let refresh = if said { std::time::Duration::from_secs_f64(f64::from(timing.rateRefresh.uiDenominator) / f64::from(timing.rateRefresh.uiNumerator)) } else { crate::platform::FRAME };
+        // The compositor's refresh, which on Windows 8.1 and later it's asked for with no window, and asked again at
+        // each of its frames.
+        let refresh = dwm_refresh().unwrap_or(crate::platform::FRAME);
         let (waiting, thread) = (frames.clone(), unsafe { windows::Win32::System::Threading::GetCurrentThreadId() });
         std::thread::Builder::new().name("frames".into()).spawn(move || {
+            let mut refresh = refresh;
             // It wakes the windows' thread for each frame, so it runs as that does.
             let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Max);
             // Windows 11's, looked up as it runs, so the program still starts on Windows 10, which hasn't it.
@@ -231,8 +250,9 @@ impl Display {
                 if wait.is_none_or(|wait| unsafe { wait(0, std::ptr::null(), 100) } != WAIT_OBJECT_0) {
                     std::thread::sleep(refresh);
                 }
-                // What's drawn in the compositor's frame shows a refresh after it began.
-                *waiting.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now() + refresh);
+                // What's drawn in the compositor's frame shows a refresh after it began, at its refresh now.
+                refresh = dwm_refresh().unwrap_or(refresh);
+                *waiting.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((std::time::Instant::now() + refresh, refresh));
                 let _ = unsafe { PostThreadMessageW(thread, WM_NULL, WPARAM(0), LPARAM(0)) };
             }
         })?;
@@ -240,7 +260,7 @@ impl Display {
         let options = DispatcherQueueOptions { dwSize: size_of::<DispatcherQueueOptions>() as u32, threadType: DQTYPE_THREAD_CURRENT, apartmentType: DQTAT_COM_NONE };
         let queue = unsafe { CreateDispatcherQueueController(options) }.context("CreateDispatcherQueueController failed")?;
         let compositor = Compositor::new().context("Windows' compositor didn't start")?;
-        Ok(Display { queue: Queue::default(), cursors: RefCell::default(), frames, refresh, compositor, _queue: queue })
+        Ok(Display { queue: Queue::default(), cursors: RefCell::default(), frames, refresh: Cell::new(refresh), compositor, _queue: queue })
     }
 
     pub fn open(&self, id: WindowId, options: &WindowOptions) -> anyhow::Result<NativeWindow> {
@@ -470,7 +490,7 @@ impl Display {
     }
 
     pub fn refresh(&self) -> std::time::Duration {
-        self.refresh
+        self.refresh.get()
     }
 
     /// Whether it says when the compositor shows each frame: it does.
@@ -488,7 +508,9 @@ impl Display {
 
     /// When the frame begun at the compositor's last frame shows, once it's come since this was last asked.
     pub fn frame(&self) -> Option<std::time::Instant> {
-        self.frames.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
+        let (shows, refresh) = self.frames.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()?;
+        self.refresh.set(refresh);
+        Some(shows)
     }
 
     /// What Windows has said since it was last asked, by the window it's about: every message waiting for this
