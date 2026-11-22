@@ -18,7 +18,7 @@
 //
 // Each scene is drawn on a native host by its headless harness (clients/app/renderer's `screenshot` example), with
 // `--web` by our renderer in headless Chromium too, in a frame a stand-in client answers (its web frame, clients/web/renderer, on Chromium's WebGPU: on a machine with no GPU,
-// SwiftShader's, which draws every frame on the CPU, so it's for a change to the web platform; elsewhere native and
+// SwiftShader's, which draws every frame on the CPU, so it's slow, run for every change to the renderer, the UI library or the web client (the `qa` skill); elsewhere native and
 // web draw with the same renderer), with `--ssh` on a device's GPU too, by its own build of the harness (a Windows
 // one's Direct3D 12, as motion.js plays there: where each node is laid out there and here, and how much of the
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
@@ -227,8 +227,14 @@ const HANGS_AFTER_MS = 120000
 async function web(browser, serve, key, scene, folder) {
   const page = await browser.newPage({ viewport: { width: scene.size[0], height: scene.size[1] }, deviceScaleFactor: 2, hasTouch: scene.touch, colorScheme: dark ? "dark" : "light", locale: "en-US", timezoneId: scene.timeZone })
   const problems = []
-  page.on("pageerror", (error) => problems.push(String(error)))
-  page.on("console", (message) => message.type() === "warning" && !message.text().includes("preferred by this device") && problems.push(message.text()))
+  // What the page logs fails it but for the errors the scene says it logs (`errors`), as the native harness's `--errors`.
+  const logged = (text) => {
+    if (scene.errors?.some((words) => text.includes(words))) return
+    problems.push(text)
+    process.exitCode = 1
+  }
+  page.on("pageerror", (error) => logged(String(error)))
+  page.on("console", (message) => message.type() === "warning" && !message.text().includes("preferred by this device") && logged(message.text()))
   await page.clock.setFixedTime(new Date(Date.UTC(2026, 0, 1)))
   // The first fetch of each picture file fails on the network, as a loaded or flaky connection's does: a picture is tried
   // again, and drawn when it comes, never left broken for a failure that passed.
@@ -412,6 +418,18 @@ function native(built, scene, folder, used) {
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
   return { tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, answers: said, at, asked, requests }
+}
+
+/// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
+/// which is what the web's tab is: the web has no system glass, so its page draws its own glass and shadows, as a native
+/// window does. → that picture (`native.png` where the scene is a window already), or why it isn't drawn.
+function windowed(drawn, scene, folder) {
+  const flags = panel(scene)
+  if (!flags.length) return { picture: join(folder, "native.png") }
+  const asked = [drawn.asked[0], join(folder, "window.png"), join(folder, "window.json"), ...drawn.asked.slice(3, -flags.length).filter((flag) => flag !== "--measure")]
+  const run = Bun.spawnSync(capped([harness, ...asked]), { stdin: new TextEncoder().encode(drawn.requests), env })
+  if (run.exitCode !== 0 || !existsSync(join(folder, "window.png"))) return { missing: stopped(run.exitCode) ?? (run.stderr.toString().trim().split("\n").at(-1) || "the harness drew nothing") }
+  return { picture: join(folder, "window.png") }
 }
 
 const insets = ([top, right, bottom, left]) => ({ top, right, bottom, left })
@@ -676,9 +694,13 @@ for (const target of targets) {
       }
     }
     const excused = WEB_DIFFERS[`${name} · ${scene.name}`]
+    const asWindow = onTheWeb && !onWeb.missing && !drawn.missing && windowed(drawn, scene, folder)
     if (onWeb.missing) said.push(`  web: ${onWeb.missing}`)
-    else if (onTheWeb && !drawn.missing) {
-      const part = differs(join(folder, "native.png"), join(folder, "web.png"), join(folder, "web-diff.png"))
+    else if (asWindow?.missing) {
+      said.push(`  native, as a window: ${asWindow.missing}`)
+      process.exitCode = 1
+    } else if (asWindow) {
+      const part = differs(asWindow.picture, join(folder, "web.png"), join(folder, "web-diff.png"))
       const over = part === undefined || part > WEB_DIFFERS_MOST
       said.push(`  native and web: pictures ${part === undefined ? "aren't the same size" : `${(part * 100).toFixed(1)}% different${over ? ` (over ${WEB_DIFFERS_MOST * 100}%${excused ? `, known: ${excused}` : ""})` : ""}`}`)
       if (over && !excused) process.exitCode = 1

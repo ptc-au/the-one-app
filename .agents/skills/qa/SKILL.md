@@ -59,7 +59,7 @@ in core/ui, after `bun build.js`:
 It draws every scene, or those of the folders named, on a native host by its headless harness (`cargo build -p
 renderer --example screenshot --features fake`), and with `--web` by our renderer on the web too, in headless Chromium
 (Playwright's, which `bunx playwright-core install chromium` fetches where it's missing; its WebGPU on SwiftShader,
-which draws on the CPU, so only for a change to the web platform: `web.png`, compared with `native.png`). What counts is **what changed since `--against`** on our renderer
+which draws on the CPU: `web.png`, compared with `native.png`, the web gate below). What counts is **what changed since `--against`** on our renderer
 (`changed.png`): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
 in the commit; one that isn't is fixed. Our renderer is the reference, judged against DESIGN.md (Raycast-inspired), not
 the browser: it draws the web too. A native host that hasn't the runtime version the UI library needs draws nothing, which it says.
@@ -78,6 +78,21 @@ things move, presses held as long as a person's). A failure says its seed; a fix
 component or primitive changed or added gets checks for what it promises, ported from its upstream file's tests where
 it's copied from the UI SDK. A bug a device showed that the checks passed is the harness's too: make a check fail on
 it first (a scene shaped like where it happened), say why the harness missed it, then fix both.
+
+### The web gate: every change to the renderer, the UI library or the web client
+
+A change under `clients/app/renderer/`, `core/ui/` or `clients/web/` runs every scene on the web too, light and dark,
+before it's committed, in core/ui, after `bun build.js` and `cargo build -p renderer --example screenshot --features
+fake --release`:
+
+    bun scenes.js --web --release --out <scratch>/web-light
+    bun scenes.js --web --release --dark --out <scratch>/web-dark
+
+Each must exit 0: a web picture more than 1% from its native one, a word on one and not the other, a blank picture or
+an error the scene doesn't say it logs fails it. The two run side by side in about 15 minutes on the Linux machine's
+SwiftShader (238 scenes each, 22 Nov), so start them as you start checking, not at the end. A difference that's meant
+goes in `WEB_DIFFERS` with why; the gate isn't widened. On 21 Nov a change to how the launcher's scenes are drawn
+natively failed 13 of them on the web, unnoticed for five hours, as it ran without `--web`.
 
 ### Motion: every change to how something moves
 
