@@ -666,7 +666,7 @@ defmodule GitRepos do
             end)
 
           results = Enum.reverse(results)
-          updates = for {old, new, ref} <- commands, state["refs"][ref] != changed["refs"][ref], do: update(state, ref, new)
+          updates = for {_old, new, ref} <- commands, state["refs"][ref] != changed["refs"][ref], do: update(state, ref, new)
 
           case validated(call, name, by, updates, %{"pack" => file && Base.encode64(File.read!(file))}) do
             :ok -> {if(changed != state, do: changed), [], results}
