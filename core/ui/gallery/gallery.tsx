@@ -1,12 +1,14 @@
 // Every component of the UI library in each of its states, as scenes (`<family>.scenes.tsx`): one page that
 // draws them all, under their families, or the one its link names (`#Buttons/Variants`), alone, as the scenes'
-// runner (core/ui/scenes.js) draws each, natively and on the web; `#scenes` lists them for it.
+// runner (core/ui/scenes.js) draws each, natively and on the web; `#scenes` lists them for it. What follows a `?` in a
+// link is the scene's own to read, as a URL's query is (`#Generated/Random?seed=7`).
 // Nothing here calls a tool.
 import { For, Show } from "solid-js"
 import { link, render, type Scene, type Scenes, ScrollView, Section, styles, Text, tokens, View } from "ui"
 import actions from "./actions.scenes.tsx"
 import buttons from "./buttons.scenes.tsx"
 import fields from "./fields.scenes.tsx"
+import generated from "./generated.scenes.tsx"
 import images from "./images.scenes.tsx"
 import lists from "./lists.scenes.tsx"
 import live from "./live.scenes.tsx"
@@ -29,11 +31,11 @@ const look = styles({
   safe: { paddingTop: tokens.length.safeTop, paddingBottom: tokens.length.safeBottom, paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight },
 })
 
-const scenes: Scenes = { ...text, ...images, ...buttons, ...lists, ...fields, ...states, ...tabs, ...widgets, ...over, ...actions, ...live, ...motion, ...styling, ...screens }
+const scenes: Scenes = { ...text, ...images, ...buttons, ...lists, ...fields, ...states, ...tabs, ...widgets, ...over, ...actions, ...live, ...motion, ...styling, ...screens, ...generated }
 const draw = (scene: Scene) => (typeof scene === "function" ? scene() : scene.render())
 const named = () => {
   const to = link()
-  return to && decodeURIComponent(to)
+  return to && decodeURIComponent(to).split("?")[0]
 }
 const families = [...new Set(Object.keys(scenes).map((name) => name.split("/")[0]))]
 

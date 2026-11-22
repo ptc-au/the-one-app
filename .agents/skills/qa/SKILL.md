@@ -78,11 +78,16 @@ turn, on the GPU or on lavapipe alike, so name the folders your change can touch
 
     bun motion.js --checks [<folder>…]
     bun motion.js --checks --dark [<folder>…]
+    bun motion.js --generated 4
+    bun motion.js --generated 4 --dark
 
 A scene's `checks` (the `CheckStep` type in `core/ui/src/types/ui.d.ts`) are what people do with it and what must
 hold, as the UI SDK's own tests have them, played on the headless harness's window, a fake platform's under the loop
 every host's windows run, once as it is and again with seeds that make it adversarial (refreshes late, input as
-things move, presses held as long as a person's). A failure says its seed; a fix keeps it in the scene's `seeds`. A
+things move, presses held as long as a person's). A failure says its seed; a fix keeps it in the scene's `seeds`. Every scene at rest is drawn the same moved by whole device pixels too.
+`--generated` plays pages no app draws (random cards, shadows, glass, lists, transforms and text, changing under random
+drags or a wheel), every frame against the same drawn whole and moved, as other people's apps will draw what the
+gallery doesn't: a seed that fails plays again alone with `--generated 1 --from <seed>`. A
 component or primitive changed or added gets checks for what it promises, ported from its upstream file's tests where
 it's copied from the UI SDK. A bug a device showed that the checks passed is the harness's too: make a check fail on
 it first (a scene shaped like where it happened), say why the harness missed it, then fix both.

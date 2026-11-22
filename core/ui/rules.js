@@ -87,7 +87,10 @@ function pages(nodes) {
     const order = new Map(here.map((node, at) => [node.node, at]))
     const layers = here.filter((node) => node.rect && node.opacity > 0 && node.resolved && ((node.resolved.backgroundColor && node.resolved.backgroundColor.token !== "transparent") || node.resolved.backdropFilter))
     const covered = (node) => node.rect && layers.some((layer) => order.get(layer.node) > order.get(node.node) && !above(node).includes(layer) && !above(layer).includes(node) && overlap(layer.rect, node.rect))
-    return { here, byId, parent, above, below, scrolled, covered }
+    // What's drawn after it, not in it nor holding it, with a shadow reaching over `rect`: a floating panel's shadow lies
+    // over what's beside it, as a corner past its rounding may show.
+    const shadowed = (node, rect) => here.some((one) => one.rect && one.opacity > 0 && one.resolved?.boxShadow && order.get(one.node) > order.get(node.node) && !above(node).includes(one) && !above(one).includes(node) && overlap({ x: one.rect.x - SHADOW, y: one.rect.y - SHADOW, width: one.rect.width + 2 * SHADOW, height: one.rect.height + 2 * SHADOW }, rect))
+    return { here, byId, parent, above, below, scrolled, covered, shadowed }
   })
 }
 
@@ -251,15 +254,19 @@ export function roomy(nodes) {
   )
 }
 
+/// How far a shadow reaches past its box, at most, in points: the window's and a lifted card's, 48 pt of blur.
+const SHADOW = 48
+
 /// What's rounded and clips what's in it shows nothing past its rounding, as CSS clips it: each corner, more than a
 /// pixel and a half outside its arc, is the colour just outside its box (within 24 levels a channel); and what blurs
 /// what's behind it (glass) is the same material to its corners as along its edges, within 16 levels, as a blur clamped
-/// to its box is. Only where the window has room around it to compare with. → what's wrong, a line each.
+/// to its box is. Only where the window has room around it to compare with, and not where what's drawn after it casts
+/// its shadow over the corner (`shadowed`). → what's wrong, a line each.
 const CORNERS = [["borderTopStartRadius", 1, 1], ["borderTopEndRadius", -1, 1], ["borderBottomEndRadius", -1, -1], ["borderBottomStartRadius", 1, -1]]
 export function corners(nodes, file, [width, height]) {
   const shot = picture(file, width)
   const wrong = []
-  for (const { here, covered } of pages(nodes)) for (const node of here) {
+  for (const { here, covered, shadowed } of pages(nodes)) for (const node of here) {
     if (!seen(node) || !node.resolved || covered(node)) continue
     // What casts a shadow draws it past its rounding, as it should.
     const clips = node.resolved.overflow === "hidden" && !node.resolved.boxShadow
@@ -271,7 +278,7 @@ export function corners(nodes, file, [width, height]) {
       const r = Math.min(length(node.resolved[property]) ?? 0, w / 2, h / 2)
       if (r < 4) continue
       const [cx, cy] = [sx > 0 ? x : x + w, sy > 0 ? y : y + h]
-      if (clips) {
+      if (clips && !shadowed(node, { x: sx > 0 ? cx : cx - r, y: sy > 0 ? cy : cy - r, width: r, height: r })) {
         // What's around the corner: outside it, and outside each edge beside it, any of which past the arc may show
         // where the box sits on a line or beside another (a chart's bar on its axis).
         const outsides = [[cx - sx * 2, cy - sy * 2], [cx - sx * 2, cy + sy * r], [cx + sx * r, cy - sy * 2]].map(([px, py]) => shot.at(px * shot.scale, py * shot.scale))

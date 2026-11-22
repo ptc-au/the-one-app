@@ -52,11 +52,22 @@
 // system's appearance switched and on a computer its window made smaller; and every scene on a computer (not `touch`)
 // is walked round by Tab, and what the keyboard comes to must draw otherwise than it does without it. It says, check
 // by check, which passed, and for
-// one that failed, its seed, which step and why; it exits 1 where one failed.
+// one that failed, its seed, which step and why; it exits 1 where one failed. Every scene at rest is drawn the same
+// moved by whole device pixels too, as nothing it draws may hang on where in the window it is (a dither, a tile's
+// grid, rounding to pixels).
+//
+// `--generated <count>` plays that many generated scenes instead, from seed 1 or `--from`'s (gallery/generated.scenes.tsx:
+// pages no app draws, a random tree of cards, shadows, glass, lists that scroll, things moved, turned and faded, and
+// text, changing as their seed says), each in a phone's window under a finger's drags and flings or a computer's under
+// a wheel, at 1 to 3 device pixels a point and 60 or 120 Hz, with the harness's `--seed` too, and every frame drawn on
+// what was kept must be the one drawn whole and the same drawn moved by whole device pixels. A seed that fails says
+// its first wrong frame, with its pictures in `--out`'s `generated/<seed>`, and plays the same again: `--generated 1
+// --from <seed>`. About a second a seed here, a hundred or so frames each.
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs"
 import { join } from "node:path"
 import { checks } from "./motion/checks.js"
-import { checking, flag, folders, harness, here, out, root, setHarness, ssh } from "./motion/options.js"
+import { checking, firstSeed, flag, folders, generating, harness, here, out, root, setHarness, ssh } from "./motion/options.js"
+import { generated } from "./motion/generated.js"
 import { copied, stale } from "./motion/pages.js"
 import { round } from "./motion/play.js"
 import { cpuName, hostScore } from "./motion/tiers.js"
@@ -81,6 +92,11 @@ if (import.meta.main) {
   if (!flag("--release") && !ssh) console.log("Its CPU times are a debug build's, so devices are judged by their GPU and drawing, as measured, alone: --release judges their painting and JS too")
   if (!hostScore && !ssh) console.log(`This CPU (${cpuName.trim()}) has no Geekbench score in devices.json's hosts, so devices are judged by their GPUs alone`)
   const started = performance.now()
+  if (generating) {
+    const { said, failed } = await generated(generating, firstSeed)
+    console.log(said.join("\n"), `\nin ${Math.round(performance.now() - started)} ms`)
+    process.exit(failed ? 1 : 0)
+  }
   if (checking) {
     const { said, failed } = await checks(folders.length ? folders : everything())
     console.log(said.join("\n"), `\nin ${Math.round(performance.now() - started)} ms`)

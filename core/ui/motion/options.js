@@ -21,7 +21,10 @@ export const dark = flag("--dark")
 export const glass = option("--glass")
 export const checking = flag("--checks")
 export const seeds = Number(option("--seeds") ?? 3)
-export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass"].includes(args[at - 1])).map((folder) => resolve(folder))
+/// How many generated scenes to play (`--generated`), from which seed (`--from`).
+export const generating = option("--generated") && Number(option("--generated"))
+export const firstSeed = Number(option("--from") ?? 1)
+export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--hz", "--scene", "--seeds", "--ssh", "--harness", "--glass", "--generated", "--from"].includes(args[at - 1])).map((folder) => resolve(folder))
 // On a device of devices.json's tiers over ssh (the one whose `measured` it is), with a harness built for it, its own
 // GPU and CPU draw each frame, as calibrate.js has them, and its tier is judged by the times it took there.
 export const ssh = option("--ssh")
