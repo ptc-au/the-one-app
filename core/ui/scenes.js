@@ -647,7 +647,7 @@ function levels(one, other) {
 /// (a picture's pixels, a tree's line, what each node's query says), or nothing. A scene is drawn twice, on a harness
 /// each, and any difference fails it: a check that passes on a rerun is broken, so what leaks in (real time, an
 /// ordering, a clock nothing pins, a wait on time rather than state) is fixed where it comes from.
-function otherwise(folder, again, files) {
+function otherwise(folder, again, files, within = 0) {
   for (const file of files) {
     const [a, b] = [folder, again].map((one) => (existsSync(join(one, file)) ? readFileSync(join(one, file)) : undefined))
     if (a && b && a.equals(b)) continue
@@ -661,8 +661,9 @@ function otherwise(folder, again, files) {
     let [differ, most] = [0, 0]
     for (let at = 0; at < one.data.length; at += 4) {
       const by = Math.max(...[0, 1, 2, 3].map((channel) => Math.abs(one.data[at + channel] - two.data[at + channel])))
-      if (by) [differ, most] = [differ + 1, Math.max(most, by)]
+      if (by > within) [differ, most] = [differ + 1, Math.max(most, by)]
     }
+    if (!differ) continue
     return `${file} is drawn otherwise in ${differ} pixels, by up to ${most} levels`
   }
 }
@@ -750,10 +751,12 @@ for (const target of targets) {
     }
     const [onWeb = {}, onWebAgain] = onWebs
     const said = [`${name} · ${scene.name}`]
-    for (const [run, twice, files] of [["native", drawnAgain, ["native.png", "native.txt", "native-text.txt", "native-answers.jsonl"]], ["web", onWebAgain, ["web.png", "web-text.txt"]]]) {
+    // The web's pictures are drawn by Chrome's GPU, whose blends and blurs round a level apart from one run to the next
+  // (5 pixels of an open select's shadow), as a picture drawn whole is compared within a level (`levels`); native's are exact.
+  for (const [run, twice, files, within] of [["native", drawnAgain, ["native.png", "native.txt", "native-text.txt", "native-answers.jsonl"], 0], ["web", onWebAgain, ["web.png", "web-text.txt"], 1]]) {
       if (!twice) continue
       const first = run === "native" ? drawn : onWeb
-      const off = first.missing || twice.missing ? (first.missing === twice.missing ? undefined : `${first.missing ?? "drew"} the first time, ${twice.missing ?? "drew"} the second`) : otherwise(folder, again, files)
+      const off = first.missing || twice.missing ? (first.missing === twice.missing ? undefined : `${first.missing ?? "drew"} the first time, ${twice.missing ?? "drew"} the second`) : otherwise(folder, again, files, within)
       if (off) {
         said.push(`  ${run}, drawn twice, FAILS: ${off}`)
         process.exitCode = 1
