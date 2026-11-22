@@ -141,9 +141,12 @@ export type ViewProps = Listens & {
    * settle (a pager's arrows) shows then. A host before this one doesn't say it. */
   onDragTransitionEnd?: () => void
   /** What its style moved (`transition`) has all but arrived, within a twenty-fifth of its way and 8 points, as SwiftUI's
-   * `.logicallyComplete`, once for the node, as CSS's `transitionend` but not each property: what waits for it to land
-   * (captions beside an icon) shows then. A host before this one doesn't say it. */
-  onTransitionEnd?: () => void
+   * `.logicallyComplete` (`rest: false`): what waits for it to land (captions beside an icon) shows then; and again as
+   * it comes to rest, drawn where its style puts it, as SwiftUI's `.removed` and CSS's `transitionend` (`rest: true`):
+   * what takes its place there (an icon handed back to its folder) shows then, unseen. Each once for the node, not each
+   * property. A host before this one doesn't say it, and one before rest's tells once, with no `rest`, as it all but
+   * arrives. */
+  onTransitionEnd?: (event: { rest?: boolean }) => void
 }
 export declare function View(props: ViewProps): Element
 

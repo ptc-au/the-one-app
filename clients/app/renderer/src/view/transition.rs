@@ -352,6 +352,10 @@ pub(crate) struct Transitions {
     /// told (`ended`).
     ending: HashSet<Id>,
     ended: Vec<Id>,
+    /// The nodes with a transition begun that has yet to come to rest, and those that have since the page was last told
+    /// (`arrived`).
+    arriving: HashSet<Id>,
+    arrived: Vec<Id>,
     /// The nodes moving by their keyframes (`Look::animation`), which are styled again each frame they're drawn.
     animated: HashSet<Id>,
     /// Where each node that moves as it's laid out again (`layout`) was laid out last, in the window, unscrolled, and
@@ -518,6 +522,7 @@ impl Transitions {
             set(computed, property, moving.at(now));
             self.moving.insert(key, moving);
             self.ending.insert(id);
+            self.arriving.insert(id);
         }
         // Coming in, with less motion: what would have slid or grown in fades in instead.
         let moved_in = entering.is_some_and(|entering| PROPERTIES.iter().any(|(property, moves)| *moves && get(entering, property) != get(computed, property)));
@@ -527,6 +532,7 @@ impl Transitions {
             set(computed, "opacity", moving.at(now));
             self.moving.insert((id, "opacity"), moving);
             self.ending.insert(id);
+            self.arriving.insert(id);
         }
     }
 
@@ -675,6 +681,7 @@ impl Transitions {
         self.flips.remove(&id);
         self.animated.remove(&id);
         self.ending.remove(&id);
+        self.arriving.remove(&id);
         if self.drawn.remove(&id) {
             for (property, _) in PROPERTIES {
                 self.values.remove(&(id, property));
@@ -737,6 +744,15 @@ impl Transitions {
             ending
         });
         self.moving.retain(|_, moving| !moving.done(now));
+        let still: HashSet<Id> = self.moving.keys().map(|(id, _)| *id).collect();
+        let arrived = &mut self.arrived;
+        self.arriving.retain(|id| {
+            let arriving = still.contains(id);
+            if !arriving {
+                arrived.push(*id);
+            }
+            arriving
+        });
         let rested = &mut self.rested;
         self.dragged.retain(|id, dragged| {
             let done = dragged.done(now);
@@ -758,6 +774,13 @@ impl Transitions {
     /// `transitionend`, but for a node and not each of its properties.
     pub fn ended(&mut self) -> Vec<Id> {
         std::mem::take(&mut self.ended)
+    }
+
+    /// The nodes whose transitions have all come to rest, drawn where their style puts them, since this was last asked,
+    /// each once, as CSS's `transitionend` and SwiftUI's `.removed` are: after `ended`, or in the same frame where they
+    /// arrived at once (an eased one).
+    pub fn arrived(&mut self) -> Vec<Id> {
+        std::mem::take(&mut self.arrived)
     }
 
     /// How many properties are still on their way, for the inspector's `settle`.

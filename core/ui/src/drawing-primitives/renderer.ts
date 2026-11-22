@@ -347,9 +347,10 @@ export interface Props {
   onDragEnd?: true
   onDragTransitionEnd?: true
   /** Told `transitionend` once everything its style moved (`transition`) has all but arrived, within a twenty-fifth of its
-   * way and 8 points, as SwiftUI's `.logicallyComplete`, a little before it's drawn at rest: what waits for it to land waits for
-   * this, never a timer. CSS's, but once for the node and not each property it moved; a host before this one doesn't
-   * say it. */
+   * way and 8 points, as SwiftUI's `.logicallyComplete` (`rest: false`), a little before it's drawn at rest, and again as
+   * it comes to rest (`rest: true`), as CSS's and SwiftUI's `.removed`: what waits for it to land or to rest waits for
+   * these, never a timer. Once each for the node and not each property it moved; a host before this one doesn't say it,
+   * and one before `rest` tells once, as it all but arrives. */
   onTransitionEnd?: true
   /** `box`, `scroll`: moves from where it was laid out to where it is as that changes, by a spring the host draws
    * (Motion's `layout`), and from where what has the same `layoutId` was a moment ago, where it's new. */

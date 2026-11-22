@@ -10,15 +10,23 @@ const look = styles({
   snappy: (translateX: number) => ({ translateX, transitionProperty: ["translateX"], transition: tokens.motion.snappy }),
 })
 
+/// Each box says what it was last told of its move (`onTransitionEnd`): that it all but landed, then that it's at rest.
 const Springs = () => {
   const [moved, setMoved] = createSignal(false)
+  const Box = (props: { name: string; style: (translateX: number) => object }) => {
+    const [told, setTold] = createSignal("still")
+    return (
+      <>
+        <Text>{`${props.name}: ${told()}`}</Text>
+        <View role="group" aria-label={props.name} onTransitionEnd={(event) => setTold((was) => (event.rest ? `${was}, then at rest` : "landed"))} style={[look.box, props.style(moved() ? 200 : 0)]} />
+      </>
+    )
+  }
   return (
     <View style={look.page}>
       <Button onPress={() => setMoved(!moved())}>Move</Button>
-      <Text>Smooth</Text>
-      <View aria-label="Smooth" style={[look.box, look.smooth(moved() ? 200 : 0)]} />
-      <Text>Snappy</Text>
-      <View aria-label="Snappy" style={[look.box, look.snappy(moved() ? 200 : 0)]} />
+      <Box name="Smooth" style={look.smooth} />
+      <Box name="Snappy" style={look.snappy} />
     </View>
   )
 }
@@ -95,8 +103,18 @@ export default {
       </View>
     ),
   },
-  // The springs the tokens name, each moving a box 200 pt as Move is pressed: SwiftUI's `.smooth` and `.snappy`.
-  "Motion/Springs": Springs,
+  // The springs the tokens name, each moving a box 200 pt as Move is pressed: SwiftUI's `.smooth` and `.snappy`, each
+  // told as it all but lands and again at rest, as SwiftUI's `.logicallyComplete` and `.removed`.
+  "Motion/Springs": {
+    motions: {
+      "Smooth moves": { from: { role: "button", name: "Move" }, follow: { role: "group", name: "Smooth" }, gesture: { moves: [{ ms: 90 }] } },
+      "Snappy moves": { from: { role: "button", name: "Move" }, follow: { role: "group", name: "Snappy" }, gesture: { moves: [{ ms: 90 }] } },
+    },
+    render: () => <Springs />,
+    checks: {
+      "Told it landed, then at rest": ["Move", { wait: 60 }, { expect: { text: "Smooth: still" } }, { wait: 2000 }, { expect: { text: "Smooth: landed, then at rest" } }, { expect: { text: "Snappy: landed, then at rest" } }],
+    },
+  },
   "Motion/Long list": {
     touch: true,
     motions: {

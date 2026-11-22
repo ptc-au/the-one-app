@@ -474,9 +474,13 @@ impl Screen {
                 self.tell(id, "dragtransitionend", json!({}));
             }
         }
-        for id in self.transitions.ended() {
-            if self.tree.nodes.get(&id).is_some_and(|node| node.listens("transitionend")) {
-                self.tell(id, "transitionend", json!({}));
+        // Told twice: as it all but arrives, what waits for it to land (a caption) shows, and at rest, what takes its
+        // place there (an icon handed back) does, unseen.
+        for (ids, rest) in [(self.transitions.ended(), false), (self.transitions.arrived(), true)] {
+            for id in ids {
+                if self.tree.nodes.get(&id).is_some_and(|node| node.listens("transitionend")) {
+                    self.tell(id, "transitionend", json!({"rest": rest}));
+                }
             }
         }
         // What's going is gone once nothing in it moves, having been drawn going.
