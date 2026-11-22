@@ -147,6 +147,10 @@ impl Screen {
                 bottom: (insets.bottom - (self.room.height - rect.origin.y - rect.size.height)).max(0.0),
                 right: (insets.right - (self.room.width - rect.origin.x - rect.size.width)).max(0.0),
             };
+            // Mutant: a frame's page told of no safe area, as before 132237a0e (L66).
+            if crate::mutants::mutant("safe-area") {
+                screen.insets = Default::default();
+            }
             // A page that says it's another height has its frame laid out again.
             if child.height != screen.content_height {
                 child.height = screen.content_height;
@@ -244,7 +248,7 @@ impl Screen {
         }
         // What says it's about to move (`will-change`) is one as it holds still too: drawn ahead, it only moves then.
         // A text is none: it's drawn where it is each frame, as one in a layer is (`Painter::paint_node`).
-        let text = |id: &Id| self.tree.nodes.get(id).is_some_and(|node| matches!(node.kind, Kind::Text | Kind::RawText));
+        let text = |id: &Id| !crate::mutants::mutant("text-stretched") && self.tree.nodes.get(id).is_some_and(|node| matches!(node.kind, Kind::Text | Kind::RawText));
         // What cross-dissolves with less motion is drawn from its layer, where it was and where it rests, even as
         // what's in it changes, which draws its layer again, as a snapshot is taken then (`Transitions::dissolving`).
         let dissolving: HashSet<Id> = whole.iter().filter(|id| self.transitions.dissolving(**id, now).is_some()).copied().collect();
@@ -485,7 +489,14 @@ impl Screen {
             tab_order.insert(0, NOTICE_ACTION);
         }
         self.focus.tab_order = tab_order;
-        self.rects = rects;
+        // Mutant: where each node was drawn the frame before, as the inspector says it, a frame stale.
+        let stale = std::mem::replace(&mut self.rects, rects);
+        if crate::mutants::mutant("stale-rect") {
+            let now = std::mem::replace(&mut self.rects, stale);
+            for (id, rect) in now {
+                self.rects.entry(id).or_insert(rect);
+            }
+        }
         self.animating = animating || moving || self.coasting();
         // What's about to move and wasn't drawn ahead, as something was moving, is in a frame of its own once it stops.
         self.again |= !plan.still && self.layout.will_change.iter().any(|id| plan.layered.contains(id) && !self.layers.get(id).is_some_and(|layer| layer.recorded));

@@ -172,6 +172,11 @@ impl Pictures {
         let mut any = !done.is_empty();
         for (id, decoded, at) in done {
             let asked = self.asked.remove(&id);
+            // Mutant: a picture that didn't decode isn't tried again, and is left blank for good, as before f0db8c31f.
+            if decoded.is_none() && crate::mutants::mutant("picture-retry") {
+                self.addresses.remove(&id);
+                continue;
+            }
             if decoded.is_none() {
                 let failed = self.failed.entry(id).or_insert(Failed { times: 0, again: Again::Trying });
                 if let Some(after) = RETRIES_MS.get(failed.times) {

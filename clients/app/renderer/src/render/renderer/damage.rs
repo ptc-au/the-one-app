@@ -43,6 +43,19 @@ pub(super) fn damage(last: &Prints, now: &Prints) -> Vec<Rect> {
     let same = was.iter().zip(&is).take_while(|(was, is)| was == is).count();
     let tail = was[same..].iter().rev().zip(is[same..].iter().rev()).take_while(|(was, is)| was == is).count();
     changed.extend(was[same..was.len() - tail].iter().chain(&is[same..is.len() - tail]).map(|thing| thing.1));
+    // Mutant: each third frame drawn again everywhere, as a card held still was, its layer dropped and drawn afresh
+    // (L86, 42860aa55).
+    static FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    if crate::mutants::mutant("held-redraw") && FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 3 == 2 {
+        changed.extend(now.iter().map(|thing| thing.1));
+    }
+    // Mutant: each change's box a pixel short at its right and bottom, as an inset shadow's edge pixel fell outside the
+    // extent it was taken at (9f93567ec).
+    if crate::mutants::mutant("damage-short") {
+        for [left, top, right, bottom] in &mut changed {
+            (*right, *bottom) = ((*right).saturating_sub(1).max(*left), (*bottom).saturating_sub(1).max(*top));
+        }
+    }
     changed
 }
 

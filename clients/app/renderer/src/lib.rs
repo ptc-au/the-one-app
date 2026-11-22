@@ -13,6 +13,7 @@ pub mod inspect;
 mod intl;
 pub mod js;
 pub mod motion;
+pub mod mutants;
 pub mod platform;
 pub mod render;
 mod style;

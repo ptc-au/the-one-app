@@ -217,6 +217,8 @@ impl Table {
     }
 
     pub fn colour(&self, id: &str, conditions: Conditions) -> Option<Rgba> {
+        // Mutant: the text's colour, `label`, as it is in light whatever the appearance.
+        let conditions = if crate::mutants::mutant("dark-token") && id == "label" { Conditions { dark: false, ..conditions } } else { conditions };
         let value = self.value(id, "colour", conditions)?;
         rgba_of(&value)
     }

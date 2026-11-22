@@ -95,6 +95,19 @@ SwiftShader (238 scenes each, 22 Nov), so start them as you start checking, not 
 goes in `WEB_DIFFERS` with why; the gate isn't widened. On 21 Nov a change to how the launcher's scenes are drawn
 natively failed 13 of them on the web, unnoticed for five hours, as it ran without `--web`.
 
+### Mutants: every change to the harness or its checks
+
+The checks are shown to work by putting back the bugs we've had, one at a time, and seeing a check fail on each, as
+mutation testing does (cargo-mutants, Stryker):
+
+    tooling/mutants [<mutant>…] [--light | --dark]
+
+Each mutant is a bug planted where it was, behind `ONE_MUTANT=<name>` (`renderer::mutants`), which only the harness's
+builds have; each plays only the scenes, motions and checks that could show it, after a baseline run
+of them with none. It says which it caught, by which check, and which it missed (`--list` lists them). A change to the
+headless harness, motion.js, scenes.js or a check runs it, and must miss none. A bug a device found that the harness
+missed gets a mutant beside the check that now catches it.
+
 ### Motion: every change to how something moves
 
 What moves under a finger or a pointer (a drag, a swipe, a sheet pulled, a list flung or pulled past its end) and how

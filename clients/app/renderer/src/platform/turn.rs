@@ -382,6 +382,8 @@ impl Windows {
             if let Some(at) = window.presented
                 && window.summoned.is_none()
                 && (ticking || now() + ROUNDING < shows(self.vsync, refresh, at))
+                // Mutant: a frame drawn as each change comes, several in a refresh, as before fbb4e1c9e.
+                && !crate::mutants::mutant("double-frame")
             {
                 held |= window.dirty;
                 continue;
@@ -392,6 +394,11 @@ impl Windows {
                 {
                     (window.on_event)(Event::Frames(frames));
                 }
+                continue;
+            }
+            // Mutant: one refresh in six that has something new draws nothing, as a frame missed while it moves.
+            if crate::mutants::mutant("dropped-refresh") && DROPPED.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 6 == 5 {
+                held = true;
                 continue;
             }
             window.dirty = false;
@@ -607,6 +614,9 @@ impl Windows {
         }
     }
 }
+
+/// How many refreshes have had something new to draw, for the mutant `dropped-refresh`.
+static DROPPED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// How far a refresh's time, as a clock gives it in whole ns, is from a refresh's length (60 Hz's 16.666667 ms) on from
 /// a frame's: a few ns either side, which held a frame due at the refresh it came at for a refresh more, the App

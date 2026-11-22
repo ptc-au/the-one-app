@@ -70,6 +70,8 @@ impl Spring {
     /// Whether something `off` from where it's going, at `velocity`, has arrived: within `near`, and moving no faster
     /// than ten times that a second. What moves on the screen is near within `NEAR`.
     pub fn arrived(off: f64, velocity: f64, near: f64) -> bool {
+        // Mutant: at rest ten times as far off, a tenth of a point, as springs were before dc4643aa1.
+        let near = if crate::mutants::mutant("spring-rest") { near * 10.0 } else { near };
         off.abs() < near && velocity.abs() < near * 10.0
     }
 }

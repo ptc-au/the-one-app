@@ -49,6 +49,11 @@ import { messages } from "./src/words.ts"
 import { build, capped, COMPONENTS, copied, env, library, monospaced, pageFolder, panel, phone, runThere, scenesOf as gallery, stale, stopped, usedApp } from "./motion.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
+/// A line that fails the run, marked ✗ after its indent, as motion.js's checks mark theirs.
+const failing = (line) => {
+  process.exitCode = 1
+  return line.replace(/^\s*/, (indent) => `${indent}✗ `)
+}
 const root = here("../../")
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
@@ -144,7 +149,7 @@ function server(built, target, used) {
   return {
     url: (key) => `http://localhost:${listener.port}/host.html?scene=${encodeURIComponent(key)}`,
     // The renderer's frame, drawing the page at its address here.
-    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
+    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}${mutant ? `&mutant=${encodeURIComponent(mutant)}` : ""}#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
     stop: () => listener.stop(true),
   }
 }
@@ -231,8 +236,7 @@ async function web(browser, serve, key, scene, folder) {
   // What the page logs fails it but for the errors the scene says it logs (`errors`), as the native harness's `--errors`.
   const logged = (text) => {
     if (scene.errors?.some((words) => text.includes(words))) return
-    problems.push(text)
-    process.exitCode = 1
+    problems.push(failing(text))
   }
   page.on("pageerror", (error) => logged(String(error)))
   page.on("console", (message) => message.type() === "warning" && !message.text().includes("preferred by this device") && logged(message.text()))
@@ -254,8 +258,7 @@ async function web(browser, serve, key, scene, folder) {
   const settled = async () => {
     const { settled, pending } = await frame.evaluate((deadline) => /** @type {any} */ (globalThis).inspector.settle(deadline), HANGS_AFTER_MS)
     if (!settled) {
-      problems.push(`it hadn't settled after ${HANGS_AFTER_MS} ms: ${JSON.stringify(pending)}`)
-      process.exitCode = 1
+      problems.push(failing(`it hadn't settled after ${HANGS_AFTER_MS} ms: ${JSON.stringify(pending)}`))
     }
     await frame.evaluate(() => new Promise((shown) => requestAnimationFrame(() => requestAnimationFrame(shown))))
   }
@@ -265,12 +268,11 @@ async function web(browser, serve, key, scene, folder) {
   if (drawn && scene.wait) await page.waitForTimeout(scene.wait).then(settled)
   for (const [url, times] of failed) {
     if (times > 1) continue
-    problems.push(`${url} failed on the network once and wasn't fetched again, so it's drawn broken`)
-    process.exitCode = 1
+    problems.push(failing(`${url} failed on the network once and wasn't fetched again, so it's drawn broken`))
   }
   // Its page's clock is paused for the pictures that follow, so they're of one time, as the native harness's are: on
   // the web's own clock a caret blinked between the frame drawn on what it kept and the one drawn whole (L77).
-  if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: true }))
+  const paused = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: true })))
   if (drawn) await page.screenshot({ path: join(folder, "web.png") })
   // The frame drawn on what it kept from the frames before is the one drawn whole, within a level, as the native harness
   // checks each frame of each motion (`unlike_whole`), where nothing on it moves (a spinner turns between pictures).
@@ -281,10 +283,12 @@ async function web(browser, serve, key, scene, folder) {
     await page.screenshot({ path: join(folder, "web-whole.png") })
     const unlike = levels(join(folder, "web.png"), join(folder, "web-whole.png"))
     if (unlike) {
-      problems.push(`its frame differs from the same drawn whole (web-whole.png) in ${unlike.differ} pixels, by up to ${unlike.most} levels`)
-      process.exitCode = 1
+      problems.push(failing(`its frame differs from the same drawn whole (web-whole.png) in ${unlike.differ} pixels, by up to ${unlike.most} levels`))
     }
   }
+  // And it stood still while they were taken, so what they show is of one time.
+  const after = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({})))
+  if (paused && after?.time !== paused.time) problems.push(failing(`its page's clock ran on from ${paused.time} to ${after?.time} ms while it was pictured, paused, so its pictures aren't of one time`))
   if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: false }))
   // What its screen reader reads: each text and name in sight (the native query's), and all of them, as the native tree's
   // are checked for words that aren't a person's.
@@ -308,14 +312,12 @@ async function web(browser, serve, key, scene, folder) {
   const code = [...new Set(Object.values(scene.checks ?? {}).flat().flatMap((step) => step?.expect?.monospace ?? []))]
   const spaced = drawn && code.length ? monospaced((await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.query({ text: "" }))).nodes, code) : undefined
   if (spaced) {
-    problems.push(`its code: ${spaced}`)
-    process.exitCode = 1
+    problems.push(failing(`its code: ${spaced}`))
   }
   const jumped = drawn && scene.wheel && (await notched(page, frame, scene.wheel))
   if (jumped?.note) problems.push(jumped.note)
   else if (jumped) {
-    problems.push(jumped)
-    process.exitCode = 1
+    problems.push(failing(jumped))
   }
   await page.close()
   return drawn ? { problems, internal: internalWords(names.join("\n")), words, all: names } : { missing: `it drew nothing${problems.length ? `: ${problems.join("; ")}` : ""}` }
@@ -630,7 +632,9 @@ const webgpuArgs = ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--e
 let webgpu = onTheWeb && (await chromium.launch({ args: webgpuArgs }))
 // The renderer's frame, built once for every scene drawn on the web (clients/web/renderer/build.js).
 const rendererFrame = join(out, "renderer")
-const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame])
+// With a bug put back (`ONE_MUTANT`, tooling/mutants), the frame that can put it back, told which by its address.
+const mutant = process.env.ONE_MUTANT
+const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame, ...(mutant ? ["--mutants"] : [])])
 if (framed && framed.exitCode !== 0) throw new Error(`The renderer's frame didn't build: ${framed.stderr}`)
 const report = []
 for (const target of targets) {
@@ -660,41 +664,33 @@ for (const target of targets) {
     if (name !== "gallery" && drawn.tree !== undefined) for (const row of strayRows(drawn.tree)) said.push(`  a row isn't in a List, so it has no card: ${row}`)
     // A person reads a scene's words: nothing of the build's or the platform's is among them.
     for (const line of drawn.tree === undefined ? [] : internalWords(drawn.tree)) {
-      said.push(`  the screen says a word that isn't a person's: ${line}`)
-      process.exitCode = 1
+      said.push(failing(`  the screen says a word that isn't a person's: ${line}`))
     }
     for (const line of drawn.tree === undefined ? [] : misreadWords(drawn.tree)) {
-      said.push(`  the screen's words misread: ${line}`)
-      process.exitCode = 1
+      said.push(failing(`  the screen's words misread: ${line}`))
     }
     // A page that threw while drawing shows `render`'s Problem, whose scene says nothing of the page.
     if (drawn.tree?.includes(messages.cantShowPage)) {
-      said.push(`  native: the page crashed, showing "${messages.cantShowPage}"`)
-      process.exitCode = 1
+      said.push(failing(`  native: the page crashed, showing "${messages.cantShowPage}"`))
     }
     for (const line of drawn.unsafe ?? []) {
-      said.push(`  on a phone: ${line}`)
-      process.exitCode = 1
+      said.push(failing(`  on a phone: ${line}`))
     }
     for (const line of drawn.squeezed ?? []) {
-      said.push(`  words are squeezed: ${line}`)
-      process.exitCode = 1
+      said.push(failing(`  words are squeezed: ${line}`))
     }
     for (const line of drawn.overflowing ?? []) {
-      said.push(`  words run past their side: ${line}`)
-      process.exitCode = 1
+      said.push(failing(`  words run past their side: ${line}`))
     }
     if (drawn.missing) said.push(`  native: ${drawn.missing}`)
     if (drawn.measured) said.push(`  native: ${timings(drawn.measured)}`)
     if (drawn.measured?.first_content_ms > OPENS_WITHIN_MS) {
-      said.push(`  opens slowly: its first content came ${drawn.measured.first_content_ms} ms after it opened, over ${OPENS_WITHIN_MS} ms, with each answer a client doesn't keep ${LATENCY_MS} ms away`)
-      process.exitCode = 1
+      said.push(failing(`  opens slowly: its first content came ${drawn.measured.first_content_ms} ms after it opened, over ${OPENS_WITHIN_MS} ms, with each answer a client doesn't keep ${LATENCY_MS} ms away`))
     }
     if (ssh && !drawn.missing) said.push(...(await onDevice(drawn, folder)))
-    for (const problem of onWeb.problems ?? []) said.push(`  web: ${problem}`)
+    for (const problem of onWeb.problems ?? []) said.push(problem.startsWith("✗ ") ? `  ✗ web: ${problem.slice(2)}` : `  web: ${problem}`)
     for (const line of onWeb.internal ?? []) {
-      said.push(`  web: the screen says a word that isn't a person's: ${line}`)
-      process.exitCode = 1
+      said.push(failing(`  web: the screen says a word that isn't a person's: ${line}`))
     }
     // Pictures a little apart can still show different states (a spinner, an error): each word in sight on one is somewhere
     // on the other, as a person reads it. A word, whichever node or nodes it's in (a text in a line is a node of its own
@@ -706,8 +702,8 @@ for (const target of targets) {
       const [nativeSees, webSees, nativeHas, webHas] = [drawn.words, onWeb.words, drawn.all, onWeb.all].map(bag)
       const lost = [...[...nativeSees].filter((word) => !webHas.has(word)).map((word) => `native shows "${word}", web has none`), ...[...webSees].filter((word) => !nativeHas.has(word)).map((word) => `web shows "${word}", native has none`)]
       if (lost.length) {
-        said.push(`  native and web: the text differs${WEB_DIFFERS[`${name} · ${scene.name}`] ? ` (known: ${WEB_DIFFERS[`${name} · ${scene.name}`]})` : ""}: ${lost.slice(0, 4).join("; ")}${lost.length > 4 ? `, and ${lost.length - 4} more` : ""}`)
-        if (!WEB_DIFFERS[`${name} · ${scene.name}`]) process.exitCode = 1
+        const differs = `  native and web: the text differs${WEB_DIFFERS[`${name} · ${scene.name}`] ? ` (known: ${WEB_DIFFERS[`${name} · ${scene.name}`]})` : ""}: ${lost.slice(0, 4).join("; ")}${lost.length > 4 ? `, and ${lost.length - 4} more` : ""}`
+        said.push(WEB_DIFFERS[`${name} · ${scene.name}`] ? differs : failing(differs))
       }
     }
     // A picture that drew nothing, or only its background: two near-empty pictures are under the 1% above, so each is judged by
@@ -716,26 +712,23 @@ for (const target of targets) {
     if (existsSync(join(folder, "native.png"))) {
       const native = inked(join(folder, "native.png"))
       if (native === 0) {
-        said.push("  native: the picture is blank (nothing drawn)")
-        process.exitCode = 1
+        said.push(failing("  native: the picture is blank (nothing drawn)"))
       }
       const onWebPicture = onTheWeb && !onWeb.missing ? inked(join(folder, "web.png")) : native
       if (onWebPicture === 0 && native > 0) {
-        said.push(`  web: the picture is blank (nothing drawn), where the native one has ${native} pixels`)
-        process.exitCode = 1
+        said.push(failing(`  web: the picture is blank (nothing drawn), where the native one has ${native} pixels`))
       }
     }
     const excused = WEB_DIFFERS[`${name} · ${scene.name}`]
     const asWindow = onTheWeb && !onWeb.missing && !drawn.missing && windowed(drawn, scene, folder)
     if (onWeb.missing) said.push(`  web: ${onWeb.missing}`)
     else if (asWindow?.missing) {
-      said.push(`  native, as a window: ${asWindow.missing}`)
-      process.exitCode = 1
+      said.push(failing(`  native, as a window: ${asWindow.missing}`))
     } else if (asWindow) {
       const part = differs(asWindow.picture, join(folder, "web.png"), join(folder, "web-diff.png"))
       const over = part === undefined || part > WEB_DIFFERS_MOST
-      said.push(`  native and web: pictures ${part === undefined ? "aren't the same size" : `${(part * 100).toFixed(1)}% different${over ? ` (over ${WEB_DIFFERS_MOST * 100}%${excused ? `, known: ${excused}` : ""})` : ""}`}`)
-      if (over && !excused) process.exitCode = 1
+      const apart = `  native and web: pictures ${part === undefined ? "aren't the same size" : `${(part * 100).toFixed(1)}% different${over ? ` (over ${WEB_DIFFERS_MOST * 100}%${excused ? `, known: ${excused}` : ""})` : ""}`}`
+      said.push(over && !excused ? failing(apart) : apart)
     }
     const before = against && join(against, name, basename(folder))
     // What changed, where our renderer drew the scene both times.

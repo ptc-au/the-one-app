@@ -1,19 +1,20 @@
-// Builds the renderer's frame into a folder, `bun build.js <out>`, as the edge serves it at `/renderer/`
+// Builds the renderer's frame into a folder, `bun build.js <out> [--mutants]`, as the edge serves it at `/renderer/`
 // (core/edge/edge.js): its page and scripts, and the renderer as WebAssembly, built by Cargo, bound to its JS by
-// wasm-bindgen and made smaller by binaryen's wasm-opt (mise.toml has both).
+// wasm-bindgen and made smaller by binaryen's wasm-opt (mise.toml has both). `--mutants` builds the web gate's own, which
+// puts back a bug its address asks for (`renderer::mutants`): never one the edge serves.
 import { $ } from "bun"
 import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { brotliCompressSync, constants } from "node:zlib"
 
-const [out] = process.argv.slice(2)
+const [out, mutants] = process.argv.slice(2)
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 const root = here("../../../")
 mkdirSync(out, { recursive: true })
 for (const file of ["index.html", "renderer.js", "text-input.js", "semantics.js", "video.js", "check.html", "check.js"]) copyFileSync(here(file), `${out}/${file}`)
 // The gate's check page, an app's page built as a server builds one (core/ui/app.js), which check.html hosts.
 await $`bun ${root}/core/ui/dist/build/app.js ${here("check")} ${out}/check`.quiet()
-await $`cargo build -p web-renderer --target wasm32-unknown-unknown --profile web`.cwd(root).quiet()
+await $`cargo build -p web-renderer --target wasm32-unknown-unknown --profile web ${mutants === "--mutants" ? ["--features", "mutants"] : []}`.cwd(root).quiet()
 await $`wasm-bindgen --target web --no-typescript --out-dir ${out} ${root}/target/wasm32-unknown-unknown/web/web_renderer.wasm`.quiet()
 await $`wasm-opt -Oz --strip-debug --strip-producers ${out}/web_renderer_bg.wasm -o ${out}/web_renderer_bg.wasm`.quiet()
 // Named by what's in it, so a browser keeps it for good (clients/web/_headers) and a new build is a new name, which the

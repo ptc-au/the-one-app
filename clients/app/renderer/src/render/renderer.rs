@@ -463,6 +463,14 @@ impl Renderer {
     /// pixels, all in one submit. → whether each was drawn, which isn't so where one had no image to draw on.
     pub fn draw(&mut self, scene: &Scene, origins: &[[f32; 2]]) -> bool {
         let (started, began) = (crate::platform::on_cpu(), web_time::Instant::now());
+        // Mutant: the web's canvas drawn empty, its frames drawn with nothing in them.
+        let empty;
+        let scene = if cfg!(target_arch = "wasm32") && crate::mutants::mutant("web-blank") {
+            empty = Scene::default();
+            &empty
+        } else {
+            scene
+        };
         let drawn = self.draw_frame(scene, origins);
         #[cfg(feature = "fake")]
         {

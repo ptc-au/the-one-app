@@ -50,6 +50,8 @@
     ])
     await renderer.default({ module_or_path: await compiled.then((module) => (step("compiled"), module)) })
     step("renderer")
+    // The web gate's frame puts back a bug it's asked to (`renderer::mutants`, `tooling/mutants`); no other has `mutant`.
+    renderer.mutant?.(new URLSearchParams(location.search).get("mutant") ?? "")
     // A page built with this renderer's own UI library (check/) names none.
     const needs = Number(new URLSearchParams(location.search).get("runtime"))
     if (!(needs <= renderer.runtime_version())) throw new Error(`it needs runtime version ${needs}`)

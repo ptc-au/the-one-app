@@ -203,3 +203,10 @@ fn semantics(screen: &Screen) -> String {
 pub fn flush() {
     turn();
 }
+
+/// The bug put back for the web gate (`renderer::mutants`), its frame's `?mutant=`: in its build alone.
+#[cfg(feature = "mutants")]
+#[wasm_bindgen]
+pub fn mutant(name: &str) {
+    crate::mutants::set(name);
+}

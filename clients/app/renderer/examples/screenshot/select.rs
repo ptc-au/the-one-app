@@ -25,7 +25,8 @@ pub(crate) fn point_of(windows: &mut Windows, id: renderer::platform::WindowId, 
     }
     let mut query = json!({"op": "query"});
     query.as_object_mut().into_iter().for_each(|query| query.extend(request.selector_inputs()));
-    let nth = request.inputs.get("nth").and_then(Value::as_u64).unwrap_or(0) as usize;
+    // Mutant: a selector's `nth` counted from 1 where several match, the node after the one meant.
+    let nth = request.inputs.get("nth").and_then(Value::as_u64).map_or(0, |nth| nth as usize + usize::from(renderer::mutants::mutant("wrong-node")));
     // What isn't there yet, its page busy, is waited for, a second at most, as Playwright's click waits for its locator.
     let started = renderer::platform::fake_time();
     let node = loop {

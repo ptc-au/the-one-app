@@ -246,7 +246,8 @@ impl Painter<'_> {
         } else if self.recording.is_some() && self.layered.contains(&id) && self.turn != TransformationMatrix::unit() {
             // Turned in the layer being drawn, it's drawn in it as usual, which is drawn again each frame.
             self.animating = true;
-        } else if self.recording.is_some() && (self.layered.contains(&id) || words) {
+        } else if self.recording.is_some() && (self.layered.contains(&id) || (words && !crate::mutants::mutant("text-stretched"))) {
+            // (Mutant: a text in a layer drawn from the layer's picture, grown and moved with it, as before fb657c5ce.)
             // A layer of its own in the one being drawn: drawn into it each frame, where that's moved it. So is a text,
             // turned with what it's in or not, its glyphs drawn where they are, at the size they are, as sharp moving as
             // at rest, as SwiftUI draws a text moved and grown: a picture of them grown or moved by a fraction of a
@@ -444,7 +445,8 @@ impl Painter<'_> {
                     });
                     // To its padding box, its corners rounded inside its border, as CSS clips; turned, to the box
                     // around it.
-                    let inside = |radius: f32, across: f32, down: f32| if self.turn == TransformationMatrix::unit() { (radius - across.max(down)).max(0.0) } else { 0.0 };
+                    // Mutant: cut to the square box, as before 26a619d61.
+                    let inside = |radius: f32, across: f32, down: f32| if self.turn == TransformationMatrix::unit() && !crate::mutants::mutant("rounded-clip") { (radius - across.max(down)).max(0.0) } else { 0.0 };
                     let borders = scaled(look.borders);
                     let corner_radii = Corners {
                         top_left: inside(radii.top_left, borders.left, borders.top),
@@ -513,7 +515,8 @@ impl Painter<'_> {
                         turn: self.turn,
                     };
                     self.path.push(at);
-                    if z >= 0 && (leaf.positioned || leaf.look.z_index.is_some()) {
+                    // Mutant: what's positioned with no `zIndex` drawn in its flow, as before 41c47f044.
+                    if z >= 0 && ((leaf.positioned && !crate::mutants::mutant("paint-order")) || leaf.look.z_index.is_some()) {
                         self.stacked.insert((z, self.path.clone()), stacked);
                     } else {
                         self.paint_stacked(stacked);

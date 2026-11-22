@@ -17,6 +17,8 @@ pub struct Display {
     refresh: Cell<std::time::Duration>,
     /// What's happened to its windows that the loop hasn't heard yet, in order.
     events: RefCell<VecDeque<(WindowId, usize, Input)>>,
+    /// Presses held back a refresh (the mutant `late-tap`), each with the ticks it has waited.
+    late: RefCell<Vec<(u32, WindowId, usize, Input)>>,
     /// The display showed a frame, which the loop hasn't heard yet.
     tick: Cell<Option<web_time::Instant>>,
     /// Whether the loop wants the display's next frame.
@@ -169,6 +171,7 @@ impl Display {
             scale,
             refresh: Cell::new(std::time::Duration::from_secs_f64(1.0 / hz)),
             events: RefCell::default(),
+            late: RefCell::default(),
             tick: Cell::new(None),
             wanted: Cell::new(false),
             link: Cell::new(Link::default()),
@@ -224,12 +227,23 @@ impl Display {
 
     /// Something happened to native window `part` of window `id` (a panel's surface of glass), where it is in that.
     pub(crate) fn push_to(&self, id: WindowId, part: usize, input: Input) {
+        // Mutant: a press, or a finger landing, heard a refresh after it came: at the second tick after it, as the
+        // first can be the refresh it came at.
+        if crate::mutants::mutant("late-tap") && matches!(input, Input::Down(..) | Input::Touch(_, _, crate::view::touch::Phase::Down)) {
+            self.late.borrow_mut().push((0, id, part, input));
+            return;
+        }
         self.events.borrow_mut().push_back((id, part, input));
     }
 
     /// The display showed a frame, at `at`, which the loop hears on its next turn.
     pub fn tick(&self, at: web_time::Instant) {
         self.tick.set(Some(at));
+        let mut late = self.late.borrow_mut();
+        late.iter_mut().for_each(|(ticks, ..)| *ticks += 1);
+        let (due, waiting) = std::mem::take(&mut *late).into_iter().partition(|(ticks, ..)| *ticks >= 2);
+        *late = waiting;
+        self.events.borrow_mut().extend(due.into_iter().map(|(_, id, part, input): (u32, WindowId, usize, Input)| (id, part, input)));
     }
 
     /// Its refreshes come late as `seed` decides, the same each time for the same seed; 0 for a display that never

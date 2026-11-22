@@ -44,7 +44,9 @@ wuff = "0.2"
 
 [features]
 # The platform with nothing behind it, for the headless harness (`platform::fake`), in place of the system's.
-fake = []
+fake = ["mutants"]
+# Bugs we've had, put back one at a time as `ONE_MUTANT` asks (`mutants`), for `tooling/mutants`: the harness's builds alone.
+mutants = []
 
 [dev-dependencies]
 # The memory the headless harness's `--measure` says drawing took.

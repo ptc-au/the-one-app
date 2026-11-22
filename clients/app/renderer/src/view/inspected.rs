@@ -265,6 +265,8 @@ impl Screen {
             "clock" => {
                 let clock = self.js.clock().clone();
                 match request.inputs.get("pause").and_then(Value::as_bool) {
+                    // Mutant: asked to pause, its clock runs on, as the web gate's did before 3f08421ed (L77).
+                    Some(true) if crate::mutants::mutant("web-clock") => {}
                     Some(true) => clock.pause(),
                     Some(false) => {
                         clock.resume();
