@@ -536,6 +536,11 @@ defmodule OneCore.Call do
   # `true` from one that hands it to the server holding what it needs.
   defp asks(ask, {_actor, subject} = principal, server, forwarded, within \\ :infinity, opts \\ [], gone \\ nil) do
     {method, params} = passed(ask, principal, forwarded)
+    # A task is waited for however long it takes, as what isn't safe to ask again is: nobody waits on it, so a server
+    # that's slow to finish isn't one that's stuck, which a connection that goes silent says (`SILENT`,
+    # `core/client/src/transport.rs`). One given up on after `within` ends the task with the answer the server's
+    # claim of its key holds (`OneCore.Writes`), which the task keeps as it is, sealed to a device that never opens it.
+    within = if match?({_id, %{task: task}} when task != nil, State.current()), do: :infinity, else: within
     again = again?(method, params, subject, [server])
     # A write may be begun by the server by then, which what says it isn't there doesn't say it hasn't: one that is
     # kept to its idempotency key is answered from there, though this server took over meanwhile.
