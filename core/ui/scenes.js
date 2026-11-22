@@ -533,6 +533,19 @@ function differs(one, other, diff) {
   return changed / (a.width * a.height)
 }
 
+/// How much of a picture is drawn, from 0 to 1: the share of its pixels that aren't its background's, its most common
+/// colour (to within a rounding of a channel or two). A picture that drew nothing, or only its background, has none.
+function inked(file) {
+  const { data } = PNG.sync.read(readFileSync(file))
+  const counts = new Map()
+  for (let at = 0; at < data.length; at += 4) counts.set(data.readUInt32BE(at), (counts.get(data.readUInt32BE(at)) ?? 0) + 1)
+  const [background] = [...counts].reduce((most, one) => (one[1] > most[1] ? one : most))
+  const [r, g, b, a] = [background >>> 24, (background >>> 16) & 255, (background >>> 8) & 255, background & 255]
+  let ink = 0
+  for (let at = 0; at < data.length; at += 4) if (Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b), Math.abs(data[at + 3] - a)) > 2) ink++
+  return ink / (data.length / 4)
+}
+
 /// Where two trees first differ, as a line of each.
 function first(one = "", other = "") {
   const [a, b] = [one.split("\n"), other.split("\n")]
@@ -556,6 +569,9 @@ const EDGE = 8
 const WEB_DIFFERS_MOST = 0.01
 /// Scenes whose web picture, or text, differs for a known reason that isn't a fault, by `<folder> · <scene>`, each with why.
 const WEB_DIFFERS = {}
+/// The least of a picture that must be drawn (not its background's colour) to count as drawn, from 0 to 1: under it a picture is
+/// blank. The least of any scene's is 0.03%, one word's.
+const BLANK = 0.0001
 
 // Our renderer on the web, on WebGPU, which a machine with no GPU has only as SwiftShader's, and whose canvas is put on
 // the page only when the page is composited on the GPU too (ANGLE on SwiftShader), at a phone's two pixels a point.
@@ -642,6 +658,21 @@ for (const target of targets) {
       if (lost.length) {
         said.push(`  native and web: the text differs${WEB_DIFFERS[`${name} · ${scene.name}`] ? ` (known: ${WEB_DIFFERS[`${name} · ${scene.name}`]})` : ""}: ${lost.slice(0, 4).join("; ")}${lost.length > 4 ? `, and ${lost.length - 4} more` : ""}`)
         if (!WEB_DIFFERS[`${name} · ${scene.name}`]) process.exitCode = 1
+      }
+    }
+    // A picture that drew nothing, or only its background: two near-empty pictures are under the 1% above, so each is judged by
+    // itself. A scene always shows something (a blank native one is a root that rendered nothing), and the web's shows what the
+    // native one does.
+    if (existsSync(join(folder, "native.png"))) {
+      const native = inked(join(folder, "native.png"))
+      if (native < BLANK) {
+        said.push(`  native: the picture is blank (${(native * 100).toFixed(3)}% drawn)`)
+        process.exitCode = 1
+      }
+      const onWebPicture = onTheWeb && !onWeb.missing ? inked(join(folder, "web.png")) : native
+      if (onWebPicture < BLANK && native >= BLANK) {
+        said.push(`  web: the picture is blank (${(onWebPicture * 100).toFixed(3)}% drawn), where the native one has ${(native * 100).toFixed(2)}%`)
+        process.exitCode = 1
       }
     }
     const excused = WEB_DIFFERS[`${name} · ${scene.name}`]
