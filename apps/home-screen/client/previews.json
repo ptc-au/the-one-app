@@ -914,6 +914,106 @@
       "ui/open-link": {}
     }
   },
+  "Launcher, editing": {
+    "like": "Launcher on a computer",
+    "checks": {
+      "+ opens the widget gallery, and Escape closes it": [
+        {
+          "press": {
+            "role": "button",
+            "name": "Notes"
+          },
+          "hold": 800
+        },
+        "Edit Home Screen",
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Done"
+            }
+          }
+        },
+        {
+          "wait": 600
+        },
+        {
+          "press": {
+            "role": "button",
+            "name": "Add Widget"
+          }
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "dialog",
+              "name": "Widgets"
+            }
+          }
+        },
+        {
+          "key": "Escape"
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Widgets"
+            }
+          }
+        },
+        {
+          "press": {
+            "role": "button",
+            "name": "Done"
+          }
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "button",
+              "name": "Done"
+            }
+          }
+        }
+      ],
+      "Done ends editing": [
+        {
+          "press": {
+            "role": "button",
+            "name": "Notes"
+          },
+          "hold": 800
+        },
+        "Edit Home Screen",
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Done"
+            }
+          }
+        },
+        {
+          "wait": 600
+        },
+        {
+          "press": {
+            "role": "button",
+            "name": "Done"
+          }
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "button",
+              "name": "Done"
+            }
+          }
+        }
+      ]
+    }
+  },
   "Launcher, swiped": {
     "like": "Launcher on a computer",
     "motions": {

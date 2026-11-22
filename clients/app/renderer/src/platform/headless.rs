@@ -494,17 +494,27 @@ impl Windows {
 
     /// The pointer moved to `x`, `y` on window `id`, as a mouse does.
     pub fn pointer_moved(&mut self, id: WindowId, x: f32, y: f32) {
+        if self.display.pointer(id, false) {
+            return;
+        }
         let (part, at) = self.part_at(id, x, y);
         self.display.push_to(id, part, Input::Moved(at));
     }
 
     /// A button went down at `x`, `y` on window `id`: 0 the main one, 1 the middle, 2 the secondary, as the DOM's.
     pub fn pointer_down(&mut self, id: WindowId, x: f32, y: f32, button: u8, shift: bool) {
+        // Where its page says a press moves the window (`appRegion`), the system moves it, as a Mac's and X11's do.
+        if button == 0 && self.display.moves(id, crate::geometry::point(x, y)) {
+            return;
+        }
         let (part, at) = self.part_at(id, x, y);
         self.display.push_to(id, part, Input::Down(at, button, shift));
     }
 
     pub fn pointer_up(&mut self, id: WindowId, x: f32, y: f32, button: u8) {
+        if self.display.pointer(id, true) {
+            return;
+        }
         let (part, at) = self.part_at(id, x, y);
         self.display.push_to(id, part, Input::Up(at, button));
     }

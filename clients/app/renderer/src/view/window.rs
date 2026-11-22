@@ -150,11 +150,14 @@ impl Screen {
         if height == 0.0 && self.chrome.drag_regions.is_empty() {
             return None;
         }
-        // What takes a press, or a hold, in the row or in what moves the window, keeps it: a button, an input, what's
-        // held to edit it. What's under them isn't in them.
-        let inside = |id: Id, placed: &Placed| placed.shown.origin.y < height || self.chrome.drag_regions.iter().any(|(region, _)| self.within(id, *region));
-        let takes = |id: &Id, placed: &Placed| placed.pressable || placed.input || self.tree.nodes.get(id).is_some_and(|node| node.listens("pointerdown"));
-        let mut taken: Vec<Bounds<f32>> = self.placed.iter().filter(|(id, placed)| takes(id, placed) && inside(*id, placed)).map(|(_, placed)| placed.shown).collect();
+        // What takes a press, or a hold, in the row or drawn over what moves the window, keeps it: a button, an input,
+        // what's held to edit it, whether it's in what moves the window or drawn over it from outside it, as the
+        // launcher's + and Done are over its card. Placing is in paint order, so what's over a region is placed after
+        // it; what's drawn under one isn't over it.
+        let regions: Vec<(usize, Bounds<f32>)> = self.chrome.drag_regions.iter().filter_map(|(region, bounds)| self.placed.iter().position(|(id, _)| id == region).map(|at| (at, *bounds))).collect();
+        let over = |at: usize, placed: &Placed| placed.shown.origin.y < height || regions.iter().any(|(region, bounds)| *region < at && bounds.intersects(&placed.shown));
+        let takes = |id: &Id, placed: &Placed| placed.pointer && (placed.pressable || placed.input || self.tree.nodes.get(id).is_some_and(|node| node.listens("pointerdown")));
+        let mut taken: Vec<Bounds<f32>> = self.placed.iter().enumerate().filter(|(at, (id, placed))| takes(id, placed) && over(*at, placed)).map(|(_, (_, placed))| placed.shown).collect();
         taken.extend(self.chrome.kept_regions.iter().copied());
         taken.extend(self.chrome.buttons.iter().map(|(_, bounds)| *bounds));
         taken.extend(self.chrome.action);

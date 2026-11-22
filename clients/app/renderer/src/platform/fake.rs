@@ -57,6 +57,10 @@ pub struct Display {
     /// What a window's page asked its client that's on its way back, each with when it comes on the page's clock, as a
     /// server's answer comes a round trip after it's asked (`Windows::answering`).
     answers: RefCell<Option<(WindowId, Answers)>>,
+    /// Where a press moves each window rather than reaching its page (`set_title_row`), and the window a press is
+    /// moving now, whose pointer is the system's until it's let go, as a Mac's window drag and X11's move have it.
+    rows: RefCell<std::collections::HashMap<WindowId, crate::view::TitleRow>>,
+    moving: Cell<Option<WindowId>>,
 }
 
 /// Answers on their way to a page, each with when it comes on the page's clock.
@@ -189,6 +193,8 @@ impl Display {
             magnifier: RefCell::default(),
             phone: Cell::new(None),
             answers: RefCell::default(),
+            rows: RefCell::default(),
+            moving: Cell::default(),
         }
     }
 
@@ -412,7 +418,32 @@ impl Display {
 
     pub fn set_cursor(&self, _: &NativeWindow, _: Cursor) {}
 
-    pub fn set_title_row(&self, _: &NativeWindow, _: Option<crate::view::TitleRow>) {}
+    pub fn set_title_row(&self, window: &NativeWindow, row: Option<crate::view::TitleRow>) {
+        match row {
+            Some(row) => _ = self.rows.borrow_mut().insert(window.id, row),
+            None => _ = self.rows.borrow_mut().remove(&window.id),
+        }
+    }
+
+    /// Whether the main button going down at `at` of window `id`'s page moves the window, as a Mac's `mouseDown:` and
+    /// X11's press ask (`TitleRow::moves`): then the window is the system's to move until it's let go, and its page
+    /// hears nothing of it (`pointer`).
+    pub(crate) fn moves(&self, id: WindowId, at: crate::geometry::Point<f32>) -> bool {
+        let moves = self.rows.borrow().get(&id).is_some_and(|row| row.moves(at));
+        if moves {
+            self.moving.set(Some(id));
+        }
+        moves
+    }
+
+    /// Whether the pointer on window `id` is the system's, moving it, and no longer once it's let go (`up`).
+    pub(crate) fn pointer(&self, id: WindowId, up: bool) -> bool {
+        let moving = self.moving.get() == Some(id);
+        if moving && up {
+            self.moving.set(None);
+        }
+        moving
+    }
 
     pub fn text_input(&self, window: &NativeWindow, calls: &[crate::editing::TextInput]) {
         for call in calls {
