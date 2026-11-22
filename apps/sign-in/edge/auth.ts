@@ -546,7 +546,7 @@ function fetchMetadata(input: RequestInfo | URL, init?: RequestInit) {
  * How Better Auth is set up for the network at `origin`, signing with `secret`, in `database`: the Worker's D1, or
  * the SQLite a migration is worked out against (`generate.ts`).
  */
-export function options(origin: string, secret: string, database: BetterAuthOptions["database"] = env.DB) {
+export function options(origin: string, secret: string, database: BetterAuthOptions["database"] = env.DB, name = ONE_APP) {
   return {
     baseURL: origin,
     basePath: "/sign-in/auth",
@@ -612,7 +612,9 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
     plugins: [
       jwt({ disableSettingJwtHeader: true }),
       passkey({
-        rpName: new URL(origin).host,
+        // What a password manager names the passkey (WebAuthn's `rp.name`): the network's name (`network`), where it
+        // named it after the host ("Ptcau").
+        rpName: name,
         registration: {
           // Whoever holds an invitation makes their first passkey with it, signed in as nobody yet.
           requireSession: false,
@@ -661,7 +663,7 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
 }
 
 /** Better Auth, as this Worker sets it up. */
-const authFor = (origin: string, secret: string) => betterAuth(options(origin, secret));
+const authFor = (origin: string, secret: string, name?: string) => betterAuth(options(origin, secret, env.DB, name));
 export type Auth = ReturnType<typeof authFor>;
 const auths = new Map<string, Auth>();
 
@@ -674,7 +676,7 @@ const auths = new Map<string, Auth>();
 export async function at(origin: string): Promise<Auth> {
   const kept = auths.get(origin);
   if (kept) return kept;
-  const auth = authFor(origin, await secret());
+  const auth = authFor(origin, await secret(), (await network()).name ?? ONE_APP);
   await auth.$context;
   auths.set(origin, auth);
   return auth;
@@ -768,6 +770,9 @@ export async function network(): Promise<{ name: string | null; icon: { png: str
   const kept = Object.fromEntries(results.map(({ name, value }) => [name, JSON.parse(value)]));
   return { name: kept.name ?? null, icon: kept.icon ?? null };
 }
+
+/** A network's name where it has none of its own. */
+export const ONE_APP = "The One App";
 
 /** The most an icon may be, as PNG's bytes. */
 const ICON_BYTES = 1024 * 1024;
@@ -880,6 +885,8 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     if (about.name !== undefined) {
       const named = about.name === null ? null : String(about.name).trim().slice(0, 100);
       await set("name", named || null);
+      // Better Auth is made with it (`at`), here again at once; another copy of this Worker, as it's next loaded.
+      auths.clear();
     }
     if (about.icon !== undefined) {
       const size = about.icon === null ? 0 : square(String(about.icon));

@@ -20,6 +20,12 @@ import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as opene
 
 /// The network's mark: its own icon, or the One App's (`icon` in `../worker.ts`).
 const mark = "/Logo.png"
+// The tab is named as the network is, which a password manager may name what it saves here by.
+fetch("/manifest.webmanifest")
+  .then((response) => response.json())
+  .then(({ name }) => {
+    document.title = name
+  })
 
 const look = styles({
   /// The consent page an assistant is let in on, as Google's and GitHub's are: its logo joined to ours.

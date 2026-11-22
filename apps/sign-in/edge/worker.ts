@@ -7,7 +7,7 @@
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { asked, assistant, at, BELIEVED, browserDevice, copied, keep, network, who, type Ask, type Auth } from "./auth.ts";
+import { asked, assistant, at, BELIEVED, browserDevice, copied, keep, network, ONE_APP, who, type Ask, type Auth } from "./auth.ts";
 
 export default {
   async fetch(request: Request, _env, ctx) {
@@ -64,7 +64,7 @@ async function icon(url: URL) {
 async function manifest() {
   const { name, icon } = await network();
   const icons = [{ src: "/Logo.png", sizes: `${icon?.size ?? 336}x${icon?.size ?? 336}`, type: "image/png" }];
-  return Response.json({ name: name ?? "the One App", start_url: "/", display: "standalone", icons }, { headers: { "content-type": "application/manifest+json", "cache-control": `public, max-age=${NAMED}` } });
+  return Response.json({ name: name ?? ONE_APP, start_url: "/", display: "standalone", icons }, { headers: { "content-type": "application/manifest+json", "cache-control": `public, max-age=${NAMED}` } });
 }
 
 /**
