@@ -185,6 +185,35 @@ export function strayInk(png, points, box) {
   return along < 0.6 || across < 0.35 || off > 1 ? `it's drawn at ${rect(box)} but its glyphs fill ${rect(ink)}` : undefined
 }
 
+/// How well a text's words in `box` of a picture (`png`, of a window `points` wide) stand off what's behind them: WCAG's
+/// contrast ratio between the colour most of its box is (what's behind it) and the pixel furthest from it in light (its
+/// ink), as a person reads the darkest stroke of a glyph against its ground. → the ratio, or nothing where its box is
+/// all one colour (nothing drawn there to judge).
+export function legibility(png, points, box) {
+  const { data, width, height } = typeof png === "string" ? PNG.sync.read(Buffer.from(png, "base64")) : png
+  const scale = width / points
+  const [x0, x1, y0, y1] = [Math.max(Math.round(box.x * scale), 0), Math.min(Math.round((box.x + box.width) * scale), width), Math.max(Math.round(box.y * scale), 0), Math.min(Math.round((box.y + box.height) * scale), height)]
+  const linear = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  const luminance = (at) => 0.2126 * linear(data[at]) + 0.7152 * linear(data[at + 1]) + 0.0722 * linear(data[at + 2])
+  const counts = new Map()
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const at = (y * width + x) * 4
+      const key = (data[at] << 16) | (data[at + 1] << 8) | data[at + 2]
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  if (counts.size < 2) return
+  const ground = [...counts].reduce((most, one) => (one[1] > most[1] ? one : most))[0]
+  const light = 0.2126 * linear(ground >> 16) + 0.7152 * linear((ground >> 8) & 255) + 0.0722 * linear(ground & 255)
+  let most = 1
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const other = luminance((y * width + x) * 4)
+      most = Math.max(most, (Math.max(other, light) + 0.05) / (Math.min(other, light) + 0.05))
+    }
+  return most
+}
+
 /// How sharp a text's glyphs are drawn in `box` of a picture (`png`, of a window `points` wide): the steepest tenth of the
 /// steps in light between pixels beside each other across its edges, against all the light there is between its ink and
 /// what's behind it. A glyph drawn where it is has its edges a pixel or two across, about 0.9; a picture of it grown or

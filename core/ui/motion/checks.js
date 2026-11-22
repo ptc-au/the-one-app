@@ -1,5 +1,5 @@
 // Plays each scene's checks, walks it by Tab and draws it the same however it came to be.
-import { mkdirSync } from "node:fs"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
 import { messages } from "../src/words.ts"
@@ -8,6 +8,7 @@ import { build, pageFolder } from "./pages.js"
 import { run, panelled, scenesOf } from "./harness.js"
 import { pressed } from "./gesture.js"
 import { requests, unlike } from "./judges.js"
+import { legibility } from "./output.js"
 
 /// A page that threw while drawing shows `render`'s Problem, "Can't show this page", and nothing to press but Try Again,
 /// so what a check or the Tab walk finds there says nothing of the page; what it threw fails the harness's run (it's
@@ -113,12 +114,14 @@ async function agrees(built, scene, folder) {
     panelled(scene) ? ["put away and summoned again", [{ op: "put_away" }, { op: "memory" }, { op: "summon" }]] : ["hidden under an app and shown again", [{ op: "hide" }, { op: "memory" }, { op: "hide", hidden: false }]],
     ...(scene.touch || panelled(scene) ? [] : [["made smaller", [{ op: "resize", width: scene.size[0] - 120, height: scene.size[1] - 80 }]]]),
   ]
-  const asked = [{ op: "clock", step: 1000 }, ...taps, ...changes.flatMap(([, ops]) => [...ops, rest, { op: "fresh" }]), crash]
+  const asked = [{ op: "clock", step: 1000 }, ...taps, { op: "query", text: "" }, ...OVER.map((role) => ({ op: "query", role, descendants: true })), { op: "snap" }, ...changes.flatMap(([, ops]) => [...ops, rest, { op: "fresh" }]), crash]
   const done = await run(at, folder, scene, asked)
   if (done.failed) return `the harness failed: ${done.said.split("\n").at(-1)}`
   const answers = done.answers.slice(1 + taps.length)
   if (crashed(answers.at(-1))) return crashed(answers.at(-1))
-  let n = 0
+  const faint = illegible(answers[0], answers.slice(1, 1 + OVER.length), answers[1 + OVER.length], scene.size[0], folder)
+  if (faint) return faint
+  let n = 2 + OVER.length
   for (const [what, ops] of changes) {
     const memory = ops.findIndex((op) => op.op === "memory")
     const held = memory < 0 ? 0 : images(answers[n + memory])
@@ -129,6 +132,28 @@ async function agrees(built, scene, folder) {
     const why = unlike(answers[n++], own)
     if (why) return `${what}: ${why} (${own})`
   }
+}
+
+/// The least contrast (WCAG's ratio) a text drawn whole and in sight may have with what's behind it: the faintest any
+/// scene draws is 2.2:1 in light and 2.8:1 in dark (22 Nov), and a text left in the other appearance's colour, as dark
+/// text on a dark page, 1.2:1.
+const LEGIBLE = 1.6
+
+/// What's over the page and covers what's behind it, so only its own words are read where one is open.
+const OVER = ["dialog", "alertdialog"]
+
+/// Why some of a scene's words can't be read, if they can't: a text in sight, opaque, and inside what's `over` the page
+/// where something is, whose ink stands off what's behind it at under LEGIBLE (`legibility`), of the `query` and `snap`
+/// answers, in a window `points` wide. Every text's is kept in `folder`'s `words.json`.
+function illegible(query, over, snap, points, folder) {
+  if (!snap?.result?.png) return `no picture to read its words in: ${snap?.error ?? query?.error}`
+  const picture = PNG.sync.read(Buffer.from(snap.result.png, "base64"))
+  const covering = new Set(over.flatMap((answer) => (answer?.result?.nodes ?? []).map((node) => node.node)))
+  const texts = (query?.result?.nodes ?? []).filter((node) => (!covering.size || covering.has(node.node)) && ["text", "raw-text"].includes(node.kind) && node.name?.trim() && node.rect && node.opacity > 0.99 && node.seen > 0.99 && node.rect.width >= 2 && node.rect.height >= 4)
+  const read = texts.map((node) => ({ name: node.name, rect: node.rect, contrast: legibility(picture, points, node.rect) })).filter((text) => text.contrast !== undefined)
+  writeFileSync(join(folder, "words.json"), JSON.stringify(read))
+  const faint = read.filter((text) => text.contrast < LEGIBLE)
+  return faint.length ? `its words can't be read: ${faint.slice(0, 3).map((text) => `"${text.name}" stands off what's behind it at ${text.contrast.toFixed(2)}:1, under ${LEGIBLE}:1`).join(", ")}${faint.length > 3 ? `, and ${faint.length - 3} more` : ""}` : undefined
 }
 
 /// Plays every check of `targets`' scenes. → each line it says, and how many failed.

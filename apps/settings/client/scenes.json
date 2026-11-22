@@ -2538,6 +2538,11 @@
           "expect": {
             "text": "Restore"
           }
+        },
+        {
+          "expect": {
+            "text": "App · With chats and accounts"
+          }
         }
       ],
       "Delete Now asks over a dimmed page": [

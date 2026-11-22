@@ -241,6 +241,11 @@ async function play(built, scene, name, motion, hz, folder) {
   // it follows: a refresh so is one the loop missed, the frame before shown twice, then a jump. A device others load
   // (`frameMs`) takes several refreshes a frame. Before the motion's first frame there's no frame before: a press that
   // came as its refresh's frame was drawn is drawn at the next, as a display link's frame begins at its tick.
+  // A window hands the display at most one frame a refresh, as a display link's frame is one a vsync: one drawn twice
+  // for a refresh shows the second, and the first, never seen, skips where the finger was (a fling jumped as it was
+  // let go, fbb4e1c9e).
+  const doubled = frames.findIndex((frame) => frame.frames_drawn > 1)
+  if (doubled >= 0) failed.push(`${frames[doubled].frames_drawn} frames were drawn for the refresh at frame ${doubled + 1} (${frames[doubled].at} ms), which shows one`)
   const missed = motion.frameMs ? -1 : frames.findIndex((frame, n) => frame.held && frames.slice(0, n).some((before) => before.drawn))
   if (missed >= 0) failed.push(`the refresh at frame ${missed} (${frames[missed].at} ms) drew nothing as it moved`)
   // Each refresh moves it as far as the time between refreshes takes it, once what moves it is done, and as it moves it

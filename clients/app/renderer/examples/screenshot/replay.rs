@@ -113,7 +113,9 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
             next += 1;
         }
         windows.run((read - elapsed()).max(0.0));
-        let drew = windows.frames(id) > drawn;
+        // How many frames it drew for this refresh, which shows one of them.
+        let frames_drawn = windows.frames(id) - drawn;
+        let drew = frames_drawn > 0;
         drawn = windows.frames(id);
         // What it cost since the frame before, every frame drawn meanwhile and its JS, which a frame that drew nothing
         // costs too.
@@ -129,6 +131,7 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         frame["at"] = json!((tick * 100.0).round() / 100.0);
         frame["pressure"] = json!(windows.pressure());
         frame["drawn"] = json!(drew);
+        frame["frames_drawn"] = json!(frames_drawn);
         // A refresh that drew nothing while something on it is on its way somewhere shows the frame before again: a
         // frame the loop held, which a person sees as a stop and then a jump.
         if !drew && windows.arriving(id) {
