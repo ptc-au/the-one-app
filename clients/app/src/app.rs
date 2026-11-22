@@ -65,6 +65,7 @@ pub(crate) fn begin(shell: impl Shell, started: Instant) {
     if APP.set(app).is_err() {
         panic!("the app starts once");
     }
+    crate::suspended::watch();
 }
 
 /// The app's views, once its client has opened.

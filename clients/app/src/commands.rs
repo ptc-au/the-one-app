@@ -342,6 +342,10 @@ pub(crate) fn deployed(app: &str) {
 pub(crate) fn opened(view: String, ms: u32) -> Result<(), String> {
     let views = views()?;
     eprintln!("{view} opened in {ms} ms, {} ms after the app started", views.started.elapsed().as_millis());
+    if crate::suspended::within(u64::from(ms)) {
+        eprintln!("{view}'s open spanned the device's sleep, so it isn't told");
+        return Ok(());
+    }
     views.client.report(json!({"name": "one.client.open.duration", "value": ms, "attributes": {"one.view": view}}));
     Ok(())
 }

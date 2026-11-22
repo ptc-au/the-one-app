@@ -442,6 +442,16 @@ const NO_KEY = "A browser can't hold your key. Use the app on your phone or comp
 /// Where this tab keeps the link it was opened with while its person signs in.
 const OPEN = "open"
 /** @type {{ [Command in keyof Commands]?: (...args: Parameters<Commands[Command]>) => ReturnType<Commands[Command]> | Promise<ReturnType<Commands[Command]>> }} */
+/// When this tab last came back from being stopped, its device asleep or the tab frozen in the background: a timer that
+/// came 4 s or more late, so an open across it isn't told.
+let stopped = 0
+let ticked = Date.now()
+setInterval(() => {
+  const now = Date.now()
+  if (now - ticked >= 6000) stopped = now
+  ticked = now
+}, 2000)
+
 const commands = {
   /// Where this browser is with its network, as the app's client says a device's session (`State` in core/client):
   /// signed in here, or sent to sign in, and whether its network answers. A browser keeps nothing of a network's, so
@@ -509,7 +519,7 @@ const commands = {
   recovery_key: cannot(NO_KEY),
   recover: cannot(NO_KEY),
   report: async ({ record }) => report(await mapped(record)),
-  opened: ({ view, ms }) => report({ name: "one.client.open.duration", value: ms, attributes: { "one.view": view } }),
+  opened: ({ view, ms }) => Date.now() - stopped < ms ? undefined : report({ name: "one.client.open.duration", value: ms, attributes: { "one.view": view } }),
   // What the app does as it's seen, which a browser doesn't: it hears notifications.
   visible() {},
   listen() {},

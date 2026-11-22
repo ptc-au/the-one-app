@@ -32,6 +32,7 @@ pub mod host;
 mod hosts;
 mod memory;
 mod native;
+mod suspended;
 
 #[cfg(mobile)]
 pub(crate) mod page;

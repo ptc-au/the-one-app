@@ -108,6 +108,10 @@ impl Opening {
             })
             .collect();
         eprintln!("{app} was ready in {ms} ms: {}", said.join(", "));
+        if crate::suspended::within(ms) {
+            eprintln!("{app}'s open spanned the device's sleep, so it isn't told");
+            return;
+        }
         let Ok(views) = crate::views() else { return };
         let live = opening.live.unwrap_or(ms);
         views.client.report(json!({"name": "one.client.native.open", "took": live, "attributes": {"one.view": app, "one.steps": said.join(", ")}}));
