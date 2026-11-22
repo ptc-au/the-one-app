@@ -75,7 +75,9 @@ pub(crate) fn input(windows: &mut Windows, id: renderer::platform::WindowId, req
                 anyhow::bail!("the clock goes forward only: it's at {now} ms");
             }
             windows.run(ms);
-            Ok(json!({"time": renderer::platform::fake_time(), "paused": true}))
+            // Said to the nanosecond: the same steps sum to a time a few femtoseconds apart by the order their pieces were
+            // added in (1016.6666666666665, ...666 or ...667 of the same second), which two runs say differently.
+            Ok(json!({"time": (renderer::platform::fake_time() * 1e6).round() / 1e6, "paused": true}))
         }
         // The app goes to the background for `ms` and comes back, as a phone's does (`Windows::away`): `drawn` is how
         // many frames it drew meanwhile, which a phone's GPU refuses.
