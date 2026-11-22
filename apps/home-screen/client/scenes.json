@@ -3188,6 +3188,23 @@
       }
     ],
     "checks": {
+      "Its corners are the card's material, as its edges are": [
+        {
+          "wait": 600
+        },
+        {
+          "expect": {
+            "even": {
+              "of": {
+                "role": "dialog",
+                "name": "Productivity"
+              },
+              "radius": 26,
+              "most": 16
+            }
+          }
+        }
+      ],
       "Its apps are in the card's middle, as Home's are": [
         {
           "expect": {
@@ -3259,7 +3276,10 @@
   },
   "App Library on a computer": {
     "like": "App Library",
-    "size": [1280, 800],
+    "size": [
+      1280,
+      800
+    ],
     "checks": {
       "Its categories are in the middle of the window, under its search": [
         {

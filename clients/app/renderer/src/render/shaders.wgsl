@@ -1447,7 +1447,9 @@ fn fs_clear() -> @location(0) vec4<f32> {
 
 // One way of a separable Gaussian: two taps a sample, between texels, for linear filtering to weigh. With no
 // `sigma`, it's the average of the `shrink` × `shrink` texels under each: a tap at the middle of each 2 × 2 of them,
-// which linear filtering averages, as halving the source that many times over did.
+// which linear filtering averages, as halving the source that many times over did. The passes average colours
+// weighed by their alpha (premultiplied, as the first pass makes them), so what isn't drawn, past a rounded corner
+// that cuts what's in it, adds nothing, as it would not behind a browser's backdrop-filter clipped to its box.
 @fragment
 fn fs_blur(input: BlurVarying) -> @location(0) vec4<f32> {
     if (blur.sigma <= 0.0) {
@@ -1456,7 +1458,8 @@ fn fs_blur(input: BlurVarying) -> @location(0) vec4<f32> {
         for (var y = 0; y < taps; y++) {
             for (var x = 0; x < taps; x++) {
                 let offset = vec2<f32>(f32(2 * x + 1 - taps), f32(2 * y + 1 - taps));
-                sum += textureSample(t_sprite, s_sprite, input.uv + blur.step * offset);
+                let tap = textureSample(t_sprite, s_sprite, input.uv + blur.step * offset);
+                sum += select(vec4<f32>(tap.rgb * tap.a, tap.a), tap, globals.premultiplied_alpha != 0u);
             }
         }
         return sum / f32(taps * taps);
@@ -1500,11 +1503,13 @@ fn vs_backdrop(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) i
 @fragment
 fn fs_backdrop(input: BackdropVarying) -> @location(0) vec4<f32> {
     let uv = input.position.xy / globals.viewport_size;
-    let sample = textureSample(t_sprite, s_sprite, uv);
+    let blurred = textureSample(t_sprite, s_sprite, uv);
     let mask = mask_coverage(input.clip_distances, input.mask_radii);
     if (mask <= 0.0) {
         return vec4<f32>(0.0);
     }
+    // What's behind, the colour of what's drawn there: the blur's average is weighed by alpha.
+    let sample = vec4<f32>(blurred.rgb / max(blurred.a, 1e-4), 1.0);
     let backdrop = b_backdrops[input.backdrop_id];
     let distance = quad_sdf(input.position.xy + globals.origin, backdrop.bounds, backdrop.corner_radii);
     // Saturated as CSS's `saturate()`: away from its luminance, by the factor.

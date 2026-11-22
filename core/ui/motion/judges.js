@@ -73,7 +73,7 @@ export function requests(steps, folder, answers = {}) {
     else if (step.trace) out.push({ request: { op: "trace", events: JSON.parse(readFileSync(join(folder, step.trace), "utf8")) } })
     else if (!step.expect) out.push({ request: pressed(step) })
     else {
-      const { shown, gone, focused, text, states, drawn, blur, keyboard, margins, tall, whole, unbroken, monospace, unclipped, apart, bleeds, aligned, centred, widest, contrast, inked, located, textMenu, handles, magnifier, dimmed, js, asked, rounded } = step.expect
+      const { shown, gone, focused, text, states, drawn, blur, keyboard, margins, tall, whole, unbroken, monospace, unclipped, apart, bleeds, aligned, centred, widest, contrast, inked, located, textMenu, handles, magnifier, dimmed, js, asked, rounded, even } = step.expect
       // Whether `settle` says it's settled, waiting a moment, as a check after it reads the page: never while an answer
       // it waits on is on its way (Playwright's network idle).
       if (step.expect.settled !== undefined) out.push({ request: { op: "settle", deadline: 300 }, judge: (answer) => answer?.result?.settled !== step.expect.settled && (step.expect.settled ? `it hadn't settled: ${JSON.stringify(answer?.result?.pending)}` : "it said it had settled, with what it waits for on its way") })
@@ -328,6 +328,34 @@ export function requests(steps, folder, answers = {}) {
                   const there = colour(column, row)
                   if (there.some((c, at) => Math.abs(c - outside[at]) > 24)) return `${named(rounded.of)} shows rgb(${there}) past its ${r} pt rounding, at ${column}, ${row} px, where what's around it is rgb(${outside})`
                 }
+            }
+          },
+        })
+      }
+      // What's named, rounded `radius` points, is the same material to its corners as along its edges: each corner's
+      // inside, 3 points in from its arc, is within `most` levels of a channel of the edges beside it, 3 points in from
+      // each and past the rounding, as a backdrop blur clamped to its box is, not pulled toward what's drawn outside the arc.
+      if (even) {
+        let found, points, missing
+        out.push({ request: { op: "window" }, judge: (answer) => void (points = answer?.result?.width) })
+        out.push({ request: { op: "query", ...selector(even.of) }, judge: (answer) => void (({ node: { rect: found } = {}, why: missing } = single(answer, even.of))) })
+        out.push({
+          request: { op: "snap" },
+          judge: (answer) => {
+            if (missing) return missing
+            if (!found) return `${named(even.of)} isn't drawn`
+            const { data, width } = PNG.sync.read(Buffer.from(answer.result.png, "base64"))
+            const scale = width / points
+            const colour = (x, y) => [0, 1, 2].map((c) => data[(Math.round(y * scale) * width + Math.round(x * scale)) * 4 + c])
+            const [r, inset] = [even.radius, 3]
+            const [left, top, right, bottom] = [found.x, found.y, found.x + found.width, found.y + found.height]
+            for (const [x, y, sx, sy] of [[left, top, 1, 1], [right, top, -1, 1], [right, bottom, -1, -1], [left, bottom, 1, -1]]) {
+              const toward = (r - inset) / Math.SQRT2
+              const corner = colour(x + sx * (r - toward), y + sy * (r - toward))
+              for (const beside of [colour(x + sx * (r + 12), y + sy * inset), colour(x + sx * inset, y + sy * (r + 12))]) {
+                const off = Math.max(...corner.map((c, at) => Math.abs(c - beside[at])))
+                if (off > even.most) return `${named(even.of)} at ${x},${y} corner is rgb(${corner}) where its edges are rgb(${beside}), ${off} levels apart, over ${even.most}`
+              }
             }
           },
         })
