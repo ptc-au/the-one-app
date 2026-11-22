@@ -40,11 +40,15 @@ pub(crate) fn path(d: &str, view_box: &str, device: Size<u32>, fill: Option<Stri
 /// The face the browser draws what no face of the renderer's has in: its UI's, which falls back to its emoji's.
 const BROWSER_FONT: &str = "system-ui, sans-serif";
 
-/// A 2D canvas of `width` by `height`, its text in the browser's face at `size` pixels.
+/// A 2D canvas of `width` by `height`, its text in the browser's face at `size` pixels, unhinted (`geometricPrecision`),
+/// as the renderer draws its own faces' (`text`): hinted, Chrome on Linux drew a glyph two ways, as the font's hinting it
+/// takes from the system came a second or two after the page opened or before.
 fn canvas(width: u32, height: u32, size: f32) -> Option<web_sys::OffscreenCanvasRenderingContext2d> {
     let canvas = web_sys::OffscreenCanvas::new(width.max(1), height.max(1)).ok()?;
     let context: web_sys::OffscreenCanvasRenderingContext2d = canvas.get_context("2d").ok()??.dyn_into().ok()?;
     context.set_font(&format!("{size}px {BROWSER_FONT}"));
+    // web-sys doesn't bind `textRendering`.
+    js_sys::Reflect::set(&context, &"textRendering".into(), &"geometricPrecision".into()).ok()?;
     Some(context)
 }
 
