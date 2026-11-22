@@ -17,6 +17,9 @@ const link = (hz) => ({ starts: 3, ...(hz > 60 ? { pauses: [8, 4] } : {}) })
 
 /// A motion played at `hz` on a scene: its frames, filmstrip and curve kept in `folder`. → what it says, and its row in
 /// the contact sheet.
+/// How long after the last icon of a closing folder lands its captions may be missing, in ms.
+const NAMED_WITHIN_MS = 100
+
 async function play(built, scene, name, motion, hz, folder) {
   mkdirSync(folder, { recursive: true })
   const at = pageFolder(built, scene.page, folder, scene.uses)
@@ -242,12 +245,18 @@ async function play(built, scene, name, motion, hz, folder) {
     else if (hidden >= 0) failed.push(`${JSON.stringify(motion.holds)} isn't drawn at frame ${hidden + 1} (${frames[hidden].at} ms), while what moves is on its way (frames ${first + 1} to ${last + 1})`)
   }
   // What `named` names (a square's captions) is never seen while an icon of what `apart` names is on its way (its box
-  // moves from the frame before): as a folder closes, its captions come in as its icons land, not under them.
+  // moves from the frame before, faster than 120 pt/s): as a folder closes, its captions come in as its icons land, not under them.
   if (motion.named) {
-    const flying = (frame, n) => (frame.apart ?? []).some((box, at) => n > 0 && frames[n - 1].apart?.[at] && (Math.abs(box.x - frames[n - 1].apart[at].x) > 0.5 || Math.abs(box.y - frames[n - 1].apart[at].y) > 0.5))
+    // On its way is faster than 2 pt a refresh at 60 Hz (120 pt/s), a speed, so a display's rate doesn't move where it lands: slower, it's a few points from its place, under a caption's gap.
+    const flying = (frame, n) => (frame.apart ?? []).some((box, at) => n > 0 && frames[n - 1].apart?.[at] && Math.max(Math.abs(box.x - frames[n - 1].apart[at].x), Math.abs(box.y - frames[n - 1].apart[at].y)) > (2 * (frame.at - frames[n - 1].at)) / (1000 / 60))
     const under = frames.findIndex((frame, n) => frame.named > 0 && flying(frame, n))
+    // And they're there as the icons land, as a folder hands its icons' names back: within a tenth of a second of the last
+    // of them settling, never a stretch of icons with no names beside names on their neighbours.
+    const last = frames.findLastIndex(flying)
+    const first = frames.findIndex((frame) => frame.named > 0)
     if (!motion.apart) failed.push("`named` reads `apart`, which it hasn't")
     else if (under >= 0) failed.push(`${JSON.stringify(motion.named)} is drawn at frame ${under + 1} (${frames[under].at} ms) while icons of what's apart are still on their way`)
+    else if (last >= 0 && (first < 0 || frames[first].at - frames[last].at > NAMED_WITHIN_MS)) failed.push(`${JSON.stringify(motion.named)} ${first < 0 ? "is never drawn" : `is first drawn at frame ${first + 1} (${frames[first].at} ms), ${Math.round(frames[first].at - frames[last].at)} ms after the last icon of what's apart landed at frame ${last + 1}, over ${NAMED_WITHIN_MS} ms`}`)
   }
   // The last frame any of what `apart` names is drawn in and the one after, where they've been handed back, look the
   // same around each of them in the first (its box, grown by 12 pt for a badge at its corner), within a level of each
