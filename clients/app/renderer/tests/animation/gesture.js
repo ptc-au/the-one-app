@@ -43,7 +43,9 @@ export function single(answer, tap) {
   return nodes[nth ?? 0] ? { node: nodes[nth ?? 0] } : { why: `only ${nodes.length} nodes match ${said}, so there's no nth ${nth}` }
 }
 
-/// How far what moved had gone at each frame: what `follow` names where it's said and moved, else what scrolls. What
+/// How far what moved had gone at each frame: whichever went furthest of what `follow` names and what scrolls, and what
+/// scrolls where both moved as far as each other, to a point (what follows a row of a list moves with it, drawn on whole
+/// device pixels: picked by a point either way, a fling was judged as a spring at 60 Hz and as a fling at 120). What
 /// `follow` names that's drawn only from some frame on (a category's button, as the category opens) is where it first
 /// shows in the frames before: left out, its motion went unjudged, and a frame held as it opened passed.
 export function travel(frames) {
@@ -58,7 +60,9 @@ export function travel(frames) {
     ["scrolled down", series((frame) => frame.scroll?.y)],
   ].filter(([, values]) => values.every((value) => value !== undefined))
   const range = (values) => Math.max(...values) - Math.min(...values)
-  return candidates.sort(([, a], [, b]) => range(b) - range(a))[0] ?? ["still", frames.map(() => 0)]
+  const scrolls = (way) => way.startsWith("scrolled")
+  const alike = (one, a, other, b) => scrolls(one) !== scrolls(other) && Math.abs(range(b) - range(a)) <= 1 && Math.min(range(a), range(b)) > 1
+  return candidates.sort(([one, a], [other, b]) => (alike(one, a, other, b) ? scrolls(other) - scrolls(one) : range(b) - range(a)))[0] ?? ["still", frames.map(() => 0)]
 }
 
 /// Where the finger was `t` ms in, along its moves, the way `travel` measures: on what it moves, or against what scrolls.

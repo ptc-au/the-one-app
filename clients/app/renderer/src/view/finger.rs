@@ -61,15 +61,18 @@ impl Screen {
         Ok(point(x, y))
     }
 
-    /// How far what scrolls under `at` shows scrolled, with its stretch past an end, if something scrolls there: on the
-    /// fake platform, in the frame its window last presented (`presented`).
+    /// How far what's under `at` shows scrolled, by every scroll it's in, with their stretch past an end, if something
+    /// scrolls there: on the fake platform, in the frame its window last presented (`presented`). Every one, as a finger
+    /// that scrolls a page's own scroll to its end goes on to the window's, or flings the window over a scroll that can't
+    /// move: the innermost alone read 0 as the window went 2138 pt.
     pub fn scrolled_under(&self, at: Point<f32>) -> Option<Point<f32>> {
         let (scrolled, stretched) = (&self.scrolled, self.stretched());
         #[cfg(feature = "fake")]
         let (scrolled, stretched) = self.shown.as_ref().map_or((scrolled, stretched), |(_, scrolled, stretched)| (scrolled, stretched.clone()));
-        let shown = self.under(at).into_iter().find_map(|id| scrolled.get(&id).copied())?;
-        let stretch = self.under(at).into_iter().find_map(|id| stretched.get(&id).copied()).unwrap_or(point(0.0, 0.0));
-        Some(point(shown.x + stretch.x, shown.y + stretch.y))
+        let under = self.under(at);
+        under.iter().any(|id| scrolled.contains_key(id)).then(|| {
+            under.iter().flat_map(|id| [scrolled.get(id), stretched.get(id)]).flatten().fold(point(0.0, 0.0), |sum, by| point(sum.x + by.x, sum.y + by.y))
+        })
     }
 
     /// Its window presented the frame it last painted: where each node was drawn in it, and how far what scrolls showed
