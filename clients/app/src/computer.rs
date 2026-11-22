@@ -342,7 +342,10 @@ fn claim(home: &std::path::Path, link: Option<&str>) -> bool {
     for _ in 0..300 {
         let claimed = try_lock(home, "app").and_then(|app| Ok(app.zip(try_lock(home, "restart")?)));
         match claimed {
-            Ok(Some((app, _))) => return INSTANCE.set(app).is_ok(),
+            Ok(Some((app, _))) => {
+                crate::exited::began(home);
+                return INSTANCE.set(app).is_ok();
+            }
             Ok(None) => {}
             Err(error) => {
                 eprintln!("couldn't tell whether the app is running: {error}");
@@ -387,6 +390,7 @@ fn handed(home: &std::path::Path) -> anyhow::Result<()> {
             Err(error) => return eprintln!("it isn't the app: {error}"),
         }
         drop(restart);
+        crate::exited::began(&home);
         if let Err(error) = hosts::serve(&home) {
             eprintln!("its channel didn't start: {error:#}");
         }
@@ -621,13 +625,17 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 None => restart(false),
             },
             Event::UserEvent(Told::Quit) => closing(|| tell(Told::Closed)),
-            Event::UserEvent(Told::Closed) => *flow = ControlFlow::Exit,
+            Event::UserEvent(Told::Closed) => {
+                crate::exited::quit(&home);
+                *flow = ControlFlow::Exit
+            }
             // The shortcut is let go of before it ends, which the system has done once this returns, so the new
             // program, which takes it as this one ends, finds it free.
             Event::UserEvent(Told::Ending) => {
                 if let Some((keeper, key)) = _shortcut.take() {
                     let _ = keeper.unregister(key);
                 }
+                crate::exited::quit(&home);
                 closing(|| std::process::exit(0))
             }
             Event::UserEvent(Told::Shortcut(asked)) => _shortcut = shortcut(&home, asked),

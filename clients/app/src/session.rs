@@ -88,6 +88,8 @@ pub(crate) async fn opens() {
         return;
     }
     let views = app.views.get().expect("it was just set");
+    // What ended the app last time, said before its client opened.
+    exited::told();
     // A newer build or page, which it's kept on from now on (`updater`).
     updater::start();
 

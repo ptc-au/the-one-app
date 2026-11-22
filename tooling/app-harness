@@ -28,6 +28,8 @@
 #            page still starting: one Home Screen window at every moment, and it ends on the version a fresh start loads.
 #   blank    an app's window opened while the server holds every request, so its page can't be read: still blank
 #            5 s on, it says so, and Telemetry hears it once the server answers, with the step its opening reached.
+#   crashed  the app killed as it runs (SIGKILL) says so at its next start, and Telemetry hears it, as
+#            `one.client.native.crash`; one an update ended (`restart`) says nothing.
 #   loading  an app's window opened while the server holds every request, so its page can't be read: the app's
 #            background as soon as it's listed, never black, and a second on its loading state, a spinner over "Loading".
 #   passkey  Add Passkey's link opened in a tab with the sign-in page open already shows Add a passkey; one made there with
@@ -55,20 +57,20 @@
 set -euo pipefail
 shopt -s extglob
 root=$(cd "$(dirname "$0")/.." && pwd)
-usage="tooling/app-harness <folder> [--seed <n>] [--phone] [start|reopen|closed|unopened|reloaded|stale|cached|restart|updated|twice|blank|loading|keys|passkey|open|writing]…"
+usage="tooling/app-harness <folder> [--seed <n>] [--phone] [start|reopen|closed|unopened|reloaded|stale|cached|restart|updated|twice|blank|crashed|loading|keys|passkey|open|writing]…"
 folder= seed=1 phone= checks=()
 while (($#)); do
   case $1 in
     --seed) seed=${2:?$usage} && shift ;;
     --phone) phone=390x844 ;;
-    start | reopen | closed | unopened | reloaded | stale | cached | restart | updated | twice | blank | loading | keys | passkey | open | writing) checks+=("$1") ;;
+    start | reopen | closed | unopened | reloaded | stale | cached | restart | updated | twice | blank | crashed | loading | keys | passkey | open | writing) checks+=("$1") ;;
     -*) echo "$usage" >&2 && exit 1 ;;
     *) folder=$1 ;;
   esac
   shift
 done
 [[ -n $folder ]] || { echo "$usage" >&2 && exit 1; }
-computers_only=" reopen stale loading keys passkey open "
+computers_only=" reopen stale loading keys passkey open crashed "
 if [[ -n $phone ]]; then
   for name in "${checks[@]}"; do
     [[ $computers_only != *" $name "* ]] ||
@@ -76,7 +78,7 @@ if [[ -n $phone ]]; then
   done
   ((${#checks[@]})) || checks=(start closed unopened reloaded cached restart updated twice blank writing)
 fi
-((${#checks[@]})) || checks=(start reopen closed unopened reloaded stale cached restart updated twice blank loading keys passkey open writing)
+((${#checks[@]})) || checks=(start reopen closed unopened reloaded stale cached restart updated twice blank crashed loading keys passkey open writing)
 mkdir -p "$folder/app"
 folder=$(cd "$folder" && pwd)
 RANDOM=$seed
@@ -499,6 +501,22 @@ blanked() {
   ONE_SUBJECT=network "$one" telemetry errors --hours 1 | jq -r '.errors[] | select(.message | test("after it was on screen")) | "        Telemetry: \(.message)"' | head -1
 }
 
+crashed() {
+  start_app || return 1
+  [[ -s $ONE_HOME/running ]] || { echo "        no marker in the app's home while it runs" && return 1; }
+  local before pids
+  before=$(said "the previous run of the app ended")
+  pids=$(programs)
+  kill -9 $pids
+  within 10 '[[ -z $(programs) ]]'
+  app=
+  start_app || return 1
+  within 60 '(($(said "the previous run of the app ended") > before))' || { echo "        the app killed as it ran said nothing at its next start" && return 1; }
+  grep -o "the previous run of the app ended.*" "$log" | tail -1 | sed 's/^/        /'
+  within 150 'ONE_SUBJECT=network "$one" telemetry errors --hours 1 | jq -e "any(.errors[]; .message | test(\"ended without quitting\"))" >/dev/null' ||
+    { echo "        Telemetry didn't hear of it within 2.5 minutes" && return 1; }
+}
+
 # Window `$1` as it's drawn now, a PNG at `$2`.
 snap() { "$one" inspector snap --window "$1" >"$2"; }
 
@@ -716,6 +734,7 @@ for name in "${checks[@]}"; do
     updated) check "updated: the Home Screen updated while it's open opens again in its place, again and again" updated ;;
     twice) check "twice: the Home Screen updated again as it opens on an update ends on the last, with one window at every moment" twice ;;
     blank) check "blank: a window still blank 5 s after it opened says so, and Telemetry hears it" blanked ;;
+    crashed) check "crashed: the app killed as it ran says so at its next start, and Telemetry hears it" crashed ;;
     loading) check "loading: a window whose page can't be read is the app's background, then its loading state" loading ;;
     passkey) check "passkey: Add Passkey's link in a reused tab adds one, which the app lets unlock with no code" passkey ;;
     keys) check "keys: Sign In & Security's waiting row goes as the servers are handed the key" keys ;;

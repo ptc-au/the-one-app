@@ -1,5 +1,6 @@
 import AppIntents
 import CoreSpotlight
+import MetricKit
 import UIKit
 
 /// An app in the One App with a screen of its own, as the app last listed them (`shortcuts` in src/shortcuts.rs): in
@@ -162,6 +163,62 @@ final class OneShortcuts: NSObject {
                 try await index.indexAppEntities(InstalledApp.listed())
             } catch {
                 NSLog("Spotlight didn't take this app's apps: \(error)")
+            }
+        }
+    }
+}
+
+/// What MetricKit says ended the app, which iOS delivers a day's of at the next start: each crash (`MXCrashDiagnostic`)
+/// and each way the system ended it (`MXAppExitMetric`: the memory limit, the watchdog, a bad access), said to the app's
+/// Rust (`OneExited` in src/exited.rs), which tells Telemetry as `one.client.native.crash`.
+@objc(OneMetrics)
+final class OneMetrics: NSObject, MXMetricManagerSubscriber {
+    private static let shared = OneMetrics()
+
+    @objc static func subscribe() {
+        MXMetricManager.shared.add(shared)
+    }
+
+    private func said(_ text: String) {
+        guard let exited: AnyClass = NSClassFromString("OneExited") else { return }
+        _ = (exited as AnyObject).perform(NSSelectorFromString("ended:"), with: text as NSString)
+    }
+
+    func didReceive(_ payloads: [MXMetricPayload]) {
+        for payload in payloads {
+            guard let exits = payload.applicationExitMetrics else { continue }
+            let foreground = exits.foregroundExitData
+            let background = exits.backgroundExitData
+            let counts: [(String, Int)] = [
+                ("foreground memory limit", foreground.cumulativeMemoryResourceLimitExitCount),
+                ("foreground watchdog", foreground.cumulativeAppWatchdogExitCount),
+                ("foreground bad access", foreground.cumulativeBadAccessExitCount),
+                ("foreground illegal instruction", foreground.cumulativeIllegalInstructionExitCount),
+                ("foreground abnormal", foreground.cumulativeAbnormalExitCount),
+                ("background memory limit", background.cumulativeMemoryResourceLimitExitCount),
+                ("background memory pressure", background.cumulativeMemoryPressureExitCount),
+                ("background CPU limit", background.cumulativeCPUResourceLimitExitCount),
+                ("background watchdog", background.cumulativeAppWatchdogExitCount),
+                ("background bad access", background.cumulativeBadAccessExitCount),
+                ("background illegal instruction", background.cumulativeIllegalInstructionExitCount),
+                ("background abnormal", background.cumulativeAbnormalExitCount),
+                ("background task assertion timeout", background.cumulativeBackgroundTaskAssertionTimeoutExitCount),
+                ("suspended with a locked file", background.cumulativeSuspendedWithLockedFileExitCount),
+            ]
+            let ended = counts.filter { $0.1 > 0 }.map { "\($0.0) x\($0.1)" }
+            if !ended.isEmpty {
+                said("iOS ended the app in the last day: \(ended.joined(separator: ", "))")
+            }
+        }
+    }
+
+    func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        for payload in payloads {
+            for crash in payload.crashDiagnostics ?? [] {
+                let signal = crash.signal.map { "signal \($0)" } ?? "no signal"
+                let type = crash.exceptionType.map { "exception type \($0)" } ?? "no exception type"
+                let reason = crash.terminationReason ?? "no termination reason"
+                said("iOS crash: \(signal), \(type), \(reason), on build \(crash.applicationVersion)")
             }
         }
     }

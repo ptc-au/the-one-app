@@ -1,5 +1,7 @@
 package app.theone.client
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
@@ -7,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Base64
@@ -53,6 +56,34 @@ class MainActivity : TauriActivity() {
     }
     // An app's window is a view over the web view, drawn natively, which Back closes (`NativeHost`).
     NativeHost.attach(this) { gate?.pass() }
+    exited()
+  }
+
+  /**
+   * Tells Telemetry, once each, the exits Android says weren't the app's own, since the last it told: a crash, a native
+   * crash, an ANR, the system's low memory killer, a signal, or the app held to its limits (`ApplicationExitInfo`, from
+   * Android 11). A person swiping it away or Android stopping it for an update isn't one.
+   */
+  private fun exited() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+    val kept = getSharedPreferences("exits", MODE_PRIVATE)
+    val told = kept.getLong("told", 0)
+    val wrong = mapOf(
+      ApplicationExitInfo.REASON_CRASH to "crash",
+      ApplicationExitInfo.REASON_CRASH_NATIVE to "native crash",
+      ApplicationExitInfo.REASON_ANR to "not responding",
+      ApplicationExitInfo.REASON_LOW_MEMORY to "low memory",
+      ApplicationExitInfo.REASON_SIGNALED to "signal",
+      ApplicationExitInfo.REASON_INITIALIZATION_FAILURE to "initialisation failure",
+      ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE to "excessive resource use",
+      ApplicationExitInfo.REASON_FREEZER to "frozen",
+    )
+    val exits = getSystemService(ActivityManager::class.java).getHistoricalProcessExitReasons(null, 0, 8).filter { it.timestamp > told }
+    for (exit in exits.sortedBy { it.timestamp }) {
+      val why = wrong[exit.reason] ?: continue
+      Notifications.exited("Android ended the app: $why (${exit.description ?: "no description"}), status ${exit.status}, importance ${exit.importance}, ${exit.rss / 1024} MB")
+    }
+    exits.maxOfOrNull { it.timestamp }?.let { kept.edit().putLong("told", it).apply() }
   }
 
   /** Whether a key pressed now comes here, as a remote's does: Computer Use presses keys here as one (`ComputerUse.kt`). */

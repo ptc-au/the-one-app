@@ -60,5 +60,8 @@ class Notifications : FirebaseMessagingService() {
 
     /** Starts the app's client kept in `home` without its window, and returns once it's told its servers it's watching. */
     @JvmStatic external fun wake(context: Context, home: String)
+
+    /** Tells the app's client that Android ended its last run for `reason`, as `ApplicationExitInfo` says (`exited`). */
+    @JvmStatic external fun exited(reason: String)
   }
 }

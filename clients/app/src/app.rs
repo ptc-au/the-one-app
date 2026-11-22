@@ -68,6 +68,11 @@ pub(crate) fn begin(shell: impl Shell, started: Instant) {
     crate::suspended::watch();
 }
 
+/// The app's views, if it has started and its client has opened.
+pub(crate) fn opened_views() -> Option<&'static Views> {
+    APP.get()?.views.get()
+}
+
 /// The app's views, once its client has opened.
 pub(crate) fn views() -> Result<&'static Views, String> {
     app().views.get().ok_or_else(|| "the app hasn't opened".to_owned())

@@ -30,6 +30,7 @@ mod login;
 #[cfg(not(mobile))]
 pub mod host;
 mod hosts;
+mod exited;
 mod memory;
 mod native;
 mod suspended;
@@ -79,7 +80,10 @@ pub fn run() {
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_haptics::init());
     #[cfg(target_os = "ios")]
-    charger::register();
+    {
+        charger::register();
+        exited::subscribe();
+    }
     builder
         .setup(move |app| {
             // An app's window is drawn natively, in a tao window over this one (`native`).
