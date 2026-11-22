@@ -7,7 +7,7 @@ defmodule Telemetry.Alerts do
   | Kind | Fires when | Clears when |
   | --- | --- | --- |
   | `server` | One of the network's servers, as the relay says (`active`): its machine's `one serve run` said its server didn't start or stopped without being asked, and it hasn't started since, for 5 min, unless the relay says it's ready; or it said its server ended unasked 3 times in 10 min (`one.server.crash_loop`), heard in the last 10 min | It says it started, or the relay says it's ready, or a server on the same machine started after it failed (its machine's server has a new key), and no loop has been heard of for 10 min |
-  | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater no longer says so, once an update or the edge's deploy under way has ended |
+  | `update` | The network's update (`core/edge/updater/updater.ts`) left a server behind, as it went back from the build or didn't take it in time, or the edge couldn't update itself, as it needs setting up or its deploy failed | The updater hasn't said so for 10 min, while no update or edge deploy is under way: the edge's deploy begins a few minutes after the servers' update ends |
   | `error` | A kind of error that wasn't in the last 14 days, as `errors` lists them: a span that failed, and an error logged outside one, by its first line, numbers and ids aside. A fault, a crash, a call that failed or a client's exception, not a call refused for what it was given or who asked (`one.outcome` `refused`, whose span isn't an error) | None arrives for 10 min, or it stops being new an hour after it first arrived |
   | `failing` | Half or more of an app's tool calls failed, of 10 or more in 10 min | 10 min with fewer |
   | `unanswered` | An app didn't answer, in 2 or more of the last 5 minutes: a hook it didn't answer in time (`one.hook.timeouts`), or its database's server kept a call waiting without running it (`one.database.lease.wait`, `not_answered`) | 5 min without |
@@ -108,7 +108,7 @@ defmodule Telemetry.Alerts do
   @open_budget 300
 
   # How long each kind's alert stays after its symptom was last seen before it's resolved, in milliseconds.
-  @cool %{"server" => 0, "update" => 0, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0}
+  @cool %{"server" => 0, "update" => 10 * 60_000, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0}
 
   @doc "Each kind of alert, with what fires it."
   def kinds, do: @kinds
