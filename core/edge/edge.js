@@ -2,7 +2,7 @@
 //
 //     bun edge.js dev [--live] [what `wrangler dev` takes]
 //     bun edge.js build <folder>
-//     bun edge.js deploy https://<the network's address>
+//     bun edge.js deploy https://<the network's address> [--allow-downgrade]
 //
 // A build is the edge as `deploy.js` deploys it, with nothing of the repo: each Worker bundled, as Wrangler bundles
 // it, and the web client's files. `tooling/release` ships it in `server-code`, so each server has the edge of the
@@ -258,4 +258,4 @@ if (existsSync(`${here}/secrets`)) cpSync(`${here}/secrets`, `${out}/workers/${e
 if (existsSync(`${here}/relay/secrets`)) cpSync(`${here}/relay/secrets`, `${out}/workers/${relayWorker.name}/secrets`);
 for (const { app, worker } of workers) if (existsSync(`${root}/apps/${app}/edge/secrets`)) cpSync(`${root}/apps/${app}/edge/secrets`, `${out}/workers/${worker.name}/secrets`);
 await $`bun install --frozen-lockfile`.cwd(out).quiet();
-process.exit(await Bun.spawn(["bun", "deploy.js", at.href], { cwd: out, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited);
+process.exit(await Bun.spawn(["bun", "deploy.js", at.href, ...rest.slice(1)], { cwd: out, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited);

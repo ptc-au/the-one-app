@@ -1,18 +1,26 @@
 // Deploys a built edge (`bun edge.js build <folder>`, which copies this in beside it) to a network's address, checks
 // it answers as that build, and rolls each Worker back to the version it ran before if it doesn't:
 //
-//     bun install --frozen-lockfile && bun deploy.js https://<the network's address>
+//     bun install --frozen-lockfile && bun deploy.js https://<the network's address> [--allow-downgrade]
 //
 // with the network's Cloudflare token in CLOUDFLARE_API_TOKEN. It needs nothing of the repo: each Worker is bundled
 // already (`workers/<name>/`), as Wrangler bundles it, and is deployed as it is, with the web client's files
 // (`web/`). A network's servers each have the edge of the build they run (`server-code`'s `edge/`), and one deploys
 // it as the network's update asks (`core/edge/updater/updater.ts`).
+//
+// It never replaces a newer build with an older one, as a server refuses to go back: it reads the build the edge says
+// it is first, and where that's newer than this build it says both and deploys nothing. `--allow-downgrade` goes back
+// on purpose.
 import { existsSync } from "node:fs";
 import { $ } from "bun";
 
 const here = import.meta.dir;
-const at = new URL(process.argv[2] ?? "");
-if (at.protocol !== "https:" || at.pathname !== "/") throw new Error("bun deploy.js https://<address>: a network's address, with no path");
+const [address, ...flags] = process.argv.slice(2);
+const at = new URL(address ?? "");
+if (at.protocol !== "https:" || at.pathname !== "/") throw new Error("bun deploy.js https://<address> [--allow-downgrade]: a network's address, with no path");
+const allowDowngrade = flags.includes("--allow-downgrade");
+const unknown = flags.filter((flag) => flag !== "--allow-downgrade");
+if (unknown.length) throw new Error(`bun deploy.js https://<address> [--allow-downgrade]: not ${unknown.join(" ")}`);
 if (!process.env.CLOUDFLARE_API_TOKEN) throw new Error("No Cloudflare token: CLOUDFLARE_API_TOKEN isn't set");
 
 // Wrangler deploys to the account of the zone the address is on, as Cloudflare says to the token, and nothing is
@@ -34,6 +42,16 @@ console.log(`Deploying to ${zone.account.name}, the account of ${zone.name}`);
  * @type {{version: string, workers: {name: string, kind: "tail" | "relay" | "part" | "edge", tag: string, d1: string[]}[]}}
  */
 const built = await Bun.file(`${here}/workers.json`).json();
+/** The build the edge says it is, from the window page's `update.json` (`edge.js` writes it), or `null` where nothing answers. */
+const said = () => fetch(new URL("/page/update.json", at), { cache: "no-store" }).then((answer) => (answer.ok ? answer.json() : null), () => null).catch(() => null);
+/** Whether `a` is a newer build than `b`: the count of commits in its `+<count>.`, as the network update reads them. */
+const newer = (a, b) => Number(/\+(\d+)/.exec(a)?.[1] ?? 0) > Number(/\+(\d+)/.exec(b)?.[1] ?? 0);
+// Two deploys at once, from checkouts on builds apart, left a network's web clients on an older renderer: the newer
+// build's deploy was replaced a minute later by the older one's (22 Nov). A deploy reads the build the edge says it is
+// before it deploys anything, and one older than it deploys nothing.
+const liveEdge = await said();
+if (!allowDowngrade && liveEdge?.version && newer(liveEdge.version, built.version))
+  throw new Error(`The edge at ${at.host} is ${liveEdge.version}, newer than this build, ${built.version}: nothing was deployed. Deploy that or a newer build, or \`--allow-downgrade\` to go back on purpose`);
 const wrangler = (/** @type {string[]} */ ...args) => Bun.spawn(["bun", "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
 const config = (/** @type {string} */ name, file = "wrangler.jsonc") => `workers/${name}/${file}`;
 
@@ -81,9 +99,9 @@ for (const { name, kind, tag, d1 } of built.workers) {
 // for up to a minute.
 let why = "";
 for (const until = Date.now() + 60_000; Date.now() < until; await Bun.sleep(5_000)) {
-  const said = await fetch(new URL("/page/update.json", at), { cache: "no-store" }).then((answer) => (answer.ok ? answer.json() : null), () => null);
+  const telling = await said();
   const page = await fetch(at, { redirect: "follow", cache: "no-store" }).then((answer) => answer.status, () => 0);
-  why = said?.version !== built.version ? `it says it's ${said?.version ?? "nothing"}, not ${built.version}` : page >= 400 || page === 0 ? `its page answered ${page}` : "";
+  why = telling?.version !== built.version ? `it says it's ${telling?.version ?? "nothing"}, not ${built.version}` : page >= 400 || page === 0 ? `its page answered ${page}` : "";
   if (!why) break;
 }
 if (why) await back(`The edge at ${at.host} didn't answer as ${built.version}: ${why}`);
