@@ -15,6 +15,7 @@ defmodule Telemetry.Alerts do
   | `open` | An app's window took over its 300 ms budget, from being asked to open to its page's first frame, the last time it opened on a device (`one.client.native.open`, which a client says of each open, with each step's time) | It opens within its budget there, or hasn't opened there for a day |
   | `backup` | A destination's last backup is older than its schedule and a day, or its last backup failed, as Backups last said (`one.backup`, which it says each hour and as each backup ends) | Backups says it's backed up, or that the destination is gone |
   | `behind` | A server or a desktop client has said for over an hour, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), and something of it arrived in the last day | It says it's on the latest, or nothing of it arrives for a day |
+  | `memory` | A device's app held more than its budget in a state (`background`, `launcher`, `windows`) the last time it measured it there (`one.client.memory.over`, which the app says as it measures over budget, beside `one.client.memory` each time) | It measures that state within its budget there, or nothing of it arrives for a day |
   | `access` | A server that acts for someone lacks the keys of something encrypted for them, or one that doesn't act for them has them, as Encryption last said (`one.encryption.access`, which it says every 10 minutes) | Encryption says every server that should hold its keys does, and no other |
 
   Each alert is a row of Telemetry's database, one per kind and key (the server, the build, the error's kind, the
@@ -85,7 +86,9 @@ defmodule Telemetry.Alerts do
     "delete from looked",
     # Which build each server and client last said it is (`service.version`), as what it said arrived, and since when
     # that's been older than the latest of its kind.
-    "create table builds (key text primary key, name text, build text not null, kind text not null, at integer not null, behind integer) without rowid"
+    "create table builds (key text primary key, name text, build text not null, kind text not null, at integer not null, behind integer) without rowid",
+    # Each device's app's last memory over budget in each state, and its last measure there (`one.client.memory`).
+    "create table memory (device text not null, state text not null, name text, over integer, said text, measured integer, gpu real, graphics real, heap real, at integer not null, primary key (device, state)) without rowid"
   ]
 
   @kinds %{
@@ -98,7 +101,8 @@ defmodule Telemetry.Alerts do
     "backup" => "A backup isn't made within its schedule and a day, or the last one failed",
     "open" => "An app's window took over 300 ms to show its page the last time it opened on a device",
     "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can",
-    "behind" => "A server or a desktop client has been on an older build than the latest for over an hour"
+    "behind" => "A server or a desktop client has been on an older build than the latest for over an hour",
+    "memory" => "A device's app held more memory than its budget the last time it measured it"
   }
 
   # How long a deploy has to show in a window, from when it began, in milliseconds.
@@ -108,7 +112,7 @@ defmodule Telemetry.Alerts do
   @open_budget 300
 
   # How long each kind's alert stays after its symptom was last seen before it's resolved, in milliseconds.
-  @cool %{"server" => 0, "update" => 10 * 60_000, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0}
+  @cool %{"server" => 0, "update" => 10 * 60_000, "error" => 0, "failing" => 10 * 60_000, "unanswered" => 5 * 60_000, "deploy" => 10 * 60_000, "backup" => 0, "open" => 0, "access" => 0, "behind" => 0, "memory" => 0}
 
   @doc "Each kind of alert, with what fires it."
   def kinds, do: @kinds
@@ -292,6 +296,10 @@ defmodule Telemetry.Alerts do
   defp log(%{"eventName" => "one.encryption.access", "attributes" => %{"one.artifact" => artifact} = a} = log),
     do: [{:access, artifact, ms(log["time"]), a["one.outcome"], a["one.problem"]}]
 
+  # The app's memory over its budget is its alert's, a device's, not a new kind of error.
+  defp log(%{"eventName" => "one.client.memory.over", "attributes" => %{"one.device" => device, "one.state" => state}} = log),
+    do: [{:memory_over, device, state, Read.from(log), ms(log["time"]), log["body"]}]
+
   # What a server's own program says of it is its alert's, not a new kind of error.
   defp log(%{"eventName" => "one.server." <> _}), do: []
 
@@ -314,6 +322,10 @@ defmodule Telemetry.Alerts do
 
   defp metric(%{"name" => "one.client.deploy.window", "attributes" => %{"one.app" => app}} = point),
     do: [{:deploy, app, minute(point["time"]), round(point["max"] || point["sum"] || 0)}]
+
+  defp metric(%{"name" => "one.client.memory" <> part, "attributes" => %{"one.device" => device, "one.state" => state}, "count" => count} = point)
+       when part in ["", ".gpu", ".graphics", ".heap"] and count > 0,
+       do: [{:memory, device, state, String.trim_leading(part, "."), ms(point["start"]), Float.round(point["sum"] / count, 1)}]
 
   defp metric(_point), do: []
 
@@ -437,6 +449,34 @@ defmodule Telemetry.Alerts do
       )
     end
 
+    for {:memory_over, device, state, name, at, said} <- signals do
+      query(
+        db,
+        """
+        insert into memory (device, state, name, over, said, at) values (?, ?, ?, ?, ?, ?)
+        on conflict (device, state) do update set name = excluded.name, over = max(coalesce(over, 0), excluded.over),
+          said = iif(excluded.over >= coalesce(over, 0), excluded.said, said), at = excluded.at
+        """,
+        [device, state, name, at, said, now]
+      )
+    end
+
+    # Each measure's interval starts after what it measured before: one that starts after the last over is within
+    # budget, as one over would have said so.
+    for {:memory, device, state, part, start, mb} <- signals do
+      column = if part == "", do: "measured", else: part
+      value = if part == "", do: start, else: mb
+
+      query(
+        db,
+        """
+        insert into memory (device, state, #{column}, at) values (?, ?, ?, ?)
+        on conflict (device, state) do update set #{column} = #{if part == "", do: "max(coalesce(measured, 0), excluded.measured)", else: "excluded.#{column}"}, at = excluded.at
+        """,
+        [device, state, value, now]
+      )
+    end
+
     for {:open, device, view, from, at, took, steps} <- signals do
       query(
         db,
@@ -454,6 +494,7 @@ defmodule Telemetry.Alerts do
     query(db, "delete from deploys where minute < ?", [now - 15 * @minute])
     query(db, "delete from opens where at < ?", [now - @day])
     query(db, "delete from builds where at < ?", [now - @day])
+    query(db, "delete from memory where at < ?", [now - @day])
     query(db, "delete from seen where last < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from servers where max(coalesce(failed, 0), coalesce(started, 0), coalesce(looping, 0)) < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from alerts where ended < ?", [now - 7 * 86_400_000])
@@ -607,7 +648,19 @@ defmodule Telemetry.Alerts do
          }}
       end
 
-    Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access, behind], &Map.merge/2)
+    memory =
+      for row <- query(db, "select * from memory where over >= coalesce(measured, 0)", []), into: %{} do
+        parts = for {part, called} <- [{"gpu", "the GPU"}, {"graphics", "graphics"}, {"heap", "the heap"}], row[part], do: "#{called} #{row[part]} MB"
+        held = if parts == [], do: "", else: " Of what it holds, #{Enum.join(parts, ", ")}."
+
+        {{"memory", "#{row["device"]}|#{row["state"]}"},
+         %{
+           title: "#{row["name"] || "An app"} holds more memory than its budget #{in_state(row["state"])}",
+           text: "#{sentence(row["said"])}.#{held}"
+         }}
+      end
+
+    Enum.reduce([servers, update, errors, failing, unanswered, deploys, opens, backups, access, behind, memory], &Map.merge/2)
   end
 
   # What the network's updater says went wrong: each server behind, which went back from the build or didn't take it
@@ -640,6 +693,15 @@ defmodule Telemetry.Alerts do
 
   # A build as a person reads it, its version: `0.34.363`.
   defp version(build), do: (build || "") |> String.split("+") |> hd()
+
+  # What a client said, as a sentence begins.
+  defp sentence(nil), do: ""
+  defp sentence(<<first::utf8, rest::binary>>), do: String.upcase(<<first::utf8>>) <> rest
+
+  # The app's state, as a person says it.
+  defp in_state("background"), do: "in the background"
+  defp in_state("launcher"), do: "with the launcher open"
+  defp in_state(_windows), do: "with windows open"
 
   # When the last backup was, as a person says it.
   defp last_backup(0, _now), do: "It hasn't been backed up yet."
