@@ -33,7 +33,7 @@ const look = styles({
   page: { width: 120, height: "100%", flexShrink: 0 },
   pages: { flexDirection: "row", width: "100%", height: "100%" },
   slid: (translateX: number) => ({ width: "100%", height: "100%", backgroundColor: tokens.colour.orange, translateX, transitionProperty: ["translateX"], transition: tokens.motion.smooth }),
-  words: { width: "100%", height: "100%", font: tokens.type.title, color: "#ffffff", backgroundColor: tokens.colour.green },
+  words: { width: "100%", height: "100%", font: tokens.type.title, color: tokens.colour.onAccent, backgroundColor: tokens.colour.blue },
 })
 
 /// A square of one colour, as a photo reaching its box's every corner is.

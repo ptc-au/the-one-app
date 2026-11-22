@@ -29,8 +29,10 @@ const look = styles({
   shown: { font: tokens.type.largeTitle, fontFamily: tokens.font.mono },
   // As wide as its part, so its words wrap there: Taffy (0.15.1) sizes a row of one line by everything in it, where a
   // browser fits it to the room it has, so a centred one ran past both sides of a phone (21 Nov).
-  said: { alignSelf: "stretch", flexDirection: "row", gap: tokens.grid[2.5], alignItems: "flex-start", color: tokens.colour.orange, textAlign: "start" },
+  said: { alignSelf: "stretch", flexDirection: "row", gap: tokens.grid[2.5], alignItems: "flex-start", textAlign: "start" },
   problem: { color: tokens.colour.red },
+  // A warning's symbol is orange, its words the label's: orange words fall short of 4.5:1 on light surfaces.
+  warns: { color: tokens.colour.orange },
   symbol: { paddingTop: tokens.grid[0.5] },
   words: { flexShrink: 1 },
   status: { flexDirection: "row", gap: tokens.grid[2], alignItems: "center", color: tokens.colour.secondaryLabel },
@@ -133,7 +135,7 @@ export function SignIn(props: {
         <Show when={props.warning}>
           <View style={look.part}>
             <View style={look.said}>
-              <View style={look.symbol}>
+              <View style={[look.symbol, look.warns]}>
                 <Icon name="warning-circle" />
               </View>
               <Text style={look.words}>{props.warning}</Text>

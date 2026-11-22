@@ -96,13 +96,14 @@ const look = styles({
     justifyContent: "center",
     borderRadius: tokens.radius.full,
     backgroundColor: tokens.colour.quaternaryLabel,
-    boxShadow: { default: "none", focused: tokens.shadow.focus },
+    // Off, its edge stands off what it's on by 3:1, as a checkbox's and a radio's ring does (WCAG's non-text contrast).
+    boxShadow: { default: tokens.shadow.tick, focused: tokens.shadow.focus },
     transitionProperty: ["backgroundColor"],
     transition: tokens.motion.settle,
   },
   // On, as iOS's and macOS's switches are: green, with a white thumb.
-  on: { backgroundColor: tokens.colour.green },
-  thumb: { width: tokens.grid[4], height: tokens.grid[4], borderRadius: tokens.radius.full, backgroundColor: tokens.colour.onAccent, boxShadow: tokens.shadow.edge, transitionProperty: ["translateX"], transition: tokens.motion.settle },
+  on: { backgroundColor: tokens.colour.green, boxShadow: { default: "none", focused: tokens.shadow.focus } },
+  thumb: { width: tokens.grid[4], height: tokens.grid[4], borderRadius: tokens.radius.full, backgroundColor: tokens.colour.thumb, boxShadow: tokens.shadow.edge, transitionProperty: ["translateX"], transition: tokens.motion.settle },
   thumbOn: { translateX: tokens.grid[3] },
   radios: { minWidth: 0 },
 })

@@ -37,8 +37,12 @@ export function plural(count: number, one: string, other = `${one}s`): string {
 const units = ["kilobyte", "megabyte", "gigabyte", "terabyte", "petabyte"]
 
 /// `size(file.bytes)`: how big something is, in thousands as Apple's devices count, as Intl.NumberFormat says it:
-/// "512 bytes", "1.2 MB", "340 GB".
+/// "512 bytes", "1.2 MB", "340 GB", its number and unit held together by a no-break space, so a line never ends between
+/// them.
 export function size(bytes: number): string {
+  return sized(bytes).replace(/ /g, "\u00a0")
+}
+function sized(bytes: number): string {
   if (bytes < 1000) return new Intl.NumberFormat(undefined, { style: "unit", unit: "byte", unitDisplay: "long" }).format(bytes)
   const power = Math.min(Math.floor(Math.log10(bytes) / 3), units.length)
   const count = bytes / 1000 ** power

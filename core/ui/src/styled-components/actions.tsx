@@ -110,7 +110,7 @@ const look = styles({
   destructive: { color: tokens.colour.red },
   destructiveGlyph: { backgroundColor: tokens.colour.redTint, color: tokens.colour.red },
   separator: { height: tokens.length.hairline, marginBlock: tokens.grid[1], marginInline: tokens.grid[2], backgroundColor: tokens.colour.quinaryLabel },
-  none: { paddingInline: tokens.grid[2], paddingBlock: tokens.grid[2], color: tokens.colour.tertiaryLabel },
+  none: { paddingInline: tokens.grid[2], paddingBlock: tokens.grid[2], color: tokens.colour.secondaryLabel },
   search: { height: tokens.grid[10], paddingInline: tokens.grid[3], justifyContent: "center", borderTopWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   field: { width: "100%", font: tokens.type.medium, color: tokens.colour.label },
 })

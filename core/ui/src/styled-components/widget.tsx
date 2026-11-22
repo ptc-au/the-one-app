@@ -73,7 +73,11 @@ const look = styles({
   track: { color: tokens.colour.quaternaryLabel },
   area: { opacity: 0.15 },
   middle: { position: "absolute", top: 0, bottom: 0, start: 0, end: 0, alignItems: "center", justifyContent: "center" },
-  meterLabel: { font: tokens.type.small, fontWeight: tokens.weight.semibold },
+  // A gauge's figure is the label's colour, its tone the arc's.
+  meterLabel: { font: tokens.type.small, fontWeight: tokens.weight.semibold, color: tokens.colour.label },
+  // Words a warning's tone is on: the label's colour, as iOS draws a widget that can't load, where orange words are
+  // 2.4:1 on the card's grey (L79); the tone's orange is its symbols', bars' and gauges'.
+  plain: { color: tokens.colour.label },
   progress: { gap: tokens.grid[1], minWidth: 0 },
   bar: { position: "relative", height: tokens.grid[2] },
   drawn: { position: "relative", flexShrink: 0 },
@@ -411,7 +415,7 @@ function Part(props: { part: Layout; root?: boolean; row?: boolean; first?: bool
     return points === undefined ? undefined : gaps.reduce((best, step) => (Math.abs(step[0] - points) < Math.abs(best[0] - points) ? step : best))[1]
   }
   const clamp = () => (props.row ? look.line : number(part().lines) ? lines[Math.min(8, Math.max(1, Math.round(number(part().lines)!))) - 1] : undefined)
-  const words = () => [look.text, part().size ? sizes[part().size!] : undefined, part().weight ? weights[part().weight!] : undefined, clamp(), ...room(part()), sized(part())]
+  const words = () => [look.text, part().size ? sizes[part().size!] : undefined, part().weight ? weights[part().weight!] : undefined, clamp(), ...room(part()), part().tone === "warn" && look.plain, sized(part())]
   return (
     <Which>
       <Match when={(part().part === "column" || part().part === "row") && fits()}>

@@ -1,7 +1,7 @@
 // The design tokens: every colour, length, radius, shadow, material, font, weight, type style and pace the UI library
 // and every app draw with, as typed values, each the same everywhere or varying by condition (dark, touch, phone,
 // reduced motion: drawing-primitives/renderer.ts's `Condition`). This is their one source. `tokens` are by role, as Raycast's
-// model has them (text at 100, 60 (66 in light), 40, 20 and 10%, a background, a selection, a loader, seven accents each with a
+// model has them (text at 100, 60 (70 in light), 40, 20 and 10%, a background, a selection, a loader, seven accents each with a
 // tint, a 4px grid, three radii, a window's shadow and edge, three sizes of text and a large title), and a page's code
 // names only those, so their values change here alone. `legacy` are what the UI library's components drawn with CSS
 // name, until each is written on the drawing primitives. The UI library's build makes from it the web's
@@ -42,7 +42,7 @@ const lightDark = (light: Shadow[], dark: Shadow[]): Token<"shadow"> => ({ kind:
 const font = (...families: string[]): Token<"font"> => ({ kind: "font", id: "", value: families })
 /** A weight, a little lighter in dark: light text on dark looks heavier. */
 const weight = (weight: number): Token<"weight"> => ({ kind: "weight", id: "", value: { default: weight, dark: weight - 25 } })
-/** A colour as another at a part of its opacity: text at 60%, an accent's 15% tint. */
+/** A colour as another at a part of its opacity: text at 60%, an accent's 12% tint. */
 const alpha = (of: Token<"colour">, percent: number): Token<"colour"> => ({ kind: "colour", id: "", value: { of, alpha: percent / 100 } })
 /** What shows through what has it: what's behind, blurred so far and saturated so much. */
 /** What shows through what has it: what's behind, blurred so far and saturated so much; `system`, the system's own
@@ -57,11 +57,13 @@ const spring = (duration: number, bounce: number): Token<"motion"> => ({ kind: "
 
 // Raycast's values as round two measured them beside it (raycast-mockups-v2): a near-white window, one text colour,
 // and Apple's accents but red, orange and blue, which are the mockup's. Dark is true black, an OLED's (20 Nov), with
-// what's raised off it neutral greys, no tint. Colours CSS names are written in OKLCH.
+// what's raised off it neutral greys, no tint. Colours CSS names are written in OKLCH. Red, orange, blue and green
+// in light are a little deeper than Apple's, and red in dark a little lighter, so words in them stand off every surface
+// a page draws on by WCAG AA's 4.5:1, and white words on them too (lint-tokens.js).
 const ink = ["oklch(0.224 0.008 285.76)", "oklch(1 0 0)"] as const
-const red = ["oklch(0.614 0.204 25.56)", "oklch(0.7 0.191 23.4)"] as const
-const orange = ["oklch(0.677 0.164 57.12)", "oklch(0.782 0.171 67.22)"] as const
-const blue = ["oklch(0.573 0.199 261.84)", "oklch(0.714 0.139 249.06)"] as const
+const red = ["oklch(0.525 0.204 25.56)", "oklch(0.745 0.191 23.4)"] as const
+const orange = ["oklch(0.60 0.164 57.12)", "oklch(0.782 0.171 67.22)"] as const
+const blue = ["oklch(0.51 0.199 261.84)", "oklch(0.714 0.139 249.06)"] as const
 const colours = {
   background: colour("oklch(0.977 0.003 286.35)", "oklch(0 0 0)"),
   foreground: colour(...ink),
@@ -76,8 +78,8 @@ const colours = {
   primaryForeground: colour("oklch(1 0 0)", "oklch(0 0 0)"),
   /** A quiet fill: a secondary button, what's hovered, a skeleton: the text at 10% over the page. */
   muted: colour("oklch(0.919 0.003 286.35)", "oklch(0.269 0 0)"),
-  /** Grey words, and where the keyboard is: the text at 60%, 66% in light (`secondaryLabel`). */
-  mutedForeground: colour("oklch(0.224 0.008 285.76 / 66%)", "oklch(1 0 0 / 60%)"),
+  /** Grey words, and where the keyboard is: the text at 60%, 70% in light (`secondaryLabel`). */
+  mutedForeground: colour("oklch(0.224 0.008 285.76 / 70%)", "oklch(1 0 0 / 60%)"),
   destructive: colour(...red),
   /** Warn: "this needs you", but it can wait. */
   warning: colour(...orange),
@@ -190,7 +192,7 @@ const accents = {
   red: colour(...red),
   orange: colour(...orange),
   yellow: colour("#ffcc00", "#ffd60a"),
-  green: colour("#34c759", "#30d158"),
+  green: colour("oklch(0.6 0.17 149)", "#30d158"),
   blue: colour(...blue),
   purple: colour("#af52de", "#bf5af2"),
   magenta: colour("#ff2d55", "#ff375f"),
@@ -199,9 +201,9 @@ const accents = {
  * loading, and the accents, each with its tint. */
 const roles = {
   label,
-  /** The text at 60%, and at 66% in light, where 60% on a widget's tile over a dark window behind the launcher fell
-   * short of WCAG AA's 4.5:1 (3.9:1; 4.6:1 at 66%). */
-  secondaryLabel: colour("oklch(0.224 0.008 285.76 / 66%)", "oklch(1 0 0 / 60%)"),
+  /** The text at 60%, and at 70% in light, where 60% on a widget's tile over a dark window behind the launcher fell
+   * short of WCAG AA's 4.5:1 (3.9:1; 4.6:1 at 66%), and 66% on a widget's tile in the launcher's light card (4.4:1). */
+  secondaryLabel: colour("oklch(0.224 0.008 285.76 / 70%)", "oklch(1 0 0 / 60%)"),
   tertiaryLabel: alpha(label, 40),
   quaternaryLabel: alpha(label, 20),
   quinaryLabel: alpha(label, 10),
@@ -232,17 +234,20 @@ const roles = {
   field: colour("oklch(1 0 0 / 70%)", "oklch(1 0 0 / 10%)"),
   /** Nothing: what has no fill of its own where something else has one. */
   transparent: colour("oklch(0 0 0 / 0%)"),
-  /** Words and icons on an accent. */
-  onAccent: colour("oklch(1 0 0)"),
+  /** Words and icons on an accent: white in light, black in dark, where the accents are light enough to read on
+   * black, and white on them falls short of 4.5:1 (red's 2.8:1). */
+  onAccent: colour("oklch(1 0 0)", "oklch(0 0 0)"),
+  /** A switch's thumb: white in light and dark, as iOS's and macOS's are, off its track by its edge's shadow. */
+  thumb: colour("oklch(1 0 0)"),
   loader: alpha(label, 40),
   ...accents,
-  redTint: alpha(accents.red, 15),
-  orangeTint: alpha(accents.orange, 15),
-  yellowTint: alpha(accents.yellow, 15),
-  greenTint: alpha(accents.green, 15),
-  blueTint: alpha(accents.blue, 15),
-  purpleTint: alpha(accents.purple, 15),
-  magentaTint: alpha(accents.magenta, 15),
+  redTint: alpha(accents.red, 12),
+  orangeTint: alpha(accents.orange, 12),
+  yellowTint: alpha(accents.yellow, 12),
+  greenTint: alpha(accents.green, 12),
+  blueTint: alpha(accents.blue, 12),
+  purpleTint: alpha(accents.purple, 12),
+  magentaTint: alpha(accents.magenta, 12),
 }
 
 /** The 4px grid, by its steps: `grid[3]` is 12px. */
@@ -351,7 +356,7 @@ export const tokens = {
     lifted: shadow({ x: 0, y: 12, blur: 28, spread: -6, colour: "oklch(0 0 0 / 30%)" }),
     /** Where the keyboard is: a blue edge and a ring of its tint. */
     focus: lightDark(
-      [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0.573 0.199 261.84)", inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.573 0.199 261.84 / 30%)" }],
+      [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0.51 0.199 261.84)", inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.51 0.199 261.84 / 30%)" }],
       [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0.714 0.139 249.06)", inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.714 0.139 249.06 / 30%)" }],
     ),
     /** A window's, a sheet's or a menu's, as Raycast's: a hairline outside, three soft shadows under it, and its edge. */
@@ -372,7 +377,7 @@ export const tokens = {
     edge: lightDark(edge.light, edge.dark),
     /** A field's edge, and where the keyboard is in it, where what's in it is wrong. */
     wrongEdge: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: red[0], inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: red[1], inset: true }]),
-    wrongFocus: lightDark([{ x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.614 0.204 25.56 / 30%)" }], [{ x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.7 0.191 23.4 / 30%)" }]),
+    wrongFocus: lightDark([{ x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.525 0.204 25.56 / 30%)" }], [{ x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.745 0.191 23.4 / 30%)" }]),
   }, (key) => `shadow-${key}`),
   material: named({ glass: material(20, 1.6), thin: material(18, 1.2), window: material(30, 1.8, true) }, (key) => `material-${key}`),
   font: named(fonts, (key) => `font-${key}`),

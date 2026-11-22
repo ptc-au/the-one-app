@@ -81,7 +81,7 @@ const look = styles({
     width: tokens.grid[8],
     height: tokens.grid[8],
     borderRadius: tokens.radius.full,
-    backgroundColor: tokens.colour.tertiaryLabel,
+    backgroundColor: tokens.colour.secondaryLabel,
     alignItems: "center",
     justifyContent: "center",
   },

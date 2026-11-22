@@ -36,7 +36,9 @@ const look = styles({
   row: { flexDirection: "row", gap: tokens.grid[2.5], alignItems: "flex-start" },
   tick: { color: tokens.colour.secondaryLabel, paddingTop: tokens.grid[0.5] },
   grows: { flexShrink: 1 },
-  warning: { flexDirection: "row", gap: tokens.grid[2.5], alignItems: "flex-start", color: tokens.colour.orange },
+  warning: { flexDirection: "row", gap: tokens.grid[2.5], alignItems: "flex-start" },
+  // A warning's symbol is orange, its words the label's: orange words fall short of 4.5:1 on light surfaces.
+  warns: { color: tokens.colour.orange, paddingTop: tokens.grid[0.5] },
   note: { color: tokens.colour.secondaryLabel, font: tokens.type.small, textAlign: "center" },
   /// Use Another Device, in the app's own window: the link to open where they're signed in, short enough to type, and
   /// the code it will show there, as big as the one a device shows.
@@ -667,7 +669,7 @@ function Consent(props: { app: App }) {
       </View>
       <Show when={props.app.to}>
         <View style={look.warning}>
-          <View style={look.tick}>
+          <View style={look.warns}>
             <Icon name="warning-circle" />
           </View>
           <Text style={look.grows}>{props.app.name} says it's from {props.app.from} but sends you back to {props.app.to}. Allow only if you trust {props.app.to}.</Text>

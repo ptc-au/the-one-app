@@ -79,7 +79,7 @@ function Dots(props: { owner: Owner; index: number; count: number; size: number 
       <For each={Array.from({ length: Math.max(1, props.count) }, (_, at) => at)}>
         {(screen) => (
           <Pressable role="button" aria-label={`Page ${screen + 1} of ${props.count}`} aria-current={lit(screen) ? "true" : undefined} onPress={press(screen)} style={looks.dotButton}>
-            <View style={[looks.dot, shown(screen) >= 0.5 && looks.dotLit, looks.dotAt(props.size, props.size * 0.64, 0.4 + 0.6 * shown(screen))]} />
+            <View style={[looks.dot, shown(screen) >= 0.5 && looks.dotLit, looks.dotAt(props.size, props.size * 0.64, 0.85 + 0.15 * shown(screen))]} />
           </Pressable>
         )}
       </For>
