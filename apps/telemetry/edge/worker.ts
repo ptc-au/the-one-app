@@ -99,11 +99,10 @@ function span(item: TraceItem) {
   const error =
     record.error ||
     (thrown && `${thrown.name}: ${thrown.message}`) ||
-    // A WebSocket ends when either end leaves, and a request when whoever sent it hangs up, as a browser that leaves
-    // the page does: neither is a failure here, as OpenTelemetry has an HTTP server's span. A call between Workers
-    // is the edge's own, so one cancelled because its caller ended first is.
-    (!request && item.outcome === "canceled" && "The caller went away before it was answered") ||
-    (!upgraded && !(request && item.outcome === "canceled") && item.outcome !== "ok" && `It ended ${item.outcome}`) ||
+    // A WebSocket ends when either end leaves, a request when whoever sent it hangs up, as a browser that leaves the
+    // page does, and a call between Workers when its caller does, as a client that disconnects mid-request: none is a
+    // failure here, as OpenTelemetry has an HTTP server's span.
+    (!upgraded && item.outcome !== "canceled" && item.outcome !== "ok" && `It ended ${item.outcome}`) ||
     (status !== undefined && status >= 500 && `It answered ${status}`) ||
     undefined;
   // As OpenTelemetry names an HTTP server's span, and a call between Workers by the Worker and its method.
@@ -117,7 +116,10 @@ function span(item: TraceItem) {
   const own = trace.getSpanContext(under(record.traceparent));
   const parent = trace.getSpanContext(under(record.parent));
   Object.assign(next, { trace: own?.traceId, span: own?.spanId });
-  const start = record.start ?? item.eventTimestamp ?? Date.now();
+  // Cloudflare's times for a request that ended `unknown` aren't to be believed (one dated 9 days ahead): nothing here
+  // ends after the Worker is told of it.
+  const now = Date.now();
+  const start = Math.min(record.start ?? item.eventTimestamp ?? now, now);
   const span = tracer.startSpan(
     name,
     {
@@ -134,7 +136,7 @@ function span(item: TraceItem) {
   );
   delete next.trace, delete next.span;
   if (error) span.setStatus({ code: SpanStatusCode.ERROR, message: error.slice(0, 1000) });
-  span.end(record.end ?? start + ((item as { wallTime?: number }).wallTime ?? 0));
+  span.end(Math.min(record.end ?? start + ((item as { wallTime?: number }).wallTime ?? 0), now));
 }
 
 export default {
