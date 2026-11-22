@@ -41,7 +41,8 @@ const IDLE: web_time::Duration = web_time::Duration::from_secs(2);
 const SPARE: usize = 2;
 
 pub struct Renderer {
-    /// When it last drew a frame (`idle`).
+    /// When it last drew a frame, as the windows' loop tells the time (`platform::now`: on the fake platform its clock,
+    /// so its harness lets go idle as a device would), by which it lets go of what it holds once idle (`idle`).
     drew: web_time::Instant,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -209,7 +210,7 @@ impl Renderer {
             ..Default::default()
         });
         Self {
-            drew: web_time::Instant::now(),
+            drew: crate::platform::now(),
             device: context.device.clone(),
             queue: context.queue.clone(),
             targets: vec![target],
@@ -409,7 +410,7 @@ impl Renderer {
         sheets.dedup_by(|one, other| Arc::ptr_eq(one, other));
         serde_json::json!({
             "surface": self.targets.iter().map(Target::surface_bytes).sum::<u64>(),
-            "kept": self.targets.iter().flat_map(|target| target.kept.as_ref().map(|kept| &kept.texture).into_iter().chain(target.canvas.as_ref().map(|(canvas, _)| canvas))).map(bytes).sum::<u64>(),
+            "kept": self.targets.iter().flat_map(|target| target.kept.as_ref().map(|kept| &kept.texture).into_iter().chain(target.canvas.as_ref())).map(bytes).sum::<u64>(),
             "spare": self.spare.iter().map(bytes).sum::<u64>(),
             "backdrop": backdrop.chain(blurred).sum::<u64>(),
             "rasters": sheets.iter().map(|sheet| bytes(&sheet.texture)).sum::<u64>(),
@@ -420,7 +421,7 @@ impl Renderer {
 
     /// How long until it's drawn nothing for a while (`IDLE`), where it holds what it lets go of then (`idle`).
     pub fn idle_in(&self) -> Option<web_time::Duration> {
-        (!self.spare.is_empty() || self.targets.iter().any(Target::holds)).then(|| IDLE.saturating_sub(self.drew.elapsed()))
+        (!self.spare.is_empty() || self.targets.iter().any(Target::holds)).then(|| IDLE.saturating_sub(crate::platform::now().saturating_duration_since(self.drew)))
     }
 
     /// It's drawn nothing for a while (`IDLE`): it lets go of the frame it kept and its backdrops' textures and blurs,

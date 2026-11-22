@@ -19,12 +19,15 @@ pub(super) struct Target {
     /// same behind one, as iOS's materials blur what's behind them once while it holds still; and whether this frame
     /// used it.
     pub(super) blurred: std::collections::HashMap<u64, super::blur::KeptBlur>,
-    /// What its last frame drew, thing by thing, over what (`Drawn::over`), by which the next is drawn again only where
-    /// that changed (`damage`), and its canvas, the texture it draws such frames on and copies into its image, with
-    /// whether it holds its last frame: kept while frames are drawn whole too, as making one again its window's size
-    /// took a Surface's Intel driver 500 ms.
-    pub(super) shown: Option<(u64, super::blur::Prints)>,
-    pub(super) canvas: Option<(wgpu::Texture, bool)>,
+    /// Its canvas, the texture it draws frames on only where they changed and copies into its image, and what the
+    /// frame it holds drew, thing by thing, over what (`Drawn::over`, `damage::Shown`): kept as frames are drawn whole
+    /// into its image, as making one again its window's size took a Surface's Intel driver 500 ms, and the frame it holds
+    /// is what the next is drawn on.
+    pub(super) shown: Option<(u64, super::damage::Shown)>,
+    pub(super) canvas: Option<wgpu::Texture>,
+    /// What its last frame drew, by which a canvas that holds none of this one's is drawn whole again where little
+    /// changed (`draw_target`).
+    pub(super) previous: Option<(u64, super::damage::Shown)>,
 }
 
 /// A window's surface, or a texture of our own, which `read` reads back.
@@ -61,7 +64,7 @@ fn offscreen(device: &wgpu::Device, (width, height): (u32, u32)) -> Output {
 
 impl Target {
     fn with(output: Output, size: (u32, u32)) -> Self {
-        Self { output, reserved: None, size, last: Drawn::default(), kept: None, backdrop: None, blurred: Default::default(), shown: None, canvas: None }
+        Self { output, reserved: None, size, last: Drawn::default(), kept: None, backdrop: None, blurred: Default::default(), shown: None, canvas: None, previous: None }
     }
 
     /// An image `size` device pixels drawn offscreen, read back by `read`.

@@ -405,7 +405,15 @@ impl Painter<'_> {
                         let now = self.scrolled.entry(id).or_insert(point(0.0, 0.0));
                         *now = point(now.x.clamp(0.0, most.x), now.y.clamp(0.0, most.y));
                         let stretched = self.stretched.get(&id).copied().unwrap_or(point(0.0, 0.0));
-                        child_offset = point(child_offset.x - now.x - stretched.x, child_offset.y - now.y - stretched.y);
+                        // Moved by whole device pixels, as Chromium snaps a scroll's offset: what it drew is the same
+                        // a few pixels on, so a frame moves the pixels it kept (`Renderer::draw_target`) and draws only
+                        // what came in.
+                        let snapped = |length: f32| (length * self.scale).round() / self.scale;
+                        let by = point(snapped(now.x + stretched.x), snapped(now.y + stretched.y));
+                        child_offset = point(child_offset.x - by.x, child_offset.y - by.y);
+                        if transform.scale == 1.0 && self.turn == TransformationMatrix::unit() {
+                            self.scene.scrolled(id, child_mask.scale_to(self.scale), [by.x * self.scale, by.y * self.scale]);
+                        }
                         let along = node.kind == Kind::Scroll && most.x > 0.0 && most.y == 0.0;
                         placed.scroll = Some((most.y, most.x, along));
                         placed.shown = child_mask.bounds;

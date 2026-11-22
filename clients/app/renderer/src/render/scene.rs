@@ -26,6 +26,18 @@ pub struct Scene {
     /// What each of its rasters is of, by its id: a layer's scene, drawn once into a texture of its own by the
     /// renderer, from `origin` (device pixels) and `size` big.
     pub(crate) recordings: Vec<Recording>,
+    /// What scrolls in it (`Scrolled`), each where it clips what's in it and how far it's scrolled, by which a frame
+    /// moves the pixels it kept of one that scrolled (`damage::scrolled`).
+    pub(crate) scrolls: Vec<Scrolled>,
+}
+
+/// A box whose content scrolls: its node, what it clips its content to, and how far its content is moved up and to
+/// the left, in whole device pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Scrolled {
+    pub id: u64,
+    pub mask: ContentMask<ScaledPixels>,
+    pub by: [f32; 2],
 }
 
 /// A layer's scene, as it was drawn (`view::Layer`), which a raster is an image of.
@@ -48,6 +60,7 @@ impl Scene {
         self.backdrops.clear();
         self.rasters.clear();
         self.recordings.clear();
+        self.scrolls.clear();
     }
 
     pub(crate) fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
@@ -147,6 +160,11 @@ impl Scene {
     /// Draws what `other` holds in this scene, in the order it was drawn there, grown `scale` times and moved `by`
     /// (`p ↦ p·scale + by`), `opacity` as opaque, and cut to `mask`: as a frame's page is drawn in its box, and as a
     /// layer kept from an earlier frame (`view::Layer`) is drawn where it's moved, grown or faded to now.
+    /// A box whose content scrolls (`Scrolled`).
+    pub(crate) fn scrolled(&mut self, id: u64, mask: ContentMask<ScaledPixels>, by: [f32; 2]) {
+        self.scrolls.push(Scrolled { id, mask, by });
+    }
+
     pub fn splice(&mut self, other: &Scene, scale: f32, by: [f32; 2], opacity: f32, mask: ContentMask<ScaledPixels>) {
         let px = |length: ScaledPixels| ScaledPixels(length.0 * scale);
         let moved = |bounds: &Bounds<ScaledPixels>| {
@@ -556,7 +574,89 @@ impl<'a> Iterator for BatchIterator<'a> {
     }
 }
 
+/// An instance's bytes past its place in the scene's order (`DrawOrder`, each's first field): what's drawn, wherever it
+/// comes, as the order a frame's things come in is compared on its own (`damage`).
+pub(crate) fn drawn<T>(item: &T) -> &[u8] {
+    // Safety: the scene's primitives are `#[repr(C)]` structs of numbers, in the layout the shader reads.
+    let bytes = unsafe { std::slice::from_raw_parts((item as *const T).cast::<u8>(), std::mem::size_of::<T>()) };
+    &bytes[std::mem::size_of::<DrawOrder>()..]
+}
+
 impl PrimitiveBatch<'_> {
+    /// Its thing `at` as it'd be drawn scrolled back `by` device pixels, in a box that scrolls clipping it to `mask`
+    /// (`Scrolled`): its bytes (`drawn`), each edge of what it's clipped to that's the box's own left out, as that stays
+    /// put as what's in it scrolls (a card longer than the window, cut by its bottom, is the same card scrolled). None
+    /// where it's turned or scaled, or a backdrop, whose blur is of what's behind it.
+    pub(crate) fn unscrolled(&self, at: usize, by: [f32; 2], mask: &ContentMask<ScaledPixels>) -> Option<Vec<u8>> {
+        let shift = |bounds: &mut Bounds<ScaledPixels>| {
+            bounds.origin.x.0 += by[0];
+            bounds.origin.y.0 += by[1];
+        };
+        // Its left, top, right and bottom, in its bounds' four numbers, only to be compared.
+        let edges = |bounds: &Bounds<ScaledPixels>| [bounds.origin.x.0, bounds.origin.y.0, bounds.origin.x.0 + bounds.size.width.0, bounds.origin.y.0 + bounds.size.height.0];
+        let box_edges = edges(&mask.bounds);
+        let clip = |clip: &mut ContentMask<ScaledPixels>| {
+            let at = edges(&clip.bounds);
+            let edge = |side: usize, by: f32| if at[side] == box_edges[side] { f32::MIN } else { at[side] + by };
+            let [left, top, right, bottom] = [edge(0, by[0]), edge(1, by[1]), edge(2, by[0]), edge(3, by[1])];
+            clip.bounds = Bounds { origin: crate::geometry::Point { x: ScaledPixels(left), y: ScaledPixels(top) }, size: crate::geometry::Size { width: ScaledPixels(right), height: ScaledPixels(bottom) } };
+        };
+        let unit = TransformationMatrix::unit();
+        match self {
+            PrimitiveBatch::Quads(all) => Some(all[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
+                (shift(&mut one.bounds), clip(&mut one.content_mask));
+                drawn(&one).to_vec()
+            }),
+            PrimitiveBatch::Shadows(all) => Some(all[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
+                (shift(&mut one.bounds), shift(&mut one.outer), clip(&mut one.content_mask));
+                drawn(&one).to_vec()
+            }),
+            PrimitiveBatch::Underlines(all) => {
+                let mut one = all[at].clone();
+                (shift(&mut one.bounds), clip(&mut one.content_mask));
+                Some(drawn(&one).to_vec())
+            }
+            PrimitiveBatch::MonochromeSprites { sprites, .. } => Some(sprites[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
+                (shift(&mut one.bounds), clip(&mut one.content_mask));
+                drawn(&one).to_vec()
+            }),
+            PrimitiveBatch::PolychromeSprites { sprites, .. } => Some(sprites[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
+                (shift(&mut one.bounds), clip(&mut one.content_mask));
+                drawn(&one).to_vec()
+            }),
+            PrimitiveBatch::Rasters(all) => Some(all[at].clone()).filter(|one| one.transformation == unit).map(|mut one| {
+                (shift(&mut one.bounds), clip(&mut one.content_mask));
+                drawn(&one).to_vec()
+            }),
+            PrimitiveBatch::Backdrops(_) => None,
+        }
+    }
+
+    /// Of its thing `at`, where it's a box of one colour, unturned, its borders solid: from the first to the last of its
+    /// rows that are each the same as the next (past its corners' rounding and its borders, and its clip's), and of its
+    /// columns, in the scene's pixels, top and bottom, left and right.
+    pub(crate) fn even(&self, at: usize) -> Option<([f32; 2], [f32; 2])> {
+        let PrimitiveBatch::Quads(quads) = self else { return None };
+        let quad = &quads[at];
+        let bordered = [quad.border_widths.top, quad.border_widths.right, quad.border_widths.bottom, quad.border_widths.left].iter().any(|width| width.0 > 0.0);
+        if quad.transformation != TransformationMatrix::unit() || quad.background.tag != 0 || (bordered && quad.border_style != BorderStyle::Solid) {
+            return None;
+        }
+        let (bounds, radii, widths) = (&quad.bounds, &quad.corner_radii, &quad.border_widths);
+        let (mask, mask_radii) = (&quad.content_mask.bounds, &quad.content_mask.corner_radii);
+        let edges = |bounds: &Bounds<ScaledPixels>| (bounds.origin.x.0, bounds.origin.y.0, bounds.origin.x.0 + bounds.size.width.0, bounds.origin.y.0 + bounds.size.height.0);
+        let ((left, top, right, bottom), (mask_left, mask_top, mask_right, mask_bottom)) = (edges(bounds), edges(mask));
+        let rows = [
+            (top + radii.top_left.0.max(radii.top_right.0).max(widths.top.0)).max(mask_top + mask_radii.top_left.0.max(mask_radii.top_right.0)),
+            (bottom - radii.bottom_left.0.max(radii.bottom_right.0).max(widths.bottom.0)).min(mask_bottom - mask_radii.bottom_left.0.max(mask_radii.bottom_right.0)),
+        ];
+        let columns = [
+            (left + radii.top_left.0.max(radii.bottom_left.0).max(widths.left.0)).max(mask_left + mask_radii.top_left.0.max(mask_radii.bottom_left.0)),
+            (right - radii.top_right.0.max(radii.bottom_right.0).max(widths.right.0)).min(mask_right - mask_radii.top_right.0.max(mask_radii.bottom_right.0)),
+        ];
+        Some((rows, columns))
+    }
+
     /// Whether anything in it is drawn in `area`, cut to where it's drawn inside.
     pub(crate) fn reaches(&self, area: &Bounds<ScaledPixels>) -> bool {
         self.extents().iter().any(|extent| extent.intersects(area))
