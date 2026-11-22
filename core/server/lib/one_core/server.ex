@@ -214,6 +214,17 @@ defmodule OneCore.Server do
     end
   end
 
+  @doc """
+  Steps aside, with `true`, as a server behind its network does (`OneCore.Servers.Aside`), or back: while aside, it's
+  as if it were off, so whoever asks it asks another.
+  """
+  def aside(on) do
+    case endpoint() do
+      {nif, endpoint} -> nif.aside(endpoint, on)
+      nil -> :ok
+    end
+  end
+
   @doc "What whoever asked is told of the server `server` that didn't answer `request/3`, by its machine's name."
   def error_message(:unreachable, server) do
     presence = Servers.presence(server) || %{}

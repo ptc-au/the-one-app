@@ -50,9 +50,11 @@ defmodule OneCore.Application do
         # and hold its leases: so whoever asks while it starts waits for it, and isn't told the server can't be
         # reached, that their device isn't signed in, or that it's starting.
         {Server, handle: &answer/3, wake: &OneCore.Hooks.wake/1, started: &Apps.changed/0},
-        Services,
-        Jobs,
-        OneCore.Apps.Lifecycle
+        # A server behind its network steps aside until it's updated, and runs none of what follows meanwhile.
+        Servers.Aside,
+        Servers.Aside.unless(Services),
+        Servers.Aside.unless(Jobs),
+        Servers.Aside.unless(OneCore.Apps.Lifecycle)
       ]
 
       with {:ok, _supervisor} = started <-

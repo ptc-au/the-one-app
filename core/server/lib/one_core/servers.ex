@@ -141,13 +141,15 @@ defmodule OneCore.Servers do
   @doc """
   Whether this server is behind: another of the network's servers that's ready runs a newer build, as each says
   (`OneCore.Builds.say/1`). One back after days away is, until it's updated, and so is one that hasn't yet taken the
-  build a release is taking the network to. What it would build or deploy, another builds against the newer.
+  build a release is taking the network to. What it would build or deploy, another builds against the newer. Each
+  server's build is read again as servers come and go (`presence_again/0`), as one says its build as it starts.
   """
   def behind? do
     mine = Builds.count(Builds.build())
 
     Enum.any?(all() -- [Server.key()], fn key ->
-      ready?(key) == true and Builds.count(read("servers/#{key}/build", %{})["build"]) > mine
+      said = cached({:build, key}, fn -> read("servers/#{key}/build", %{})["build"] end)
+      ready?(key) == true and Builds.count(said) > mine
     end)
   end
 
@@ -175,11 +177,12 @@ defmodule OneCore.Servers do
   end
 
   @doc """
-  What was kept of who's ready is read again, once one of the network's servers came or went, and whoever waits for
-  one to be back (`back/1`) looks again.
+  What was kept of who's ready, and of the build each runs, is read again, once one of the network's servers came or
+  went, and whoever waits for one to be back (`back/1`) looks again.
   """
   def presence_again do
-    for {:presence, _key} = presence <- Cache.keys(__MODULE__), do: Cache.invalidate(__MODULE__, presence)
+    for {kept, _key} = what <- Cache.keys(__MODULE__), kept in [:presence, :build],
+        do: Cache.invalidate(__MODULE__, what)
 
     Registry.dispatch(OneCore.Waiting, :seen, fn waiting -> for {process, _} <- waiting, do: send(process, :seen) end)
     :ok

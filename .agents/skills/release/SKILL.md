@@ -47,7 +47,10 @@ network's update takes every server to the latest build by itself (`core/edge/up
 prepares it, then each restarts on it, one at
 a time, never the last ready one. A build published while another is under way takes its
 place; a server asleep or gone is caught up once it's back; one that goes back holds it, saying which and why, until
-a newer build or Update Now (the `update` tool). Run no `one update` for a release. `one builds` says how far it is
+a newer build or Update Now (the `update` tool). A server behind the network's build with none prepared, as a laptop
+that slept through releases, steps aside until it's on it (`OneCore.Servers.Aside`): it takes no calls and runs no
+services or jobs, so what only it runs (a Mac's iMessage, Remote Shell there) waits for its update. Run no
+`one update` for a release. `one builds` says how far it is
 (`network`: its `network_update_status`, the servers `behind` it, and when each step was reached, in `timings`).
 Nothing is watched after a release: each server verifies a build before it keeps it, and a bug found later is fixed
 forward.

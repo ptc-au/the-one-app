@@ -2,6 +2,7 @@
 //! the address over the web is passed down this connection by the relay there (`core/edge/relay/relay.ts`), and the
 //! server's answer goes back up it.
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -22,15 +23,15 @@ const EVERY: Duration = Duration::from_secs(30);
 
 /// Keeps the connection open for as long as it runs, which is while its endpoint is open, handing each call to `asked`
 /// as a client's is.
-pub async fn listen(network: Network, key: SecretKey, handler: LocalPid) {
+pub async fn listen(network: Network, key: SecretKey, handler: LocalPid, aside: crate::Aside) {
     loop {
         // Why it ended doesn't matter: the next one is the same either way.
-        let _ = connect(&network, &key, &handler).await;
+        let _ = connect(&network, &key, &handler, &aside).await;
         sleep(EVERY).await;
     }
 }
 
-async fn connect(network: &Network, key: &SecretKey, handler: &LocalPid) -> Result<()> {
+async fn connect(network: &Network, key: &SecretKey, handler: &LocalPid, aside: &crate::Aside) -> Result<()> {
     let address = network.address.trim_end_matches('/');
     let socket = format!("ws{}/relay/outside", address.strip_prefix("http").context("an address is http or https")?);
     let mut request = socket.into_client_request()?;
@@ -56,10 +57,16 @@ async fn connect(network: &Network, key: &SecretKey, handler: &LocalPid) -> Resu
         tokio::select! {
             message = down.next() => match message {
                 Some(Ok(Message::Text(call))) => {
-                    let (handler, responses) = (*handler, responses.clone());
+                    let (handler, responses, aside) = (*handler, responses.clone(), aside.clone());
                     tokio::spawn(async move {
                         let Ok(call) = serde_json::from_str::<Value>(call.as_str()) else { return };
                         let Some(message) = call["message"].as_str() else { return };
+                        // Stepped aside, it answers nothing it's asked, its ping first, so the relay passes the call
+                        // to a server that answers (`forward` in `core/edge/relay/relay.ts`).
+                        let asked = serde_json::from_str::<Value>(message).is_ok_and(|asked| asked.get("id").is_some());
+                        if asked && aside.load(Ordering::Relaxed) {
+                            return;
+                        }
                         if let Ok(response) = crate::ask(&handler, None, message.as_bytes(), Default::default()).await {
                             let response = json!({"call": call["call"], "answer": String::from_utf8_lossy(&response)});
                             let _ = responses.send(response.to_string());

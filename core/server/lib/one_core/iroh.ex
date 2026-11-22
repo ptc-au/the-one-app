@@ -62,6 +62,13 @@ defmodule OneCore.Iroh do
   """
   def close(_endpoint, _within), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc """
+  Steps aside, with `true`, or back: while aside, whoever connects or asks is refused, so they ask another server, and
+  what outsiders ask through the relay isn't answered, so the relay asks another; what the relay only tells it still
+  reaches it.
+  """
+  def aside(_endpoint, _on), do: :erlang.nif_error(:nif_not_loaded)
+
   @doc "Sends `answer` back to whoever asked `ask`."
   def reply(_ask, _response), do: :erlang.nif_error(:nif_not_loaded)
 

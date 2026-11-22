@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
@@ -32,7 +33,8 @@ static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().expect("toki
 /// it and the ones watching, by their keys, and its connections to other servers by theirs, each with the address
 /// it was made to. Where the ones watching are is kept in the file `watching` beside its key too, so a server that
 /// starts again still tells them what changes. A server found gone leaves that address with no connection, and a
-/// connection that closed for want of anything to ask leaves nothing. `asks` is what's being answered (`Asks`).
+/// connection that closed for want of anything to ask leaves nothing. `asks` is what's being answered (`Asks`), and
+/// `aside` whether the server has stepped aside (`aside/2`).
 /// Nothing looks inside it after a panic, which is what Rustler needs to hear before it hands one to Elixir.
 struct Reached {
     endpoint: AssertUnwindSafe<Endpoint>,
@@ -41,11 +43,16 @@ struct Reached {
     watching: AssertUnwindSafe<PathBuf>,
     servers: AssertUnwindSafe<Servers>,
     asks: AssertUnwindSafe<Asks>,
+    aside: AssertUnwindSafe<Aside>,
 }
 
 /// What's being answered: each message holds it for reading while it is, and a server that's stopping holds it for
 /// writing, so it takes nothing new.
 type Asks = Arc<RwLock<()>>;
+
+/// Whether the server has stepped aside, as one behind its network does until it's updated (`OneCore.Servers.Aside`):
+/// it takes nothing, as if it were off, so whoever asks it asks another.
+type Aside = Arc<AtomicBool>;
 
 impl Reached {
     /// Keeps where the clients that are watching are, and the device each runs for, as `watchers` has them now.
@@ -178,17 +185,18 @@ fn start(
             std::fs::write(&port_file, socket.port().to_string()).map_err(|error| error.to_string())?;
         }
         let address = client::address(&endpoint, network.as_ref()).map_err(|error| format!("{error:#}"))?;
+        let aside = Aside::default();
         if let Some(network) = network {
             endpoint.online().await;
             // It listens there while the endpoint is open: one closed, as the server closes it as it stops
             // (`OneCore.Server`), leaves the relay to the next.
-            let listen = outside::listen(network, endpoint.secret_key().clone(), handler);
+            let listen = outside::listen(network, endpoint.secret_key().clone(), handler, aside.clone());
             tokio::spawn(endpoint.closed().run_until(listen));
         }
         let address = serde_json::to_string(&address).map_err(|error| error.to_string())?;
         let clients = Clients::default();
         let asks = Asks::default();
-        tokio::spawn(accept(endpoint.clone(), handler, clients.clone(), asks.clone()));
+        tokio::spawn(accept(endpoint.clone(), handler, clients.clone(), asks.clone(), aside.clone()));
         let watching = Path::new(&key_file).with_file_name("watching");
         let stored = std::fs::read(&watching).ok();
         let stored: HashMap<String, serde_json::Value> =
@@ -208,6 +216,7 @@ fn start(
             watching: AssertUnwindSafe(watching),
             servers: AssertUnwindSafe(Mutex::default()),
             asks: AssertUnwindSafe(asks),
+            aside: AssertUnwindSafe(aside),
         };
         Ok((ResourceArc::new(reached), address))
     })
@@ -233,20 +242,20 @@ async fn ask(
     reply_receiver.await.map_err(|_| client::STOPPED)
 }
 
-async fn accept(endpoint: Endpoint, handler: LocalPid, clients: Clients, asks: Asks) {
+async fn accept(endpoint: Endpoint, handler: LocalPid, clients: Clients, asks: Asks, aside: Aside) {
     while let Some(incoming) = endpoint.accept().await {
-        // A server that's stopping takes no new connection, so whoever connects reaches another.
-        if asks.try_read().is_err() {
+        // A server that's stopping, or has stepped aside, takes no new connection, so whoever connects reaches another.
+        if asks.try_read().is_err() || aside.load(Ordering::Relaxed) {
             incoming.refuse();
             continue;
         }
-        let (clients, asks) = (clients.clone(), asks.clone());
+        let (clients, asks, aside) = (clients.clone(), asks.clone(), aside.clone());
         tokio::spawn(async move {
             let Ok(connection) = incoming.await else { return };
             let from = connection.remote_id().to_string();
             clients.lock().expect("no connection panics").insert(from.clone(), connection.clone());
             while let Ok((mut send, mut receive)) = connection.accept_bi().await {
-                let (from, asks) = (from.clone(), asks.clone());
+                let (from, asks, aside) = (from.clone(), asks.clone(), aside.clone());
                 tokio::spawn(async move {
                     let Ok(message) = receive.read_to_end(client::LIMIT).await else { return };
                     // Whoever asks nothing only asks whether this server is there, which this says, while it's
@@ -256,8 +265,12 @@ async fn accept(endpoint: Endpoint, handler: LocalPid, clients: Clients, asks: A
                         return;
                     }
                     // A stream ended unanswered is reset, so whoever asked knows it wasn't answered, and whether it
-                    // was taken.
+                    // was taken. One asked over a connection made before it stepped aside is refused, and whoever
+                    // asked gives that connection up for another server's (`client::Reached::ask`).
                     let Ok(_answering) = asks.try_read_owned() else { return drop(send.reset(client::REFUSED)) };
+                    if aside.load(Ordering::Relaxed) {
+                        return drop(send.reset(client::REFUSED));
+                    }
                     let stage = Arc::new(Mutex::new(None));
                     let response = ask(&handler, Some(&from), &message, stage.clone());
                     tokio::pin!(response);
@@ -443,6 +456,16 @@ fn close(reached: ResourceArc<Reached>, within: u64) -> Atom {
     atoms::ok()
 }
 
+/// Steps aside, or back: while aside, whoever connects or asks is refused, so they connect to and ask another
+/// server, and what the network's relay passes on from outsiders isn't answered, so it passes it to another, as it
+/// does for a server that's off. What the relay only tells it, which isn't answered, as where the network's update
+/// is, it still hears.
+#[rustler::nif]
+fn aside(reached: ResourceArc<Reached>, on: bool) -> Atom {
+    reached.aside.store(on, Ordering::Relaxed);
+    atoms::ok()
+}
+
 /// Sends `message` back to whoever asked `ask`. An empty answer only ends the stream.
 #[rustler::nif]
 fn reply(ask: ResourceArc<Ask>, message: Binary) -> Atom {
@@ -480,7 +503,8 @@ fn connect(reached: ResourceArc<Reached>, address: String, to: LocalPid, referen
                 .get(&key)
                 .is_some_and(|(was, open)| *was == address && open.is_none());
             let within = if gone_there { client::THERE } else { client::CONNECT };
-            let open = client::Reached::connect(&reached.endpoint, server, within).await.map_err(|why| why.to_string())?;
+            let open =
+                client::Reached::connect(&reached.endpoint, server, within).await.map_err(|why| why.to_string())?;
             let path = open.path();
             reached.servers.lock().expect("no connection panics").insert(key, (address, Some(Arc::new(open))));
             Ok::<_, String>(path)
