@@ -467,9 +467,12 @@ fn blend_color(color: vec4<f32>, alpha_factor: f32) -> vec4<f32> {
 // edge or a blur does, shows no bands where its 8 bits a channel step: less than half a step either way, by blue
 // noise, whose dither the eye doesn't see as a pattern, as Skia dithers a gradient. The noise is laid from the pixel
 // nearest the top left of what's drawn (`anchor`, in the scene), not the frame's, so it moves with it: a tile drawn once
-// and moved (a scroll's) has them as they'd be drawn where it's moved to.
+// and moved (a scroll's) has them as they'd be drawn where it's moved to. A top left on a half pixel, as a layout's often
+// is, is taken as the pixel after it a little short of the half: at the half itself, the same box moved by whole pixels
+// came a float's rounding either side and shifted its whole dither (generated seed 7, frame 26: 66,132 pixels a level
+// apart).
 fn dither(position: vec2<f32>, anchor: vec2<f32>) -> f32 {
-    let at = vec2<i32>(floor(position)) - vec2<i32>(floor(anchor - globals.origin + 0.5));
+    let at = vec2<i32>(floor(position)) - vec2<i32>(floor(anchor - globals.origin + 0.5 + 1.0 / 64.0));
     return (textureLoad(t_noise, vec2<u32>(at & vec2<i32>(63)), 0).r - 0.5) / 255.0;
 }
 
