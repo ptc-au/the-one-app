@@ -45,7 +45,8 @@
 #            A take-over of its lease and its process stopping, with the bucket held, each wait on it only their deadline.
 #
 # The folder keeps the network, the app's build and its log (`app.log`), and a network running there is used again.
-# `--seed` picks the moments things happen at, the same each time for the same seed. `--phone` runs a phone's app
+# Each check runs under two seeds, `--seed` and the next, which pick the moments things happen at, the same each time for the
+# same seed, and fails (`FLAKY`) where its outcome isn't the same under both. `--phone` runs a phone's app
 # instead (`clients/app`'s `phone`): Tauri's, its event loop and its page (in WebKitGTK), and its native windows a
 # phone's (`Native::phone`), each the whole of a 390 × 844 screen, the launcher its Home Screen, the root window under
 # every app's, which its system can close, where a computer's is a panel it only puts away. A phone has no checks of a
@@ -132,7 +133,25 @@ open_window() { windows | awk -v app="$1" '$2 == app { print $1 }'; }
 # The app's processes: the program it is, by its file, which a new build replaced is `(deleted)`.
 programs() { for exe in /proc/[0-9]*/exe; do [[ $(readlink "$exe" 2>/dev/null) == "$folder/app/one-real"?(" (deleted)") ]] && echo "${exe//[^0-9]/}"; done; true; }
 failed=0
-check() { if "${@:2}"; then echo "ok      $1"; else echo "FAILED  $1" && failed=1; fi; }
+# Each check runs under two seeds (the one given and the next), the app started again for each, and fails where the
+# outcome isn't the same under both: a check that passes on a rerun is broken, so what differs is fixed where it comes
+# from (real time leaking in, an order, a clock nothing pins, a wait on time rather than state), never retried.
+check() {
+  local first=$seed outcomes=() each
+  for each in "$first" "$((first + 1))"; do
+    seed=$each RANDOM=$each ONE_SEED=$each
+    stop_app
+    if "${@:2}"; then outcomes+=(ok); else outcomes+=(FAILED); fi
+  done
+  seed=$first
+  if [[ ${outcomes[0]} != "${outcomes[1]}" ]]; then
+    echo "FLAKY   $1: seed $first ${outcomes[0]}, seed $((first + 1)) ${outcomes[1]}" && failed=1
+  elif [[ ${outcomes[0]} == ok ]]; then
+    echo "ok      $1"
+  else
+    echo "FAILED  $1" && failed=1
+  fi
+}
 # No app has two windows, now.
 one_each() {
   local twice
