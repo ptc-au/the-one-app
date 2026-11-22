@@ -447,6 +447,13 @@ pub struct Windows {
     system: (web_time::Instant, Pressure),
     /// The app is in the background, where its system refuses its GPU's work (`background`).
     background: bool,
+    /// Whether the app's page says a window shows (`expect`), since when no window on screen has drawn a frame, whether
+    /// that's been told (`on_blank`), and what tells it. A page that says one shows, over which nothing was drawn,
+    /// leaves its person a black screen with no window to be blank (21 Nov).
+    expecting: bool,
+    unseen: web_time::Instant,
+    unseen_told: bool,
+    on_blank: Option<Box<dyn FnMut(String)>>,
 }
 
 /// A 60 Hz display's refresh: the fake platform's own thread's (`native`), and where a system has no display to ask

@@ -26,7 +26,7 @@ impl Windows {
             let mut text = TextSystem::new(crate::FONT, fonts, !cfg!(feature = "fake"));
             #[cfg(any(feature = "fake", target_arch = "wasm32"))]
             text.monospace(crate::view::MONOSPACE.0);
-            Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, clock: Default::default(), check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false })
+            Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, clock: Default::default(), check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false, expecting: false, unseen: now(), unseen_told: false, on_blank: None })
         })();
         if let Err(error) = &made {
             *UNSTARTED.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(format!("{error:#}"));
@@ -232,6 +232,20 @@ impl Windows {
         }
     }
 
+    /// What's told when the page says a window shows (`expect`) and none on screen has drawn a frame `BLANK` after: why.
+    pub fn on_blank(&mut self, tell: impl FnMut(String) + 'static) {
+        self.on_blank = Some(Box::new(tell));
+    }
+
+    /// The app's page says whether a window shows: a phone's Home Screen is its root window, which its page leaves
+    /// clear. One it says shows, with none on screen drawn, is told as blank (`on_blank`), as a window blank on its own
+    /// is (`Event::Blank`).
+    pub fn expect(&mut self, shows: bool) {
+        self.expecting = shows;
+        self.unseen = now();
+        self.unseen_told = false;
+    }
+
     /// The app goes to the background, or comes back, as an iPhone's does. While it's there, its system refuses its
     /// GPU's work: Metal fails each command buffer it's given, and what the queue uploads with one, as the glyphs and
     /// pictures a frame added to the atlas, which the atlas holds as there from then on (letters missing from an
@@ -242,6 +256,7 @@ impl Windows {
             return;
         }
         self.background = background;
+        self.unseen = now();
         // Its pages aren't seen meanwhile, as a browser's page in a tab behind isn't, so what each does only while it's
         // seen waits (a toast's time, a refresh).
         for window in self.windows.values_mut() {

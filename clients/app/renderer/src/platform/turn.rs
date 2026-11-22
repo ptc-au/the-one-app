@@ -12,12 +12,18 @@ impl Windows {
         let screens = self.windows.values().filter_map(|window| window.screen.as_ref().ok()?.due());
         let showing = self.windows.values().filter(|window| !window.shown || matches!(window.cover, Cover::Over(_)) || window.reloading).map(|window| (if window.picture.is_some() { SHOWN_WITHIN } else { QUIET }).saturating_sub(since(window.opened)));
         let blank = self.windows.values().filter(|window| !window.looked && (!window.panel || window.visible)).map(|window| BLANK.saturating_sub(since(window.looking)));
+        let unseen = (!self.seen() && !self.unseen_told).then(|| BLANK.saturating_sub(since(self.unseen)));
         // The next frame begun, while something moves or a window has a change to draw (`FrameClock`).
         let frame = self.drawing().then(|| self.clock.due(now(), self.refresh()));
         let check = self.check.as_ref().map(conformance::Check::due).into_iter().chain(self.recording.as_ref().map(|recording| recording.until.saturating_duration_since(now()))).min();
         let idle = self.renderers().filter_map(Renderer::idle_in);
         let hang = self.renderers().filter_map(Renderer::hang_in);
-        screens.chain(showing).chain(blank).chain(frame).chain(check).chain(idle).chain(hang).min()
+        screens.chain(showing).chain(blank).chain(unseen).chain(frame).chain(check).chain(idle).chain(hang).min()
+    }
+
+    /// Whether nothing's wanted of a window on screen, or one is on screen and has drawn a frame (`expect`).
+    fn seen(&self) -> bool {
+        self.background || !self.expecting || self.windows.values().any(|window| window.on_screen() && window.drawn)
     }
 
     /// Whether its windows are a phone's: each the whole screen, an app's over the Home Screen, which it opens out of.
@@ -252,6 +258,18 @@ impl Windows {
                 if let Some(why) = why {
                     (window.on_event)(Event::Blank(format!("{why} {} s after it was on screen", BLANK.as_secs())));
                 }
+            }
+        }
+        // The page says a window shows and none on screen has drawn a frame a while after: there's none to be blank, or
+        // none that drew, which no window's own check tells.
+        if self.seen() {
+            self.unseen = now();
+            self.unseen_told = false;
+        } else if !self.unseen_told && since(self.unseen) >= BLANK {
+            self.unseen_told = true;
+            let why = format!("the page said a window shows, and none of the {} windows had drawn a frame {} s after", self.windows.len(), BLANK.as_secs());
+            if let Some(tell) = &mut self.on_blank {
+                tell(why);
             }
         }
         // The system's own parts of a window (a Mac's glass and title bar, Windows' frame, a Linux window manager's)

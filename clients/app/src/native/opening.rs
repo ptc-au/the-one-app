@@ -144,6 +144,22 @@ pub(super) fn blank(view: &str, app: &str, why: &str) {
     });
 }
 
+/// Tells Telemetry, as an error, that the page said a window shows and none had drawn a frame a while after
+/// (`Windows::expect`), which `one.client.native.blank` says of the whole host, as its view `host`, where no window was
+/// there to be blank (an iPhone's black screen, 21 Nov), beside the builds of this app and the server it asks.
+#[cfg(mobile)]
+pub(super) fn host_blank(why: String) {
+    eprintln!("the host is blank: {why}");
+    let Ok(views) = crate::views() else { return };
+    crate::spawn(async move {
+        let pinged = tokio::time::timeout(std::time::Duration::from_secs(5), views.client.request("ping", json!({}))).await;
+        let server = pinged.ok().and_then(Result::ok).and_then(|pong| pong["_meta"]["io.modelcontextprotocol/serverInfo"]["version"].as_str().map(str::to_owned));
+        let server = server.as_deref().unwrap_or("unknown");
+        let error = format!("{why}; this app's build {}, its server's {server}", ::client::BUILD);
+        views.client.report(json!({"name": "one.client.native.blank", "error": error, "attributes": {"one.view": "host", "one.server.version": server}}));
+    });
+}
+
 /// Tells Telemetry an app's window didn't open, and why, as it's said in the window, where it could open one.
 pub(crate) fn reported(entrypoint: &str, started: Instant, why: &str) {
     eprintln!("{entrypoint} didn't open: {why}");

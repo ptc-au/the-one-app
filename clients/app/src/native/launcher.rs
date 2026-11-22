@@ -37,6 +37,15 @@ static LAUNCHER: Mutex<Option<(WindowId, String)>> = Mutex::new(None);
 fn opened_launcher(id: Option<WindowId>, entrypoint: &str) -> Option<WindowId> {
     if let Some(id) = id {
         *LAUNCHER.lock().expect("nothing panics holding it") = Some((id, entrypoint.to_owned()));
+        // A phone's page leaves it clear, so a window that has drawn nothing is its person's black screen
+        // (`Windows::expect`).
+        #[cfg(mobile)]
+        if let Ok(native) = Native::get() {
+            native.run(|windows| {
+                windows.on_blank(super::opening::host_blank);
+                windows.expect(true);
+            });
+        }
     }
     id
 }
@@ -48,7 +57,13 @@ pub(crate) fn launcher_window() -> Option<(WindowId, String)> {
 
 /// Closes window `id` on the windows' thread, as the app does: forgotten first where it's the launcher's.
 pub(crate) fn close_window(windows: &mut renderer::platform::Windows, id: WindowId) {
-    LAUNCHER.lock().expect("nothing panics holding it").take_if(|(launcher, _)| *launcher == id);
+    let launcher = LAUNCHER.lock().expect("nothing panics holding it").take_if(|(launcher, _)| *launcher == id);
+    #[cfg(mobile)]
+    if launcher.is_some() {
+        windows.expect(false);
+    }
+    #[cfg(not(mobile))]
+    drop(launcher);
     windows.close(id);
 }
 
