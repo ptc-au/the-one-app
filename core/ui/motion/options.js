@@ -27,9 +27,11 @@ export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--ou
 export const ssh = option("--ssh")
 export const present = flag("--present")
 export let harness = ssh ? option("--harness") && resolve(option("--harness")) : join(root, `target/${flag("--release") ? "release" : "debug"}/examples/screenshot`)
-/// How every harness runs, here and in scenes.js, on a machine others share: Vulkan on lavapipe, which draws on the
-/// CPU with 2 threads rather than one a core (`LP_NUM_THREADS`), as a few run at once.
-export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), VK_ICD_FILENAMES: process.env.VK_ICD_FILENAMES ?? "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" }
+/// Where every harness draws, here and in scenes.js: on the machine's GPU, the one wgpu prefers (Vulkan, or lavapipe
+/// where there's none), or with `--lavapipe` on Mesa's software Vulkan, which draws on the CPU with 2 threads rather
+/// than one a core (`LP_NUM_THREADS`), as a few run at once: a second GPU whose frames must agree with the first's.
+export const lavapipe = flag("--lavapipe")
+export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), ...(lavapipe ? { VK_ICD_FILENAMES: "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" } : {}) }
 /// The most a harness may use, and for how long: a page that grows or never ends is stopped, not the machine.
 const MEMORY = "3G"
 const MINUTES = 10
