@@ -43,6 +43,12 @@ debug = "line-tables-only"
 opt-level = 3
 debug = false
 
+# The headless renderer, as the renderer's tests build it (`clients/app/renderer/tests`): a release build, built again
+# incrementally, where a change to the renderer took a minute of CPU to build again and takes a few seconds.
+[profile.headless]
+inherits = "release"
+incremental = true
+
 # AccessKit's Android adapter with one change, until it's taken upstream: a heading is one to TalkBack
 # (`AccessibilityNodeInfo.setHeading`), so it moves between them; on accesskit_android 0.9.1's tag, with the AccessKit
 # it's built with there.

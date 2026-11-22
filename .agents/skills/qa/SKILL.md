@@ -59,8 +59,9 @@ expectations of its own: the renderer's tests run over every one. Every change t
     bun screenshot.js --release --out <scratch>/before          # on main, before the change (or an earlier run)
     bun screenshot.js --release --out <scratch>/after --against <scratch>/before [<folder>…]
 
-It draws every scene and preview, or those of the folders named, on a native host by the headless renderer (`cargo build -p
-renderer --example headless --features fake --release`: a debug build draws several times slower), on the machine's
+It draws every scene and preview, or those of the folders named, on a native host by the headless renderer, which it
+builds, or takes the one any worktree on the machine built from the same (`tooling/cached-build`; `--release` for a
+release build: a debug build draws several times slower), on the machine's
 GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every one in about a minute. Like animation.js, it
 runs headless renderers side by side, twice its share of the cores (8 on the Linux machine, shared by about 4 agents), and says
 what it found in the same order whatever finished first; `--jobs <n>` sets how many. `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
@@ -78,7 +79,7 @@ check of that one alone.
 ### Checks: every change to the UI library or the renderer
 
 A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in `clients/app/renderer/tests`, after `bun
-build.js` in `core/ui` and `cargo build -p renderer --example headless --features fake --release` (about 6 minutes for all 500 on
+build.js` in `core/ui` (about 6 minutes for all 500 on
 the Linux machine at a load of 20, 8 headless renderers at once; a debug build takes about 20, so name the folders your change
 can touch while you work):
 
@@ -101,8 +102,7 @@ it first (a scene shaped like where it happened), say why the tests missed it, t
 ### The web gate: every change to the renderer, the UI library or the web client
 
 A change under `clients/app/renderer/`, `core/ui/` or `clients/web/` runs every scene on the web too, light and dark,
-before it's committed, in `clients/app/renderer/tests`, after `bun build.js` in `core/ui` and `cargo build -p renderer --example headless --features
-fake --release`:
+before it's committed, in `clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
 
     bun screenshot.js --web --release --out <scratch>/web-light
     bun screenshot.js --web --release --dark --out <scratch>/web-dark

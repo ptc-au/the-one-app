@@ -1,8 +1,8 @@
 // Plays every scene's gestures (its `motions`) on a native host's headless renderer, frame by frame, on its paused
 // clock: `bun animation.js [<folder>…] [--scene <words>] [--hz 60,120] [--out <dir>] [--against <dir>] [--dark]
-// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--atlas starved] [--ssh <host> --headless <its build of the headless renderer>]` in core/ui, after `bun build.js` and `cargo
-// build -p renderer --example headless --features fake` (`--release` too for `--release`, whose costs are a shipped
-// build's). `--ssh` plays them on a real device instead, as calibrate.js draws there (a Windows one's headless renderer built with
+// [--release] [--watch] [--keeps] [--glass tinted|blurred] [--atlas starved] [--ssh <host> --headless <its build of the headless renderer>]` in core/ui, after `bun build.js`,
+// on the headless renderer it builds, or the one built before from the same (`built`; `--release` for a release
+// build's, whose costs are a shipped build's). `--ssh` plays them on a real device instead, as calibrate.js draws there (a Windows one's headless renderer built with
 // `cargo xwin build --release … --target x86_64-pc-windows-msvc`, which draws with Direct3D 12 over ssh), at its tier's
 // device pixels a point, and judges its tier by each frame's own times there: its GPU's (its timestamps), its thread's
 // painting and drawing, and its JS's. With `--present` too, and the `window` example built for it as `--headless`, each
@@ -71,14 +71,14 @@
 import { existsSync, readdirSync, readFileSync, watch } from "node:fs"
 import { join } from "node:path"
 import { checks } from "./animation/checks.js"
-import { checking, firstSeed, flag, folders, generating, headless, here, out, root, setHeadless, ssh, ui } from "./animation/options.js"
+import { built, checking, firstSeed, flag, folders, generating, headless, here, out, root, setHeadless, ssh, ui } from "./animation/options.js"
 import { generated } from "./animation/generated.js"
 import { copied, stale } from "./animation/pages.js"
 import { round } from "./animation/play.js"
 import { cpuName, hostScore } from "./animation/tiers.js"
 
 // What screenshot.js and calibrate.js import from here.
-export { capped, env, FACES, glass, jobs, lavapipe, pLimit, slot, stopped } from "./animation/options.js"
+export { built, capped, env, FACES, glass, headless, jobs, lavapipe, pLimit, setHeadless, slot, stopped } from "./animation/options.js"
 export { moves, selector } from "./animation/gesture.js"
 export { monospaced } from "./animation/judges.js"
 export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animation/headless.js"
@@ -89,8 +89,8 @@ const everything = () => [here("gallery"), ...(checking ? readdirSync(join(root,
 
 // Run, rather than imported for what it shares (calibrate.js).
 if (import.meta.main) {
-  if (stale(ssh ? undefined : headless)) throw new Error(stale(ssh ? undefined : headless))
-  if (!existsSync(headless)) throw new Error("Build the headless renderer first: `cargo build -p renderer --example headless --features fake`")
+  if (stale()) throw new Error(stale())
+  if (!ssh) setHeadless(built())
   // `--watch` plays what it builds again as it changes.
   if (!flag("--watch")) setHeadless(copied(ssh ? undefined : headless, out) ?? headless)
   // A debug build's CPU is several times a shipped one's.
@@ -120,6 +120,7 @@ if (import.meta.main) {
       const started = performance.now()
       const library = touched.some((file) => file.startsWith(ui("src")))
       if (library) Bun.spawnSync(["bun", "build.js"], { cwd: ui(".") })
+      if (!ssh) setHeadless(built())
       const targets = library ? watched : watched.filter((target) => touched.some((file) => file.startsWith(target)))
       console.log((await round(targets)).join("\n"), `\nin ${Math.round(performance.now() - started)} ms`)
     }

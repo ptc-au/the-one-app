@@ -46,7 +46,15 @@ export const jobs = ssh ? 1 : Number(option("--jobs") ?? Math.max(2, Math.floor(
 export const slot = pLimit(jobs)
 // For clients/app/renderer/tests/mutants.js, which runs passes a few at once, and has no packages of its own.
 export { pLimit }
-export let headless = ssh ? option("--headless") && resolve(option("--headless")) : join(root, `target/${flag("--release") ? "release" : "debug"}/examples/headless`)
+export let headless = ssh ? option("--headless") && resolve(option("--headless")) : undefined
+/// This machine's headless renderer, built once for what it's built from and kept for every worktree
+/// (tooling/cached-build): a debug build, or with `--release` the `headless` profile's, a release build built again
+/// incrementally. → its path.
+export function built() {
+  const cargo = Bun.spawnSync([join(root, "tooling/cached-build"), join(root, "clients/app/renderer"), "--example", "headless", "--features", "fake", ...(flag("--release") ? ["--profile", "headless"] : [])], { stdout: "pipe", stderr: "inherit" })
+  if (cargo.exitCode !== 0) throw new Error("The headless renderer didn't build: Cargo says why above")
+  return cargo.stdout.toString().trim()
+}
 /// Where every headless renderer draws, here and in screenshot.js: on the machine's GPU, the one wgpu prefers (Vulkan, or lavapipe
 /// where there's none), or with `--lavapipe` on Mesa's software Vulkan, which draws on the CPU with 2 threads rather
 /// than one a core (`LP_NUM_THREADS`), as a few run at once: a second GPU whose frames must agree with the first's.

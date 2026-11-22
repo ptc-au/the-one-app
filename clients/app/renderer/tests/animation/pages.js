@@ -7,9 +7,8 @@ import { root, slot, ui } from "./options.js"
 const changed = (...paths) => Math.max(...paths.map((path) => (statSync(path).isDirectory() ? Math.max(0, ...readdirSync(path, { recursive: true }).map((file) => statSync(join(path, file)).mtimeMs)) : statSync(path).mtimeMs)))
 /// What's built that's older than what it's built from, as after a pull, so what a run draws and checks would be of the
 /// build, not the source: the UI library, or the headless renderer where it's built. → what to build again, if anything.
-export function stale(headless) {
+export function stale() {
   if (!existsSync(ui("dist/build/app.js")) || changed(ui("src"), ui("tables.ts"), ui("build.js")) > statSync(ui("dist/build/app.js")).mtimeMs) return "Build the UI library: `bun build.js` in core/ui"
-  if (existsSync(headless) && changed(join(root, "clients/app/renderer/src"), join(root, "clients/app/renderer/examples")) > statSync(headless).mtimeMs) return `Build the headless renderer again, which is older than the renderer: \`cargo build -p renderer --example headless --features fake${headless.includes("/release/") ? " --release" : ""}\``
 }
 
 /// The UI library's build a pass runs: its own, until the pass copies it (`copied`).

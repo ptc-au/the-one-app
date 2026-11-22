@@ -11,9 +11,8 @@
 // where a mutant was missed or the baseline failed. What each run said is kept in `--out` (`target/mutants` unless
 // said), `<mutant>/<light|dark>/<play>.log`.
 //
-// It builds what it plays first: core/ui (`bun build.js`) and the headless renderer (`cargo build -p renderer --example
-// screenshot --features fake --release`, which plays them several times faster than a debug build); screenshot.js builds
-// the web's frame.
+// It builds what it plays first: core/ui (`bun build.js`), and the headless renderer, a release build, which plays them
+// several times faster than a debug build (animation.js's `built`); screenshot.js builds the web's frame.
 //
 // A mutant for a bug a device found and the headless renderer missed is added here with the check that now catches it: the check
 // is the fix's, the mutant shows it stays caught.
@@ -122,7 +121,7 @@ const started = performance.now()
 const minutes = () => `${((performance.now() - started) / 60000).toFixed(1)} min`
 for (const [what, argv, cwd] of [
   ["core/ui", ["bun", "build.js"], join(root, "core/ui")],
-  ["the headless renderer", ["nice", "-n", "10", "cargo", "build", "-p", "renderer", "--example", "headless", "--features", "fake", "--release", "-j", "4"], root],
+  ["the headless renderer", [join(root, "tooling/cached-build"), join(root, "clients/app/renderer"), "--example", "headless", "--features", "fake", "--profile", "headless"], root],
 ]) {
   const built = Bun.spawnSync(argv, { cwd, stdout: "pipe", stderr: "pipe" })
   if (built.exitCode !== 0) throw new Error(`${what} didn't build: ${built.stderr.toString().trim().split("\n").slice(-5).join("\n")}`)

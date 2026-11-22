@@ -1,7 +1,7 @@
 // Draws every scene on a native host, and with `--web` on the web too, and compares them: `bun screenshot.js [<folder>…] [--scene <words>]
 // [--out <dir>] [--against <dir>] [--dark] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --headless <its build of the
-// headless renderer>]` in clients/app/renderer/tests, after `bun build.js` in core/ui (and, for the native half, `cargo build -p renderer
-// --example headless --features fake`, `--release` too for `--release`, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
+// headless renderer>]` in clients/app/renderer/tests, after `bun build.js` in core/ui, on the headless renderer it builds, or
+// the one built before from the same (animation.js's `built`; `--release` for a release build's, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
 // `--out`: what a change did to how things look, drawn before it (on main) and after.
 //
 // A folder is the gallery (clients/app/renderer/tests/gallery, its scenes the components': `*.scenes.tsx`) or an app's (apps/<app>,
@@ -53,7 +53,7 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, capped, COMPONENTS, copied, env, glass, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, slot, stale, stopped, usedFolder } from "./animation.js"
+import { build, built, capped, COMPONENTS, copied, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -78,15 +78,14 @@ const ssh = option("--ssh")
 const only = option("--scene")?.toLowerCase()
 const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--headless", "--scene", "--glass", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
 const targets = folders.length ? folders : [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json")))]
-let headless = join(root, `target/${flag("--release") ? "release" : "debug"}/examples/headless`)
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
 // page written for this one, so there's nothing yet to compare.
 const speaks = (file, pattern) => Number(readFileSync(join(root, file), "utf8").match(pattern)?.[1])
 const needed = speaks("core/ui/src/drawing-primitives/renderer.ts", /export const RUNTIME_VERSION = (\d+)/)
 const hosted = speaks("clients/app/renderer/src/lib.rs", /pub const RUNTIME_VERSION: u32 = (\d+)/)
 
-if (stale(headless)) throw new Error(stale(headless))
-headless = copied(headless, out)
+if (stale()) throw new Error(stale())
+setHeadless(copied(built(), out))
 
 
 /// A target's scenes, each its name, page, link, answers, taps and size, and where a wheel's notch eases what it
@@ -458,7 +457,6 @@ const headlessRun = (asked, requests) =>
 
 /// A scene drawn by a native host's headless renderer, or nothing where it hasn't been built or can't draw the page.
 async function native(built, scene, folder) {
-  if (!existsSync(headless)) return { missing: "the headless renderer isn't built (`cargo build -p renderer --example headless --features fake`)", error: true }
   if (hosted < needed) return { missing: `the native host's runtime version is ${hosted}, the UI library needs ${needed}: nothing to compare until it's ${needed}` }
   const at = pageFolder(built, scene.page, folder, scene.uses)
   const answers = { ...scene.answers, "ui/initialize": scene.answers["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
