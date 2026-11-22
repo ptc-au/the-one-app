@@ -144,7 +144,8 @@ impl Screen {
                 true
             }
             // A Mac says its fingers lifted a refresh after they last moved, moving no more (`ended`): they're let go as
-            // they last moved, at the speed they had then, springing on from then, as a finger's lift is taken. Let go as
+            // they last moved, at the speed they had then, springing on from the frame that drew them there, as a
+            // finger's lift is taken. Let go as
             // it was said, what they drag stood still for that refresh, then sped on to catch up (a launcher's page
             // swiped at 120 Hz: 16.8 pt a refresh, then 0, then 20).
             (Some(lifted @ ("ended" | "cancelled")), Trackpad::On(was, moved)) => {
@@ -242,7 +243,11 @@ impl Screen {
     /// (`lifted`, a trackpad's), otherwise now.
     pub(super) fn drag_up(&mut self, at: Point<f32>, cancelled: bool, lifted: Option<f64>) {
         let Some(mut drag) = self.drag.take().filter(|drag| drag.began) else { return };
-        let (time, now) = lifted.map_or_else(|| (self.input_time(), self.js.clock().now()), |lifted| (lifted, lifted));
+        // Lifted late, it springs on from the frame that last drew it held there, so the next is a refresh of its
+        // spring on: from its last move, which that frame drew a refresh after it came, the next frame drew two
+        // refreshes' worth of spring in one (a card swiped past its end at 120 Hz: 2.4 pt a refresh, then 0.1).
+        let painted = self.painted_at.map(|at| crate::platform::time_at(self.js.clock(), at));
+        let (time, now) = lifted.map_or_else(|| (self.input_time(), self.js.clock().now()), |lifted| (lifted, painted.map_or(lifted, |painted| painted.max(lifted))));
         drag.velocity.add(at, time);
         let going = if cancelled { point(0.0, 0.0) } else { drag.velocity.get(time) };
         let velocity = point(if drag.along { going.x } else { 0.0 }, if drag.down { going.y } else { 0.0 });
