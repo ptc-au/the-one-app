@@ -549,9 +549,10 @@ impl Thread {
                     (posts.timers, posts.turned, posts.framing) = (timers, now, framing);
                 });
                 // Its next timer, by the real time, unless its clock is paused, or what it dropped collected once it's
-                // been still a while.
+                // been still a while: not while its clock is paused, when no time passes for it however long it waits
+                // on a busy machine, so what a frame's JS costs doesn't depend on how loaded that is.
                 let timer = due.filter(|_| !time.paused()).map(|due| Duration::from_secs_f64(due.max(0.0) / 1000.0));
-                let still = collect.then_some(IDLE);
+                let still = collect.then_some(IDLE).filter(|_| !time.paused());
                 let first = match timer.into_iter().chain(still).min() {
                     Some(wait) => match queue.recv_timeout(wait) {
                         Ok(call) => Some(call),
