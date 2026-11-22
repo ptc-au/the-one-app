@@ -39,7 +39,7 @@ const MUTANTS = {
   "damage-short": { bug: "a damage rectangle 1 px short", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "dropped-refresh": { bug: "a dropped refresh while moving", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "double-frame": { bug: "a frame drawn twice in one refresh", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
-  "late-tick-held": { bug: "a window held a refresh where its link said the refresh a fraction of a ms sooner than the tick before (a Surface's windows drew every other refresh, 22 Nov)", plays: [animation("apps/settings", "Accounts, a long Vault")] },
+  "late-tick-held": { bug: "a window held a refresh where its link said the refresh a fraction of a ms sooner than the tick before (a Surface's windows drew every other refresh, 22 Nov)", plays: [animation("clients/app/renderer/tests/gallery", "Motion/Long list")] },
   "paint-order": { bug: "the wrong paint order for positioned elements", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Painting order")] },
   "dark-token": { bug: "dark mode not applied to one token (the text's, `label`)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Type styles")], only: "dark" },
   "rounded-clip": { bug: "rounded clip off", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Rounded corners clip")] },
