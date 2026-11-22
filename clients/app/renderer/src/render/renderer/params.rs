@@ -5,8 +5,6 @@ use bytemuck::{Pod, Zeroable};
 pub(super) struct GlobalParams {
     pub(super) viewport_size: [f32; 2],
     pub(super) origin: [f32; 2],
-    pub(super) premultiplied_alpha: u32,
-    pub(super) pad: [u32; 3],
 }
 
 #[repr(C)]

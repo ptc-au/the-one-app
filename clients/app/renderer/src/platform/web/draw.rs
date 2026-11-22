@@ -85,8 +85,9 @@ fn glyph_in(text: &str, size: f32, colour: &str) -> Option<(i32, i32, u32, u32, 
     Some((left, ascent, width, height, pixels))
 }
 
-/// The browser's straight RGBA as the atlas's BGRA.
+/// The browser's straight RGBA as the atlas's BGRA, premultiplied as it holds every picture.
 fn bgra(size: Size<u32>, mut pixels: Vec<u8>) -> crate::view::Decoded {
+    crate::render::atlas::premultiply(&mut pixels);
     for pixel in pixels.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }

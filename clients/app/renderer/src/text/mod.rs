@@ -492,6 +492,7 @@ impl TextSystem {
             if colored {
                 image.content = swash::scale::image::Content::Color;
                 image.data = rgba;
+                crate::render::atlas::premultiply(&mut image.data);
             } else {
                 image.content = swash::scale::image::Content::Mask;
                 image.data = rgba.chunks_exact(4).map(|pixel| pixel[3]).collect();
@@ -529,7 +530,13 @@ impl TextSystem {
             render.embolden(ppem / 48.0);
         }
         let glyph: u16 = params.glyph_id.0.try_into()?;
-        render.render(&mut scaler, glyph).with_context(|| format!("swash didn't draw {params:?}"))
+        let mut image = render.render(&mut scaler, glyph).with_context(|| format!("swash didn't draw {params:?}"))?;
+        // A colour bitmap's (an emoji font's PNG) is straight; what swash draws of a colour outline is over nothing,
+        // premultiplied, as the atlas holds them.
+        if matches!(image.source, Source::ColorBitmap(_)) {
+            crate::render::atlas::premultiply(&mut image.data);
+        }
+        Ok(image)
     }
 
     /// Paints `paragraph` with its top left at `origin`, each line placed along `width` by `align` (0 start, 0.5

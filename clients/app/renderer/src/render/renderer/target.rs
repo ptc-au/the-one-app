@@ -73,8 +73,8 @@ impl Target {
     }
 
     /// A window's surface, as its platform gives it, `size` device pixels, see-through or not; and the format it's
-    /// drawn in and whether what's drawn into it is premultiplied by its alpha.
-    pub(super) fn surface(context: &Context, target: super::super::SurfaceTarget, (width, height): (u32, u32), transparent: bool) -> anyhow::Result<(Self, wgpu::TextureFormat, bool)> {
+    /// drawn in.
+    pub(super) fn surface(context: &Context, target: super::super::SurfaceTarget, (width, height): (u32, u32), transparent: bool) -> anyhow::Result<(Self, wgpu::TextureFormat)> {
         // Safety: a window's renderer is let go before its window is.
         #[cfg(not(target_arch = "wasm32"))]
         let surface = unsafe { context.instance.create_surface_unsafe(target) }?;
@@ -137,8 +137,7 @@ impl Target {
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
         surface.configure(&context.device, &config);
-        let premultiplied = alpha_mode == wgpu::CompositeAlphaMode::PreMultiplied;
-        Ok((Self::with(Output::Surface { surface, config }, (width, height)), format, premultiplied))
+        Ok((Self::with(Output::Surface { surface, config }, (width, height)), format))
     }
 
     /// The image to draw this frame on: its surface's next (a surface its window has outgrown, or lost, configured

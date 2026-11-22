@@ -53,10 +53,8 @@ pub struct Renderer {
     /// that a Surface's Intel driver takes hundreds of ms to free.
     targets: Vec<Target>,
     pipelines: Arc<Pipelines>,
-    /// The format of its targets, which the pipelines and a backdrop's textures are for, and whether what's drawn
-    /// into them is premultiplied by its alpha.
+    /// The format of its targets, which the pipelines and a backdrop's textures are for.
     format: wgpu::TextureFormat,
-    premultiplied: bool,
     /// What a frame binds, each part at a multiple of this.
     alignment: u64,
     /// The frame's globals, its batches' instances and its blurs' parameters, written once a frame.
@@ -173,14 +171,14 @@ impl Renderer {
         size: Size<DevicePixels>,
         transparent: bool,
     ) -> anyhow::Result<Self> {
-        let (target, format, premultiplied) = Target::surface(context, target, extent(size), transparent)?;
-        Ok(Self::with_target(context, atlas, target, format, premultiplied))
+        let (target, format) = Target::surface(context, target, extent(size), transparent)?;
+        Ok(Self::with_target(context, atlas, target, format))
     }
 
     /// Draws into `target` too, after those it draws into: a surface as its platform gives it, a panel's part's.
     pub fn add(&mut self, context: &Context, target: super::SurfaceTarget, size: Size<DevicePixels>, transparent: bool) -> anyhow::Result<()> {
-        let (target, format, premultiplied) = Target::surface(context, target, extent(size), transparent)?;
-        anyhow::ensure!((format, premultiplied) == (self.format, self.premultiplied), "a window's parts' surfaces draw in one format");
+        let (target, format) = Target::surface(context, target, extent(size), transparent)?;
+        anyhow::ensure!(format == self.format, "a window's parts' surfaces draw in one format");
         self.targets.push(target);
         Ok(())
     }
@@ -199,11 +197,11 @@ impl Renderer {
 
     /// A renderer that draws offscreen, `size` device pixels, read back by `read`.
     pub fn offscreen(context: &Context, atlas: Arc<Atlas>, size: Size<DevicePixels>) -> Self {
-        Self::with_target(context, atlas, Target::offscreen(&context.device, extent(size)), OFFSCREEN_FORMAT, false)
+        Self::with_target(context, atlas, Target::offscreen(&context.device, extent(size)), OFFSCREEN_FORMAT)
     }
 
     /// A renderer drawing into `target`, from `atlas`, which every renderer on the context shares.
-    fn with_target(context: &Context, atlas: Arc<Atlas>, target: Target, format: wgpu::TextureFormat, premultiplied: bool) -> Self {
+    fn with_target(context: &Context, atlas: Arc<Atlas>, target: Target, format: wgpu::TextureFormat) -> Self {
         let limits = context.device.limits();
         let sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Linear,
@@ -215,9 +213,8 @@ impl Renderer {
             device: context.device.clone(),
             queue: context.queue.clone(),
             targets: vec![target],
-            pipelines: Pipelines::shared(&context.device, &context.queue, &context.pipelines, format, premultiplied),
+            pipelines: Pipelines::shared(&context.device, &context.queue, &context.pipelines, format),
             format,
-            premultiplied,
             alignment: u64::from(limits.min_storage_buffer_offset_alignment.max(limits.min_uniform_buffer_offset_alignment)),
             data: Vec::new(),
             buffer: None,

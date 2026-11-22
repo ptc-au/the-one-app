@@ -257,7 +257,7 @@ impl Windows {
     /// and the pipelines it draws with are compiled: until they are, it has none, so the windows' thread never waits
     /// for them, and is given one as they are (`compiled`).
     pub(super) fn renderer(&self, parts: &[Part]) -> anyhow::Result<Option<Renderer>> {
-        if self.background || !parts[0].native.has_surface() || !drawable(&self.context, &parts[0].native) {
+        if self.background || !parts[0].native.has_surface() || !self.context.compiled(crate::render::context::surface_format()) {
             return Ok(None);
         }
         draws_on(&self.context, self.atlas.clone(), parts).map(Some)

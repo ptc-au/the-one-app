@@ -487,12 +487,6 @@ pub(crate) fn since(at: web_time::Instant) -> std::time::Duration {
     now().saturating_duration_since(at)
 }
 
-/// Whether what draws on `native` would draw at once: the pipelines its surface draws with are compiled
-/// (`Context::compiled`).
-fn drawable(context: &Context, native: &NativeWindow) -> bool {
-    let (format, premultiplied) = crate::render::context::surface_pipelines(native.transparent());
-    context.compiled(format, premultiplied)
-}
 
 /// What draws on `native`: its surface, which the system shows.
 #[cfg(not(feature = "fake"))]

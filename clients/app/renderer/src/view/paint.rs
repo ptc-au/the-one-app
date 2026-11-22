@@ -507,19 +507,12 @@ pub(super) fn decode(src: &str, device: Size<u32>) -> Option<Decoded> {
         let size = tree.size();
         let fit = (device.width as f32 / size.width()).min(device.height as f32 / size.height());
         resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(fit, fit), &mut pixmap.as_mut());
-        // tiny-skia's pixels are premultiplied; the atlas takes them straight.
-        let mut data = pixmap.take();
-        for pixel in data.chunks_exact_mut(4) {
-            let alpha = pixel[3] as f32 / 255.0;
-            if alpha > 0.0 {
-                for channel in &mut pixel[..3] {
-                    *channel = (*channel as f32 / alpha).round().min(255.0) as u8;
-                }
-            }
-        }
-        (device.width, device.height, data)
+        // tiny-skia's pixels are premultiplied, as the atlas holds them.
+        (device.width, device.height, pixmap.take())
     } else {
-        let mut image = image::load_from_memory(&bytes).ok()?;
+        // Premultiplied, as the atlas holds it, before it's made smaller, so its clear pixels give its edge none of their colour.
+        let mut image = image::load_from_memory(&bytes).ok()?.into_rgba8();
+        crate::render::atlas::premultiply(&mut image);
         let (mut width, mut height) = (image.width(), image.height());
         // What it's drawn at, fitted in its box keeping its shape (`paint_image`).
         let fit = (device.width as f32 / width as f32).min(device.height as f32 / height as f32);
@@ -528,9 +521,8 @@ pub(super) fn decode(src: &str, device: Size<u32>) -> Option<Decoded> {
             (width, height) = (width / 2, height / 2);
         }
         if width < image.width() {
-            image = image.thumbnail_exact(width, height);
+            image = image::imageops::thumbnail(&image, width, height);
         }
-        let image = image.into_rgba8();
         (image.width(), image.height(), image.into_raw())
     };
     for pixel in rgba.chunks_exact_mut(4) {

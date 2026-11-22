@@ -43,7 +43,7 @@ pub(super) struct Layouts {
 }
 
 impl Layouts {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, premultiplied: bool) -> Self {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         #[cfg(not(target_os = "windows"))]
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
@@ -74,8 +74,10 @@ impl Layouts {
         };
         let (globals, texture) = (layout(bindings::GLOBALS), layout(bindings::TEXTURE));
         let (instances, blur_params) = (layout(Data::Instances.bindings()), layout(Data::BlurParams.bindings()));
-        // See https://apoorvaj.io/alpha-compositing-opengl-blending-and-premultiplied-alpha/
-        let blend = if premultiplied { wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING } else { wgpu::BlendState::ALPHA_BLENDING };
+        // Every colour a shader gives, every picture in the atlas and every target holds is premultiplied by its alpha,
+        // so what's resampled, blurred or blended weighs nothing that isn't drawn (`shaders.wgsl`, `Atlas`):
+        // https://apoorvaj.io/alpha-compositing-opengl-blending-and-premultiplied-alpha/
+        let blend = wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING;
         let pixels = image::load_from_memory(include_bytes!("../blue-noise.png")).expect("it's a PNG").to_luma8();
         let size = wgpu::Extent3d { width: pixels.width(), height: pixels.height(), depth_or_array_layers: 1 };
         let tile = device.create_texture(&wgpu::TextureDescriptor {
@@ -206,8 +208,8 @@ fn side_by_side<const N: usize>(compile: [Compile; N]) -> [wgpu::RenderPipeline;
 }
 
 impl Pipelines {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat, premultiplied: bool) -> Self {
-        let layouts = Layouts::new(device, queue, format, premultiplied);
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        let layouts = Layouts::new(device, queue, format);
         let (l, blend) = (&layouts, Some(layouts.blend));
         // All of them before a window's first frame, as Flutter's Impeller and Chromium's Graphite make theirs ahead:
         // a pipeline compiled as a frame first needs it made that frame wait, the first to show glass half a second on
@@ -218,7 +220,7 @@ impl Pipelines {
             &|| l.pipeline(&bindings::UNDERLINES, blend),
             &|| l.pipeline(&bindings::MONO_SPRITES, blend),
             &|| l.pipeline(&bindings::POLY_SPRITES, blend),
-            &|| l.pipeline(&bindings::RASTERS, Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING)),
+            &|| l.pipeline(&bindings::RASTERS, blend),
             &|| l.pipeline(&bindings::BACKDROPS, blend),
             // Each pass of a blur replaces what's in its target.
             &|| l.pipeline(&bindings::BLUR, None),
@@ -232,20 +234,20 @@ impl Pipelines {
 
     /// The pipelines for targets of `format`, compiled the first time a renderer draws to one, or ahead of it
     /// (`Context::prepare`), which one that comes meanwhile waits for: only it, as each format's are compiled apart.
-    pub(crate) fn shared(device: &wgpu::Device, queue: &wgpu::Queue, compiled: &crate::render::context::Compiled, format: wgpu::TextureFormat, premultiplied: bool) -> Arc<Pipelines> {
-        Self::slot(compiled, format, premultiplied)
-            .get_or_init(|| Arc::new(Pipelines::new(device, queue, format, premultiplied)))
+    pub(crate) fn shared(device: &wgpu::Device, queue: &wgpu::Queue, compiled: &crate::render::context::Compiled, format: wgpu::TextureFormat) -> Arc<Pipelines> {
+        Self::slot(compiled, format)
+            .get_or_init(|| Arc::new(Pipelines::new(device, queue, format)))
             .clone()
     }
 
     /// Where the pipelines for targets of `format` are kept, once they're compiled.
-    pub(crate) fn slot(compiled: &crate::render::context::Compiled, format: wgpu::TextureFormat, premultiplied: bool) -> Arc<std::sync::OnceLock<Arc<Pipelines>>> {
+    pub(crate) fn slot(compiled: &crate::render::context::Compiled, format: wgpu::TextureFormat) -> Arc<std::sync::OnceLock<Arc<Pipelines>>> {
         let mut compiled = compiled.lock().expect("nothing panics holding it");
-        if let Some((_, _, slot)) = compiled.iter().find(|(f, p, _)| *f == format && *p == premultiplied) {
+        if let Some((_, slot)) = compiled.iter().find(|(f, _)| *f == format) {
             return slot.clone();
         }
         let slot = Arc::default();
-        compiled.push((format, premultiplied, Arc::clone(&slot)));
+        compiled.push((format, Arc::clone(&slot)));
         slot
     }
 }

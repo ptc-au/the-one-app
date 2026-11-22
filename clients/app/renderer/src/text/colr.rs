@@ -39,16 +39,8 @@ pub fn render(font: &skrifa::FontRef, glyph: u16, ppem: f32, coords: &[skrifa::i
         transforms: vec![base],
     };
     color.paint(location, &mut painter).ok()?;
-    let mut rgba = painter.layers.pop()?.take();
-    // tiny-skia's pixels are premultiplied; the atlas takes them straight.
-    for pixel in rgba.chunks_exact_mut(4) {
-        let alpha = pixel[3] as f32 / 255.0;
-        if alpha > 0.0 {
-            for channel in &mut pixel[..3] {
-                *channel = (*channel as f32 / alpha).round().min(255.0) as u8;
-            }
-        }
-    }
+    let rgba = painter.layers.pop()?.take();
+    // tiny-skia's pixels are premultiplied, as the atlas holds them.
     Some((left as i32, top as i32, width, height, rgba))
 }
 

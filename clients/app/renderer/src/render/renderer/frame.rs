@@ -104,7 +104,7 @@ impl Renderer {
                     self.rasters.insert(recording.id, (sheet.clone(), slot));
                 }
                 drawn.sort();
-                let globals = GlobalParams { viewport_size: [size[0] as f32, size[1] as f32], origin: [0.0; 2], premultiplied_alpha: u32::from(self.premultiplied), pad: [0; 3] };
+                let globals = GlobalParams { viewport_size: [size[0] as f32, size[1] as f32], origin: [0.0; 2] };
                 let globals = self.push(bytemuck::bytes_of(&globals));
                 let instances = drawn.batches().map(|batch| self.push_batch(&batch)).collect();
                 rastering.push((drawn, view, globals, instances));
@@ -203,7 +203,7 @@ impl Renderer {
             .map(|(image, origin)| {
                 let image = image.as_ref()?;
                 let size = (image.texture.width(), image.texture.height());
-                let globals = GlobalParams { viewport_size: [size.0 as f32, size.1 as f32], origin: *origin, premultiplied_alpha: u32::from(self.premultiplied), pad: [0; 3] };
+                let globals = GlobalParams { viewport_size: [size.0 as f32, size.1 as f32], origin: *origin };
                 let globals = self.push(bytemuck::bytes_of(&globals));
                 // Only what reaches its box of the scene: a panel's pane of glass (`platform::Window::arrange`) draws a
                 // strip of its page, not all of it again.
@@ -302,7 +302,7 @@ impl Renderer {
                 }
                 let blur = shadow.blur_radius.0;
                 let side = [(tile[0] + 6.0 * blur).ceil() as u32, (tile[1] + 6.0 * blur).ceil() as u32];
-                let globals = GlobalParams { viewport_size: [side[0] as f32, side[1] as f32], origin: [0.0; 2], premultiplied_alpha: 0, pad: [0; 3] };
+                let globals = GlobalParams { viewport_size: [side[0] as f32, side[1] as f32], origin: [0.0; 2] };
                 let globals = self.push(bytemuck::bytes_of(&globals));
                 let mut alone = shadow.clone();
                 alone.bounds = crate::geometry::Bounds {

@@ -116,11 +116,6 @@ impl NativeWindow {
         Handle
     }
 
-    /// Whether what isn't drawn on it is see-through: never, as it draws offscreen.
-    pub fn transparent(&self) -> bool {
-        false
-    }
-
     /// It draws offscreen from the start (`super::drawn_on`).
     pub fn has_surface(&self) -> bool {
         true

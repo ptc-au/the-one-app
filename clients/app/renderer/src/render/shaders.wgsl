@@ -69,10 +69,6 @@ fn apply_contrast_and_gamma_correction(sample: f32, color: vec3<f32>, enhanced_c
 struct GlobalParams {
     viewport_size: vec2<f32>,
     origin: vec2<f32>,
-    premultiplied_alpha: u32,
-    pad0: u32,
-    pad1: u32,
-    pad2: u32,
 }
 
 struct GammaParams {
@@ -227,9 +223,9 @@ fn mask_coverage(distances: vec4<f32>, radii: vec4<f32>) -> f32 {
     return saturate(0.5 - (length(from_centre) - radius));
 }
 
-// `color`, as `blend_color` gives it, with only `coverage` of it drawn.
+// `color`, premultiplied as `blend_color` gives it, with only `coverage` of it drawn.
 fn masked(color: vec4<f32>, coverage: f32) -> vec4<f32> {
-    return select(vec4<f32>(color.rgb, color.a * coverage), color * coverage, globals.premultiplied_alpha != 0u);
+    return color * coverage;
 }
 
 // https://gamedev.stackexchange.com/questions/92015/optimized-linear-to-srgb-glsl
@@ -448,12 +444,11 @@ fn quad_sdf_impl(corner_center_to_point: vec2<f32>, corner: vec2<f32>) -> f32 {
     }
 }
 
-// Abstract away the final color transformation based on the
-// target alpha compositing mode.
+// A straight colour, `alpha_factor` of it drawn, as every fragment gives it and every target, texture and atlas tile
+// holds it: premultiplied by its alpha, which every pipeline blends (`Layouts::new`).
 fn blend_color(color: vec4<f32>, alpha_factor: f32) -> vec4<f32> {
     let alpha = color.a * alpha_factor;
-    let multiplier = select(1.0, alpha, globals.premultiplied_alpha != 0u);
-    return vec4<f32>(color.rgb * multiplier, alpha);
+    return vec4<f32>(color.rgb * alpha, alpha);
 }
 
 // How far to move a colour at pixel `position` so that what changes slowly across pixels, as a gradient, a shadow's
@@ -1248,7 +1243,7 @@ fn fs_underline(input: UnderlineVarying) -> @location(0) vec4<f32> {
     let underline = b_underlines[input.underline_id];
     if ((underline.wavy & 0xFFu) == 0u)
     {
-        return masked(blend_color(input.color, input.color.a), mask);
+        return masked(blend_color(input.color, 1.0), mask);
     }
 
     let half_thickness = underline.thickness * 0.5;
@@ -1264,7 +1259,7 @@ fn fs_underline(input: UnderlineVarying) -> @location(0) vec4<f32> {
     let distance_from_top_border = distance_in_pixels - half_thickness;
     let distance_from_bottom_border = distance_in_pixels + half_thickness;
     let alpha = saturate(0.5 - max(-distance_from_bottom_border, distance_from_top_border));
-    return masked(blend_color(input.color, alpha * input.color.a), mask);
+    return masked(blend_color(input.color, alpha), mask);
 }
 
 // --- monochrome sprites --- //
@@ -1399,12 +1394,14 @@ fn fs_poly_sprite(input: PolySpriteVarying) -> @location(0) vec4<f32> {
 
     let distance = quad_sdf(input.local, sprite.bounds, sprite.corner_radii);
 
+    // The atlas holds it premultiplied (`Atlas`), as its texels are filtered: grey of a premultiplied colour is the
+    // premultiplied grey.
     var color = sample;
     if (sprite.grayscale != 0u) {
         let grayscale = dot(color.rgb, GRAYSCALE_FACTORS);
         color = vec4<f32>(vec3<f32>(grayscale), sample.a);
     }
-    return masked(blend_color(color, sprite.opacity * saturate(0.5 - distance)), mask);
+    return masked(color * (sprite.opacity * saturate(0.5 - distance)), mask);
 }
 
 
@@ -1456,7 +1453,7 @@ fn fs_clear() -> @location(0) vec4<f32> {
 // One way of a separable Gaussian: two taps a sample, between texels, for linear filtering to weigh. With no
 // `sigma`, it's the average of the `shrink` × `shrink` texels under each: a tap at the middle of each 2 × 2 of them,
 // which linear filtering averages, as halving the source that many times over did. The passes average colours
-// weighed by their alpha (premultiplied, as the first pass makes them), so what isn't drawn, past a rounded corner
+// weighed by their alpha (premultiplied, as every target holds them), so what isn't drawn, past a rounded corner
 // that cuts what's in it, adds nothing, as it would not behind a browser's backdrop-filter clipped to its box.
 @fragment
 fn fs_blur(input: BlurVarying) -> @location(0) vec4<f32> {
@@ -1466,8 +1463,7 @@ fn fs_blur(input: BlurVarying) -> @location(0) vec4<f32> {
         for (var y = 0; y < taps; y++) {
             for (var x = 0; x < taps; x++) {
                 let offset = vec2<f32>(f32(2 * x + 1 - taps), f32(2 * y + 1 - taps));
-                let tap = textureSample(t_sprite, s_sprite, input.uv + blur.step * offset);
-                sum += select(vec4<f32>(tap.rgb * tap.a, tap.a), tap, globals.premultiplied_alpha != 0u);
+                sum += textureSample(t_sprite, s_sprite, input.uv + blur.step * offset);
             }
         }
         return sum / f32(taps * taps);
@@ -1561,8 +1557,8 @@ fn vs_raster(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) ins
     return out;
 }
 
-// Its texture holds what was drawn over nothing, so each texel's colour is already multiplied by its alpha: it's drawn
-// over what's there as it is, as opaque as the raster is (the pipeline blends premultiplied, whatever the target's).
+// Its texture holds what was drawn over nothing, premultiplied as every target is: it's drawn over what's there as it
+// is, as opaque as the raster is.
 // It's read from its slot in its texture, held to its slot's edge texels as a texture of its own is by its sampler's
 // clamp to its edge, so what's beside it in the texture never bleeds in.
 @fragment

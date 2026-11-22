@@ -20,6 +20,25 @@ use std::{
 
 pub struct Atlas(Mutex<AtlasState>);
 
+/// A picture's straight BGRA or RGBA pixels (a decoder's, a browser canvas's) premultiplied by their alpha, as the atlas
+/// holds every colour tile (`premultiplied`), so a texel filtered with its clear neighbours, as a picture drawn smaller
+/// or between pixels is, takes none of their colour.
+pub(crate) fn premultiply(pixels: &mut [u8]) {
+    for pixel in pixels.chunks_exact_mut(4) {
+        let alpha = u16::from(pixel[3]);
+        for channel in &mut pixel[..3] {
+            *channel = ((u16::from(*channel) * alpha + 127) / 255) as u8;
+        }
+    }
+}
+
+/// Whether every pixel of a colour tile is premultiplied by its alpha, none of its colour above it: the one way every
+/// colour in the renderer is held (`Layouts::new`), checked as each tile is put in, where a debug build runs (the
+/// harness), so a picture put in straight, whose clear edge would darken or bleed as it's filtered, is caught there.
+fn premultiplied(pixels: &[u8]) -> bool {
+    pixels.chunks_exact(4).all(|pixel| pixel[..3].iter().all(|channel| *channel <= pixel[3]))
+}
+
 struct PendingUpload {
     id: AtlasTextureId,
     bounds: Bounds<DevicePixels>,
@@ -223,6 +242,7 @@ impl Atlas {
     /// before the next frame that draws it.
     pub(crate) fn write(&self, tile: &AtlasTile, size: Size<DevicePixels>, data: Vec<u8>) {
         let bounds = crate::geometry::Bounds { origin: crate::geometry::point(tile.bounds.origin.x + DevicePixels(1), tile.bounds.origin.y + DevicePixels(1)), size };
+        debug_assert!(premultiplied(&data), "a video's frame is put in the atlas premultiplied");
         let mut lock = self.0.lock();
         lock.generation += 1;
         lock.uploads.push(PendingUpload { id: tile.texture_id, bounds, data });
@@ -247,6 +267,7 @@ impl Atlas {
         if size.width.0 > largest || size.height.0 > largest {
             anyhow::bail!("a tile of {} × {} pixels is larger than this GPU's largest texture, {largest}", size.width.0, size.height.0);
         }
+        debug_assert!(key.texture_kind() == AtlasTextureKind::Monochrome || premultiplied(&bytes), "a colour tile is put in the atlas premultiplied by its alpha: {key:?}");
         let tile = lock.allocate(size, key.texture_kind());
         lock.uploads.push(PendingUpload { id: tile.texture_id, bounds: tile.bounds, data: bytes.into_owned() });
         lock.tiles_by_key.insert(key.clone(), Kept { tile: tile.clone(), used: turn });
