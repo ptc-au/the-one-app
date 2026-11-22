@@ -15,7 +15,7 @@ const look = styles({
   largeIcon: { width: sizes.largeIcon, height: sizes.largeIcon, borderRadius: tokens.radius.large },
   /// Where an app has no icon.
   blank: { backgroundColor: tokens.colour.quinaryLabel },
-  name: { font: tokens.type.caption, textAlign: "center", lineClamp: 1, width: "100%" },
+  name: { font: tokens.type.caption, textAlign: "center", lineClamp: 2, width: "100%" },
   shelf: { gap: tokens.grid[3] },
   shelfHeading: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", minHeight: tokens.length.control },
   heading: { fontWeight: tokens.weight.medium },
@@ -183,7 +183,7 @@ async function trust(market: Market, owner: Owner, done: Install) {
   act(owner, done.app, "trust", () => call("apps_trust", { name: done.name, trusted: !done.trusted }, { subject: owner.subject }))
 }
 
-/// An app's icon and its name under it, the size it is on a Home Screen.
+/// An app's icon and its name under it, the size it is on a Home Screen: a long name wraps to a second line, as the App Store's and the Home Screen's do, never cut to a few letters.
 function Tile(props: { listed: { title?: string; name?: string; icon: string | null }; onPress?: () => void; fills?: boolean }) {
   const name = () => props.listed.title ?? props.listed.name
   return (

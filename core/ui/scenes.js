@@ -409,7 +409,7 @@ function native(built, scene, folder, used) {
   const after = ssh ? DRAWN.length : 0
   const queried = said.at(-after - 2)?.result?.nodes ?? []
   const unsafe = scene.safeArea && underTheDevice(said.at(-after - 1)?.result?.nodes ?? [], scene.size[1], insets(scene.safeArea))
-  const squeezed = squeezedWords(queried)
+  const squeezed = squeezedWords(queried, scene.size[0])
   const overflowing = overflowingWords(queried, scene.size[0])
   // The words in sight, as the last frame drew them: each text and name of the semantic tree whose node, or the nearest
   // above it the inspector knows (a text in a line, a page in a frame), has some of its box in the window and isn't
@@ -488,22 +488,26 @@ function underTheDevice(nodes, height, { top, bottom }) {
 }
 
 /// A row's words given less than half of its width while they are cut short or wrapped: a control or a value beside
-/// them took the room the words needed, where they'd have it whole on the row's own width. A control's own words (a
-/// button's label) aren't a row's. → what's wrong, a line each.
+/// them took the room the words needed, where they'd have it whole on the row's own width. Words outside any row (a
+/// tile's name in a grid or a shelf) are judged against the window's width, so a name cut in a column narrower than half
+/// of it fails, as a row's does, where wrapping to a second line or a wider column would show it whole. A control's own
+/// words (a button's label) aren't a row's. → what's wrong, a line each.
 const SQUEEZED = 0.5
-function squeezedWords(nodes) {
-  const byId = new Map(nodes.map((node) => [node.node, node]))
+function squeezedWords(nodes, window) {
   const parent = new Map(nodes.flatMap((node) => (node.children ?? []).map((child) => [child, node])))
   return nodes.flatMap((node) => {
     if (node.kind !== "text" || !node.rect || !(node.opacity > 0) || !(node.seen > 0) || !(node.cut || node.lines?.length > 1)) return []
     const above = []
     for (let up = parent.get(node.node); up; up = parent.get(up.node)) above.push(up)
     const row = above.find((up) => up.role === "listitem")
-    if (!row?.rect || node.rect.width >= SQUEEZED * row.rect.width) return []
+    const said = node.name ?? above.find((up) => up.name)?.name
+    // Outside a row, only a name cut short counts: wrapped to a second line it's shown whole.
+    if (!row) return node.cut && node.rect.width < SQUEEZED * window ? [`"${said}" is ${Math.round(node.rect.width)} pt wide in a window ${window} pt wide, cut short`] : []
+    if (!row.rect || node.rect.width >= SQUEEZED * row.rect.width) return []
     // Inside a control that's not most of the row (a button beside the words), the words are its own.
     const control = above.slice(0, above.indexOf(row)).find((up) => up.actions)
     if (control?.rect && control.rect.width < 0.5 * row.rect.width) return []
-    return [`"${node.name}" is ${Math.round(node.rect.width)} pt wide in a row ${Math.round(row.rect.width)} pt wide, ${node.cut ? "cut short" : `wrapped to ${node.lines.length} lines`}`]
+    return [`"${said}" is ${Math.round(node.rect.width)} pt wide in a row ${Math.round(row.rect.width)} pt wide, ${node.cut ? "cut short" : `wrapped to ${node.lines.length} lines`}`]
   })
 }
 
@@ -669,7 +673,7 @@ for (const target of targets) {
       process.exitCode = 1
     }
     for (const line of drawn.squeezed ?? []) {
-      said.push(`  a row's words are squeezed: ${line}`)
+      said.push(`  words are squeezed: ${line}`)
       process.exitCode = 1
     }
     for (const line of drawn.overflowing ?? []) {
