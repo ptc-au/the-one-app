@@ -20,7 +20,9 @@
 // what they take played in a real window there (`animation.js --present`), with frames in flight as an app's are, which the
 // headless renderer never has. It fails where the two are further apart than MARGIN_MS at their 90th percentile, which a motion's
 // few first frames of a kind (its pipelines compiled as it first draws with them, a driver's command lists first grown
-// to as many passes) don't reach.
+// to as many passes) don't reach. It prices every kind of work, so it draws glass blurred whatever the device
+// (`ONE_GLASS=blurred`): a weak GPU tints it by itself, and fitted on that, a backdrop and its blur cost nothing on
+// every tier scaled from it (the Surface's fit of 22 Nov).
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -99,7 +101,7 @@ cpSync(here("../../../../core/ui/dist/client"), join(batch, "ui"), { recursive: 
 cpSync(headless, join(batch, exe))
 for (const face of FACES) cpSync(face, join(batch, basename(face)))
 const script = mac ? "run.sh" : "run.cmd"
-writeFileSync(join(batch, script), mac ? ['cd "$(dirname "$0")"', ...lines].join("\n") : ["@echo off", "cd /d %~dp0", ...lines].join("\r\n"))
+writeFileSync(join(batch, script), mac ? ['cd "$(dirname "$0")"', "export ONE_GLASS=blurred", ...lines].join("\n") : ["@echo off", "cd /d %~dp0", 'set "ONE_GLASS=blurred"', ...lines].join("\r\n"))
 
 // There, and back.
 const started = performance.now()
@@ -121,7 +123,7 @@ console.log(`${scenes.length} scenes drawn on ${name} in ${Math.round((performan
 // The gallery's motions that keep a tier, played there as animation.js plays them (and with `--window`, in a real window), each
 // motion's frames kept in a folder of its own: `gallery/<scene>/<motion>/60hz/frames.json` (and `presented.json`).
 const playThere = (folder, ...more) => {
-  const played = Bun.spawnSync(["bun", here("animation.js"), gallery, "--keeps", "--hz", "60", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
+  const played = Bun.spawnSync(["bun", here("animation.js"), gallery, "--keeps", "--hz", "60", "--glass", "blurred", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
   if (!existsSync(join(out, folder))) throw new Error(`animation.js played nothing there: ${played.stderr.toString().trim()}`)
 }
 playThere("motions", "--headless", headless)
@@ -192,6 +194,8 @@ for (const { motion, frames: there } of motions) {
   console.log(`${off.length ? "FAILS " : ""}${motion}: ${Object.entries(sides).map(([side, [model, device]]) => `${side} ${ms(model)} / ${ms(device)}`).join(", ")}; drops ${drops(model)} / ${drops(there.map((frame) => ({ gpu: frame.gpu_ms, draw: frame.draw_ms, paint: frame.paint_ms })))} of ${there.length}`)
 }
 if (!motions.length) apart.push("no motion that keeps a tier was played there")
+// A finger's motion isn't played in a computer's window (`--present`), so with none of a computer's, `--window` checked nothing.
+if (windowed && !Object.values(presented).some((rounds) => rounds.length)) apart.push("--window: no motion that keeps a tier was played in a window (each is a finger's, which a computer's window doesn't take)")
 if (apart.length) {
   console.log(`\nThe model and ${name} disagree: ${apart.join("; ")}`)
   process.exit(1)

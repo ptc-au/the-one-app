@@ -88,23 +88,23 @@
     "surface": {
       "gpu": {
         "costs": {
-          "quads": 0.6292,
-          "shadows": 4.39,
-          "sprites": 3.49,
-          "backdrops": 0.5173,
-          "rasters": 0.5652,
-          "copied": 0.385,
-          "blurred": 0.1541,
-          "draws": 0,
+          "quads": 0.5,
+          "shadows": 4.835,
+          "sprites": 1.951,
+          "backdrops": 0,
+          "rasters": 0.8029,
+          "copied": 0.3567,
+          "blurred": 0.3748,
+          "draws": 0.008589,
           "uploaded": 0,
           "blurs": 0
         },
         "constant": 0,
-        "error": 0.13,
-        "frames": 1284,
-        "scenes": 101
+        "error": 0.14,
+        "frames": 1222,
+        "scenes": 104
       },
-      "paint_ms": 0.78,
+      "paint_ms": 0.62,
       "open": {
         "about": "An app window's opening, from the app's log after an update restart (20 Nov, shaders as DXIL): window_ms its system's window and renderer once its pipelines are compiled (the median of 24 to 135 ms), pipelines_ms the pipelines a kind of window draws with, which the first window after a start waited for (401 to 563 ms)",
         "window_ms": 40,
@@ -113,10 +113,10 @@
       "on": "2026-11-22",
       "draw": {
         "costs": {
-          "passes": 0.07539,
-          "draws": 0.008836
+          "passes": 0.9351,
+          "draws": 0.03864
         },
-        "constant": 0.9897
+        "constant": 0.1563
       }
     }
   }
