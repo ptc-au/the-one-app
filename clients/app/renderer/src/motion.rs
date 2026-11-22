@@ -46,6 +46,27 @@ impl Spring {
         }
     }
 
+    /// Where something let go `off` from where it rests, going `velocity` (each a second), is `seconds` later, and how
+    /// fast it goes then. Flung toward where it rests hard enough to get there by itself (its momentum, slowing as
+    /// UIScrollView's does, carries it that far: the projection the UI library's `projected` makes), from further than
+    /// this spring would let it go on without pulling it faster, it carries on at that speed till it's as near as this
+    /// spring pulls it no harder than its damping holds it back (`damping · velocity / stiffness`), where this spring
+    /// takes it in, so it leaves at the speed it was let go at and eases in, as a fling does; otherwise this spring takes
+    /// it from where it is. A launcher's page swiped at 2,000 pt a second, 520 pt short of the next, was sped on to
+    /// 4,100 by the pages' spring.
+    pub fn let_go(&self, off: f64, velocity: f64, seconds: f64) -> (f64, f64) {
+        let toward = -velocity * off.signum();
+        let near = f64::from(self.damping) * toward / f64::from(self.stiffness);
+        if toward <= 0.0 || near >= off.abs() || toward / 1000.0 * DECELERATION / (1.0 - DECELERATION) < off.abs() {
+            return self.at(off, velocity, seconds);
+        }
+        let cruise = (off.abs() - near) / toward;
+        if seconds < cruise {
+            return (off + velocity * seconds, velocity);
+        }
+        self.at(near * off.signum(), velocity, seconds - cruise)
+    }
+
     /// Whether something `off` from where it's going, at `velocity`, has arrived: within `near`, and moving no faster
     /// than ten times that a second. What moves on the screen is near within `NEAR`.
     pub fn arrived(off: f64, velocity: f64, near: f64) -> bool {

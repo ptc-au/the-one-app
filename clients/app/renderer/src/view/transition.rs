@@ -404,7 +404,7 @@ impl Dragged {
         let seconds = |axis: &Axis| ((now - axis.start) / 1000.0).max(0.0);
         self.axes.map(|axis| match (self.held, self.coasting, self.spring) {
             (false, true, _) => (axis.off + axis.velocity * seconds(&axis), axis.velocity),
-            (false, false, Some(spring)) => spring.at(axis.off, axis.velocity, seconds(&axis)),
+            (false, false, Some(spring)) => spring.let_go(axis.off, axis.velocity, seconds(&axis)),
             _ => (axis.off, 0.0),
         })
     }
