@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 /// The GPU, shared by what draws: every window's surface and every offscreen texture, with the pipelines each format
 /// of target draws with, compiled once for every window.
+#[derive(Clone)]
 pub struct Context {
     pub(crate) instance: wgpu::Instance,
     pub(crate) adapter: wgpu::Adapter,

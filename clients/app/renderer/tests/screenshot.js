@@ -53,7 +53,7 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, built, capped, COMPONENTS, copied, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder } from "./animation.js"
+import { build, built, COMPONENTS, copied, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -446,14 +446,9 @@ const { tools, kept } = (() => {
   return { tools, kept: [...kept] }
 })()
 
-/// The headless renderer run with `asked`, and `requests` on its stdin, once a slot of `jobs` is free (animation.js's
-/// `--jobs`). → its exit status, stdout and stderr.
-const headlessRun = (asked, requests) =>
-  slot(async () => {
-    const run = Bun.spawn(capped([headless, ...asked]), { stdin: new TextEncoder().encode(requests), stdout: "pipe", stderr: "pipe", env })
-    const [stdout, stderr] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited])
-    return { exitCode: run.exitCode, stdout, stderr }
-  })
+/// The headless renderer run with `asked`, once a slot of `jobs` is free (animation.js's `--jobs`). → its exit
+/// status, stdout and stderr.
+const headlessRun = (asked) => slot(() => work(headless, asked, env))
 
 /// A scene drawn by a native host's headless renderer, or nothing where it hasn't been built or can't draw the page.
 async function native(built, scene, folder) {
@@ -467,8 +462,9 @@ async function native(built, scene, folder) {
   // With a plain tint for glass (`--glass tinted`), the scene drawn whole runs no blur: its `profile` says what's drawn.
   const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query" }, { op: "query", frames: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
-  const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", "-", ...panel(scene)]
-  const run = await headlessRun(asked, requests)
+  writeFileSync(join(folder, "requests.jsonl"), requests)
+  const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...panel(scene)]
+  const run = await headlessRun(asked)
   if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing"), error: true }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))
   // Its tree: each node's role, name and what it is (its states, by ARIA's names, beside them), and its words.
@@ -519,7 +515,7 @@ async function windowed(drawn, scene, folder) {
   const flags = panel(scene)
   if (!flags.length) return { picture: join(folder, "native.png") }
   const asked = [drawn.asked[0], join(folder, "window.png"), join(folder, "window.json"), ...drawn.asked.slice(3, -flags.length).filter((flag) => flag !== "--measure")]
-  const run = await headlessRun(asked, drawn.requests)
+  const run = await headlessRun(asked)
   if (run.exitCode !== 0 || !existsSync(join(folder, "window.png"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing") }
   return { picture: join(folder, "window.png") }
 }
@@ -824,7 +820,7 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
   const drawnScenes = await Promise.all((await scenesOf(target, built)).filter((scene) => !only || scene.name.toLowerCase().includes(only)).map(async (scene) => {
     const folder = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
     mkdirSync(folder, { recursive: true })
-    // Each scene is drawn twice, on a headless renderer (and a browser page) of its own each, side by side, in `again`: the second
+    // Each scene is drawn twice, a run (and a browser page) of its own each, side by side, in `again`: the second
     // is only compared, and any difference between the two fails the scene.
     const again = join(folder, "again")
     mkdirSync(again, { recursive: true })

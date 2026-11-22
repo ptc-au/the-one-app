@@ -7,11 +7,11 @@ use std::path::PathBuf;
 use url::Url;
 
 /// The page `page` (`<app>/client/<page>.html`) of the app built beside the page in `folder`, started as a frame's
-/// page, its tools answered from `answers`.
-pub(crate) fn framed(folder: &std::path::Path, page: &str, ui: Option<PathBuf>, clock: Clock, touch: bool, answers: std::rc::Rc<std::cell::RefCell<Value>>) -> anyhow::Result<Screen> {
+/// page, its tools answered from `answers`, its modules' bytecode kept in `bytecode` where there's one.
+pub(crate) fn framed(folder: &std::path::Path, page: &str, ui: Option<PathBuf>, clock: Clock, touch: bool, answers: std::rc::Rc<std::cell::RefCell<Value>>, bytecode: Option<PathBuf>) -> anyhow::Result<Screen> {
     let at = folder.join(page);
     let (module, files, tokens_page) = built_page(folder, &at, ui)?;
-    let js = Thread::start(&module, files, None, clock, touch)?;
+    let js = Thread::start(&module, files, bytecode, clock, touch)?;
     let asked: renderer::Asked = Box::new(move |message, _| {
         let id = message.get("id")?.clone();
         let (method, params) = (message["method"].as_str().unwrap_or_default(), &message["params"]);

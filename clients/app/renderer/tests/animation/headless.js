@@ -1,7 +1,8 @@
 // The headless renderer process: here, or on `--ssh`'s device, and the scenes it lists and draws.
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
-import { capped, checking, dark, env, FACES, glass, headless, out, slot, ssh, stopped } from "./options.js"
+import { checking, dark, env, FACES, glass, headless, out, slot, ssh } from "./options.js"
+import { stopped, work } from "./workers.js"
 import { COMPONENTS, library, pageFolder } from "./pages.js"
 import { device, devices, hostScore } from "./tiers.js"
 
@@ -47,7 +48,7 @@ export async function runThere(at, folder, args, lines) {
   cpSync(at, join(staged, "page"), { recursive: true, dereference: true })
   cpSync(join(folder, "answers.json"), join(staged, "answers.json"))
   writeFileSync(join(staged, "requests.jsonl"), lines)
-  const there = args.map((arg) => (arg === at ? `${run}${sep}page` : arg === join(folder, "answers.json") ? `${run}${sep}answers.json` : arg === "-" ? `${run}${sep}requests.jsonl` : arg.startsWith(folder) ? `${run}${sep}${basename(arg)}` : arg === library("client") ? `${base}${sep}ui` : arg))
+  const there = args.map((arg) => (arg === at ? `${run}${sep}page` : arg === join(folder, "answers.json") ? `${run}${sep}answers.json` : arg.startsWith(folder) ? `${run}${sep}${basename(arg)}` : arg === library("client") ? `${base}${sep}ui` : arg))
   // Its tree after what it said, whether it drew or not, and its folder taken away; the whole quoted for the shell here.
   const command = mac
     ? `mkdir "${run}" && tar -xf - -C "${run}" && ${glass ? `ONE_GLASS=${glass} ` : ""}"${base}/${exe}" ${quoted(there)}; cat "${run}/end.json" 1>&2; rm -rf "${run}"`
@@ -160,20 +161,20 @@ async function headlessRun(at, folder, scene, requests, seed) {
   const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
   writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
   const lines = requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n")
+  writeFileSync(join(folder, "requests.jsonl"), lines)
   // Its pictures decode as slowly as on the slowest device of its kind: as this machine's CPU is to that one's, at
   // that one's device pixels a point, where it's drawn at one here; on a device, as that decodes them.
   const slowest = devices.tiers.find((tier) => tier.name === (scene.touch ? "low-end Android" : "Intel UHD laptop at 4K"))
   const slower = hostScore && !ssh ? ["--slower", String((hostScore / slowest.cpu) * slowest.scale ** 2)] : []
-  const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", "-", ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower]
+  const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", join(folder, "requests.jsonl"), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower]
   if (ssh) {
     const { stdout, stderr, failed } = await runThere(at, folder, args, lines)
     return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: stderr.trim(), failed }
   }
   // Its pipelines compile as slowly as the Surface's (`open.pipelines_ms`), so a frame that waits for some is a long one.
   const compiling = { ONE_PIPELINES_MS: String(devices.measured.surface.open.pipelines_ms) }
-  const headlessRun = Bun.spawn(capped([headless, ...args]), { stdin: new TextEncoder().encode(lines), stdout: "pipe", stderr: "pipe", env: { ...env, ...compiling } })
-  const [stdout, stderr] = await Promise.all([new Response(headlessRun.stdout).text(), new Response(headlessRun.stderr).text(), headlessRun.exited])
-  return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: [stderr.trim(), stopped(headlessRun.exitCode)].filter(Boolean).join("\n"), failed: headlessRun.exitCode !== 0 }
+  const { exitCode, stdout, stderr } = await work(headless, args, { ...env, ...compiling })
+  return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: [stderr.trim(), stopped(exitCode)].filter(Boolean).join("\n"), failed: exitCode !== 0 }
 }
 
 

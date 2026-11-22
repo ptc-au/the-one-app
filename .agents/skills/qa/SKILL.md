@@ -64,7 +64,9 @@ builds, or takes the one any worktree on the machine built from the same (`tooli
 release build: a debug build draws several times slower), on the machine's
 GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every one in about a minute. Like animation.js, it
 runs headless renderers side by side, twice its share of the cores (8 on the Linux machine, shared by about 4 agents), and says
-what it found in the same order whatever finished first; `--jobs <n>` sets how many. `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
+what it found in the same order whatever finished first; `--jobs <n>` sets how many. Each is a persistent worker
+(`--persistent_worker`, Bazel's protocol) that keeps its GPU and draws one run after another, every run else its own;
+together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
 not every time. Compare only runs made on the same GPU. With `--web` it draws by our renderer on the web too, in headless Chromium
 (Playwright's, which `bunx playwright-core install chromium` fetches where it's missing; its WebGPU on SwiftShader,
@@ -79,8 +81,8 @@ check of that one alone.
 ### Checks: every change to the UI library or the renderer
 
 A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in `clients/app/renderer/tests`, after `bun
-build.js` in `core/ui` (about 6 minutes for all 500 on
-the Linux machine at a load of 20, 8 headless renderers at once; a debug build takes about 20, so name the folders your change
+build.js` in `core/ui` (under a minute for all 663 on
+the Linux machine at a load of 25, 8 headless renderers at once; a debug build takes several times as long, so name the folders your change
 can touch while you work):
 
     bun animation.js --checks --release [<folder>…]
@@ -137,7 +139,7 @@ few seconds: give the gallery scene that shows it `motions` (the `Motion` type i
     bun animation.js --release --out <scratch>/before [<folder>…]          # on main, before the change
     bun animation.js --release --out <scratch>/after --against <scratch>/before [<folder>…] [--watch]
 
-(every motion in about 2 minutes, where a debug build takes 7) and the same again with `--dark` (an `--out` of its own): a frame drawn on what was kept is checked against the same
+(every motion in about 20 seconds) and the same again with `--dark` (an `--out` of its own): a frame drawn on what was kept is checked against the same
 drawn whole, and a light card on a near-white page leaves little to be wrong by, so on 22 Nov partial redraws that
 passed in light failed 4 motions in dark.
 

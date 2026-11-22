@@ -6,10 +6,11 @@ use super::*;
 #[cfg(feature = "fake")]
 impl Windows {
     /// The windows of a display of `scale` device pixels a point, refreshing `hz` times a second, whose time is
-    /// `clock`'s, which their pages' JS reads too: paused, it moves only as the driver moves it.
-    pub fn fake(scale: f32, hz: f64, clock: crate::js::Clock) -> anyhow::Result<Windows> {
+    /// `clock`'s, which their pages' JS reads too: paused, it moves only as the driver moves it. They draw on
+    /// `context`'s GPU, which a harness keeps for every run it draws, as its start takes a run most of its time.
+    pub fn fake(scale: f32, hz: f64, clock: crate::js::Clock, context: Context) -> anyhow::Result<Windows> {
         fake::keep_time(clock);
-        Self::made(Display::new(scale, hz), Context::new())
+        Self::made(Display::new(scale, hz), Ok(context))
     }
 
     /// Waits for the pipelines its windows draw with, compiled as it started (`Context::prepare`), as a test that

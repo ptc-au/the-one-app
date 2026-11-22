@@ -60,18 +60,10 @@ export function built() {
 /// than one a core (`LP_NUM_THREADS`), as a few run at once: a second GPU whose frames must agree with the first's.
 export const lavapipe = flag("--lavapipe")
 export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), ...(atlas ? { ONE_ATLAS: atlas } : {}), ...(lavapipe ? { VK_ICD_FILENAMES: "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" } : {}) }
-/// The most a headless renderer may use, and for how long: a page that grows or never ends is stopped, not the machine.
-const MEMORY = "3G"
-const MINUTES = 10
-/// `command` run within those, in a systemd scope of its own on Linux, where systemd is; elsewhere as it is.
-export const capped = (command) => (Bun.which("systemd-run") ? ["systemd-run", "--user", "--scope", "--quiet", "-p", `MemoryMax=${MEMORY}`, "-p", "MemorySwapMax=0", "timeout", `${MINUTES}m`, ...command] : command)
 
 /// The faces the headless renderer falls back to where its own font hasn't a character, this machine's, which a device it's sent
 /// to is sent beside it (renderer's `fake::fallback_fonts`).
 export const FACES = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"]
-
-/// Why a capped headless renderer was stopped, by its exit status, if it was.
-export const stopped = (status) => ({ 137: `it used more than ${MEMORY}B of memory, and was stopped`, 124: `it ran for ${MINUTES} minutes, and was stopped` })[status]
 
 /// `--watch` plays the headless renderer a pass copied (`copied`), not the one it was given.
 export const setHeadless = (path) => {

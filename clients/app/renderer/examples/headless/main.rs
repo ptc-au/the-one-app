@@ -56,6 +56,15 @@
 //! in the background, isn't part of), the memory drawing took (`memory_mb`: the GPU, its atlas and the
 //! renderer, as the process's resident set grew), and what a second window of its size adds (`window_mb`: a renderer
 //! of its own, drawing the same frame, the GPU and the atlas shared).
+//!
+//! `--persistent_worker` draws one run after another in the one process, as Bazel's persistent workers build: each
+//! line of its stdin is a JSON work request, `{"arguments": [<a run's arguments, as above>], "requestId": n}`, and
+//! each run's work response is a line of its stdout, `{"requestId": n, "exitCode": 0, "output": <its stderr>,
+//! "stdout": <its stdout>}`, its `--requests` a file. Each run has everything of its own (its windows, page, atlas,
+//! fonts and clock) but the GPU, whose start takes a run most of its time (1 to 2 s on a machine others load, as its
+//! driver sets up), as an app's process keeps one GPU for every window it opens, and the bytecode its pages' modules
+//! compile to, kept by their address and what's in them as an app keeps it (`Thread::start`'s `cache`), in a folder of
+//! the worker's own.
 
 mod between;
 mod input;
@@ -73,7 +82,9 @@ use serde_json::{Value, json};
 use renderer::geometry::{DevicePixels, Pixels, Size};
 use renderer::js::{Clock, Thread};
 use renderer::platform::{Event, WindowOptions, Windows};
+use renderer::render::context::Context;
 use renderer::render::renderer::Renderer;
+use std::io::Write;
 use renderer::{Appearance, Screen};
 use url::Url;
 
@@ -92,7 +103,54 @@ fn main() -> anyhow::Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     });
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let [folder, png, tree, ..] = &args[..] else {
+    let context = Context::new()?;
+    if args.iter().any(|arg| arg == "--persistent_worker") {
+        return worker(&context);
+    }
+    run(&args, &context, None, &mut std::io::stdout(), &mut std::io::stderr())
+}
+
+/// Each work request on stdin run in turn, its work response on stdout (`--persistent_worker`).
+fn worker(context: &Context) -> anyhow::Result<()> {
+    let bytecode = std::env::temp_dir().join(format!("one-headless-bytecode-{}", std::process::id()));
+    let worked = work(context, &bytecode);
+    let _ = std::fs::remove_dir_all(&bytecode);
+    worked
+}
+
+fn work(context: &Context, bytecode: &std::path::Path) -> anyhow::Result<()> {
+    for line in std::io::stdin().lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request: Value = serde_json::from_str(&line)?;
+        let arguments: Vec<String> = request["arguments"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let ran = run(&arguments, context, Some(bytecode), &mut out, &mut err);
+        if let Err(error) = &ran {
+            writeln!(err, "Error: {error:?}")?;
+        }
+        let response = json!({"requestId": request["requestId"], "exitCode": i32::from(ran.is_err()), "output": String::from_utf8_lossy(&err), "stdout": String::from_utf8_lossy(&out)});
+        let mut stdout = std::io::stdout().lock();
+        writeln!(stdout, "{response}")?;
+        stdout.flush()?;
+        drop((response, out, err));
+        // What the run let go of goes back to the system, which glibc's malloc keeps otherwise: a worker that had played
+        // a long motion held a gigabyte between runs.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        unsafe {
+            libc::malloc_trim(0);
+        }
+    }
+    Ok(())
+}
+
+/// One run, with `args`, on `context`'s GPU, its modules' bytecode kept in `bytecode` where there's one: what it answers
+/// said on `out`, the rest on `err`.
+fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, out: &mut dyn Write, err: &mut dyn Write) -> anyhow::Result<()> {
+    let bytecode = bytecode.map(std::path::Path::to_path_buf);
+    let [folder, png, tree, ..] = args else {
         anyhow::bail!("screenshot <folder> <out.png> <out.json> [--ui <dir>] [--answers <json>] [--size WxH] [--scale N] [--dark] [--click id]...")
     };
     let flag = |name: &str| args.iter().position(|arg| arg == name).and_then(|at| args.get(at + 1)).cloned();
@@ -134,12 +192,11 @@ fn main() -> anyhow::Result<()> {
     let throwing = threw.clone();
 
     let latency: f64 = flag("--latency").and_then(|ms| ms.parse().ok()).unwrap_or(0.0);
-    if let Some(times) = flag("--slower").and_then(|times| times.parse().ok()) {
-        renderer::decoding_takes(times);
-    }
-    if let Some(gb) = flag("--memory").and_then(|gb| gb.parse::<f64>().ok()) {
-        renderer::js::device_memory_is((gb * f64::from(1u32 << 30)) as usize);
-    }
+    // What the process keeps between runs is each run's own (`--persistent_worker`): as it says, or as with none.
+    renderer::decoding_takes(flag("--slower").and_then(|times| times.parse().ok()).unwrap_or(1.0));
+    renderer::js::device_memory_is(flag("--memory").and_then(|gb| gb.parse::<f64>().ok()).map_or(0, |gb| (gb * f64::from(1u32 << 30)) as usize));
+    input::PRESSED.set(None);
+    BETWEEN.set(None);
     let cached: Vec<String> = flag("--cached").map(|tools| tools.split(',').map(str::to_owned).collect()).unwrap_or_default();
     // The answers on their way, each with when it comes on the page's clock (`--latency`).
     let coming: std::rc::Rc<std::cell::RefCell<Vec<(f64, Value)>>> = Default::default();
@@ -159,7 +216,16 @@ fn main() -> anyhow::Result<()> {
 
     let started = std::time::Instant::now();
     let clock = flag("--time-zone").map_or_else(Clock::fixed, |zone| Clock::fixed_in(&zone));
-    let js = Thread::start(&page, files, None, clock.clone(), touch)?;
+    // A window of the fake platform's, drawn by the loop every host's windows are (`Windows::turn`), whose time is the
+    // clock's from before its page starts, which reads it: what a process ran before (`--persistent_worker`) told
+    // time by its own.
+    let gpu = std::time::Instant::now();
+    let resident = || memory_stats::memory_stats().map_or(0, |memory| memory.physical_mem);
+    let before = resident();
+    let hz: f64 = flag("--hz").and_then(|hz| hz.parse().ok()).unwrap_or(60.0);
+    let mut windows = Windows::fake(scale, hz, clock.clone(), context.clone())?;
+    windows.prepared();
+    let js = Thread::start(&page, files, bytecode.clone(), clock.clone(), touch)?;
     // What the page asks its client, answered from `answers`, as record.js answers it.
     let (page_folder, page_ui) = (folder.clone(), ui.clone());
     let asked: renderer::Asked = Box::new(move |message, _| {
@@ -241,13 +307,6 @@ fn main() -> anyhow::Result<()> {
         screen.late = Some(renderer::Late::new(Box::new(move || if random(4) == 0 { 1 + random(3) as u32 } else { 0 })));
     }
     screen.seed(seed);
-    // A window of the fake platform's, drawn by the loop every host's windows are (`Windows::turn`).
-    let gpu = std::time::Instant::now();
-    let resident = || memory_stats::memory_stats().map_or(0, |memory| memory.physical_mem);
-    let before = resident();
-    let hz: f64 = flag("--hz").and_then(|hz| hz.parse().ok()).unwrap_or(60.0);
-    let mut windows = Windows::fake(scale, hz, clock.clone())?;
-    windows.prepared();
     // `--dark` is the system's, as a phone's or a computer's Dark mode is, which the app follows, so it can change.
     windows.appearance(if dark { Appearance::Dark } else { Appearance::Light });
     // A phone's window (`--touch`) is the whole of its screen, as every window there but a panel is.
@@ -278,11 +337,11 @@ fn main() -> anyhow::Result<()> {
     // does, what it sets off going out then; one still on its way is a request `settle` waits for.
     windows.answering(id, coming.clone());
     {
-        let (folder, ui, clock, answers) = (folder.clone(), ui.clone(), clock.clone(), answers.clone());
+        let (folder, ui, clock, answers, bytecode) = (folder.clone(), ui.clone(), clock.clone(), answers.clone(), bytecode.clone());
         FRAMES.set(Some(Box::new(move |windows: &mut Windows| {
             for (node, src) in framing.borrow_mut().drain(..) {
                 let page = src.split_once('#').map_or(src.as_str(), |(page, _)| page);
-                let made = framed(&folder, page, ui.clone(), clock.clone(), touch, answers.clone());
+                let made = framed(&folder, page, ui.clone(), clock.clone(), touch, answers.clone(), bytecode.clone());
                 windows.with(id, |parent| match made {
                     Ok(screen) => parent.framed(node, &src, screen),
                     Err(error) => parent.failed = Some(format!("its frame's page, {src}, didn't start: {error:#}")),
@@ -321,7 +380,7 @@ fn main() -> anyhow::Result<()> {
             }
             let Some(from) = opens.borrow_mut().pop() else { return };
             let Some(files) = files.take() else { return };
-            let Ok(js) = Thread::start(&page, files, None, clock.clone(), touch) else { return };
+            let Ok(js) = Thread::start(&page, files, bytecode.clone(), clock.clone(), touch) else { return };
             let (answers, sent) = (answers.clone(), coming.clone());
             let asked: renderer::Asked = Box::new(move |message, _| {
                 let id = message.get("id")?.clone();
@@ -397,13 +456,13 @@ fn main() -> anyhow::Result<()> {
         let request = match renderer::inspect::Request::parse(line) {
             Ok(request) => request,
             Err(refused) => {
-                println!("{refused}");
+                writeln!(out, "{refused}")?;
                 continue;
             }
         };
         // What the page has asked its client so far, each call as `asked_of` names it, as a check counts them.
         if request.op == "asks" {
-            println!("{}", renderer::inspect::answer(&request.id, Ok(json!({"asks": *calls.borrow()}))));
+            writeln!(out, "{}", renderer::inspect::answer(&request.id, Ok(json!({"asks": *calls.borrow()}))))?;
             continue;
         }
         // A server said something changed, as a client tells a page on screen (`notifications/one/changed`), with what
@@ -417,7 +476,7 @@ fn main() -> anyhow::Result<()> {
             }
             windows.with(id, |screen| screen.message(&json!({"jsonrpc": "2.0", "method": "notifications/one/changed"})));
             windows.run(0.0);
-            println!("{}", renderer::inspect::answer(&request.id, Ok(json!({}))));
+            writeln!(out, "{}", renderer::inspect::answer(&request.id, Ok(json!({}))))?;
             continue;
         }
         // What a person does comes as the display's input, on the platform's time, as a host's does; with a seed, a
@@ -431,7 +490,7 @@ fn main() -> anyhow::Result<()> {
             // On a phone's screen, it's the window on top's, an app's over the Home Screen, as a finger lands on it.
             let top = windows.top().unwrap_or(id);
             let answered = input(&mut windows, top, &request);
-            println!("{}", renderer::inspect::answer(&request.id, answered));
+            writeln!(out, "{}", renderer::inspect::answer(&request.id, answered))?;
             continue;
         }
         // A read reaches a page busy with what came before it (`--seed`) once it's taken it, as a device's busy page's
@@ -464,7 +523,7 @@ fn main() -> anyhow::Result<()> {
             windows.turn();
         }
         let answer = answered.borrow_mut().take();
-        println!("{}", answer.unwrap_or_else(|| json!({"error": "it didn't answer"})));
+        writeln!(out, "{}", answer.unwrap_or_else(|| json!({"error": "it didn't answer"})))?;
     }
     // What it comes to rest on is what's pictured, as a page's animations that end are waited for on the DOM
     // (screenshot.js): its time runs, the display ticking, until nothing's on its way anywhere but in a loop (a spinner),
@@ -481,12 +540,12 @@ fn main() -> anyhow::Result<()> {
     let semantics = windows.with(id, |screen| (screen.semantics(), screen.failed.clone())).unwrap_or((json!([]), None));
     std::fs::write(tree, serde_json::to_string_pretty(&semantics.0)?)?;
     if let Some(failed) = &semantics.1 {
-        eprintln!("the page failed: {failed}");
+        writeln!(err, "the page failed: {failed}")?;
     }
     for said in said.borrow().iter() {
-        eprintln!("{said}");
+        writeln!(err, "{said}")?;
     }
-    eprintln!("ran its JS in {ran:?}, first frame in {drawn:?}, {w}x{h} px");
+    writeln!(err, "ran its JS in {ran:?}, first frame in {drawn:?}, {w}x{h} px")?;
     if let Some(why) = crashed.borrow().as_ref() {
         anyhow::bail!("its page crashed: {why}");
     }
@@ -543,10 +602,11 @@ fn main() -> anyhow::Result<()> {
         second.read(0);
         let window_mb = mb(resident().saturating_sub(alone));
         second.destroy();
-        eprintln!(
+        writeln!(
+            err,
             "measured {}",
             json!({"first_frame_ms": ms(first_frame_ms), "first_content_ms": ms(first_content), "worst_paint_ms": ms(Some(worst_paint_ms)), "idle_ms": ms(idle), "typing_ms": ms(typing), "scrolling_ms": ms(scrolling), "memory_mb": memory_mb, "window_mb": window_mb})
-        );
+        )?;
     }
     Ok(())
 }
