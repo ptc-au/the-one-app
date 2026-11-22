@@ -52,6 +52,11 @@ const newer = (a, b) => Number(/\+(\d+)/.exec(a)?.[1] ?? 0) > Number(/\+(\d+)/.e
 const liveEdge = await said();
 if (!allowDowngrade && liveEdge?.version && newer(liveEdge.version, built.version))
   throw new Error(`The edge at ${at.host} is ${liveEdge.version}, newer than this build, ${built.version}: nothing was deployed. Deploy that or a newer build, or \`--allow-downgrade\` to go back on purpose`);
+// A network that moved to another address redirects its old one there, and a deploy to the old one would take its name
+// back from the new: Wrangler replaces every Custom Domain of the edge with the one it's deployed to.
+const moved = await fetch(at, { redirect: "manual", cache: "no-store" }).then((answer) => answer.headers.get("location"), () => null);
+if (moved && new URL(moved, at).host !== at.host)
+  throw new Error(`${at.host} redirects to ${new URL(moved, at).host}, where its network moved: nothing was deployed. Deploy to https://${new URL(moved, at).host}`);
 const wrangler = (/** @type {string[]} */ ...args) => Bun.spawn(["bun", "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
 const config = (/** @type {string} */ name, file = "wrangler.jsonc") => `workers/${name}/${file}`;
 
