@@ -6,7 +6,7 @@ import { home, room, tapping, windowWidth } from "./store.ts"
 import { type Owner, badgeOf, opens, press } from "./owners.ts"
 import { holds } from "./holds.ts"
 import { Count, Tile } from "./tiles.tsx"
-import { handed, landing, openedCategory, places, setLanding, wait } from "./library.tsx"
+import { flyingHome, landing, openedCategory, places, setLanding, wait } from "./library.tsx"
 
 /// How large an opened category's apps' icons are, how wide each is with its name, and the gap between them across,
 /// as `sizes.found` and `looks.openedApps` have them.
@@ -43,12 +43,12 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
   const area = () => props.within ?? { x: 0, y: 0, width: windowWidth(), height: viewport().height }
   // Where its apps start: under its title, in from the area's side.
   const inset = () => (props.within ? { top: 24, inline: 24, bottom: 24 } : { top: room().safe.top + 108, inline: 24 + room().safe.left, bottom: 32 + room().safe.bottom })
-  // Where each of its apps is in it, open, from its top left: measured as it's made, and again as the area's width
-  // changes, which moves its apps' columns. Till then nothing in it has a transition, so it goes straight to where that
-  // puts it, not on its way there as it opens.
+  // Where each of its apps is in it, open, from its top left: measured as each category is made in it, whose apps are
+  // its own, and again as the area's width changes, which moves its apps' columns. Till then nothing in it has a
+  // transition, so it goes straight to where that puts it, not on its way there as it opens.
   const [laid, setLaid] = createSignal<{ all?: Rect; apps: Record<number, Rect> }>({ apps: {} })
-  const across = createMemo(() => area().width)
-  createEffect(across, () => void setLaid({ apps: {} }))
+  const measuring = createMemo(() => `${props.made} ${area().width}`)
+  createEffect(measuring, () => void setLaid({ apps: {} }))
   const measured = createMemo(() => {
     const { all, apps } = laid()
     const count = category()?.entrypoints.length ?? 0
@@ -64,17 +64,26 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
     return reducedMotion() || !at || !icon ? undefined : { at, icon, scale: Math.max(icon.width / ICON, 0.01) }
   }
   const flight = (index: number) => (props.open ? undefined : leg(index))
-  // Each app that flies tells as it lands, out or home, and its names, and its square's, come in once the last has.
-  let landed = new Set<number>()
+  // Each app that flies tells as it all but lands, out or home, and its names, and its square's, come in once the last
+  // has; and again at rest, where its square's icons are handed back once the last is. A host that doesn't say which
+  // (`rest`) tells once, as it all but lands.
+  let [landed, rested] = [new Set<number>(), new Set<number>()]
   createEffect(
     () => props.open,
     (open) => {
-      landed = new Set()
-      setLanding({ key: props.made, open, landed: 0, travels: (category()?.entrypoints ?? []).filter((_, index) => leg(index)).length })
+      ;[landed, rested] = [new Set(), new Set()]
+      setLanding({ key: props.made, open, landed: 0, rested: 0, travels: (category()?.entrypoints ?? []).filter((_, index) => leg(index)).length })
     },
   )
-  const lands = (index: number) => (landed.add(index), setLanding((now) => ({ ...now, landed: landed.size })))
-  const arrived = () => landing().key === props.made && landing().open && landing().landed >= landing().travels
+  const lands = (index: number, rest?: boolean) => {
+    landed.add(index)
+    if (rest !== false) rested.add(index)
+    setLanding((now) => ({ ...now, landed: landed.size, rested: rested.size }))
+  }
+  // Shown while it's open and while its apps fly home, handed to its square at once as they come to rest, or with less
+  // motion dissolved.
+  const shown = createMemo(() => props.open || flyingHome(props.made, "rested"))
+  const arrived = createMemo(() => landing().key === props.made && landing().open && landing().landed >= landing().travels)
   const flown = (index: number) => {
     const flying = flight(index)
     if (!flying) return undefined
@@ -103,7 +112,7 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
       {/* What's behind blurs and dims through a veil. */}
       <Pressable aria-hidden="true" onPress={close} style={[looks.cover, looks.frosted, looks.veils, !props.open && looks.unveiled, props.within && looks.round, props.within && looks.at(area().x, area().y, area().width, area().height)]} />
       <View role="dialog" aria-label={category()?.category} style={[looks.opening, props.within && looks.round, looks.at(area().x, area().y, area().width, area().height)]}>
-        <View style={[looks.inOpened, handed(category()?.entrypoints.length ?? 1), props.open ? looks.handing : looks.unseen]}>
+        <View style={[looks.inOpened, reducedMotion() && looks.handing, !shown() && looks.unseen]}>
           <ScrollView style={[looks.openedArea, !props.open && looks.inert, looks.sized(area().width, area().height)]}>
             <Pressable onPress={beside} onLayout={measured() ? undefined : (event) => setLaid((laid) => ({ ...laid, all: event.currentTarget.getBoundingClientRect() }))} style={[looks.opened, props.within && looks.centred, looks.libraryPadding(inset().inline, inset().top, inset().bottom), looks.atLeast(area().height)]}>
               <Text role="heading" aria-level={2} style={[looks.categoryTitle, named(), column()]}>
@@ -116,7 +125,7 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
                     const held = holds(() => ({ item: opens(entrypoint()), listed: entrypoint(), page: 0, index: -1, from: "library" }), () => true)
                     return (
                       <View style={looks.slots} onLayout={measured() ? undefined : (event) => setLaid((laid) => ({ ...laid, apps: { ...laid.apps, [index()]: event.currentTarget.getBoundingClientRect() } }))}>
-                        <Tile name={entrypoint().name} icon={entrypoint().icon} size={ICON} scale={1} style={[measured() && [looks.flies, looks.after(wait(index()))], flown(index())]} nameStyle={named()} badge={badgeOf(entrypoint() as Entrypoint, props.owner)} counted={false} onTransitionEnd={() => lands(index())} holds={held} onPress={(behind, from) => press(entrypoint(), props.owner, behind, from)} />
+                        <Tile name={entrypoint().name} icon={entrypoint().icon} size={ICON} scale={1} style={[measured() && [looks.flies, looks.after(wait(index()))], flown(index())]} nameStyle={named()} badge={badgeOf(entrypoint() as Entrypoint, props.owner)} counted={false} onTransitionEnd={(event) => lands(index(), event.rest)} holds={held} onPress={(behind, from) => press(entrypoint(), props.owner, behind, from)} />
                         <View aria-hidden="true" style={looks.badged}>
                           <View style={[looks.slots, looks.square(ICON), measured() && [looks.flies, looks.after(wait(index()))], flownBadge(index())]}>
                             <Count count={badgeOf(entrypoint() as Entrypoint, props.owner)} />

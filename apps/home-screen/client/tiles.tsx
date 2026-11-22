@@ -70,7 +70,7 @@ export const Count = (props: { count?: number }) => (
 /// An icon with its name under it, `size` across, drawn `scale` times larger. The app starts as a finger lands on it,
 /// and shows as the finger lifts, unless the finger held it, growing out of its icon. `style` moves it (`onTransitionEnd`: it has landed), and
 /// `nameStyle` its name. Its badge is drawn at its icon's corner, unless `counted` is false: then whoever flies it draws the badge.
-export function Tile(props: { name: string; icon: string; size: number; scale: number; badge?: number; counted?: boolean; onPress?: (behind: boolean, from?: From) => void; holds?: Holds; onLayout?: (event: Laid) => void; onTransitionEnd?: () => void; style?: Styles; nameStyle?: Styles }) {
+export function Tile(props: { name: string; icon: string; size: number; scale: number; badge?: number; counted?: boolean; onPress?: (behind: boolean, from?: From) => void; holds?: Holds; onLayout?: (event: Laid) => void; onTransitionEnd?: (event: { rest?: boolean }) => void; style?: Styles; nameStyle?: Styles }) {
   const from = (event: Located): From => {
     const tile = event.currentTarget.getBoundingClientRect()
     const size = props.size * props.scale

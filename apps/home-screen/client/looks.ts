@@ -134,12 +134,8 @@ export const looks = styles({
   veils: { opacity: { default: 1, entering: 0 }, transitionProperty: ["opacity"], transition: tokens.motion.smooth },
   opening: { position: "absolute", overflow: "hidden", pointerEvents: "none" },
   unveiled: { opacity: 0 },
-  // Its apps are handed from its square to it at once as it opens, and back once they've flown into the square again
-  // and arrived (`smooth` within a hundredth of a point, where the renderer draws it at rest: 1200 ms on from as far as
-  // 1500 pt), so each app is drawn once, never in both, and the hand-back draws what was there. A host that doesn't wait
-  // hands them back as it starts to close. With less motion they cross-fade (`smooth` is a short fade then), so `handed` waits nothing.
-  handedAfter: (ms: number) => ({ transitionProperty: ["opacity"], transitionDelay: ms }),
-  handing: { transitionDelay: 0, transition: tokens.motion.smooth },
+  // With less motion, its apps dissolve between its square and it, as nothing flies.
+  handing: { transitionProperty: ["opacity"], transition: tokens.motion.smooth },
   unseen: { opacity: 0 },
   inOpened: { position: "absolute", top: 0, start: 0 },
   openedArea: { position: "absolute", top: 0, start: 0, overflow: "hidden", pointerEvents: "auto" },

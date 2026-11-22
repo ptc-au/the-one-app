@@ -1,7 +1,7 @@
 // The App Library: one page of every app you can reach, by category, with its search, Background Apps and an app's icon
 // in it.
 import { createMemo, createSignal, For, Show } from "solid-js"
-import { ScrollView, Empty, Icon, Image, type Located, Pressable, type Rect, reducedMotion, Search, type Styles, Text, View } from "ui"
+import { ScrollView, Empty, Icon, Image, type Located, Pressable, type Rect, reducedMotion, Search, Text, View } from "ui"
 import { BAR, corner, TOP_ROW } from "./layout.ts"
 import { type Category, type Listed, src } from "./types.ts"
 import { looks } from "./looks.ts"
@@ -51,20 +51,19 @@ export const openedCategory = (library: Category[], key: string) =>
 /// one above its neighbour once that one has gone ahead, where all at once they cross.
 export const wait = (index: number) => Math.min(index, 2) * 40
 
-/// How a category's `count` apps are handed between its square and it: once they've all flown, or at once with less
-/// motion, when they cross-fade.
-export const handed = (count: number) => [looks.handedAfter(1200 + wait(count - 1)), reducedMotion() && looks.handing]
-
 /// How far a category's apps have got, flying out of its square or home into it, the way they go (`open`): each tells
-/// as it lands (`onTransitionEnd`), `landed` of the `travels` that fly. Its names, in its square and opened, are
-/// drawn once the last has: never under an icon on its way, as iOS hands a folder's names back, and with less motion
-/// nothing flies, so they dissolve with its apps.
-export const [landing, setLanding] = createSignal({ key: "", open: false, landed: 0, travels: 0 })
+/// as it all but lands (`onTransitionEnd`), `landed` of the `travels` that fly, and again at rest, `rested`. Its names,
+/// in its square and opened, are drawn once the last has landed: never under an icon on its way, as iOS hands a
+/// folder's names back. Its square's own icons are drawn again once the last has come to rest where they are, so each
+/// is drawn once, never in both, and the hand-back draws what was there. With less motion nothing flies, so they
+/// dissolve with its apps (`looks.handing`).
+export const [landing, setLanding] = createSignal({ key: "", open: false, landed: 0, rested: 0, travels: 0 })
 
-/// Whether the category `key`'s apps are flying home into its square, its names there not yet drawn.
-const pending = (key: string) => {
+/// Whether the category `key`'s apps are flying home into its square, not yet all `landed` or `rested` there: never
+/// once another category is made in its place (`made`), which took its flight's apps with it.
+export const flyingHome = (key: string, got: "landed" | "rested") => {
   const now = landing()
-  return now.key === key && !now.open && now.landed < now.travels
+  return now.key === key && made() === key && !now.open && now[got] < now.travels
 }
 
 /// Where each category's place was drawn as it was opened, which it grows out of and shrinks back into, and each of its
@@ -161,8 +160,11 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
           const key = () => inner.prefix + category().category
           const count = () => category().entrypoints.length
           const shown = () => (count() > 4 ? category().entrypoints.slice(0, 3) : category().entrypoints)
-          // Its apps are in it opened while it's open, and on their way back.
-          const away = () => state().context.category === key()
+          // Its apps are in it opened while it's open, and on their way back till they rest; its names, till they land.
+          // Each a memo, so a flight's landing changes only what it shows.
+          const opened = createMemo(() => state().context.category === key())
+          const away = createMemo(() => opened() || flyingHome(key(), "rested"))
+          const named = createMemo(() => !opened() && !flyingHome(key(), "landed"))
           return (
             <View style={[looks.category, looks.wide(laid().category)]}>
               <Pressable
@@ -173,10 +175,10 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
                 style={[looks.folder, looks.folderBox(laid().columnGap, laid().rowGap, laid().category, laid().padding.top, laid().padding.inline, laid().padding.bottom)]}
               >
                 <For each={shown()} keyed={(entrypoint) => entrypoint.entrypoint ?? entrypoint.app}>
-                  {(entrypoint) => <LibraryEntrypoint entrypoint={entrypoint()} owner={props.owner} icon={laid().icon} small away={away()} named={!away() && !pending(key())} handed={handed(count())} />}
+                  {(entrypoint) => <LibraryEntrypoint entrypoint={entrypoint()} owner={props.owner} icon={laid().icon} small away={away()} named={named()} />}
                 </For>
                 <Show when={count() > 4}>
-                  <Pressable role="button" aria-label={`All of ${category().category}`} onPress={opening(key, count)} style={[looks.more, looks.square(laid().icon + 14), handed(count()), away() && [looks.handing, looks.unseen]]}>
+                  <Pressable role="button" aria-label={`All of ${category().category}`} onPress={opening(key, count)} style={[looks.more, looks.square(laid().icon + 14), reducedMotion() && looks.handing, away() && looks.unseen]}>
                     <For each={category().entrypoints.slice(3, 7)} keyed={(entrypoint) => entrypoint.entrypoint ?? entrypoint.app}>
                       {(entrypoint) => <Image src={src(entrypoint().icon)} alt="" style={[looks.iconImage(corner((laid().icon + 9) / 2)), looks.square((laid().icon + 9) / 2)]} />}
                     </For>
@@ -244,10 +246,11 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
 
 /// An app's icon in the App Library, `icon` across: a tap opens it, or for an app with no entrypoint, the App Store
 /// at its page, and a finger that holds it opens its menu; moving it carries it onto whichever owner's pages it's
-/// dropped on. In a category's square (`small`) its name is smaller, and its icon is handed over to its category opened
-/// as that says (`handed`), and not drawn while it's in it (`away`); its name stays in the square, going as the category
-/// opens and coming back once its apps have flown home (`named`), as the opened one's go and come, so nothing changes as they're handed back.
-function LibraryEntrypoint(props: { entrypoint: Listed; owner: Owner; icon: number; small?: boolean; away?: boolean; named?: boolean; handed?: Styles }) {
+/// dropped on. In a category's square (`small`) its name is smaller, and its icon isn't drawn while it's in its category
+/// opened or on its way home from it (`away`), with less motion dissolving; its name stays in the square, going as the
+/// category opens and coming back once its apps have flown home (`named`), as the opened one's go and come, so nothing
+/// changes as they're handed back.
+function LibraryEntrypoint(props: { entrypoint: Listed; owner: Owner; icon: number; small?: boolean; away?: boolean; named?: boolean }) {
   const badge = () => (opens(props.entrypoint) ? badgeOf(opens(props.entrypoint)!, props.owner) : undefined)
   const from = (event: Located): From => {
     const at = event.currentTarget.getBoundingClientRect()
@@ -269,7 +272,7 @@ function LibraryEntrypoint(props: { entrypoint: Listed; owner: Owner; icon: numb
       }}
       style={[looks.entry, props.small && looks.entrySmall]}
     >
-      <View style={[looks.slots, looks.square(props.icon), props.handed, props.away && [looks.handing, looks.unseen]]}>
+      <View style={[looks.slots, looks.square(props.icon), props.small && reducedMotion() && looks.handing, props.away && looks.unseen]}>
         <Image src={src(props.entrypoint.icon)} alt="" style={[looks.iconImage(corner(props.icon)), looks.square(props.icon)]} />
         <Count count={badge()} />
       </View>
