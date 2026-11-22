@@ -49,7 +49,7 @@ impl Blur {
     /// region and sigma over the same frame and what's behind it changed only in part (a glass button fading behind a
     /// veil): the things behind that differ, where they're drawn, and round them as far as the blur's Gaussian reaches
     /// (`fs_blur`'s taps), what it reads twice as far. → what to blur and what of it to keep, in device pixels, where
-    /// that's less than half the region; else none, as it's blurred whole.
+    /// that's some of the region and less than half of it; else none, as it's blurred whole.
     pub(super) fn damaged(&self, kept: &KeptBlur) -> Option<([u32; 4], [u32; 4])> {
         if kept.sigma != self.sigma || kept.region != self.whole || kept.over != self.over {
             return None;
@@ -76,7 +76,10 @@ impl Blur {
         };
         let (keep, take) = (round(taps * step), round(2 * taps * step));
         let area = |[l, t, r, b]: [u32; 4]| u64::from(r.saturating_sub(l)) * u64::from(b.saturating_sub(t));
-        (2 * area(take) < area(self.whole)).then_some((take, keep))
+        // What changed is all outside the region (or nothing did), so there's nothing of it to take again in part: it's
+        // blurred whole, where a region of none, right of its left, was blurred as billions of texels (a generated
+        // scene, `motion.js --generated 1 --from 3`).
+        (area(take) > 0 && 2 * area(take) < area(self.whole)).then_some((take, keep))
     }
 
     /// Whether `next` can be blurred in the same passes as `blurs`: at the same level, through the same textures, where
