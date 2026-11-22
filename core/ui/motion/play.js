@@ -95,6 +95,13 @@ async function play(built, scene, name, motion, hz, folder) {
   const lifted = events?.findLast((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase))
   const end = events ? (lifted ?? events.at(-1)).ms : stretches.reduce((sum, stretch) => sum + stretch.ms, 0)
   const lifting = frames.slice(Math.max(0, frames.findLastIndex((frame) => frame.at < end)))
+  // What a finger moved and holds still is drawn nothing again while it's held still, once it's stopped, as Core
+  // Animation keeps a still layer's pixels: a card held still was drawn afresh, then from its layer's picture, each third
+  // frame, its edge half a pixel aside each time (L86). A press that hasn't moved yet draws what it presses.
+  const where = (n) => finger(stretches, frames[n].at - 1000 / hz, way)
+  const holding = (n) => where(n - 2) === where(n) && where(n) !== where(0) && [n - 2, n - 1].every((was) => JSON.stringify(frames[was].rect) === JSON.stringify(frames[n].rect))
+  const redrawn = events || !motion.follow ? -1 : frames.findIndex((frame, n) => n > 1 && frame.at < end && holding(n) && frame.work?.damage > 0)
+  if (redrawn >= 0) failed.push(`frame ${redrawn} (${frames[redrawn].at} ms) drew ${frames[redrawn].work.damage} pixels again while what the finger holds was held still`)
   const cutting = motion.reducedMotion && cut(lifting)
   if (cutting) failed.push(cutting)
   // And all of it at once, with no pause between its parts, as a folder's name and its apps' are dissolved with it.

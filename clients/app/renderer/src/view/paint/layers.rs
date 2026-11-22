@@ -44,8 +44,25 @@ impl Painter<'_> {
         let by = point(at.x + k * (centre.x + translate.x - own * centre.x) - grown * was.x, at.y + k * (centre.y + translate.y - own * centre.y) - grown * was.y);
         let moved = |bounds: Bounds<f32>| Bounds { origin: point(bounds.origin.x * grown + by.x, bounds.origin.y * grown + by.y), size: Size { width: bounds.size.width * grown, height: bounds.size.height * grown } };
         let opacity = opacity * look.opacity;
+        // What it placed, moved, in the order it was drawn among what's drawn into it each frame: what's on top takes
+        // the pointer. Put after them, a text drawn into it each frame was under the box it's in, which took the
+        // pointer from it, so it was hovered in a frame drawn afresh and not in one drawn from the layer, and that
+        // change drew the layer afresh again, each third frame, as it was held still.
+        let placed = |painter: &mut Self, range: std::ops::Range<usize>| {
+            let layer = &painter.layers[&id];
+            let moved = layer.placed[range].iter().map(|(id, placed)| (*id, Placed { shown: moved(placed.shown).intersect(&mask.bounds), opacity: placed.opacity * opacity, ..placed.clone() })).collect::<Vec<_>>();
+            painter.placed.extend(moved);
+        };
+        let mut done = 0;
         for part in self.layers[&id].parts.clone() {
+            if let Part::Sublayer(sublayer) = &part {
+                placed(self, done..sublayer.after);
+                done = sublayer.after;
+            }
             match part {
+                // Where it was drawn, as it was, it's drawn as what it drew, the same to the pixel as drawn without a
+                // layer, so coming to rest there draws nothing again.
+                Part::Scene(scene, Some(_)) if grown == 1.0 && by == point(0.0, 0.0) && opacity == 1.0 => self.scene.splice(&scene, 1.0, [0.0, 0.0], opacity, mask.scale_to(self.scale)),
                 Part::Scene(_, Some(recording)) => self.scene.raster(&recording, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Scene(scene, None) => self.scene.splice(&scene, grown, [by.x * self.scale, by.y * self.scale], opacity, mask.scale_to(self.scale)),
                 Part::Sublayer(sublayer) => {
@@ -59,8 +76,8 @@ impl Painter<'_> {
                 }
             }
         }
+        placed(self, done..self.layers[&id].placed.len());
         let layer = &self.layers[&id];
-        self.placed.extend(layer.placed.iter().map(|(id, placed)| (*id, Placed { shown: moved(placed.shown).intersect(&mask.bounds), opacity: placed.opacity * opacity, ..placed.clone() })));
         self.rects.extend(layer.rects.iter().map(|(id, rect)| {
             let drawn = moved(Bounds { origin: point(rect.x, rect.y), size: Size { width: rect.width, height: rect.height } });
             (*id, Rect { x: drawn.origin.x, y: drawn.origin.y, width: drawn.size.width, height: drawn.size.height })
@@ -205,7 +222,7 @@ impl Painter<'_> {
             let mut scene = std::mem::take(&mut *self.scene);
             scene.sort();
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));
-            self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, parent, pointer, turn: self.turn }));
+            self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, parent, pointer, turn: self.turn, after: self.placed.len() }));
             return;
         } else if self.layered.contains(&id) && self.unsettled != Some(id) && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
             return self.paint_layer(taffy_node, id, offset, transform, &look, mask, opacity, parent, pointer);

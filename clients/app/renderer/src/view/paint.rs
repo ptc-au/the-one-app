@@ -183,6 +183,9 @@ pub(super) struct Sublayer {
     pub(super) pointer: bool,
     /// How what it's in turns it, in the layer as it rests.
     pub(super) turn: TransformationMatrix,
+    /// How many of the layer's own placed nodes (`Layer::placed`) were drawn before it: they're under it, and the rest
+    /// over it, for the pointer as for the eye.
+    pub(super) after: usize,
 }
 
 /// The tree as Taffy lays it out, kept from frame to frame, as GPUI's and Flutter's are: a frame styles again only what
