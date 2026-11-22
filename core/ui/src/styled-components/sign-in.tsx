@@ -41,6 +41,14 @@ const look = styles({
   half: { flexGrow: 1 },
 })
 
+/// A code's groups, two to a line at most: a code read off one screen and typed or checked on another breaks between
+/// pairs of groups (no-break spaces inside a pair), as Apple shows a verification code, never three and a lone fourth.
+const inPairs = (code: string) =>
+  code
+    .split(" ")
+    .reduce<string[]>((pairs, group, at) => (at % 2 ? [...pairs.slice(0, -1), `${pairs.at(-1)}\u00a0${group}`] : [...pairs, group]), [])
+    .join(" ")
+
 /// `<SignIn mark={logo} heading="Sign in" button="Sign in" onSignIn={passkey} />`: the one screen someone signs in on,
 /// wherever it's shown: the `mark` of whose it is (a picture's address, or what draws one), a `heading` and one
 /// `button`. `onSignIn` asks them, and what it throws is shown above the button to try again, as a `problem` given
@@ -116,7 +124,7 @@ export function SignIn(props: {
         <Show when={props.code}>
           <View style={look.part}>
             <Text style={look.grey}>{props.note}</Text>
-            <Text style={look.shown}>{props.code}</Text>
+            <Text style={look.shown}>{inPairs(String(props.code))}</Text>
             <Button variant="ghost" onPress={() => copy(String(props.code)).then(() => setCopied(true))}>
               {copied() ? "Copied" : "Copy"}
             </Button>
