@@ -152,7 +152,7 @@ impl Here {
         unpack("server-code", &builds["server-code"], &unpacking).await?;
         let mut check = command(release(&unpacking));
         check.args(["eval", "OneCore.Release.check()"]).env("ONE_SERVER_STATUS", told.to_string());
-        let output = check.output()?;
+        let output = ran(check, Duration::from_secs(300)).await?;
         let (out, errors) = (String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         let out = out
             .lines()
@@ -191,9 +191,12 @@ pub(super) async fn unpack(what: &str, build: &Value, folder: &Path) -> Result<(
     let name = build["build"].as_str().context("a build says which it is")?;
     let archive = folder.with_extension("tar.gz");
     fetch(what, build, &archive).await.with_context(|| format!("the build {name} didn't download"))?;
-    let unpacked = command("tar").arg("-xzf").arg(&archive).arg("-C").arg(folder).status()?;
+    let mut tar = command("tar");
+    tar.arg("-xzf").arg(&archive).arg("-C").arg(folder);
+    let unpacked = ran(tar, Duration::from_secs(300)).await?;
     fs::remove_file(&archive)?;
-    ensure!(unpacked.success(), "The build {name} didn't unpack.");
+    let errors = String::from_utf8_lossy(&unpacked.stderr);
+    ensure!(unpacked.status.success(), "The build {name} didn't unpack: {}", errors.trim());
     Ok(())
 }
 

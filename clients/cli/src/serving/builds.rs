@@ -115,6 +115,21 @@ pub(super) fn command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Com
     command
 }
 
+/// Runs `command` to its end, for at most `within`, giving what it printed. It's started on a thread of its own and
+/// waited for without holding the one thread all of this program runs on (`lib.rs`), and killed once `within`
+/// passes, so a program that hangs, even as it starts, fails what started it and the rest carries on: on 22 Nov
+/// 2026 a Surface's tar hung in Windows unpacking a build, once its GPU driver had, and its server's log and updates
+/// stopped with it.
+pub(super) async fn ran(command: std::process::Command, within: Duration) -> Result<std::process::Output> {
+    let program = command.get_program().to_string_lossy().into_owned();
+    let mut command = Command::from(command);
+    command.kill_on_drop(true).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let run = async {
+        Ok::<_, anyhow::Error>(tokio::task::spawn_blocking(move || command.spawn()).await??.wait_with_output().await?)
+    };
+    timeout(within, run).await.with_context(|| format!("{program} didn't end within {} s", within.as_secs()))?
+}
+
 /// The latest builds for this kind of machine, by what they are (`server`, `one`), each with a link to it.
 pub(super) async fn download(client: &Client) -> Result<Map<String, Value>> {
     let response = tool(client, "download", json!({"target": target()})).await?;
