@@ -17,7 +17,7 @@ const varying = (value: unknown): Partial<Varying> => (value && typeof value ===
 /** Each value of a varying one, made into another. */
 const each = (value: unknown, change: (value: any) => unknown) => {
   const by = varying(value)
-  const made = Object.fromEntries(Object.entries(by).map(([condition, value]) => [condition, change(value)]))
+  const made = Object.fromEntries(Object.entries(by).map(([condition, value]) => [condition, condition === "reducedTransparency" ? each(value, change) : change(value)]))
   return Object.keys(made).length === 1 ? made.default : made
 }
 
@@ -36,6 +36,12 @@ function declared(token: Token, condition: "default" | Condition): [string, stri
   const value = token.value as any
   switch (token.kind) {
     case "colour": {
+      if (condition === "reducedTransparency") {
+        const tinted = varying(value)[condition] as any
+        if (tinted === undefined) return []
+        const by = varying(tinted)
+        return [[token.id, by.dark ? `light-dark(${by.default}, ${by.dark})` : String(by.default)]]
+      }
       if (condition !== "default") return []
       if (value.of) return [[token.id, `color-mix(in oklab, var(--${value.of.id}) ${+(value.alpha * 100).toFixed(2)}%, transparent)`]]
       const by = varying(value)
@@ -43,7 +49,7 @@ function declared(token: Token, condition: "default" | Condition): [string, stri
     }
     case "material": {
       const at = varying(value)[condition] as any
-      return at ? [[token.id, `blur(${css(at.blur)}) saturate(${at.saturate})`]] : []
+      return at ? [[token.id, at.blur.px === 0 ? "none" : `blur(${css(at.blur)}) saturate(${at.saturate})`]] : []
     }
     case "length":
     case "radius": {
@@ -91,6 +97,7 @@ const where: Record<Condition, (rules: string) => string> = {
   // An iPhone's or iPad's rem is its body text size, which its person chose (`-webkit-touch-callout` is known only to iOS).
   phone: (rules) => `@supports (-webkit-touch-callout: none) and (font: -apple-system-body) {\n  :root {\n    font: -apple-system-body;\n${indent(rules)}  }\n}\n`,
   reducedMotion: (rules) => `@media (prefers-reduced-motion: reduce) {\n  :root {\n${indent(rules)}  }\n}\n`,
+  reducedTransparency: (rules) => `@media (prefers-reduced-transparency: reduce) {\n  :root {\n${indent(rules)}  }\n}\n`,
 }
 
 /** Tokens as CSS variables, on `:root`, as they are by default and where each condition holds. */

@@ -108,6 +108,7 @@ impl Screen {
         page.theme = self.theme;
         page.appearance = self.appearance;
         page.reduced_motion = self.reduced_motion;
+        page.reduced_transparency = self.reduced_transparency;
         page.pressure = self.pressure;
         page.text_size = self.text_size;
         page.title = self.title.take();

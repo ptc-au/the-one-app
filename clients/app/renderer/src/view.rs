@@ -142,6 +142,8 @@ pub struct Screen {
     pub appearance: Appearance,
     /// The person asked for less motion, as the device says.
     pub reduced_motion: bool,
+    /// Glass is a plain tint, as the device says (`Conditions::reduced_transparency`).
+    pub reduced_transparency: bool,
     /// How pressed the device is (`platform::Pressure`), which the page hears as `hostContext.pressure`, to do less as a
     /// web page's `PressureObserver` would. What's drawn is drawn as ever: what moves goes on moving, as a cross-fade
     /// costs a frame no less than a slide, and glass keeps its blur, which a still page behind it costs once
@@ -346,6 +348,7 @@ impl Screen {
             theme: None,
             appearance: Appearance::Light,
             reduced_motion: false,
+            reduced_transparency: false,
             pressure: Default::default(),
             text_size: None,
             page: 0,

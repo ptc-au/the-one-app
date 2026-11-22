@@ -55,6 +55,7 @@ impl Windows {
         let rail = self.windows.get(&id).is_some_and(|window| self.rail(window.root));
         let Some(window) = self.windows.get_mut(&id).filter(|window| window.pending) else { return false };
         fit(&mut screen, &window.parts[0].native, id, window.room(), rail, window.title_row, self.pressure);
+        screen.reduced_transparency = self.context.tinted();
         screen.when_unused.append(&mut window.when_unused);
         screen.unused();
         (window.screen, window.pending, window.dirty) = (Ok(screen), false, true);
@@ -84,6 +85,7 @@ impl Windows {
             // phone's is its screen whatever it was asked to be, and a computer's app opens where it was left.
             let room = if options.panel.is_some() { options.size } else { native.size() };
             fit(screen, &native, id, room, self.rail(options.root), options.title_row, self.pressure);
+            screen.reduced_transparency = self.context.tinted();
         }
         let rendering = web_time::Instant::now();
         let whole = crate::geometry::Bounds { origin: crate::geometry::point(0.0, 0.0), size: Size { width: options.size.width.0, height: options.size.height.0 } };

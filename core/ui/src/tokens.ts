@@ -28,7 +28,11 @@ export interface Token<Kind extends string = string> {
 
 export type { Condition }
 
-const colour = (light: string, dark = light): Token<"colour"> => ({ kind: "colour", id: "", value: light === dark ? light : { default: light, dark } })
+/** A colour, light and dark; and `tinted`, its light and dark where glass is a plain tint (`reducedTransparency`). */
+const colour = (light: string, dark = light, tinted?: readonly [light: string, dark: string]): Token<"colour"> => {
+  const tint = tinted && (tinted[0] === tinted[1] ? tinted[0] : { default: tinted[0], dark: tinted[1] })
+  return { kind: "colour", id: "", value: tint ? { default: light, ...(light === dark ? {} : { dark }), reducedTransparency: tint } : light === dark ? light : { default: light, dark } }
+}
 const length = (value: Varies<Length>): Token<"length"> => ({ kind: "length", id: "", value })
 const radius = (value: Varies<Length | { percent: number }>): Token<"radius"> => ({ kind: "radius", id: "", value })
 const rem = (rem: number): Length => ({ rem })
@@ -44,10 +48,14 @@ const font = (...families: string[]): Token<"font"> => ({ kind: "font", id: "", 
 const weight = (weight: number): Token<"weight"> => ({ kind: "weight", id: "", value: { default: weight, dark: weight - 25 } })
 /** A colour as another at a part of its opacity: text at 60%, an accent's 12% tint. */
 const alpha = (of: Token<"colour">, percent: number): Token<"colour"> => ({ kind: "colour", id: "", value: { of, alpha: percent / 100 } })
-/** What shows through what has it: what's behind, blurred so far and saturated so much. */
 /** What shows through what has it: what's behind, blurred so far and saturated so much; `system`, the system's own
- * material where the host has one, as a launcher panel's glass is under the window (a Mac's), and else blurred as any. */
-const material = (blur: number, saturate: number, system?: boolean): Token<"material"> => ({ kind: "material", id: "", value: { blur: px(blur), saturate, ...(system ? { system } : {}) } })
+ * material where the host has one, as a launcher panel's glass is under the window (a Mac's), and else blurred as any.
+ * Where glass is a plain tint (`reducedTransparency`) it blurs nothing, and the fill of what has it is all there is. */
+const material = (blur: number, saturate: number, system?: boolean): Token<"material"> => ({
+  kind: "material",
+  id: "",
+  value: { default: { blur: px(blur), saturate, ...(system ? { system } : {}) }, reducedTransparency: { blur: px(0), saturate: 1, ...(system ? { system } : {}) } },
+})
 const motion = (duration: Varies<number>, easing: Varies<[number, number, number, number]>): Token<"motion"> => ({ kind: "motion", id: "", value: { duration, easing } })
 /** A spring, as SwiftUI's `.spring(duration:bounce:)` and Motion's are given: about how long it takes to get there, in
  * milliseconds, and how far past it goes, from 0 (not at all) to 1. A change on its way is turned to the new value
@@ -221,12 +229,13 @@ const roles = {
   /** A panel of glass, over the window or the desktop: the action panel, an alert, the launcher. Tinted as macOS's
    * widgets and Control Center are, so text stays readable over any window behind it: secondary text holds WCAG AA's
    * 4.5:1 over a white one in dark. */
-  panel: colour("oklch(0.991 0.001 286.38 / 92%)", "oklch(0.185 0 0 / 92%)"),
+  panel: colour("oklch(0.991 0.001 286.38 / 92%)", "oklch(0.185 0 0 / 92%)", ["oklch(0.991 0.001 286.38)", "oklch(0.185 0 0)"]),
   /** Liquid Glass's fill, over what's blurred behind it: mostly white in light, a grey a little lighter than black in
    * dark, a fifth see-through, so it reads over anything. */
-  glass: colour("oklch(1 0 0 / 80%)", "oklch(0.26 0 0 / 80%)"),
-  /** What veils a page behind something opened over it, over what's blurred. */
-  veil: alpha(colours.background, 55),
+  glass: colour("oklch(1 0 0 / 80%)", "oklch(0.26 0 0 / 80%)", ["oklch(1 0 0)", "oklch(0.26 0 0)"]),
+  /** What veils a page behind something opened over it, over what's blurred; where glass is a plain tint, opaque: what's
+   * behind, unblurred, would show its words through the words over it. */
+  veil: colour("oklch(0.977 0.003 286.35 / 55%)", "oklch(0 0 0 / 55%)", ["oklch(0.977 0.003 286.35)", "oklch(0 0 0)"]),
   /** A tile's tint, as an App Library category's square is. */
   tile: alpha(label, 14),
   /** What's typed in, and an outline button: a field's fill, a little lighter than what it's on, as iOS's

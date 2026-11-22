@@ -19,6 +19,8 @@ pub struct Context {
     /// Its device was lost (its GPU was reset, as a Windows driver's TDR resets it, or went), so nothing drawn with
     /// it draws again: what draws makes everything again, on a new one (`Windows::recover`).
     lost: Arc<AtomicBool>,
+    /// Glass is a plain tint on this GPU, not a blur (`weak`), decided once, as it's chosen.
+    tinted: bool,
 }
 
 /// The pipelines each format of target draws with, by that format, compiled once for every window: by the first that
@@ -130,7 +132,12 @@ impl Context {
             log::error!("the GPU was lost ({reason:?}): {message}");
             told.store(true, Ordering::Relaxed);
         });
-        Ok(Self { instance, adapter, device, queue, pipelines: Default::default(), lost })
+        let tinted = match std::env::var("ONE_GLASS").as_deref() {
+            Ok("tinted") => true,
+            Ok("blurred") => false,
+            _ => weak(&adapter.get_info()),
+        };
+        Ok(Self { instance, adapter, device, queue, pipelines: Default::default(), lost, tinted })
     }
 
     /// The GPU memory its allocator has taken from the system (`reserved`) and what it's given out of that
@@ -163,6 +170,12 @@ impl Context {
         })
     }
 
+    /// Whether glass is a plain tint here, not a blur: the GPU is too weak to blur at its refresh rate. `ONE_GLASS`
+    /// (`tinted` or `blurred`) says it where the harness stands for another device than its own.
+    pub fn tinted(&self) -> bool {
+        self.tinted
+    }
+
     /// Whether its device was lost (`lost`).
     pub fn lost(&self) -> bool {
         self.lost.load(Ordering::Relaxed)
@@ -185,6 +198,26 @@ async fn adapter(instance: &wgpu::Instance) -> anyhow::Result<wgpu::Adapter> {
     match instance.request_adapter(&options(false)).await {
         Ok(adapter) => Ok(adapter),
         Err(_) => instance.request_adapter(&options(true)).await.map_err(|error| anyhow::anyhow!("no GPU to draw with: {error}")),
+    }
+}
+
+/// Whether `info`'s GPU is one of the weak ones, which blurring costs frames on (core/ui/devices.json's low-end Android
+/// and Intel UHD laptop, from its Manhattan 3.1 score, below the iPhone 11's): an Intel HD or UHD Graphics of the 600s
+/// or older, an Arm Mali of the Midgard or of G3x, G5x, an Adreno before the 640, a PowerVR. Apple's, AMD's, NVIDIA's,
+/// Intel's Iris Xe and Arc, and a software renderer's are not: a software renderer is only ever a harness's.
+fn weak(info: &wgpu::AdapterInfo) -> bool {
+    if info.device_type != wgpu::DeviceType::IntegratedGpu {
+        return false;
+    }
+    let name = info.name.to_ascii_lowercase();
+    // The model's number, as `Mali-G52 MC2` and `Adreno (TM) 613` end or run on in digits.
+    let number = |after: &str| name.split(after).nth(1).and_then(|rest| rest.trim_start_matches(|c: char| !c.is_ascii_digit()).split(|c: char| !c.is_ascii_digit()).next()?.parse::<u32>().ok());
+    match info.vendor {
+        0x8086 => (name.contains("uhd graphics") || name.contains("hd graphics")) && number("graphics").is_some_and(|model| model < 700),
+        0x13b5 => name.contains("mali-t") || number("mali-g").is_some_and(|model| model < 60),
+        0x5143 => number("adreno").is_some_and(|model| model < 640),
+        0x1010 => true,
+        _ => false,
     }
 }
 

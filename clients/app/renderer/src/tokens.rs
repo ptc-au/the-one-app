@@ -55,6 +55,9 @@ pub struct Conditions {
     pub touch: bool,
     pub phone: bool,
     pub reduced_motion: bool,
+    /// Glass is a plain tint, not a blur: its person asked for less transparency, or its GPU is too weak to blur
+    /// at its refresh rate (`Context::tinted`), as macOS, Windows and Android make glass opaque on low-end hardware.
+    pub reduced_transparency: bool,
     /// What the window keeps for itself at its top, right, bottom and left, in whole pixels (`Screen::insets`, which
     /// its page is told as `safeAreaInsets`): the UI library's `safe-top`, `safe-right`, `safe-bottom` and `safe-left`
     /// lengths are these, as its tokens say the host sets them.
@@ -72,7 +75,7 @@ pub struct Conditions {
 
 impl Default for Conditions {
     fn default() -> Conditions {
-        Conditions { dark: false, touch: false, phone: false, reduced_motion: false, insets: [0; 4], page: 0, title_bar: [0; 2], rem: REM }
+        Conditions { dark: false, touch: false, phone: false, reduced_motion: false, reduced_transparency: false, insets: [0; 4], page: 0, title_bar: [0; 2], rem: REM }
     }
 }
 
@@ -83,6 +86,7 @@ impl Conditions {
             "touch" => self.touch,
             "phone" => self.phone,
             "reducedMotion" => self.reduced_motion,
+            "reducedTransparency" => self.reduced_transparency,
             _ => false,
         }
     }
@@ -176,14 +180,15 @@ pub fn table() -> std::sync::Arc<Table> {
 fn varies<'a>(value: &'a serde_json::Value, conditions: Conditions) -> &'a serde_json::Value {
     let Some(by) = value.as_object().filter(|by| by.contains_key("default")) else { return value };
     let mut out = &by["default"];
-    for condition in ["dark", "touch", "phone", "reducedMotion"] {
+    for condition in ["dark", "touch", "phone", "reducedMotion", "reducedTransparency"] {
         if conditions.holds(condition)
             && let Some(value) = by.get(condition)
         {
             out = value;
         }
     }
-    out
+    // What a condition says may itself vary, as the tint of glass is light or dark.
+    varies(out, conditions)
 }
 
 /// A `Length` (`{px}` or `{rem}`), in pixels, as 1rem is where `conditions` hold.
@@ -263,10 +268,11 @@ impl Table {
     }
 
     /// A material: how far what's behind is blurred, in pixels, how saturated it is, and whether it's the system's own
-    /// where the host has one.
+    /// where the host has one. None where it blurs nothing (its tinted form): the fill it's drawn with is all there is.
     pub fn material(&self, id: &str, conditions: Conditions) -> Option<(f32, f32, bool)> {
         let value = self.value(id, "material", conditions)?;
-        Some((length_of(&value["blur"], conditions)?, value["saturate"].as_f64().unwrap_or(1.0) as f32, value["system"] == true))
+        let (blur, system) = (length_of(&value["blur"], conditions)?, value["system"] == true);
+        (blur > 0.0 || system).then(|| (blur, value["saturate"].as_f64().unwrap_or(1.0) as f32, system))
     }
 
     pub fn weight(&self, id: &str, conditions: Conditions) -> Option<f32> {

@@ -11,7 +11,7 @@ impl Screen {
             Some(size) => (true, (size * 100.0).round() as u16),
             None => (false, Conditions::default().rem),
         };
-        Conditions { dark: self.dark(), touch: self.touch, phone, reduced_motion: self.reduced_motion, insets, title_bar, page: self.page, rem }
+        Conditions { dark: self.dark(), touch: self.touch, phone, reduced_motion: self.reduced_motion, reduced_transparency: self.reduced_transparency, insets, title_bar, page: self.page, rem }
     }
 
     /// Draws its canvas over what it painted, `opacity` as opaque: its page's background with nothing on it, under its
@@ -137,7 +137,7 @@ impl Screen {
     fn paint_frames(&mut self, at: Option<Instant>, scale: f32, text: &mut TextSystem, atlas: &Atlas) {
         for (id, child) in &mut self.frames {
             let screen = &mut child.screen;
-            (screen.theme, screen.appearance, screen.reduced_motion, screen.touch) = (self.theme, self.appearance, self.reduced_motion, self.touch);
+            (screen.theme, screen.appearance, screen.reduced_motion, screen.reduced_transparency, screen.touch) = (self.theme, self.appearance, self.reduced_motion, self.reduced_transparency, self.touch);
             screen.active = self.active && self.focus.focused == Some(*id);
             // What of the window's own safe area its frame reaches, as an iframe's `env(safe-area-inset-*)` is: its page keeps clear of the part under it.
             let (rect, insets) = (child.rect, self.insets);

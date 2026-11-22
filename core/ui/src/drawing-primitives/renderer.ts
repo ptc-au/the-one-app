@@ -391,12 +391,15 @@ export type TokenId = string
  * - `dark`: the window is dark, as its person's Colour Mode, or the device's where they chose none, says.
  * - `touch`: what points at it is a finger, not a mouse or a trackpad (CSS's `pointer: coarse`).
  * - `phone`: an iPhone's or Android phone's own text size, which sets `rem` to the size its person chose.
- * - `reducedMotion`: its person asked for less motion. */
-export type Condition = "dark" | "touch" | "phone" | "reducedMotion"
-export const conditions: Condition[] = ["dark", "touch", "phone", "reducedMotion"]
+ * - `reducedMotion`: its person asked for less motion.
+ * - `reducedTransparency`: glass is a plain tint, not a blur: its person asked for less transparency (CSS's
+ *   `prefers-reduced-transparency`), or its GPU is too weak to blur at its refresh rate, as macOS, Windows and Android
+ *   make glass opaque on low-end hardware. What it says may itself vary by the others, as the tint is light or dark. */
+export type Condition = "dark" | "touch" | "phone" | "reducedMotion" | "reducedTransparency"
+export const conditions: Condition[] = ["dark", "touch", "phone", "reducedMotion", "reducedTransparency"]
 
 /** A value, or a value by condition: `default`, and what it is where a condition holds. */
-export type Varies<T> = T | ({ default: T } & { [C in Condition]?: T })
+export type Varies<T> = T | ({ default: T } & { [C in Condition]?: C extends "reducedTransparency" ? Varies<T> : T })
 
 /** A colour in sRGB, each channel and alpha from 0 to 1. */
 export type Rgba = [r: number, g: number, b: number, a: number]
