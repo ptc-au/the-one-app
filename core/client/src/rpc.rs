@@ -117,7 +117,7 @@ const KEYS: u64 = 2;
 /// Has `request`, a write, say an idempotency key, as Stripe's API and the IETF's `Idempotency-Key` have one, unless it
 /// says one already: the time it's made, which says when it's past its day, and 128 random bits. Gives it, and the same
 /// request as it's asked again of another server, which says so and speaks only the protocol that keeps to keys.
-fn idempotent(request: &mut Value) -> (String, Vec<u8>) {
+fn idempotent(request: &mut Value) -> (String, Value) {
     let meta = &mut request["params"]["_meta"];
     if !meta["idempotencyKey"].is_string() {
         let made = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
@@ -128,7 +128,7 @@ fn idempotent(request: &mut Value) -> (String, Vec<u8>) {
     let mut again = request.clone();
     again["params"]["_meta"]["resent"] = json!(true);
     again["params"]["_meta"]["protocol"] = json!({"oldest": KEYS, "newest": KEYS});
-    (key, again.to_string().into_bytes())
+    (key, again)
 }
 
 /// What a server answered a write it found was done already, which it kept encrypted to this device: the answer it
@@ -185,7 +185,7 @@ impl Client {
         // A request is read once on its way out: for what this device fills in of it, what it says of itself, and
         // the span it is of a trace (`span`).
         #[allow(clippy::type_complexity)]
-        let (message, lists, reads, span, said, write): (std::borrow::Cow<[u8]>, bool, bool, Option<opentelemetry_sdk::trace::Span>, Option<Value>, Option<(String, Vec<u8>)>) =
+        let (message, lists, reads, span, said, write): (std::borrow::Cow<[u8]>, bool, bool, Option<opentelemetry_sdk::trace::Span>, Option<Value>, Option<(String, Value)>) =
             match serde_json::from_slice::<Value>(message) {
                 Ok(mut request) if request["method"].is_string() => {
                     if request.get("id").is_some() && request["params"]["_meta"]["progressToken"].is_null() {
@@ -210,20 +210,11 @@ impl Client {
             for _ in 0..2 {
                 let open = self.reached().await?;
                 *reached.lock().expect("no ask panics") = open.path();
-                // It says the attestation of the run the connection it goes over is of, which a run made again as it
-                // went (`relink`) changed: a server found the owner's phone nobody's as it started (20 Nov).
-                let sending: std::borrow::Cow<[u8]> = match &said {
-                    Some(request) if request["params"]["_meta"]["attestation"].is_string() && request["params"]["_meta"]["attestation"] != open.attestation.as_str() && !open.attestation.is_empty() => {
-                        let mut request = request.clone();
-                        request["params"]["_meta"]["attestation"] = json!(open.attestation);
-                        request.to_string().into_bytes().into()
-                    }
-                    _ => message.clone(),
-                };
-                let asked = match (reads, &write) {
-                    (true, _) => self.hedged(&open, &sending, None, &notified).await,
-                    (false, Some((_key, again))) => self.hedged(&open, &sending, Some(again), &notified).await,
-                    (false, None) => open.ask(&sending, &notified).await,
+                let asked = match (&said, reads, &write) {
+                    (Some(request), true, _) => self.hedged(&open, request, None, &notified).await,
+                    (Some(request), false, Some((_key, again))) => self.hedged(&open, request, Some(again), &notified).await,
+                    (Some(request), false, None) => open.ask(&open.said(request), &notified).await,
+                    (None, ..) => open.ask(&message, &notified).await,
                 };
                 match asked {
                     Ok(response) => return Ok(response),
@@ -290,19 +281,22 @@ impl Client {
         }
     }
 
-    /// What `open`'s server answers `message`, or if it hasn't within `HEDGE`, what another server answers it, if
-    /// first, which what's asked from then on is asked of. Either one's failing leaves the other's. A read is asked
+    /// What `open`'s server answers `request`, or if it hasn't within `HEDGE`, what another server answers it, if
+    /// first, which what's asked from then on is asked of. Each is asked it as said over its own connection
+    /// (`Reached::said`), which may be of a run made since. Either one's failing leaves the other's. A read is asked
     /// the same of both. A write is asked of the other `again`, as it's asked again by its idempotency key, and an
     /// error that one answers is it not running it there, so the first is waited for.
-    async fn hedged(&self, open: &Arc<Reached>, message: &[u8], again: Option<&[u8]>, notified: &impl Fn(&[u8])) -> Result<Vec<u8>, RequestError> {
-        let first = open.ask(message, notified);
+    async fn hedged(&self, open: &Arc<Reached>, request: &Value, again: Option<&Value>, notified: &impl Fn(&[u8])) -> Result<Vec<u8>, RequestError> {
+        let said = open.said(request);
+        let first = open.ask(&said, notified);
         tokio::pin!(first);
         let other = tokio::select! {
             answered = &mut first => return answered,
             other = async { tokio::time::sleep(HEDGE).await; self.elsewhere(open).await } => other,
         };
         let Some(other) = other else { return first.await };
-        let second = other.ask(again.unwrap_or(message), notified);
+        let said_there = other.said(again.unwrap_or(request));
+        let second = other.ask(&said_there, notified);
         tokio::pin!(second);
         tokio::select! {
             answered = &mut first => match answered { Ok(answer) => Ok(answer), Err(_) => second.await },
@@ -337,15 +331,13 @@ impl Client {
         response.to_string().into_bytes()
     }
 
-    /// Has `request` say who it's from, in its `_meta`: the device this run is of, with its attestation for the run's key,
-    /// and what the environment says, unless the request says otherwise, as one of a device's own does. It says the
-    /// protocols it speaks too, which a server refuses, saying why, only where it speaks none of them (`OneCore.Mcp`),
-    /// and this build, and which client this is, as MCP's 2026-07-28 has each request say (`one-cli`, `one-app`), unless it's an MCP
-    /// client's own request that says which that is.
+    /// Has `request` say who it's from, in its `_meta`: the device this run is of, which the connection it's asked over
+    /// attests to for its run (`Reached::said`), and what the environment says, unless the request says otherwise, as
+    /// one of a device's own does. It says the protocols it speaks too, which a server refuses, saying why, only where
+    /// it speaks none of them (`OneCore.Mcp`), and this build, and which client this is, as MCP's 2026-07-28 has each
+    /// request say (`one-cli`, `one-app`), unless it's an MCP client's own request that says which that is.
     pub(crate) fn say(&self, request: &mut Value) {
-        for (says, value) in [("device", self.key.public().to_string()), ("attestation", self.link().attestation)] {
-            request["params"]["_meta"][says] = json!(value);
-        }
+        request["params"]["_meta"]["device"] = json!(self.key.public().to_string());
         request["params"]["_meta"]["protocol"] = PROTOCOL.clone();
         request["params"]["_meta"]["version"] = json!(BUILD);
         let info = &mut request["params"]["_meta"]["io.modelcontextprotocol/clientInfo"];

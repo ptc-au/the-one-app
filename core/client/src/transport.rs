@@ -249,6 +249,20 @@ impl Reached {
         }
     }
 
+    /// `request` as it's asked over this connection, saying the attestation of the run whose endpoint made it. A run
+    /// made again (`relink`, as each run is as it starts and as it's back online) has another, which a server checks
+    /// against the connection's key: a request said before then and asked over a connection of the new run, as one
+    /// hedged to another server is, had the server find the device nobody's (20 and 21 Nov, as servers restarted).
+    /// A server's connection has none.
+    pub(crate) fn said(&self, request: &Value) -> Vec<u8> {
+        if self.attestation.is_empty() {
+            return request.to_string().into_bytes();
+        }
+        let mut request = request.clone();
+        request["params"]["_meta"]["attestation"] = json!(self.attestation);
+        request.to_string().into_bytes()
+    }
+
     /// Whether the connection is still one to ask over: it hasn't closed, and its server hasn't been found gone.
     pub fn open(&self) -> bool {
         self.connection.close_reason().is_none() && !self.gone()
@@ -459,7 +473,7 @@ impl Client {
             {
                 let mut unwatch = json!({"jsonrpc": "2.0", "method": WATCH, "params": {}});
                 self.say(&mut unwatch);
-                let _ = open.ask(unwatch.to_string().as_bytes(), |_| {}).await;
+                let _ = open.ask(&open.said(&unwatch), |_| {}).await;
             }
         });
         join_all(watches).await;
@@ -483,7 +497,7 @@ impl Client {
             let here = address(&link.endpoint, link.network.as_ref()).ok()?;
             let mut watch = json!({"jsonrpc": "2.0", "method": WATCH, "params": {"address": here}});
             self.say(&mut watch);
-            open.ask(watch.to_string().as_bytes(), |_| {}).await.ok()?;
+            open.ask(&open.said(&watch), |_| {}).await.ok()?;
         }
         Some(open)
     }
