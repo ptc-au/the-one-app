@@ -13,7 +13,7 @@ use crate::geometry::{DevicePixels, Pixels, Size};
 use crate::platform::{Input, WindowId, WindowOptions};
 
 thread_local! {
-    /// A frame asked for (`request_frame`), and when the browser last showed one.
+    /// A frame asked for (`request_frame`), and when the frame begun at the last the browser gave shows.
     static ASKED: Cell<bool> = const { Cell::new(false) };
     static FRAMED: Cell<Option<web_time::Instant>> = const { Cell::new(None) };
     /// The display's refresh interval, as the browser's frames show it: the shortest between two in a row (each frame's
@@ -171,7 +171,8 @@ impl Display {
                     REFRESH.set(Some(REFRESH.get().map_or(between, |refresh| refresh.min(between))));
                 }
                 ASKED.set(false);
-                FRAMED.set(Some(web_time::Instant::now()));
+                // What's drawn in the browser's frame shows a refresh after it began.
+                FRAMED.set(Some(web_time::Instant::now() + REFRESH.get().unwrap_or(crate::platform::FRAME)));
                 soon();
             });
             // The browser's own, which the frame's JS gives it, not the page's, which a `settle` waits for.

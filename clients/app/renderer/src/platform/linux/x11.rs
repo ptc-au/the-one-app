@@ -785,7 +785,7 @@ impl Display {
         }
     }
 
-    /// When the display showed the frame asked for, once it has.
+    /// When the frame begun at the refresh asked for shows, once that's come.
     pub fn frame(&self) -> Option<std::time::Instant> {
         self.framed.take()
     }
@@ -1038,7 +1038,8 @@ impl Display {
                 let mut now = libc::timespec { tv_sec: 0, tv_nsec: 0 };
                 unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now) };
                 let now = now.tv_sec as u64 * 1_000_000 + now.tv_nsec as u64 / 1000;
-                self.framed.set(Some(std::time::Instant::now() - std::time::Duration::from_micros(now.saturating_sub(shown.ust))));
+                // The frame begun now shows at the next refresh.
+                self.framed.set(Some(std::time::Instant::now() - std::time::Duration::from_micros(now.saturating_sub(shown.ust)) + self.refresh));
             }
             Event::ClientMessage(event) => {
                 let data = event.data.as_data32();

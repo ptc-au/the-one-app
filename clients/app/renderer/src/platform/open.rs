@@ -26,7 +26,7 @@ impl Windows {
             let mut text = TextSystem::new(crate::FONT, fonts, !cfg!(feature = "fake"));
             #[cfg(any(feature = "fake", target_arch = "wasm32"))]
             text.monospace(crate::view::MONOSPACE.0);
-            Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, framed: now(), showed: now(), wanted: false, ticked: None, vsync: None, check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false })
+            Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, clock: Default::default(), check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false })
         })();
         if let Err(error) = &made {
             *UNSTARTED.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(format!("{error:#}"));
@@ -146,7 +146,7 @@ impl Windows {
                 cover: if panel || screen_failed { Cover::Gone } else { Cover::Over(None) },
                 loading: false,
                 uncovered: false,
-                presented: None,
+                shows: None,
                 frames: 0,
                 timing: Default::default(),
                 waiting: VecDeque::new(),

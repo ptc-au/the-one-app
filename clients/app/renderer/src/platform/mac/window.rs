@@ -155,7 +155,7 @@ impl NativeWindow {
     }
 }
 
-/// When the display last showed a frame, and what wakes the native thread to it.
+/// When the frame begun at the display link's last tick shows, and what wakes the native thread to it.
 struct Frames {
     shown: Mutex<Option<std::time::Instant>>,
     /// The display's refresh interval, as its link last said, or before it's ticked, its nominal one.
@@ -173,19 +173,25 @@ impl DisplayLink {
         use objc2_core_video::{CVDisplayLink, CVOptionFlags, CVReturn, CVTimeStamp, kCVReturnSuccess};
         unsafe extern "C-unwind" fn shown(
             _: std::ptr::NonNull<CVDisplayLink>,
-            _: std::ptr::NonNull<CVTimeStamp>,
+            now: std::ptr::NonNull<CVTimeStamp>,
             output: std::ptr::NonNull<CVTimeStamp>,
             _: CVOptionFlags,
             _: std::ptr::NonNull<CVOptionFlags>,
             frames: *mut c_void,
         ) -> CVReturn {
             let frames = unsafe { &*frames.cast::<Frames>() };
-            *frames.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now());
-            let output = unsafe { output.as_ref() };
+            let (now, output) = unsafe { (now.as_ref(), output.as_ref()) };
             if output.videoRefreshPeriod > 0 && output.videoTimeScale > 0 {
                 let refresh = std::time::Duration::from_secs_f64(output.videoRefreshPeriod as f64 / f64::from(output.videoTimeScale));
                 *frames.refresh.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = refresh;
             }
+            // The frame begun now shows at the link's output time, which is ahead of its now on the display's own clock.
+            let refresh = *frames.refresh.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let ahead = match output.videoTimeScale > 0 && output.videoTime >= now.videoTime {
+                true => std::time::Duration::from_secs_f64((output.videoTime - now.videoTime) as f64 / f64::from(output.videoTimeScale)),
+                false => refresh,
+            };
+            *frames.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now() + ahead);
             frames.ping.ping();
             kCVReturnSuccess
         }
@@ -589,7 +595,7 @@ impl Display {
         *self.frames.refresh.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// When the display last showed a frame, once it has since this was last asked.
+    /// When the frame begun at the link's last tick shows, once it's ticked since this was last asked.
     pub fn frame(&self) -> Option<std::time::Instant> {
         self.frames.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
     }

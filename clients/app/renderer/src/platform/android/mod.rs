@@ -115,22 +115,22 @@ thread_local! {
     static JAVA: RefCell<Option<(JavaVM, GlobalRef)>> = const { RefCell::new(None) };
     /// The file the looper wakes on when the next timer of any window is due.
     static TIMER: RefCell<Option<OwnedFd>> = const { RefCell::new(None) };
-    /// Whether Choreographer has been asked for the next frame, and when the display showed the last one asked for.
+    /// Whether Choreographer has been asked for the next frame, and when the frame begun at the last one shows.
     static ASKED: Cell<bool> = const { Cell::new(false) };
     static FRAMED: Cell<Option<Instant>> = const { Cell::new(None) };
     /// The display's refresh interval, as it said once asked.
     static REFRESH: Cell<Option<std::time::Duration>> = const { Cell::new(None) };
 }
 
-/// Choreographer's frame, on the UI thread: when it was shown, on CLOCK_MONOTONIC as `Instant` is, and the windows'
-/// turn for it.
+/// Choreographer's frame, on the UI thread: when it began, on CLOCK_MONOTONIC as `Instant` is, so the frame begun
+/// now shows a refresh after, and the windows' turn for it.
 unsafe extern "C" fn framed(frame_time_nanos: std::ffi::c_long, _: *mut c_void) {
     let mut now = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now) };
     let now = now.tv_sec as i64 * 1_000_000_000 + now.tv_nsec as i64;
     let ago = std::time::Duration::from_nanos(now.saturating_sub(frame_time_nanos as i64).max(0) as u64);
     ASKED.set(false);
-    FRAMED.set(Some(Instant::now() - ago));
+    FRAMED.set(Some(Instant::now() - ago + REFRESH.get().unwrap_or(super::FRAME)));
     with_windows(|_| {});
 }
 
@@ -318,7 +318,7 @@ impl Display {
         }
     }
 
-    /// When the display showed the frame asked for, once it has.
+    /// When the frame begun at Choreographer's last frame shows, once it's come since this was last asked.
     pub fn frame(&self) -> Option<std::time::Instant> {
         FRAMED.take()
     }

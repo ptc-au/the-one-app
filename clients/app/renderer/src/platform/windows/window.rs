@@ -62,6 +62,7 @@ pub struct Display {
 struct Frames {
     wanted: std::sync::Mutex<bool>,
     told: std::sync::Condvar,
+    /// When the frame begun at the compositor's last frame shows.
     shown: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
@@ -230,7 +231,8 @@ impl Display {
                 if wait.is_none_or(|wait| unsafe { wait(0, std::ptr::null(), 100) } != WAIT_OBJECT_0) {
                     std::thread::sleep(refresh);
                 }
-                *waiting.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now());
+                // What's drawn in the compositor's frame shows a refresh after it began.
+                *waiting.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::time::Instant::now() + refresh);
                 let _ = unsafe { PostThreadMessageW(thread, WM_NULL, WPARAM(0), LPARAM(0)) };
             }
         })?;
@@ -484,7 +486,7 @@ impl Display {
         }
     }
 
-    /// When the compositor showed the frame asked for, once it has.
+    /// When the frame begun at the compositor's last frame shows, once it's come since this was last asked.
     pub fn frame(&self) -> Option<std::time::Instant> {
         self.frames.shown.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
     }

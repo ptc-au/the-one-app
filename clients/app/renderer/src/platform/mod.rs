@@ -17,12 +17,12 @@
 //!   while a press moves, where the device predicts it's going (`Input::Predicted`: iOS's `predictedTouches`,
 //!   Android's `MotionPredictor`, the web's `getPredictedEvents`). No host gives the device's time yet, so each event
 //!   is timed as it's handled, which events handled together get wrong: the check says so.
-//! - **A tick each time the display shows a frame** (`Display::frame`), with when it showed it, while a frame is
-//!   wanted (`Display::request_frame`), and none while nothing moves: X11's Present, a Mac's CVDisplayLink, Windows'
-//!   compositor clock (DComposition), Android's Choreographer, an iPhone's CADisplayLink, the web's
-//!   `requestAnimationFrame`. A display that says nothing (`Display::paced` false), or whose link hasn't ticked for
-//!   a refresh and a quarter, is ticked by the loop's own clock, at the display's refresh (`Display::refresh`), or 60 Hz
-//!   where it doesn't say.
+//! - **A tick each refresh** (`Display::frame`), saying when the frame begun at it shows, while a frame is wanted
+//!   (`Display::request_frame`), and none while nothing moves, and the display's refresh (`Display::refresh`, 60 Hz
+//!   where it doesn't say): X11's Present, a Mac's CVDisplayLink, Windows' compositor clock (DComposition), Android's
+//!   Choreographer, an iPhone's CADisplayLink, the web's `requestAnimationFrame`. That's all a host's link does: the
+//!   windows' one frame clock (`frame_clock`) keeps the refreshes from it, through a link that's slow to start, late or
+//!   stopped, and one that says nothing (`Display::paced` false).
 //! - **A surface to present on**: a frame presented each tick while something moves, and nothing while it's still.
 
 use std::collections::{HashMap, VecDeque};
@@ -75,6 +75,7 @@ mod window;
 use cover::{BLANK, FADES_IN, QUIET, SHOWN_WITHIN, Cover, covered, whole};
 use window::fit;
 pub(crate) use input::Input;
+mod frame_clock;
 mod frame_timing;
 pub use frame_timing::Frames;
 pub(crate) use frame_timing::Timing;
@@ -388,8 +389,8 @@ struct Window {
     uncovered: bool,
     /// Its frames while something on it moves.
     timing: frame_timing::Timing,
-    /// When it last handed the display a frame, since the display's last tick (`Windows::turned`).
-    presented: Option<web_time::Instant>,
+    /// The refresh its last frame shows at, which it draws no other for (`Windows::turned`).
+    shows: Option<web_time::Instant>,
     /// How many frames it's presented, all told.
     frames: u64,
     /// What the person did that waits, in order, for its page to catch up with what they did before (`Windows::input`).
@@ -427,17 +428,8 @@ pub struct Windows {
     text: TextSystem,
     windows: HashMap<WindowId, Window>,
     next: WindowId,
-    /// When the display last showed a frame, as its platform says, or the loop's own clock stood in for it (`showed`),
-    /// or a window last drew where its link doesn't tick: what the loop's own clock counts its next frame from.
-    framed: web_time::Instant,
-    showed: web_time::Instant,
-    /// Whether the display's frames were asked for as the loop last turned, and when its link last ticked since they
-    /// were (`ticking`).
-    wanted: bool,
-    ticked: Option<web_time::Instant>,
-    /// The refresh its link last said the display showed, which its others are whole refreshes from, so the loop's own
-    /// clock stands in on them (`turned`).
-    vsync: Option<web_time::Instant>,
+    /// The display's refreshes, which frames begin at and are drawn for.
+    clock: frame_clock::FrameClock,
     /// The inspector's `host` check under way, and what the host has done since it started.
     check: Option<conformance::Check>,
     record: conformance::Record,
@@ -471,15 +463,24 @@ pub use fake::reduce as fake_reduce;
 #[cfg(feature = "fake")]
 pub use fake::time as fake_time;
 
-/// When `at`, an instant the windows' loop told (a frame's), was on `clock`, a page's: on the fake platform, whose
-/// instants are its clock's (`fake::now`), exactly as long before its time; elsewhere as the clock says (`Clock::at`).
+/// When `at`, an instant the windows' loop told (a frame's, which can be a moment on), is on `clock`, a page's: on the
+/// fake platform, whose instants are its clock's (`fake::now`), exactly as far from its time; elsewhere as the clock
+/// says (`Clock::at`).
 #[cfg(not(feature = "fake"))]
 pub(crate) fn time_at(clock: &crate::js::Clock, at: web_time::Instant) -> f64 {
     clock.at(at)
 }
 #[cfg(feature = "fake")]
 pub(crate) fn time_at(clock: &crate::js::Clock, at: web_time::Instant) -> f64 {
-    clock.now() - since(at).as_secs_f64() * 1000.0
+    clock.now() + ms_from(now(), at)
+}
+
+/// How many ms `at` is after `now`, or before it as fewer than none.
+pub(crate) fn ms_from(now: web_time::Instant, at: web_time::Instant) -> f64 {
+    match at.checked_duration_since(now) {
+        Some(after) => after.as_secs_f64() * 1000.0,
+        None => -now.duration_since(at).as_secs_f64() * 1000.0,
+    }
 }
 
 /// How long since `at`, by `now`.

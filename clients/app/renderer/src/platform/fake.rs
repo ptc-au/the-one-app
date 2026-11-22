@@ -231,7 +231,7 @@ impl Display {
         self.events.borrow_mut().push_back((id, part, input));
     }
 
-    /// The display showed a frame, at `at`, which the loop hears on its next turn.
+    /// The display's link ticked: the frame begun now shows at `at`, which the loop hears on its next turn.
     pub fn tick(&self, at: web_time::Instant) {
         self.tick.set(Some(at));
         let mut late = self.late.borrow_mut();

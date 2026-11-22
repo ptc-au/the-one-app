@@ -87,12 +87,13 @@ impl Windows {
         }
     }
 
-    /// The display refreshes now, its link saying so to the loop on its turn where it ticks (`set_link`). A panel just
+    /// The display refreshes now, its link saying so to the loop on its turn where it ticks (`set_link`): the frame begun
+    /// now shows at the next. A panel just
     /// put on the screen with nothing drawn on it (a page that hadn't drawn yet) is wrong (`wrong`), as a host's
     /// compositor shows its window then, its backdrop an empty box, until the next frame.
     pub fn tick(&mut self) {
         if self.display.ticks() {
-            self.display.tick(now());
+            self.display.tick(now() + self.display.refresh());
         }
         for id in self.display.summoned() {
             let Some(window) = self.windows.get_mut(&id) else { continue };
@@ -105,9 +106,9 @@ impl Windows {
     }
 
     /// The display's next refresh comes, on its own clock: the fake platform's time moves on to it (`run`), and its link
-    /// ticks there, as a host's display does only on its refreshes. Ticked at whatever time a request came, the loop
-    /// counted the display's refreshes from a moment it never refreshed at (`Windows::vsync`), and a change it held for
-    /// the next was drawn between two, out of step with every frame after it.
+    /// ticks there, as a host's display does only on its refreshes. Ticked at whatever time a request came, the frame
+    /// clock counted the display's refreshes from a moment it never refreshed at (`FrameClock`), and a change it held
+    /// for the next was drawn between two, out of step with every frame after it.
     pub fn refresh_next(&mut self) {
         let refresh = self.display.refresh().as_secs_f64() * 1000.0;
         let now = fake::time();

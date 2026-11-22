@@ -78,8 +78,7 @@ impl Clock {
 
     /// When `instant` was, on this clock, or now while it's paused.
     pub fn at(&self, instant: Instant) -> f64 {
-        let ago = Instant::now().saturating_duration_since(instant).as_secs_f64() * 1000.0;
-        if self.paused() { self.now() } else { self.now() - ago }
+        if self.paused() { self.now() } else { self.now() + crate::platform::ms_from(Instant::now(), instant) }
     }
 
     pub fn now(&self) -> f64 {

@@ -12,19 +12,11 @@ impl Windows {
         let screens = self.windows.values().filter_map(|window| window.screen.as_ref().ok()?.due());
         let showing = self.windows.values().filter(|window| !window.shown || matches!(window.cover, Cover::Over(_)) || window.reloading).map(|window| (if window.picture.is_some() { SHOWN_WITHIN } else { QUIET }).saturating_sub(since(window.opened)));
         let blank = self.windows.values().filter(|window| !window.looked && (!window.panel || window.visible)).map(|window| BLANK.saturating_sub(since(window.looking)));
-        // Where the display says nothing of its frames, hasn't yet since they were asked for, or has stopped, the loop's
-        // own clock stands in for it a refresh after its last; while its link ticks, the loop looks again once a tick is
-        // a quarter of a refresh late (`ticking`).
-        let refresh = self.refresh();
-        let frame = self.framing().then(|| match self.ticked.filter(|_| self.ticking()) {
-            Some(at) => (refresh * 5 / 4).saturating_sub(since(at)),
-            None => shows(self.vsync, refresh, self.framed).saturating_duration_since(now()),
-        });
+        // The next frame begun, while something moves or a window has a change to draw (`FrameClock`).
+        let frame = self.drawing().then(|| self.clock.due(now(), self.refresh()));
         let check = self.check.as_ref().map(conformance::Check::due).into_iter().chain(self.recording.as_ref().map(|recording| recording.until.saturating_duration_since(now()))).min();
         let idle = self.renderers().filter_map(Renderer::idle_in);
-        // A change held for the refresh its window's last frame shows on (`turned`), where the display says nothing yet.
-        let held = self.windows.values().filter(|window| !self.ticking() && window.dirty && window.on_screen()).filter_map(|window| window.presented).map(|at| shows(self.vsync, refresh, at).saturating_duration_since(now()));
-        screens.chain(showing).chain(blank).chain(frame).chain(check).chain(idle).chain(held).min()
+        screens.chain(showing).chain(blank).chain(frame).chain(check).chain(idle).min()
     }
 
     /// Whether its windows are a phone's: each the whole screen, an app's over the Home Screen, which it opens out of.
@@ -41,25 +33,16 @@ impl Windows {
         self.on_phone() && !root && (cfg!(not(feature = "fake")) || self.windows.values().any(|window| window.root))
     }
 
-    /// Whether the display says when it shows each frame, and has within the last refresh and a quarter since its
-    /// frames were last asked for: a display link just started takes a while to tick (a Mac's two or three refreshes),
-    /// and a ProMotion display's stops a while as if what's on it were idle, and the loop's own clock stands in for it
-    /// meanwhile, so what moves isn't held. A tick later than that finds the frame that clock drew for it (`turned`).
-    pub(super) fn ticking(&self) -> bool {
-        self.display.paced() && self.ticked.is_some_and(|at| since(at) < self.refresh() * 5 / 4)
-    }
-
-    /// Whether the display's link, ticking while something moves, hasn't yet for a refresh that's gone by: what the
-    /// person does meanwhile came after that refresh, so it waits (`waits`) for the frame drawn for it, on the link's
-    /// late tick or the loop's own clock standing in (`ticking`), and is drawn in the next, as a browser's input is in
-    /// the frame begun after it came. Done at once, the late frame drew it a refresh early and the next drew nothing
-    /// new: a trackpad's swipe at 120 Hz, as a ProMotion display's link stopped, moved 5.5 pt and then held.
+    /// Whether the loop asked for frames and the display has begun a refresh no frame has yet: what the person does now
+    /// waits (`waits`) for the frame begun for it, and is drawn in the next, as a browser's input is in the frame begun
+    /// after it came. Done at once, the frame begun drew it a refresh early and the next drew nothing new: a trackpad's
+    /// swipe at 120 Hz, as a ProMotion display's link stopped, moved 5.5 pt and then held.
     pub(super) fn overdue(&self) -> bool {
-        self.ticking() && self.framing() && self.ticked.is_some_and(|at| since(at) >= self.refresh())
+        self.clock.overdue(now(), self.refresh())
     }
 
-    /// The display's refresh interval, as it says: every platform's knows it before its first frame, so the loop's own
-    /// clock stands in at the display's pace from the first motion after it starts, never a 60 Hz display's on a 120.
+    /// The display's refresh interval, as it says: every platform's knows it before its first frame, so the frame clock
+    /// keeps the display's pace from the first motion after it starts, never a 60 Hz display's on a 120.
     pub fn refresh(&self) -> std::time::Duration {
         self.display.refresh()
     }
@@ -72,6 +55,14 @@ impl Windows {
     pub(super) fn framing(&self) -> bool {
         self.check.as_ref().is_some_and(conformance::Check::moving)
             || self.windows.values().any(|window| window.on_screen() && (window.moving || (window.dirty && window.working()) || window.slide.is_some() || window.pull.as_ref().is_some_and(|pull| pull.pulling() || pull.springing()) || matches!(window.cover, Cover::Fading(..)) || window.screen.as_ref().is_ok_and(Screen::framing)))
+    }
+
+    /// Whether a frame is wanted: the loop asked for the display's next as it last turned, something moves, or a window
+    /// on screen has a change to draw, which it draws at once or, where it has a frame for the coming refresh, at the
+    /// next (`turned`). Asked for and never begun, what the person did waited for it (`overdue`) for good: a tap on a
+    /// Settings row whose key took a while never opened it.
+    fn drawing(&self) -> bool {
+        self.clock.asked() || self.framing() || self.windows.values().any(|window| window.dirty && window.on_screen())
     }
 
     /// Makes what draws again, on a new GPU device, where the one it drew with was lost, as a browser makes a lost
@@ -162,55 +153,36 @@ impl Windows {
                 renderer.idle();
             }
         }
-        // The display showed a frame: what moves on a window on screen is drawn again, and its page's
-        // `requestAnimationFrame` runs, told when, as a browser's does once a frame.
-        let framing = self.framing();
-        let ticked = self.display.frame();
-        self.ticked = ticked.or(self.ticked);
-        // A tick for the refresh the loop's own clock has drawn for, as the link starts on the refresh the clock stood in
-        // for, shows nothing new: taken as the next, it forgot the frame drawn for it (`presented`), and input after it
-        // was drawn at once, a refresh early, with what came next (a list flung at 60 Hz jumped 113 pt as it was let go).
-        let refresh = self.refresh();
-        let ticked = ticked.filter(|at| at.saturating_duration_since(self.showed) >= refresh / 4);
-        self.vsync = ticked.or(self.vsync);
-        // Where the loop's own clock stands in, its frame is the display's refresh after the one its last showed on
-        // (`shows`), at most a refresh late (a link that stopped, noticed a quarter of a refresh on), so what moves keeps
-        // the display's pace: at the clock's own time, a link's pause had it move a step and a half, then half a step;
-        // a refresh after a frame drawn as input came, it drew just before each refresh, before the move that came
-        // then, and took two at once as the link started (a Home Screen's page dragged at 120 Hz: 2.5, 5, 2.5 pt).
-        let next = shows(self.vsync, refresh, self.framed);
-        let shown = ticked.or_else(|| (framing && !self.ticking() && now() >= next).then(|| Some(next).filter(|next| since(*next) < refresh).unwrap_or_else(now)));
-        // What moves is drawn where it is at the time of the display's refresh its frame is for, as a link's tick says
-        // it: the nearest to the loop's own clock's, which, counting from a frame drawn as input came, is out of step
-        // with them. Drawn at its own time, a step as the link started came two thirds of a refresh after the one
-        // before; at the refresh before it, a frame due a hair before a refresh was drawn at the last one's time.
-        let time = shown.map(|at| match self.vsync.filter(|vsync| *vsync <= at) {
-            Some(vsync) => vsync + refresh.mul_f64(((at - vsync).as_secs_f64() / refresh.as_secs_f64()).round()),
-            None => at,
-        });
-        // A window a gesture let go, or an app's opening out of its icon, is moved where its spring is at that time too.
-        #[cfg(any(target_os = "android", target_os = "ios", feature = "fake"))]
-        if let Some(time) = time {
-            self.spring(time);
-            #[cfg(any(target_os = "ios", feature = "fake"))]
-            self.slide(time);
+        // The display's link says when the frame begun at its tick shows (`FrameClock`).
+        if let Some(shows) = self.display.frame() {
+            self.clock.tick(shows);
+            if self.check.is_some() {
+                self.record.tick(shows);
+            }
         }
-        // When the display showed the frame before, which a frame presented since was drawn after (`presented`).
-        let before = shown.map(|at| std::mem::replace(&mut self.showed, at));
-        if let Some(at) = shown {
-            self.framed = at;
-            if let Some(check) = &self.check {
-                self.record.tick(at);
-                // The window it checks moves on each tick while it's kept moving.
-                if check.moving()
-                    && let Some(window) = self.windows.get_mut(&check.window)
-                {
-                    window.moving = true;
-                }
+        // A frame begins once a refresh while one's wanted (`drawing`): what moves on a window on screen is drawn again,
+        // and its page's `requestAnimationFrame` runs, told the frame's time, as a browser's does once a frame. What a
+        // frame drawn now draws is where it is at that time, the same for every window.
+        let (at, refresh) = (now(), self.refresh());
+        let time = self.clock.time(at, refresh);
+        if self.drawing() && self.clock.begin(at, refresh) {
+            // A window a gesture let go, or an app's opening out of its icon, is moved where its spring is at that time too.
+            #[cfg(any(target_os = "android", target_os = "ios", feature = "fake"))]
+            {
+                self.spring(time);
+                #[cfg(any(target_os = "ios", feature = "fake"))]
+                self.slide(time);
+            }
+            // The window a host check checks moves on each frame while it's kept moving.
+            if let Some(check) = &self.check
+                && check.moving()
+                && let Some(window) = self.windows.get_mut(&check.window)
+            {
+                window.moving = true;
             }
             for window in self.windows.values_mut().filter(|window| window.on_screen()) {
                 window.dirty |= std::mem::take(&mut window.moving);
-                if let (Ok(screen), Some(time)) = (&mut window.screen, time) {
+                if let Ok(screen) = &mut window.screen {
                     screen.frame(time);
                 }
             }
@@ -272,26 +244,16 @@ impl Windows {
                 (window.on_event)(Event::Mismatched(why));
             }
         }
-        // A window hands the display at most one frame a refresh: what changes after it has drawn since the last tick is
-        // drawn on the next, as a browser draws on its frames, and where the display's link isn't ticking (idle, just
-        // asked for, or stopped), a refresh after the frame it drew. Drawn as each input or change came, frames queued
-        // ahead of the display, each shown a refresh late, and the thread waited for an image to draw on every frame
-        // (an iPhone's main thread, 120 times a second); and a finger lifting in the refresh after its last move drew
-        // again, so where it last was never showed, and a fling jumped as it was let go. A change before it has is
-        // drawn at once, so what the page answers just after a tick, or the first input, isn't held a refresh.
-        let ticking = self.ticking();
+        // A window hands the display at most one frame a refresh: what changes after it has drawn is drawn once the
+        // refresh its frame shows at has come (`FrameClock::shows`), as a browser draws on its frames. Drawn as each
+        // input or change came, frames queued ahead of the display, each shown a refresh late, and the thread waited for
+        // an image to draw on every frame (an iPhone's main thread, 120 times a second); and a finger lifting in the
+        // refresh after its last move drew again, so where it last was never showed, and a fling jumped as it was let
+        // go. A change in a window with no frame for the coming refresh is drawn at once, so what the page answers just
+        // after a refresh began, or the first input, isn't held a refresh.
         let mut held = false;
         #[cfg(any(target_os = "android", target_os = "ios", feature = "fake"))]
         let phone = self.on_phone();
-        // A frame presented since the display showed the one before, in the quarter refresh before it showed this one
-        // or after, is too late for it: it's the next refresh's, which the window draws no other for. Forgotten, a
-        // link's tick at the moment the loop's own clock or input drew drew again at once, and so did input on the frame
-        // after, a frame never shown (a fling's lift).
-        if let (Some(at), Some(before)) = (shown, before) {
-            for window in self.windows.values_mut() {
-                window.presented = window.presented.filter(|presented| *presented > before && at.saturating_duration_since(*presented) < refresh / 4);
-            }
-        }
         for window in self.windows.values_mut() {
             // A new window shows at once, its page covered (`Cover`) by its snapshot until its page has heard back from
             // what it asked, or has waited long enough, or with no snapshot by its canvas, until its page is ready or a
@@ -335,7 +297,7 @@ impl Windows {
                     let mut opening = rail::Pull::opening();
                     let reduced = window.screen.as_ref().is_ok_and(|screen| screen.reduced_motion);
                     let room = window.room();
-                    let (moved, _) = opening.step(Size { width: room.width.0, height: room.height.0 }, window.icon, reduced, time.unwrap_or_else(now));
+                    let (moved, _) = opening.step(Size { width: room.width.0, height: room.height.0 }, window.icon, reduced, time);
                     self.display.set_moved(&window.parts[0].native, moved);
                     window.pull = Some(opening);
                 }
@@ -379,9 +341,9 @@ impl Windows {
                 continue;
             }
             let (width, height) = (device.width.0 as u32, device.height.0 as u32);
-            if let Some(at) = window.presented
+            if let Some(shows) = window.shows
                 && window.summoned.is_none()
-                && (ticking || now() + ROUNDING < shows(self.vsync, refresh, at))
+                && frame_clock::waits(now(), shows)
                 // Mutant: a frame drawn as each change comes, several in a refresh, as before fbb4e1c9e.
                 && !crate::mutants::mutant("double-frame")
             {
@@ -421,7 +383,7 @@ impl Windows {
                         // canvas; under its snapshot, or a canvas over all of it, it's left until it's revealed, as
                         // it was before it showed, so what it asks for as it's laid out is for its real layout.
                         if !matches!(window.cover, Cover::Over(_)) || (window.picture.is_none() && screen.title.is_some()) {
-                            changed = screen.paint(time, room, scale, &mut self.text, &self.atlas, &mut window.scene);
+                            changed = screen.paint(Some(time), room, scale, &mut self.text, &self.atlas, &mut window.scene);
                         }
                         window.moving = screen.take_again();
                         let calls = screen.text_input(&mut window.text_input);
@@ -502,22 +464,17 @@ impl Windows {
             }
             window.unshown = false;
             window.missed = 0;
-            window.presented = Some(now());
+            window.shows = Some(self.clock.shows(now(), refresh));
             window.frames += 1;
             #[cfg(feature = "fake")]
             if let Ok(screen) = &mut window.screen {
                 screen.presented();
             }
-            // Drawn where the display's link doesn't tick, as input came, it's the frame the display shows next, which the
-            // loop's own clock counts its next from; drawn on that clock's frame, it counts from that.
-            if !ticking && shown.is_none() {
-                self.framed = now();
-            }
             // Its opening out of its icon starts from the frame it first shows something in.
             if window.frames == 1
                 && let Some(opening) = window.pull.as_mut().filter(|pull| pull.opens())
             {
-                opening.shown(time.unwrap_or_else(now));
+                opening.shown(time);
             }
             if self.check.is_some() {
                 self.record.present();
@@ -568,10 +525,9 @@ impl Windows {
         self.pressed();
         #[cfg(feature = "fake")]
         self.ran();
-        // The display's frames are wanted while something moves, and while a change waits for its next tick; a link
-        // just started, or stopped, hasn't ticked.
-        let waiting = held || (ticking && self.windows.values().any(|window| window.on_screen() && window.dirty));
-        let wanted = self.framing() || waiting;
+        // The display's frames are wanted while something moves, and while a change waits for its next refresh.
+        let wanted = self.framing() || held;
+        self.clock.ask(wanted, now(), self.refresh());
         // With no frame wanted, what moved is still: its frames are said, so the next one, drawn whenever something
         // comes, isn't counted as a refresh the display missed, which pressed the device for 5 s.
         if !wanted {
@@ -581,8 +537,6 @@ impl Windows {
                 }
             }
         }
-        self.ticked = self.ticked.filter(|_| wanted && self.wanted);
-        self.wanted = wanted;
         self.display.request_frame(wanted);
         self.display.flush();
         if let Some(recording) = self.recording.take_if(|recording| recording.until <= now()) {
@@ -617,24 +571,3 @@ impl Windows {
 
 /// How many refreshes have had something new to draw, for the mutant `dropped-refresh`.
 static DROPPED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-/// How far a refresh's time, as a clock gives it in whole ns, is from a refresh's length (60 Hz's 16.666667 ms) on from
-/// a frame's: a few ns either side, which held a frame due at the refresh it came at for a refresh more, the App
-/// Library's category opening at 60 Hz showing its 8th frame twice and then jumping 45 pt.
-const ROUNDING: std::time::Duration = std::time::Duration::from_micros(1);
-
-/// The display's refresh a frame presented at `at` shows on: the first a quarter of a refresh or more after it, counted
-/// from the link's last tick (`vsync`), as one presented in the quarter before a refresh is too late for it (`turned`);
-/// a refresh after it where the display has never ticked. What changes after it is drawn there, at the start of the
-/// refresh after, with what comes before it, as a display link's frame begins at its tick: a refresh after the frame
-/// itself, a frame drawn as the page answered just before a refresh had every move after it drawn just before the
-/// next, which a move that comes then missed, a refresh late (a finger's pan held a frame, and took two steps at once
-/// as it was let go). A turn within `ROUNDING` of it is at it.
-fn shows(vsync: Option<web_time::Instant>, refresh: std::time::Duration, at: web_time::Instant) -> web_time::Instant {
-    let ready = at + refresh / 4;
-    match vsync {
-        Some(vsync) if vsync <= ready => vsync + refresh.mul_f64(((ready - vsync).as_secs_f64() / refresh.as_secs_f64()).ceil()),
-        Some(vsync) => vsync,
-        None => at + refresh,
-    }
-}

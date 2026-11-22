@@ -154,7 +154,7 @@ thread_local! {
     static TAPPED: RefCell<Vec<WindowId>> = const { RefCell::new(Vec::new()) };
     /// What each window's picker chose, for which node, until the windows hear it (`device.mm`).
     static PICKED: RefCell<Vec<(WindowId, crate::tree::Id, String)>> = const { RefCell::new(Vec::new()) };
-    /// The display link, once a frame's been wanted, and when the display showed the last frame it said.
+    /// The display link, once a frame's been wanted, and when the frame begun at its last tick shows.
     static LINK: RefCell<Option<Retained<CADisplayLink>>> = const { RefCell::new(None) };
     static FRAMED: Cell<Option<Instant>> = const { Cell::new(None) };
     /// The display's interval for the frame its link last said, which ProMotion changes (8.3 ms at 120 Hz).
@@ -526,7 +526,7 @@ impl Display {
         })
     }
 
-    /// When the display showed the frame asked for, once it has.
+    /// When the frame begun at the link's last tick shows, once it's ticked since this was last asked.
     pub fn frame(&self) -> Option<std::time::Instant> {
         FRAMED.take()
     }
@@ -644,12 +644,12 @@ define_class!(
     unsafe impl NSObjectProtocol for Ticker {}
 
     impl Ticker {
-        /// The display showed a frame: when, on the clock Core Animation's media time is, as `Instant` is (mach's
-        /// continuous time), and the windows' turn for it.
+        /// The display's link ticked: when the frame begun now shows (its target), on the clock Core Animation's media
+        /// time is, as `Instant` is (mach's continuous time), and the windows' turn for it.
         #[unsafe(method(framed:))]
         fn framed(&self, link: &CADisplayLink) {
-            let ago = (CACurrentMediaTime() - link.timestamp()).max(0.0);
-            FRAMED.set(Some(Instant::now() - Duration::from_secs_f64(ago)));
+            let ahead = (link.targetTimestamp() - CACurrentMediaTime()).max(0.0);
+            FRAMED.set(Some(Instant::now() + Duration::from_secs_f64(ahead)));
             let interval = link.targetTimestamp() - link.timestamp();
             if interval > 0.0 {
                 REFRESH.set(Some(Duration::from_secs_f64(interval)));
