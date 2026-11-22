@@ -122,6 +122,12 @@ async function play(built, scene, name, motion, hz, folder) {
   // point, a page fading out under another), which its renderer can't know without drawing it.
   const same = frames.filter((frame, n) => n > 0 && frame.drawn && !frames[n - 1].arriving && frame.png === frames[n - 1].png)
   if (same.length) failed.push(`${same.length} frames the same as the one before were drawn and presented, the first frame ${frames.indexOf(same[0])} (${same[0].at} ms), ${same[0].work?.damage ?? 0} pixels drawn again`)
+  // What `follow` names, where it's a surface of its own, has what's in it painted once, as it's first drawn: moved,
+  // faded, grown or scrolled, its picture is, as Core Animation moves a layer. Painted again a frame after it was drawn
+  // from its surface, it was dropped and made again (`view::Surfaced`).
+  const drew = frames.filter((frame) => frame.drawn)
+  const repainted = drew.findIndex((frame, n) => n > 0 && frame.surface === "painted" && drew[n - 1].surface)
+  if (repainted >= 0) failed.push(`frame ${frames.indexOf(drew[repainted])} (${drew[repainted].at} ms) painted what's in ${JSON.stringify(motion.follow)} again, though it was drawn from its surface the frame before, which only moves`)
   const cutting = motion.reducedMotion && cut(lifting)
   if (cutting) failed.push(cutting)
   // And all of it at once, with no pause between its parts, as a folder's name and its apps' are dissolved with it.

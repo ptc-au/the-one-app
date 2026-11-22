@@ -165,6 +165,10 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
                 }
                 None => frame["gone"] = json!(true),
             }
+            // How the frame drew it, where it's a surface of its own: what's in it painted, or drawn from what it was.
+            if let Some(surfaced) = query["node"].as_u64().and_then(|node| windows.with(id, |screen| screen.surfaced(node)).flatten()) {
+                frame["surface"] = json!(surfaced);
+            }
         }
         // How many of what `count` matches a person sees, and the same for `shows`, `holds` and `named`.
         if let Some(query) = &count {

@@ -259,6 +259,11 @@ impl Screen {
         let dissolving: HashSet<Id> = whole.iter().filter(|id| self.transitions.dissolving(**id, now).is_some()).copied().collect();
         let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| (!touched.contains(id) || dissolving.contains(id)) && !text(id)).copied().collect();
         self.layers.retain(|id, _| layered.contains(id) && !(dissolving.contains(id) && touched.contains(id)));
+        // Mutant: each third frame every surface dropped and what's in it painted again, as when promotion was guessed
+        // from what moved the frame before and flipped.
+        if crate::mutants::mutant("surface-dropped") && self.frame % 3 == 2 {
+            self.layers.clear();
+        }
         self.frame += 1;
         Some(Plan { conditions, window, scale, now, caret, everything, changed, moving, below, layered, scrolled })
     }
