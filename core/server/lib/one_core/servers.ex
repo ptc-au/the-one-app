@@ -139,6 +139,19 @@ defmodule OneCore.Servers do
   def ready?(key), do: presence(key)["server_ready"]
 
   @doc """
+  Whether this server is behind: another of the network's servers that's ready runs a newer build, as each says
+  (`OneCore.Builds.say/1`). One back after days away is, until it's updated, and so is one that hasn't yet taken the
+  build a release is taking the network to. What it would build or deploy, another builds against the newer.
+  """
+  def behind? do
+    mine = Builds.count(Builds.build())
+
+    Enum.any?(all() -- [Server.key()], fn key ->
+      ready?(key) == true and Builds.count(read("servers/#{key}/build", %{})["build"]) > mine
+    end)
+  end
+
+  @doc """
   Whether this server is the one to do `what` (a JSON value, such as the build or the commit it's for), of all the
   servers that would, as the blob `blob` says: the first to ask writes that it does, and the others leave it to that
   one while it's ready. One that isn't any more left it unfinished, and the next to ask takes it on, as it does

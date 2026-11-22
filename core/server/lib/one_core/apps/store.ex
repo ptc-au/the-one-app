@@ -355,9 +355,11 @@ defmodule OneCore.Apps.Store do
       blob = "#{artifact}/described/#{code}"
       description = Description.description(version)
 
-      # One said otherwise, as an earlier build of this server said it, is said again.
+      # One said otherwise is said again by a build at least as new as the one that said it, as a newer build says
+      # more of a version; one older, as a server back after days away has, never takes its place.
       with :exists <- Bucket.write(blob, description),
            {:ok, was, tag} when was != description <- Bucket.read(blob),
+           true <- Description.newer?(description, was),
            do: Bucket.replace(blob, description, tag)
     end
 

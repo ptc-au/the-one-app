@@ -156,6 +156,10 @@ defmodule OneCore.Tools.Apps do
   # what it deploys or installs runs there (`OneCore.Apps.runs?/3`).
   defp runs(owner, trusted, forward) do
     cond do
+      # A server behind the network builds nothing, as it would against what's older (`OneCore.Servers.behind?/0`).
+      Apps.runs?(owner, trusted) and OneCore.Servers.behind?() ->
+        forward.({:running, owner})
+
       Apps.runs?(owner, trusted) ->
         true
 

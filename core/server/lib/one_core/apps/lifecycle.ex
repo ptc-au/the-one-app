@@ -670,43 +670,49 @@ defmodule OneCore.Apps.Lifecycle do
 
   @doc """
   Looks at the git source of the app `artifact` for a commit after the one it runs that changed its folder: a
-  trusted app takes it at once, and an untrusted one offers it. Gives where its updates are.
+  trusted app takes it at once, and an untrusted one offers it. Gives where its updates are. A server behind the
+  network looks at none: it would build the update against what's older (`OneCore.Servers.behind?/0`), and the
+  others look.
   """
   def check(artifact) do
     case settled(artifact) do
       %{"state" => "updating"} = record ->
         record
 
-      _ ->
-        about = Store.about(artifact)
+      record ->
+        if Servers.behind?(), do: record, else: checked(artifact)
+    end
+  end
 
-        with %{"source" => source, "commit" => commit} = from <- about["from"] || :none,
-             false <- from["dirty"] == true,
-             {:ok, offer} when offer != nil <- newer(source, from["ref"], commit, Path.basename(artifact), Store.trusted?(about)),
-             %{} = record <-
-               doing({:update, artifact}, Store.whose(artifact), "apps_update", fn task ->
-                 with %{} = record <- Update.change(artifact, {:newer, offer, Store.trusted?(about), Server.key(), task}) do
-                   told(artifact)
-                   if mine?(record), do: updating(artifact, record), else: record
-                 end
-               end) do
-          record
-        else
-          {:error, why} ->
-            Logger.warning("#{artifact}'s git source wasn't checked: #{why}")
-            Update.read(artifact)
+  defp checked(artifact) do
+    about = Store.about(artifact)
 
-          # Nothing at the source is newer than what runs. An offer or a failure still kept is of a commit it has gone
-          # past since, as a deploy from a later one does, and is no update.
-          {:ok, nil} ->
-            case Update.read(artifact) do
-              %{"state" => state} when state != "updating" -> told(artifact, Update.change(artifact, :current))
-              record -> record
-            end
+    with %{"source" => source, "commit" => commit} = from <- about["from"] || :none,
+         false <- from["dirty"] == true,
+         {:ok, offer} when offer != nil <- newer(source, from["ref"], commit, Path.basename(artifact), Store.trusted?(about)),
+         %{} = record <-
+           doing({:update, artifact}, Store.whose(artifact), "apps_update", fn task ->
+             with %{} = record <- Update.change(artifact, {:newer, offer, Store.trusted?(about), Server.key(), task}) do
+               told(artifact)
+               if mine?(record), do: updating(artifact, record), else: record
+             end
+           end) do
+      record
+    else
+      {:error, why} ->
+        Logger.warning("#{artifact}'s git source wasn't checked: #{why}")
+        Update.read(artifact)
 
-          _ ->
-            Update.read(artifact)
+      # Nothing at the source is newer than what runs. An offer or a failure still kept is of a commit it has gone
+      # past since, as a deploy from a later one does, and is no update.
+      {:ok, nil} ->
+        case Update.read(artifact) do
+          %{"state" => state} when state != "updating" -> told(artifact, Update.change(artifact, :current))
+          record -> record
         end
+
+      _ ->
+        Update.read(artifact)
     end
   end
 

@@ -20,7 +20,8 @@ defmodule OneCore.Apps.Version.Description do
 
   @doc """
   What a loaded version says of itself, as the bucket keeps it: its manifest's JSON form (`OneCore.App.Manifest`)
-  as checked, what it provides besides, and its files and skills, but none of its code.
+  as checked, what it provides besides, and its files and skills, but none of its code, with the `build` of the
+  server that said it.
   """
   def description(%Version{under: under} = version) do
     kept = LoadedVersion.kept(under)
@@ -31,8 +32,18 @@ defmodule OneCore.Apps.Version.Description do
 
     version
     |> Map.take(Manifest.said() ++ @kept)
-    |> Map.merge(%{tools: tools, files: kept.files, skills: kept.skills})
+    |> Map.merge(%{tools: tools, files: kept.files, skills: kept.skills, build: OneCore.Builds.build()})
     |> JSON.encode!()
+  end
+
+  @doc """
+  Whether `description` of a version takes the place of `was`, another said of it: it says something else of the
+  version, and the server that said it is on a build at least as new as the one that said `was`. One said before
+  descriptions said their build is the oldest.
+  """
+  def newer?(description, was) do
+    {now, was} = {JSON.decode!(description), JSON.decode!(was)}
+    Map.delete(now, "build") != Map.delete(was, "build") and OneCore.Builds.count(now["build"]) >= OneCore.Builds.count(was["build"])
   end
 
   @doc """
