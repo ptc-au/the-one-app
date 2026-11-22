@@ -83,7 +83,7 @@ function shelf(width: number) {
   const padding = { top: category * 0.072, inline: category * 0.066, bottom: category * 0.054 }
   const [columnGap, rowGap] = [category * 0.06, category * 0.036]
   const icon = (category - padding.inline * 2 - columnGap) / 2 - 18 - 4
-  return { gap, category, padding, columnGap, rowGap, icon }
+  return { gap, across, category, padding, columnGap, rowGap, icon }
 }
 
 /// Where each of a category's `count` apps' icons is in its square, drawn at `square`: its first four in its two
@@ -142,6 +142,10 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
   const found = (background: boolean) => findIn(props.owner.library, query(), background)
   const apps = () => sorted(props.owner.library, false)
   const background = () => sorted(props.owner.library, true)
+  // Its categories are as wide as the row that has the most of them, so the block is in the middle of the room under the
+  // search, as Launchpad's is, and not left of it with room for tiles it hasn't.
+  const columns = () => Math.min(laid().across, Math.max(1, apps().length, background().length))
+  const block = () => columns() * laid().category + (columns() - 1) * laid().gap
   const open = () => (searching() ? !shut() : unfolded())
   // Components, not JSX made again whenever the App Library's asked again: its rows stay, each with its icon.
   const Categories = (inner: { list: Category[]; prefix: string }) => (
@@ -200,7 +204,7 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
         </View>
       </Show>
       <ScrollView onScroll={(event) => (libraryScroll.scrollTop = event.currentTarget.scrollTop)} style={[looks.libraryScroll, looks.libraryPadding(inline(), props.size ? 0 : 12, props.size ? 0 : 96 + room().safe.bottom)]}>
-        <View style={[looks.libraryColumn, looks.wide(width())]}>
+        <View role="region" aria-label="Apps" style={[looks.libraryColumn, looks.wide(Math.min(width(), block()))]}>
           <Show when={searching() ? found(false).length || found(true).length : props.owner.library.length} fallback={<Empty>{searching() ? "No apps match." : "No apps yet."}</Empty>}>
             <Show when={searching()} fallback={<Show when={apps().length}><Categories list={apps()} prefix="" /></Show>}>
               <Show when={found(false).length}><Found list={found(false)} /></Show>

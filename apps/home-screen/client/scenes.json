@@ -3257,6 +3257,22 @@
       }
     }
   },
+  "App Library on a computer": {
+    "like": "App Library",
+    "size": [1280, 800],
+    "checks": {
+      "Its categories are in the middle of the window, under its search": [
+        {
+          "expect": {
+            "centred": {
+              "role": "region",
+              "name": "Apps"
+            }
+          }
+        }
+      ]
+    }
+  },
   "App Library, a category open": {
     "like": "App Library",
     "taps": [
