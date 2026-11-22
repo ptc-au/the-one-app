@@ -6,7 +6,7 @@ import { home, room, tapping, windowWidth } from "./store.ts"
 import { type Owner, badgeOf, opens, press } from "./owners.ts"
 import { holds } from "./holds.ts"
 import { Count, Tile } from "./tiles.tsx"
-import { handed, openedCategory, places, wait } from "./library.tsx"
+import { handed, landing, openedCategory, places, setLanding, wait } from "./library.tsx"
 
 /// How large an opened category's apps' icons are, how wide each is with its name, and the gap between them across,
 /// as `sizes.found` and `looks.openedApps` have them.
@@ -58,11 +58,23 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
   // that is. A scale is around its middle, and its icon is at its top, in the middle across.
   const square = () => places[props.made] ?? { apps: [] }
   // With less motion they stay where they are and fade, as an iPhone's folder's do, not jump onto it as they go.
-  const flight = (index: number) => {
+  const leg = (index: number) => {
     const at = measured()?.[index]
     const icon = square().apps[index]
-    return props.open || reducedMotion() || !at || !icon ? undefined : { at, icon, scale: Math.max(icon.width / ICON, 0.01) }
+    return reducedMotion() || !at || !icon ? undefined : { at, icon, scale: Math.max(icon.width / ICON, 0.01) }
   }
+  const flight = (index: number) => (props.open ? undefined : leg(index))
+  // Each app that flies tells as it lands, out or home, and its names, and its square's, come in once the last has.
+  let landed = new Set<number>()
+  createEffect(
+    () => props.open,
+    (open) => {
+      landed = new Set()
+      setLanding({ key: props.made, open, landed: 0, travels: (category()?.entrypoints ?? []).filter((_, index) => leg(index)).length })
+    },
+  )
+  const lands = (index: number) => (landed.add(index), setLanding((now) => ({ ...now, landed: landed.size })))
+  const arrived = () => landing().key === props.made && landing().open && landing().landed >= landing().travels
   const flown = (index: number) => {
     const flying = flight(index)
     if (!flying) return undefined
@@ -75,7 +87,7 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
     const flying = flight(index)
     return flying && looks.scaledAt(1, flying.icon.x + flying.icon.width - area().x - flying.at.x - (flying.at.width + ICON) / 2, flying.icon.y - area().y - flying.at.y)
   }
-  const named = () => (props.open ? looks.namedAfter(reducedMotion() ? 0 : 250) : looks.unnamed)
+  const named = () => (props.open && arrived() ? looks.named : looks.unnamed)
   // In a launcher's card, its name and its apps are a column in the card's middle, as Home's pages are, as wide as its
   // apps take, as a Mac's Launchpad's folder is; a phone's are its whole screen, as an iPhone's.
   const column = () => {
@@ -104,7 +116,7 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
                     const held = holds(() => ({ item: opens(entrypoint()), listed: entrypoint(), page: 0, index: -1, from: "library" }), () => true)
                     return (
                       <View style={looks.slots} onLayout={measured() ? undefined : (event) => setLaid((laid) => ({ ...laid, apps: { ...laid.apps, [index()]: event.currentTarget.getBoundingClientRect() } }))}>
-                        <Tile name={entrypoint().name} icon={entrypoint().icon} size={ICON} scale={1} style={[measured() && [looks.flies, looks.after(wait(index()))], flown(index())]} nameStyle={named()} badge={badgeOf(entrypoint() as Entrypoint, props.owner)} counted={false} holds={held} onPress={(behind, from) => press(entrypoint(), props.owner, behind, from)} />
+                        <Tile name={entrypoint().name} icon={entrypoint().icon} size={ICON} scale={1} style={[measured() && [looks.flies, looks.after(wait(index()))], flown(index())]} nameStyle={named()} badge={badgeOf(entrypoint() as Entrypoint, props.owner)} counted={false} onTransitionEnd={() => lands(index())} holds={held} onPress={(behind, from) => press(entrypoint(), props.owner, behind, from)} />
                         <View aria-hidden="true" style={looks.badged}>
                           <View style={[looks.slots, looks.square(ICON), measured() && [looks.flies, looks.after(wait(index()))], flownBadge(index())]}>
                             <Count count={badgeOf(entrypoint() as Entrypoint, props.owner)} />
