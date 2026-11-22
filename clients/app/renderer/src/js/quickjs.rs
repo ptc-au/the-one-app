@@ -389,6 +389,8 @@ pub struct Thread {
     /// How many calls it's been sent, and of those how many reached its thread: the rest are held (`seed`).
     sent: u64,
     posted: u64,
+    /// How many of the calls it's run its window had taken the posts of, when it last took them (`take`).
+    taken: u64,
     /// The number of the last call that told it something (`send`), rather than run its timers or a frame.
     told: u64,
     /// With a seed (`seed`), a xorshift's state, and the calls held while its thread is busy with something else, until
@@ -587,7 +589,7 @@ impl Thread {
                 spent += crate::platform::on_cpu().saturating_sub(running);
             }
         })?;
-        Ok(Thread { calls, shared, clock, sent: 0, posted: 0, told: 0, random: 0, held: Vec::new(), until: 0.0 })
+        Ok(Thread { calls, shared, clock, sent: 0, posted: 0, taken: 0, told: 0, random: 0, held: Vec::new(), until: 0.0 })
     }
 
     /// Tells the UI library what the person did (`ui.event`), or a message from its client (`ui.message`), for its
@@ -675,6 +677,7 @@ impl Thread {
         }
         self.shared.waiting.store(false, Ordering::Release);
         let mut posts = self.shared.posts();
+        self.taken = posts.ran;
         (posts.posted.drain(..).collect(), posts.ran)
     }
 
@@ -716,11 +719,13 @@ impl Thread {
         self.shared.posts().crashed.clone()
     }
 
-    /// Whether its thread has something it was sent to run yet, or hasn't started: what it then posts is on its way.
-    /// What's held for it (`seed`) isn't its yet.
+    /// Whether its thread has something it was sent to run yet, or hasn't started, or has run what its window hasn't
+    /// taken the posts of: what it posts is on its way. A harness asking after it ran the last of what it was sent, and
+    /// before the window took what that posted, found it quiet with its answer still to come, as quick or slow as
+    /// its thread was (the clock's first step landed 16.67 or 33.33 ms on). What's held for it (`seed`) isn't its yet.
     pub fn busy(&self) -> bool {
         let posts = self.shared.posts();
-        !posts.ended && (posts.started.is_none() || posts.ran < self.posted)
+        !posts.ended && (posts.started.is_none() || posts.ran < self.posted || posts.ran != self.taken)
     }
 
     /// Whether its thread ended.
