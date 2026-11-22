@@ -63,7 +63,7 @@ defmodule OneCore.Apps.Deploy do
          # An untrusted app runs no NIF or program of its own, so nothing is downloaded for one.
          {:ok, files} <- step("precompiled", fn -> if(trusted, do: Precompiled.fill(files), else: {:ok, files}) end),
          _ = stage.("Building its app"),
-         {:ok, built} <- step("build", fn -> built(owner, name, files, trusted) end),
+         {:ok, built} <- step("build", fn -> built(name, files, trusted) end),
          built = Store.deployment(built),
          _ = stage.(if(trusted, do: "Compiling its code", else: "Compiling its code in its sandbox")),
          {:ok, version, warnings} <- step("compile", fn -> loaded(artifact, built, trusted) end) do
@@ -410,30 +410,8 @@ defmodule OneCore.Apps.Deploy do
   end
 
   # An app's entrypoint is built against this server's UI library (`OneCore.Entrypoint`).
-  defp built(owner, name, files, trusted) do
-    if Entrypoint.client?(files),
-      do: built_before(Apps.app(owner, name), files) || Entrypoint.build(name, files, trusted),
-      else: {:ok, files}
-  end
-
-  # The apps as the app's running version built them, where that was from the same source against the same UI library,
-  # since building it again would make the same: `{:ok, files}`, or `nil`.
-  defp built_before(nil, _files), do: nil
-
-  defp built_before(artifact, files) do
-    client = &Map.filter(&1, fn {path, _} -> Version.client?(path) end)
-
-    with %Version{ui: ui, code: hash} <- Apps.version(artifact),
-         true <- ui == Entrypoint.library().code,
-         true <- client.(Store.source(artifact, hash)) == client.(files) do
-      {:ok,
-       Map.merge(
-         Map.reject(files, fn {path, _} -> Version.client?(path) end),
-         client.(Store.files(artifact, hash))
-       )}
-    else
-      _ -> nil
-    end
+  defp built(name, files, trusted) do
+    if Entrypoint.client?(files), do: Entrypoint.build(name, files, trusted), else: {:ok, files}
   end
 
   @doc """

@@ -4,13 +4,14 @@ defmodule OneCore.Apps.Version.Compile do
   modules sits under that name (`OneCore.Apps.V<hash>.Notes`), by an alias put before each file, and what its app
   says of itself is checked (`OneCore.Apps.Version.Checks`).
 
-  What it's compiled to is kept on this machine, as `.beam` files, and loaded instead of compiling it again for as
-  long as nothing its compile read has changed: Elixir and OTP, and each module outside it that it used as it
-  compiled, as Mix tracks and compares them (`Kernel.LexicalTracker`): one whose macros it ran, or that it `use`d or
-  `require`d, by its MD5, and one whose struct it built, by its exports' MD5. So a server that restarts compiles
-  again only the apps whose code, or what they're compiled with, changed.
+  What it's compiled to is kept on this machine (`OneCore.BuildCache`), as `.beam` files, and loaded instead of
+  compiling it again for as long as nothing its compile read has changed: Elixir and OTP, and each module outside it
+  that it used as it compiled, as Mix tracks and compares them (`Kernel.LexicalTracker`): one whose macros it ran, or
+  that it `use`d or `require`d, by its MD5, and one whose struct it built, by its exports' MD5. So a server that
+  restarts compiles again only the apps whose code, or what they're compiled with, changed, and a server of another
+  network on the machine, deployed the same app, compiles none of it.
   """
-  alias OneCore.{Entrypoint, Builds, Nif, Server, Skills}
+  alias OneCore.{BuildCache, Entrypoint, Builds, Nif, Server, Skills}
   alias OneCore.App.Manifest
   alias OneCore.Apps.Version
   alias OneCore.Apps.Version.Checks
@@ -67,7 +68,7 @@ defmodule OneCore.Apps.Version.Compile do
   # compiled together.
   defp compiled(under, sources, builds) do
     cache =
-      Path.join([Server.home(), "compiled", Version.code({under, System.version(), :erlang.system_info(:otp_release)})])
+      BuildCache.path(["compiled", Version.code({under, System.version(), :erlang.system_info(:otp_release)})])
 
     with :error <- kept(cache) do
       with {:ok, modules, warnings, binaries, references} <- compile_files(under, sources, builds) do
@@ -77,12 +78,15 @@ defmodule OneCore.Apps.Version.Compile do
     end
   end
 
-  # What's kept is loaded at once (`:code.atomic_load`), if each module it was compiled with is as it was then.
+  # What's kept is loaded at once (`:code.atomic_load`), if each module it was compiled with is as it was then. A
+  # server compiling it again, with other modules, may be replacing it as it's read: then it isn't kept.
   defp kept(cache) do
     with {:ok, kept} <- File.read(Path.join(cache, "compiled")),
          %{modules: modules, references: references, warnings: warnings} <- :erlang.binary_to_term(kept),
          true <- Enum.all?(references, fn {module, {kind, md5}} -> md5(module, kind) == md5 end),
-         :ok <- :code.atomic_load(for module <- modules, do: beam(cache, module)) do
+         beams = for(module <- modules, do: beam(cache, module)),
+         false <- :error in beams,
+         :ok <- :code.atomic_load(beams) do
       File.touch(cache)
       {:ok, modules, warnings}
     else
@@ -92,7 +96,7 @@ defmodule OneCore.Apps.Version.Compile do
 
   defp beam(cache, module) do
     file = Path.join(cache, "#{module}.beam")
-    {module, String.to_charlist(file), File.read!(file)}
+    with {:ok, binary} <- File.read(file), do: {module, String.to_charlist(file), binary}
   end
 
   defp md5(module, kind) do
@@ -103,12 +107,11 @@ defmodule OneCore.Apps.Version.Compile do
     end
   end
 
-  # Written beside, then renamed into place, so what's kept is all there or not at all. What wasn't loaded for a month
-  # goes, a version's files kept here among it too (`OneCore.Apps.Store.files/3`): its version, or the Elixir it was
-  # compiled with, is long gone.
+  # Written beside, then renamed into place, so what's kept is all there or not at all. Another server may keep the
+  # same meanwhile, which is as good. What wasn't loaded for a month goes, a version's files kept here among it too
+  # (`OneCore.Apps.Store.files/3`): its version, or the Elixir it was compiled with, is long gone.
   defp keep(cache, binaries, references, warnings) do
-    writing = cache <> ".writing"
-    File.rm_rf!(writing)
+    writing = cache <> ".writing." <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     File.mkdir_p!(writing)
     for {module, binary} <- binaries, do: File.write!(Path.join(writing, "#{module}.beam"), binary)
 
@@ -120,13 +123,8 @@ defmodule OneCore.Apps.Version.Compile do
 
     File.write!(Path.join(writing, "compiled"), :erlang.term_to_binary(kept))
     File.rm_rf!(cache)
-    File.rename!(writing, cache)
-    month_ago = System.os_time(:second) - 30 * 24 * 3600
-
-    for folder <- Path.wildcard(Path.join(Path.dirname(cache), "*")),
-        {:ok, %{mtime: used}} <- [File.stat(folder, time: :posix)],
-        used < month_ago,
-        do: File.rm_rf!(folder)
+    with {:error, _} <- File.rename(writing, cache), do: File.rm_rf!(writing)
+    BuildCache.prune(Path.dirname(cache))
   rescue
     error -> Logger.warning("What an app was compiled to wasn't kept: #{Exception.message(error)}")
   end

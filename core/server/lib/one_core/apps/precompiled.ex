@@ -13,9 +13,12 @@ defmodule OneCore.Apps.Precompiled do
       named in checksums.json, not in the files ─► downloaded ─► its SHA-256 is the one named ─► deployed with it
                                                        └─ missing, or another SHA-256 ─► the deploy fails, saying which
 
-  A build a deploy brings itself, as one from a checkout built with `tooling/nifs` does, is deployed as it is.
+  A build a deploy brings itself, as one from a checkout built with `tooling/nifs` does, is deployed as it is. One
+  downloaded is kept on the machine by its SHA-256 (`OneCore.BuildCache`), as rustler_precompiled keeps its own, so it's
+  downloaded once for every server there.
   """
 
+  alias OneCore.BuildCache
   alias OneCore.Call.State
 
   @checksums "server/checksums.json"
@@ -60,10 +63,18 @@ defmodule OneCore.Apps.Precompiled do
   defp build?(_), do: false
 
   defp download({path, %{"url" => url, "sha256" => sha256}}) do
+    kept = BuildCache.path(["precompiled", sha256])
+    build = BuildCache.read(kept)
+
+    if build && sha256(build) == sha256, do: {:ok, path, build}, else: download(path, url, sha256, kept)
+  end
+
+  defp download(path, url, sha256, kept) do
     case Req.get(url, raw: true, retry: :transient) do
       {:ok, %{status: 200, body: build}} ->
-        case Base.encode16(:crypto.hash(:sha256, build), case: :lower) do
+        case sha256(build) do
           ^sha256 ->
+            BuildCache.write(kept, build)
             {:ok, path, build}
 
           other ->
@@ -77,4 +88,6 @@ defmodule OneCore.Apps.Precompiled do
         {:error, "#{path} couldn't be downloaded from #{url}: #{Exception.message(error)}"}
     end
   end
+
+  defp sha256(build), do: Base.encode16(:crypto.hash(:sha256, build), case: :lower)
 end

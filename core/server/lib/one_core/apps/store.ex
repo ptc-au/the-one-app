@@ -17,7 +17,7 @@ defmodule OneCore.Apps.Store do
   no version names, which `prune/1` sweeps.
   """
   require Logger
-  alias OneCore.{Bucket, Server}
+  alias OneCore.{Bucket, BuildCache}
   alias OneCore.Apps.{LoadedVersion, Version}
   alias OneCore.Apps.Version.{Compile, Description}
 
@@ -384,12 +384,13 @@ defmodule OneCore.Apps.Store do
 
   The files a server keeps are named by their hash, so they never change: once read, they're kept on this machine
   beside what they're compiled to (`OneCore.Apps.Version.Compile`), which goes as that does, and read from there for
-  as long as they still hash to their name. So a server that restarts asks the bucket for no app's files it had.
+  as long as they still hash to their name. So a server that restarts asks the bucket for no app's files it had, nor
+  does a server of another network on the machine that has the same.
   """
   def files(artifact, code, prefix \\ "code")
 
   def files(artifact, code, "code") do
-    kept = Path.join([Server.home(), "compiled", Version.code({artifact, code})])
+    kept = BuildCache.path(["compiled", Version.code({artifact, code})])
 
     with %{} = files <- kept(kept), ^code <- Version.code(files) do
       File.touch(kept)
@@ -407,17 +408,9 @@ defmodule OneCore.Apps.Store do
     _ -> nil
   end
 
-  # Written beside, then renamed into place, so what's kept is all there or not at all; and only a set that's all
-  # there, as its hash says, is kept.
+  # Only a set that's all there, as its hash says, is kept.
   defp keep_files(kept, code, files) do
-    if Version.code(files) == code do
-      writing = "#{kept}.#{System.unique_integer([:positive])}"
-      File.mkdir_p!(Path.dirname(kept))
-      File.write!(writing, :erlang.term_to_binary(files))
-      File.rename!(writing, kept)
-    end
-  rescue
-    error -> Logger.warning("An app's files weren't kept on this machine: #{Exception.message(error)}")
+    if Version.code(files) == code, do: BuildCache.write(kept, :erlang.term_to_binary(files))
   end
 
   defp read(artifact, code, prefix) do

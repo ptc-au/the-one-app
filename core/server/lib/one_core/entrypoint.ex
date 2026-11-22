@@ -11,7 +11,7 @@ defmodule OneCore.Entrypoint do
   An app that names packages of its own in `client/package.json` has them installed as it's built; one that names none
   installs nothing.
   """
-  alias OneCore.{Server, Skills}
+  alias OneCore.{BuildCache, Server, Skills}
   alias OneCore.Apps.Version
 
   @client "client/"
@@ -61,31 +61,45 @@ defmodule OneCore.Entrypoint do
   sandbox (`OneCore.Sandbox.run/3`), which reads only Bun, the UI library's build and the app.
 
   The build's sourcemaps name each file as the app's repo does, `apps/<name>/client/<file>`, which an error reports.
+
+  What it builds to is kept on this machine (`OneCore.BuildCache`) by what it was built from: its name, its
+  client's source, the UI library and whether it's trusted. So the same app deployed again, by any server there,
+  isn't built again.
   """
   def build(name, files, trusted) do
     {app, rest} = Map.split_with(files, fn {path, _} -> String.starts_with?(path, @client) end)
+    source = client(app, trusted)
+    kept = BuildCache.path(["apps", Version.code({name, source, library().code, trusted})])
+    was = BuildCache.read(kept)
+
+    with {:ok, built} <- if(was, do: {:ok, :erlang.binary_to_term(was)}, else: built(name, source, trusted, kept)) do
+      # What the build makes nothing of, as an app's icon, is served as it was deployed: its pictures, sounds,
+      # videos and fonts.
+      as_is =
+        Map.filter(app, fn {path, _} -> String.starts_with?(MIME.from_path(path), ~w(image/ audio/ video/ font/)) end)
+
+      {:ok, rest |> Map.merge(as_is) |> Map.merge(built) |> Map.put(@ui, library().code)}
+    end
+  end
+
+  defp built(name, source, trusted, kept) do
     folder = Path.join([Server.home(), "building", Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)])
-    source = Path.join(folder, "source")
     out = Path.join(folder, "out")
 
     try do
-      write(source, client(app, trusted))
+      write(Path.join(folder, "source"), source)
 
       with {:ok, bun} <- bun(),
            {:ok, builder} <- builder(bun),
-           :ok <- install(bun, source, trusted),
-           :ok <- built(bun, builder, source, out, "apps/#{name}/client", trusted) do
+           :ok <- install(bun, Path.join(folder, "source"), trusted),
+           :ok <- built(bun, builder, Path.join(folder, "source"), out, "apps/#{name}/client", trusted) do
         built =
           for path <- Path.wildcard(Path.join(out, "**"), match_dot: true), File.regular?(path), into: %{} do
             {@client <> Path.relative_to(path, out), File.read!(path)}
           end
 
-        # What the build makes nothing of, as an app's icon, is served as it was deployed: its pictures, sounds,
-        # videos and fonts.
-        as_is =
-          Map.filter(app, fn {path, _} -> String.starts_with?(MIME.from_path(path), ~w(image/ audio/ video/ font/)) end)
-
-        {:ok, rest |> Map.merge(as_is) |> Map.merge(built) |> Map.put(@ui, library().code)}
+        BuildCache.write(kept, :erlang.term_to_binary(built))
+        {:ok, built}
       end
     after
       File.rm_rf!(folder)
@@ -162,13 +176,15 @@ defmodule OneCore.Entrypoint do
   def ui(settings), do: settings[@ui]
 
   # The UI library's build, with what it builds with installed: its folder, made whole beside it and moved in, so a
-  # folder that's there is ready. Those an earlier server build made go as this one's is made.
+  # folder that's there is ready. It's every server's on the machine (`OneCore.BuildCache`), each of which may run another
+  # build of the UI library, so one goes once no app was built with it for a month.
   defp builder(bun) do
     files = for {path, text} <- library().files, String.starts_with?(path, @build), into: %{}, do: {path, text}
-    builds = Path.join(Server.home(), "ui-builds")
+    builds = BuildCache.path(["ui-builds"])
     folder = Path.join(builds, binary_part(Version.code(files), 0, 16))
 
     if File.dir?(folder) do
+      File.touch(folder)
       {:ok, folder}
     else
       writing = folder <> "." <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
@@ -179,8 +195,7 @@ defmodule OneCore.Entrypoint do
         with :ok <- run(bun, ~w(install --frozen-lockfile --production), "The UI library's build didn't install", writing) do
           # Another build may have made it meanwhile, which is as good.
           with {:error, _} <- File.rename(writing, folder), do: :ok
-          for name <- File.ls!(builds), not String.contains?(name, "."), name != Path.basename(folder),
-              do: File.rm_rf!(Path.join(builds, name))
+          BuildCache.prune(builds)
 
           {:ok, folder}
         end
