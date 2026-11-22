@@ -77,7 +77,7 @@ async function play(built, scene, name, motion, hz, folder) {
   // at once, as a browser's compositor does (`Windows::waits`); a press, a key or a finger does.
   const waits = !events?.every((event) => ["wheel", "move"].includes(event.kind))
   const [way, values] = travel(frames)
-  const kept = frames.map(({ png, width, height, unlike_whole, nodes, ...frame }) => ({ ...frame, ...(unlike_whole ? { unlike_whole: unlike_whole.map(({ whole, ...unlike }) => unlike) } : {}) }))
+  const kept = frames.map(({ png, width, height, unlike_whole, nodes, ...frame }) => ({ ...frame, ...(unlike_whole ? { unlike_whole: unlike_whole.map(({ whole, presented, ...unlike }) => unlike) } : {}) }))
   const beforeAt = against && join(against, relative(out, folder))
   const before = beforeAt && existsSync(join(beforeAt, "frames.json")) ? JSON.parse(readFileSync(join(beforeAt, "frames.json"), "utf8")) : undefined
   const beforeTravel = before && { frames: before.frames, values: travel(before.frames)[1] }

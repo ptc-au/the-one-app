@@ -27,10 +27,12 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
     let every = 1000.0 / request.f64("input_hz").unwrap_or(hz).clamp(1.0, 1000.0);
     let after = request.f64("after").unwrap_or(2000.0).max(0.0);
     let snaps = renderer::inspect::snaps(request);
-    // Each frame against the same drawn whole (`Windows::whole`), as one drawn only where it changed must be.
+    // Each frame against the same drawn whole (`Windows::whole`), as one drawn only where it changed must be, and
+    // against itself drawn moved by whole device pixels (`unlike_moved`), each of MOVED's in turn.
     let checks_whole = request.inputs.get("whole").and_then(Value::as_bool) == Some(true);
     // Every node of each frame, where `nodes` asks, as core/ui's rules read each frame (what's drawn over what).
     let every_node = request.inputs.get("nodes").and_then(Value::as_bool) == Some(true);
+    let checks_moved = request.inputs.get("moved").and_then(Value::as_bool) == Some(true);
     let query = |input: &str| match request.inputs.get(input) {
         Some(Value::Object(selector)) => {
             let mut query = json!({"op": "query"});
@@ -218,6 +220,13 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
                 frame["unlike_whole"] = json!(unlike);
             }
         }
+        if checks_moved && drew {
+            // One way a frame, in turn, as each is a frame's whole drawing twice more.
+            let unlike = unlike_moved(windows, id, &[MOVED[frames.len() % MOVED.len()]])?;
+            if !unlike.is_empty() {
+                frame["unlike_moved"] = json!(unlike);
+            }
+        }
         frames.push(frame);
         // Halfway to the refresh, so what it draws is after the read, as what the loop's own clock draws a refresh on
         // from it is after the next: drawn at the read itself, it was read in that refresh's frame. Its time is the
@@ -267,7 +276,7 @@ pub(crate) static EMPTY: Vec<Value> = Vec::new();
 pub(crate) const JUST_BEFORE: f64 = 0.01;
 
 /// How window `id`'s frame as presented differs from the same scene drawn whole (`Windows::whole`), where it does by
-/// more than a level in a channel: how many pixels, by how much at most, where, and the picture drawn whole.
+/// more than a level in a channel: how many pixels, by how much at most, where, and the pictures drawn whole and presented.
 fn unlike_whole(windows: &mut Windows, id: renderer::platform::WindowId) -> anyhow::Result<Option<Value>> {
     let (Some((width, height, presented)), Some((_, _, whole))) = (windows.presented(id), windows.whole(id)) else { return Ok(None) };
     if presented.len() != whole.len() {
@@ -284,5 +293,84 @@ fn unlike_whole(windows: &mut Windows, id: renderer::platform::WindowId) -> anyh
     if differ == 0 {
         return Ok(None);
     }
-    Ok(Some(json!({"window": id, "differ": differ, "most": most, "box": {"x": left, "y": top, "width": right - left, "height": bottom - top}, "whole": renderer::inspect::png(width, height, whole)?["png"]})))
+    Ok(Some(json!({"window": id, "differ": differ, "most": most, "box": {"x": left, "y": top, "width": right - left, "height": bottom - top}, "whole": renderer::inspect::png(width, height, whole)?["png"], "presented": renderer::inspect::png(width, height, presented)?["png"]})))
 }
+
+/// Where window `id`'s last frame is drawn otherwise moved by whole device pixels (`Windows::moved`), by each of
+/// `offsets` (`by`, each `[dx, dy]`): how many pixels differ, by how much at most, where, and the two pictures. At an
+/// edge (a curve's, a glyph's, a hairline's, where the picture changes by more than EDGE across a pixel's neighbours)
+/// what isn't on whole pixels rounds otherwise moved, up to EDGE_APART levels on a software GPU's corners; elsewhere a
+/// pixel may be FLAT_APART levels apart in FLAT pixels at most, where a dither or a grid of the window's moves every one
+/// of a gradient or a shadow's. Under glass, its blur's samples are on its frame's grid, which moves under it, so there
+/// it may be GLASS levels apart (step 6 of the renderer's plan, a blur reading the surfaces beneath it, ends that).
+/// scenes.js judges the web's the same (`unmoved`).
+pub(crate) fn unlike_moved(windows: &mut Windows, id: renderer::platform::WindowId, offsets: &[[i32; 2]]) -> anyhow::Result<Vec<Value>> {
+    let mut unlike = Vec::new();
+    for by in offsets {
+        let Some((width, height, here, there, glass)) = windows.moved(id, *by) else { continue };
+        // How much the picture changes across the pixel at `x`, `y` and its neighbours, in its most changing channel.
+        let span = |x: u32, y: u32| {
+            let near = |dx: i32, dy: i32| {
+                let (x, y) = (x.saturating_add_signed(dx).min(width - 1), y.saturating_add_signed(dy).min(height - 1));
+                &here[(y * width + x) as usize * 4..][..3]
+            };
+            (0..3).map(|channel| {
+                let values = (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (dx, dy))).map(|(dx, dy)| near(dx, dy)[channel]);
+                let (least, most) = values.fold((u8::MAX, 0), |(least, most), value| (least.min(value), most.max(value)));
+                most - least
+            }).max().unwrap_or(0)
+        };
+        let (mut over, mut flat, mut most, mut left, mut top, mut right, mut bottom) = (0u32, 0u32, 0u8, width, height, 0, 0);
+        for (at, (was, now)) in here.chunks(4).zip(there.chunks(4)).enumerate() {
+            let apart = was.iter().zip(now).map(|(was, now)| was.abs_diff(*now)).max().unwrap_or(0);
+            if apart == 0 {
+                continue;
+            }
+            let (x, y) = (at as u32 % width, at as u32 / width);
+            if glass.iter().any(|[l, t, r, b]| (*l..*r).contains(&x) && (*t..*b).contains(&y)) {
+                if apart <= GLASS {
+                    continue;
+                }
+                over += 1;
+            } else if span(x, y) > EDGE {
+                if apart <= EDGE_APART {
+                    continue;
+                }
+                over += 1;
+            } else if apart <= FLAT_APART {
+                flat += 1;
+            } else {
+                over += 1;
+            }
+            (most, left, top, right, bottom) = (most.max(apart), left.min(x), top.min(y), right.max(x + 1), bottom.max(y + 1));
+        }
+        let differ = over + if flat > FLAT { flat } else { 0 };
+        if differ > 0 {
+            unlike.push(json!({"window": id, "by": by, "differ": differ, "of": width * height, "most": most, "box": {"x": left, "y": top, "width": right - left, "height": bottom - top}, "here": renderer::inspect::png(width, height, here)?["png"], "moved": renderer::inspect::png(width, height, there)?["png"]}));
+        }
+    }
+    Ok(unlike)
+}
+
+/// How much a picture changes across a pixel and its neighbours where it's an edge (`unlike_moved`), in levels: a
+/// hairline's on a card is 17, and a shadow's or a gradient's falls off by 1 to 3, where a dither shows.
+const EDGE: u8 = 8;
+
+/// How far apart a pixel at an edge may be moved: lavapipe's are a level or two, a GPU's rasterizer, interpolating on
+/// its own grid of a 256th of a pixel, put a box's 3 apart, and the web's SwiftShader a pill's round end 20. What's
+/// drawn wrong moved (a clip's row, a snap) is hundreds of levels apart.
+const EDGE_APART: u8 = 32;
+
+/// How many pixels away from edges and glass a frame moved may differ in, by FLAT_APART levels at most: main's most was
+/// 6 natively; a shadow or a gradient dithered from the window's grid is thousands.
+const FLAT: u32 = 64;
+const FLAT_APART: u8 = 4;
+
+/// How many levels apart a pixel under glass may be moved (`unlike_moved`): main's most was 3, the App Library's veil,
+/// whose blur is taken on every sixteenth pixel.
+const GLASS: u8 = 4;
+
+/// How far a frame is moved to be compared with itself where it was (`unlike_moved`), in device pixels: a pixel each
+/// way, as a surface's image moves by its own, and far enough the other way to cross a tile's and a blur's grid at odd
+/// places.
+pub(crate) const MOVED: [[i32; 2]; 3] = [[1, 0], [0, 1], [-37, -23]];

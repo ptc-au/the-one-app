@@ -1,5 +1,5 @@
 // A check's steps as the harness's requests, each with what judges its answer.
-import { readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
 import { pressed, selector, single } from "./gesture.js"
@@ -456,6 +456,17 @@ export const unlike = (answer, folder) => {
   if (!differ) return
   if (folder && kept) for (const [name, png] of [["kept", kept], ["afresh", afresh]]) writeFileSync(join(folder, `${name}.png`), Buffer.from(png, "base64"))
   return `the frame drawn on what it kept differs from one drawn afresh in ${differ} of ${of} pixels${box ? `, from ${box.x},${box.y} ${box.width}×${box.height} px` : ""}`
+}
+
+/// Why a frame drawn moved by whole device pixels isn't itself where it was (the harness's `moved`, `unlike_moved`), if
+/// it isn't, each offset's pictures kept in `folder` (`here-<dx>,<dy>.png`, `moved-<dx>,<dy>.png`) where they differ.
+export const unmoved = (answer, folder) => {
+  if (answer?.error) return answer.error
+  const unlike = answer?.result?.unlike ?? []
+  if (!unlike.length) return
+  mkdirSync(folder, { recursive: true })
+  for (const { by, here, moved } of unlike) for (const [name, png] of [["here", here], ["moved", moved]]) writeFileSync(join(folder, `${name}-${by.join(",")}.png`), Buffer.from(png, "base64"))
+  return `drawn moved by ${unlike.map(({ by, differ, most, box }) => `${by.join(",")} px it differs in ${differ} pixels, by up to ${most} levels, from ${box.x},${box.y} ${box.width}×${box.height} px`).join("; ")} (${folder})`
 }
 
 /// Why the texts named, among a query's `nodes`, aren't in one monospace face, if they aren't: every glyph of them

@@ -434,6 +434,18 @@ impl Windows {
             // scene's place for this frame; and once more as it's gone.
             changed |= !matches!(window.cover, Cover::Gone) || std::mem::take(&mut window.uncovered);
             let page = window.cover.scene().map(|cover| covered(&window.scene, Some(cover), window.cover.opacity(), device)).map(|shown| std::mem::replace(&mut window.scene, shown));
+            // Drawn moved by whole device pixels where a harness on the web asked (`web::moving`), in its page's scene's
+            // place for this frame, as what covers it is.
+            #[cfg(target_arch = "wasm32")]
+            let page = match super::web::moving() {
+                Some([dx, dy]) => {
+                    changed = true;
+                    let shown = window.scene.moved([dx as f32, dy as f32], device.width.0 as u32, device.height.0 as u32);
+                    let was = std::mem::replace(&mut window.scene, shown);
+                    page.or(Some(was))
+                }
+                None => page,
+            };
             // A character no font had draws as a font's missing glyph: a gap where a symbol or an emoji goes.
             for character in self.text.undrawn() {
                 let what = format!("{} drew {character:?} (U+{:04X}) as a missing glyph: no font has it", window.title, u32::from(character));

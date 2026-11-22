@@ -24,7 +24,7 @@
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
 // semantic tree as text (src/drawing-primitives/outline.ts) too. It says, scene by scene, how much of the pictures
 // differs (a web picture more than 1% from its native one fails, `WEB_DIFFERS_MOST`, as does one drawn on what its frame kept
-// that differs from the same drawn whole, `web-whole.png`, by more than a level) and whether the text in sight is the same (any
+// that differs from the same drawn whole, `web-whole.png`, by more than a level, or drawn moved by whole device pixels, `web-moved-<dx>,<dy>.png`, by more than rounding, as motion.js's checks have it natively) and whether the text in sight is the same (any
 // difference fails, however small the pictures'), and keeps them all in `--out` to look at. A native host that can't draw a page yet (an older runtime
 // version) gives nothing, which it says. It says too how quickly the native host drew each (the harness's
 // `--measure`): its first frame, a frame when nothing changes, as its first field is typed in and as its first list
@@ -315,6 +315,26 @@ async function web(browser, serve, key, scene, folder) {
     if (unlike) {
       problems.push(failing(`its frame differs from the same drawn whole (web-whole.png) in ${unlike.differ} pixels, by up to ${unlike.most} levels`))
     }
+  }
+  // Drawn moved by whole device pixels, it's the same moved, as natively (motion.js's checks): each way in turn, then
+  // drawn where it is again.
+  if (drawn) {
+    // Drawn whole where it is first, as the moved ones are, so what a frame drawn on what it kept may differ by isn't in it.
+    await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.whole())
+    await settled()
+    await picture("web-here.png")
+    for (const by of WEB_MOVED) {
+      const glass = await frame.evaluate((by) => /** @type {any} */ (globalThis).inspector.moved(...by), by)
+      await settled()
+      const file = join(folder, `web-moved-${by.join(",")}.png`)
+      await picture(basename(file))
+      const unlike = unmoved(join(folder, "web-here.png"), file, by, glass)
+      if (unlike) {
+        problems.push(failing(`drawn moved by ${by.join(",")} px (${basename(file)}) it differs in ${unlike.differ} pixels, by up to ${unlike.most} levels, from ${unlike.box}`))
+      }
+    }
+    await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.moved(0, 0))
+    await settled()
   }
   // And it stood still while they were taken, so what they show is of one time.
   const after = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({})))
@@ -666,6 +686,48 @@ function otherwise(folder, again, files, within = 0) {
     if (!differ) continue
     return `${file} is drawn otherwise in ${differ} pixels, by up to ${most} levels`
   }
+}
+
+/// How far a web frame is moved to be compared with itself (`unmoved`), in device pixels: down and right, as the canvas
+/// cuts off what's moved past its edge.
+const WEB_MOVED = [[1, 0], [0, 1], [37, 23]]
+
+/// How `moved`, a picture of the frame in `here` (both drawn whole) drawn moved `by` device pixels on the canvas,
+/// differs from it where both have it, by the native harness's rules (its `unlike_moved`, whose constants these are): at
+/// an edge, where `here` changes by more than 8 levels across a pixel's neighbours, 32 levels apart, as what isn't on
+/// whole pixels rounds otherwise moved (SwiftShader's a pill's round end by 20); elsewhere 4 levels in 64 pixels at
+/// most; and under glass (`glass`, left, top, right and bottom each) 4, as its blur's samples are on its frame's grid,
+/// but near the canvas's edges, where what it reads beyond them is cut off otherwise moved. → how many pixels differ,
+/// by how much at most and where, or nothing.
+function unmoved(here, moved, [dx, dy], glass) {
+  const [a, b] = [here, moved].map((file) => PNG.sync.read(readFileSync(file)))
+  const rects = Array.from({ length: glass.length / 4 }, (_, n) => glass.slice(n * 4, n * 4 + 4))
+  // How far a blur reads round its glass, at most: twice three of its widest sigma, 30 points at 2x.
+  const REACH = 360
+  const value = (x, y, channel) => a.data[(Math.min(a.height - 1, Math.max(0, y)) * a.width + Math.min(a.width - 1, Math.max(0, x))) * 4 + channel]
+  const span = (x, y) => Math.max(...[0, 1, 2].map((channel) => {
+    const near = [-1, 0, 1].flatMap((j) => [-1, 0, 1].map((i) => value(x + i, y + j, channel)))
+    return Math.max(...near) - Math.min(...near)
+  }))
+  let [over, flat, most, box] = [0, 0, 0, [Infinity, Infinity, 0, 0]]
+  for (let y = 0; y + dy < b.height && y < a.height; y++)
+    for (let x = 0; x + dx < b.width && x < a.width; x++) {
+      const [i, j] = [(y * a.width + x) * 4, ((y + dy) * b.width + x + dx) * 4]
+      const apart = Math.max(...[0, 1, 2].map((channel) => Math.abs(a.data[i + channel] - b.data[j + channel])))
+      if (!apart) continue
+      if (rects.some(([l, t, r, bottom]) => x >= l && x < r && y >= t && y < bottom)) {
+        const edge = Math.min(x, y, b.width - dx - x, b.height - dy - y) < REACH
+        if (apart <= 4 || edge) continue
+        over++
+      } else if (span(x, y) > 8) {
+        if (apart <= 32) continue
+        over++
+      } else if (apart <= 4) flat++
+      else over++
+      ;[most, box] = [Math.max(most, apart), [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x + 1), Math.max(box[3], y + 1)]]
+    }
+  const differ = over + (flat > 64 ? flat : 0)
+  return differ ? { differ, most, box: `${box[0]},${box[1]} ${box[2] - box[0]}×${box[3] - box[1]} px` } : undefined
 }
 
 /// Where two trees first differ, as a line of each.

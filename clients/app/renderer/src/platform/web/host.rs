@@ -10,7 +10,7 @@ use super::display::{Display, observe_pressure};
 use super::draw::fetch;
 use super::page::data;
 use super::thread::{Thread, channel, wake};
-use super::{HOST, Host, SCALE, WINDOW, WINDOWS, call, call_with, soon};
+use super::{HOST, Host, MOVING, SCALE, WINDOW, WINDOWS, call, call_with, soon};
 use crate::geometry::Size;
 use crate::js::Clock;
 use crate::platform::{Event, Native, WindowOptions, Windows};
@@ -142,6 +142,17 @@ pub fn whole() {
             windows.with(WINDOW, |_| ());
         })
     });
+}
+
+/// Draws the window's frames whole and moved `dx`, `dy` device pixels from now, where it was with both 0, as a harness
+/// asks (core/ui's scenes.js), to compare with its frame where it was, as the native harness's `Windows::moved` draws
+/// one: → where it draws glass, four numbers each, left, top, right and bottom (`Scene::glass`).
+#[wasm_bindgen]
+pub fn moved(dx: i32, dy: i32) -> Vec<u32> {
+    MOVING.set(((dx, dy) != (0, 0)).then_some([dx, dy]));
+    let glass = WINDOWS.with_borrow(|windows| windows.as_ref().and_then(|windows| windows.windows.get(&WINDOW)).map(|window| window.scene.glass()));
+    whole();
+    glass.unwrap_or_default().concat()
 }
 
 /// The runtime version this renderer draws (`crate::RUNTIME_VERSION`), which a page's entrypoint names.

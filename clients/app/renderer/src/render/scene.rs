@@ -245,6 +245,28 @@ impl Scene {
         }
     }
 
+    /// It moved `by` device pixels, cut to its `width` by `height` there, as a window's frame is moved to be checked
+    /// against itself where it was (the harness's `Windows::moved`, the web's `moved`).
+    pub fn moved(&self, by: [f32; 2], width: u32, height: u32) -> Scene {
+        let at = Bounds { origin: crate::geometry::Point { x: ScaledPixels(by[0]), y: ScaledPixels(by[1]) }, size: crate::geometry::Size { width: ScaledPixels(width as f32), height: ScaledPixels(height as f32) } };
+        let mut moved = Scene::default();
+        moved.splice(self, 1.0, by, 1.0, at.into());
+        moved.finish();
+        moved
+    }
+
+    /// Where it draws glass, what's behind a backdrop blurred, in whole device pixels, left, top, right and bottom:
+    /// whose blur is taken on a grid of its frame's, every fourth pixel or so (`Renderer::plan_blur`), not its own, so
+    /// it's sampled otherwise where it's moved.
+    pub fn glass(&self) -> Vec<[u32; 4]> {
+        let whole = |length: f32, up: bool| (if up { length.ceil() } else { length.floor() }).max(0.0) as u32;
+        self.backdrops
+            .iter()
+            .map(|backdrop| backdrop.bounds.intersect(&backdrop.content_mask.bounds))
+            .map(|seen| [whole(seen.origin.x.0, false), whole(seen.origin.y.0, false), whole(seen.origin.x.0 + seen.size.width.0, true), whole(seen.origin.y.0 + seen.size.height.0, true)])
+            .collect()
+    }
+
     pub fn finish(&mut self) {
         self.sort();
         self.occlude();

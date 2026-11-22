@@ -7,7 +7,7 @@ import { dark, only, out, seeds } from "./options.js"
 import { build, pageFolder } from "./pages.js"
 import { run, panelled, scenesOf } from "./harness.js"
 import { pressed } from "./gesture.js"
-import { requests, unlike } from "./judges.js"
+import { requests, unlike, unmoved } from "./judges.js"
 import { legibility } from "./output.js"
 
 /// A page that threw while drawing shows `render`'s Problem, "Can't show this page", and nothing to press but Try Again,
@@ -100,8 +100,9 @@ const IMAGES_HIDDEN = 4096
 /// (`away`, which on an iPhone draws it in the other appearance and back for the app switcher, and puts a Mac's launcher
 /// away as it takes the keyboard, so it's summoned again, as its person does), the system's appearance switched, hidden
 /// under an app as a phone's root window is (a panel put away) and shown again, holding none of its window's images
-/// meanwhile, and on a computer its window made smaller, but for a panel, which is as big as its page asks. → why it
-/// failed, or nothing.
+/// meanwhile, and on a computer its window made smaller, but for a panel, which is as big as its page asks. And at rest
+/// it's drawn the same moved by whole device pixels (`moved`), as a surface moved across its window must be. → why each
+/// failed, or nothing: `{ fresh, moved }`.
 async function agrees(built, scene, folder) {
   mkdirSync(folder, { recursive: true })
   const at = pageFolder(built, scene.page, folder, scene.uses)
@@ -114,24 +115,26 @@ async function agrees(built, scene, folder) {
     panelled(scene) ? ["put away and summoned again", [{ op: "put_away" }, { op: "memory" }, { op: "summon" }]] : ["hidden under an app and shown again", [{ op: "hide" }, { op: "memory" }, { op: "hide", hidden: false }]],
     ...(scene.touch || panelled(scene) ? [] : [["made smaller", [{ op: "resize", width: scene.size[0] - 120, height: scene.size[1] - 80 }]]]),
   ]
-  const asked = [{ op: "clock", step: 1000 }, ...taps, { op: "query", text: "" }, ...OVER.map((role) => ({ op: "query", role, descendants: true })), { op: "snap" }, ...changes.flatMap(([, ops]) => [...ops, rest, { op: "fresh" }]), crash]
+  const asked = [{ op: "clock", step: 1000 }, ...taps, { op: "query", text: "" }, ...OVER.map((role) => ({ op: "query", role, descendants: true })), { op: "snap" }, rest, { op: "moved" }, ...changes.flatMap(([, ops]) => [...ops, rest, { op: "fresh" }]), crash]
   const done = await run(at, folder, scene, asked)
-  if (done.failed) return `the harness failed: ${done.said.split("\n").at(-1)}`
+  if (done.failed) return { fresh: `the harness failed: ${done.said.split("\n").at(-1)}` }
   const answers = done.answers.slice(1 + taps.length)
-  if (crashed(answers.at(-1))) return crashed(answers.at(-1))
+  if (crashed(answers.at(-1))) return { fresh: crashed(answers.at(-1)) }
+  const moved = unmoved(answers[3 + OVER.length], join(folder, "moved"))
   const faint = illegible(answers[0], answers.slice(1, 1 + OVER.length), answers[1 + OVER.length], scene.size[0], folder)
-  if (faint) return faint
-  let n = 2 + OVER.length
+  if (faint) return { moved, fresh: faint }
+  let n = 4 + OVER.length
   for (const [what, ops] of changes) {
     const memory = ops.findIndex((op) => op.op === "memory")
     const held = memory < 0 ? 0 : images(answers[n + memory])
-    if (held > IMAGES_HIDDEN) return `${what}: hidden, it still holds ${(held / 1e6).toFixed(1)} MB of images its window's size (its surface's, the frame it kept, its blurs)`
+    if (held > IMAGES_HIDDEN) return { moved, fresh: `${what}: hidden, it still holds ${(held / 1e6).toFixed(1)} MB of images its window's size (its surface's, the frame it kept, its blurs)` }
     n += ops.length + 1
     const own = join(folder, what.replace(/[^\w.-]+/g, "-"))
     mkdirSync(own, { recursive: true })
     const why = unlike(answers[n++], own)
-    if (why) return `${what}: ${why} (${own})`
+    if (why) return { moved, fresh: `${what}: ${why} (${own})` }
   }
+  return { moved }
 }
 
 /// The least contrast (WCAG's ratio) a text drawn whole and in sight may have with what's behind it: the faintest any
@@ -179,7 +182,8 @@ export async function checks(targets) {
       const own = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
       const results = scene.checks ? await check(built, scene, own) : []
       if (!scene.touch) results.push({ name: "Tab shows where the keyboard is", seed: 0, failed: await walk(built, scene, join(own, "tab")) })
-      results.push({ name: "Drawn the same however it came to be", seed: 0, failed: await agrees(built, scene, join(own, "fresh")) })
+      const { fresh, moved } = await agrees(built, scene, join(own, "fresh"))
+      results.push({ name: "Drawn the same however it came to be", seed: 0, failed: fresh }, { name: "Drawn the same moved by whole device pixels", seed: 0, failed: moved })
       for (const [check, runs] of Object.entries(Object.groupBy(results, (result) => result.name))) {
         const bad = runs.filter((run) => run.failed)
         bad.length ? failed++ : passed++

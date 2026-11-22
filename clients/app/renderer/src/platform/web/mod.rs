@@ -65,6 +65,13 @@ thread_local! {
     /// The page's frame, as `open` was given it: its canvas, how dark the device is and whether it asked for less
     /// motion, and what tells the frame's own JS what the screen says of itself (its cursor, its client's messages).
     static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
+    /// How far the window's frames are drawn moved, in device pixels, as a harness asked (`moved`).
+    static MOVING: Cell<Option<[i32; 2]>> = const { Cell::new(None) };
+}
+
+/// How far the window's frames are drawn moved, in device pixels, where a harness asked (`host::moved`).
+pub(crate) fn moving() -> Option<[i32; 2]> {
+    MOVING.get()
 }
 
 struct Host {

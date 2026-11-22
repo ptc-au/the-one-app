@@ -13,9 +13,9 @@ use crate::select::{ask, point_of};
 /// moved on with the display ticking through it. On a phone's window (`--touch`), a press is a finger's. And what the
 /// platform's keyboard was told (`keyboard`), and what its menu for text and magnifier were asked to show, with the
 /// handles drawn (`text_selection`), which only the fake platform knows; the system's appearance switched
-/// (`appearance`), the window resized or hidden (`resize`, `hide`), its last frame beside one drawn afresh (`fresh`),
-/// and what its windows hold (`memory`, `Windows::memory`).
-pub(crate) const INPUT: [&str; 22] = ["tap", "hover", "down", "up", "key", "scroll", "drag", "replay", "trace", "clock", "wait_for", "away", "put_away", "summon", "hide", "back", "keyboard", "text_selection", "appearance", "resize", "fresh", "memory"];
+/// (`appearance`), the window resized or hidden (`resize`, `hide`), its last frame beside one drawn afresh (`fresh`)
+/// and the same drawn moved by whole device pixels (`moved`), and what its windows hold (`memory`, `Windows::memory`).
+pub(crate) const INPUT: [&str; 23] = ["moved", "tap", "hover", "down", "up", "key", "scroll", "drag", "replay", "trace", "clock", "wait_for", "away", "put_away", "summon", "hide", "back", "keyboard", "text_selection", "appearance", "resize", "fresh", "memory"];
 
 /// How long a click holds the button down, as a person's does.
 pub(crate) const CLICK_MS: f64 = 80.0;
@@ -129,6 +129,16 @@ pub(crate) fn input(windows: &mut Windows, id: renderer::platform::WindowId, req
                 answer["afresh"] = renderer::inspect::png(width, height, afresh)?["png"].clone();
             }
             Ok(answer)
+        }
+        // Its last frame drawn whole where it is and moved by whole device pixels (`Windows::moved`), by each of `by` (`[[dx,
+        // dy], …]`, MOVED's unless said): where any differ, as `fresh` says it, with both pictures.
+        "moved" => {
+            drawn(windows, id);
+            let offsets: Vec<[i32; 2]> = match request.inputs.get("by") {
+                Some(by) => serde_json::from_value(by.clone())?,
+                None => crate::replay::MOVED.to_vec(),
+            };
+            Ok(json!({"unlike": crate::replay::unlike_moved(windows, id, &offsets)?}))
         }
         // A panel (`--panel`) put away, as its shortcut or a click outside it does a launcher, and summoned again.
         "put_away" => {

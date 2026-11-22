@@ -302,6 +302,32 @@ impl Windows {
         self.alone(id, &scene, true)
     }
 
+    /// Window `id`'s last frame drawn whole twice, by renderers of their own, where it is and moved `by` whole device
+    /// pixels, each in a border of nothing so neither reaches its image's edge, as a compositor moves a surface across
+    /// a window: → its width and height, and the two as the window's size, the second moved back, and where it draws
+    /// glass (a backdrop's blur, left, top, right and bottom), whose blur is taken on a grid of its frame's, every
+    /// fourth pixel or so (`Renderer::plan_blur`), not its own. They must be the same, as nothing it draws may depend on
+    /// where in its image it is (a dither, a tile's grid, rounding to pixels), but for that sampling under glass.
+    pub fn moved(&mut self, id: WindowId, by: [i32; 2]) -> Option<(u32, u32, Vec<u8>, Vec<u8>, Vec<[u32; 4]>)> {
+        let window = self.windows.get(&id)?;
+        let scene = window.renderer.as_ref()?.scene()?.clone();
+        let scale = window.parts[0].native.scale();
+        let (width, height) = ((window.room.width.0 * scale).round() as u32, (window.room.height.0 * scale).round() as u32);
+        let border = 16 + by[0].unsigned_abs().max(by[1].unsigned_abs());
+        let size = Size { width: DevicePixels((width + 2 * border) as i32), height: DevicePixels((height + 2 * border) as i32) };
+        let draw = |at: [u32; 2]| {
+            let mut renderer = Renderer::offscreen(&self.context, self.atlas.clone(), size);
+            renderer.draw(&scene.moved([at[0] as f32, at[1] as f32], width, height), &[[0.0, 0.0]]);
+            let (full, _, rgba) = renderer.read(0)?;
+            renderer.destroy();
+            let row = |y: u32| ((y + at[1]) * full + at[0]) as usize * 4;
+            Some((0..height).flat_map(|y| rgba[row(y)..row(y) + width as usize * 4].to_vec()).collect::<Vec<u8>>())
+        };
+        let here = draw([border, border])?;
+        let there = draw([border.checked_add_signed(by[0])?, border.checked_add_signed(by[1])?])?;
+        Some((width, height, here, there, scene.glass()))
+    }
+
     /// `scene` drawn as window `id` would draw it, each part by a renderer of its own, from its renderer's layers'
     /// images where `layers` says, composed.
     fn alone(&mut self, id: WindowId, scene: &crate::render::scene::Scene, layers: bool) -> Option<(u32, u32, Vec<u8>)> {
