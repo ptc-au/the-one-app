@@ -54,6 +54,35 @@ export function lull(frames) {
   }
 }
 
+/// How many levels (of 255, in any channel) a pixel differs by from the window's ground to be drawn on it, and how much
+/// less of the window than its emptier end a frame of a cross-fade may draw.
+const INK = 12
+const EMPTIER = 0.5
+
+/// The first of `frames` that draws on less than half as much of the window as the emptier of the first and the last:
+/// a cross-fade's frames are never emptier than its emptier end, where one that fades the first out before it fades the
+/// last in shows an empty window between (a launcher's page let go with less motion, frame 63). The ground is what most
+/// of the last frame is.
+export function dips(frames) {
+  const pictures = frames.map((frame) => PNG.sync.read(Buffer.from(frame.png, "base64")))
+  const last = pictures.at(-1).data
+  const counts = new Map()
+  for (let at = 0; at < last.length; at += 4) {
+    const colour = (last[at] << 16) | (last[at + 1] << 8) | last[at + 2]
+    counts.set(colour, (counts.get(colour) ?? 0) + 1)
+  }
+  const ground = [...counts].reduce((most, one) => (one[1] > most[1] ? one : most))[0]
+  const [r, g, b] = [ground >> 16, (ground >> 8) & 255, ground & 255]
+  const ink = pictures.map(({ data }) => {
+    let drawn = 0
+    for (let at = 0; at < data.length; at += 4) if (Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b)) > INK) drawn++
+    return drawn
+  })
+  const least = Math.min(ink[0], ink.at(-1)) * EMPTIER
+  const n = ink.findIndex((drawn) => drawn < least)
+  return n < 0 ? undefined : `frame ${n + 1} (${frames[n].at} ms) draws on ${ink[n]} pixels, under half its emptier end's ${Math.min(ink[0], ink.at(-1))}: it fades out to an empty window and back, where less motion cross-fades`
+}
+
 /// How many levels (of 255, in any channel) a pixel of the last frame may differ by from the full-motion run's, and how
 /// much of the window may.
 const ARRIVED = 24

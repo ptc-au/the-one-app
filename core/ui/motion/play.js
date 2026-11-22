@@ -7,7 +7,7 @@ import { build, pageFolder } from "./pages.js"
 import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./harness.js"
 import { finger, ios, moves, projected, selector, single, travel } from "./gesture.js"
-import { apart, arrives, contactSheet, curve, cut, differs, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
+import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
 
 
 /// How the display's link ticks at `hz`, as a real one: a Mac's starts three refreshes after it's asked for frames,
@@ -107,6 +107,9 @@ async function play(built, scene, name, motion, hz, folder) {
   // And all of it at once, with no pause between its parts, as a folder's name and its apps' are dissolved with it.
   const lulled = motion.reducedMotion && lull(lifting)
   if (lulled) failed.push(lulled)
+  // And never through an empty window.
+  const dipped = motion.reducedMotion && dips(lifting)
+  if (dipped) failed.push(dipped)
   // And it gets where the same gesture goes with all its motion: a drag that follows nothing with less motion, and so
   // changes nothing, is no cut.
   if (motion.reducedMotion) {
