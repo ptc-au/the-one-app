@@ -104,6 +104,28 @@ defmodule SignIn do
         outputs: %{type: "object", properties: %{domains: %{type: "array", items: %{type: "string"}}}, required: ["domains"]}
       },
       %{
+        name: "network",
+        description: """
+        Says the network's name and icon, as its sign-in page and its web app show them and as its own apps are
+        finished with, or, given `name` or `icon`, makes them those. Without them, it's the One App's
+        """,
+        inputs: %{
+          type: "object",
+          properties: %{
+            name: %{type: ["string", "null"], description: "Its name, like The PTC App: null for the One App's"},
+            icon: %{type: ["string", "null"], description: "Its icon, a square PNG up to 1 MB, as base64: null for the One App's"}
+          }
+        },
+        outputs: %{
+          type: "object",
+          properties: %{
+            name: %{type: ["string", "null"]},
+            icon: %{type: ["string", "null"], description: "Where its icon is, if it has one of its own"}
+          },
+          required: ["name", "icon"]
+        }
+      },
+      %{
         name: "remove_person",
         description:
           "Takes someone out of the network: their devices, assistants and passkeys stop working, and what they made stays",
@@ -433,6 +455,19 @@ defmodule SignIn do
   def call("domains", _inputs, call) do
     if not Call.member?(call, "network"), do: raise("Only a member of the network sees who joins it.")
     %{domains: ask(%{ask: "domains"})["domains"]}
+  end
+
+  # Whoever invites names the network, and any member sees what it's called.
+  def call("network", inputs, call) do
+    given = Map.take(inputs, ["name", "icon"])
+
+    if given == %{} do
+      if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
+    else
+      Call.reach(call, Artifact.name(call.own), "editor")
+    end
+
+    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon"])
   end
 
   # Whoever invites takes out, and nobody takes themselves out. Only an owner takes out an owner, as only a super

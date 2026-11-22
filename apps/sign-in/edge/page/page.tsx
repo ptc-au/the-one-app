@@ -12,12 +12,14 @@
 // to Unlock with Passkey. Where the network signs people in with Google too, Continue with Google is the first way,
 // and the passkey the second: Google sends them back here, to carry on with what the page was opened for.
 import { createSignal, Show } from "solid-js"
-import mark from "../../../../icons/Logo.png"
 import { Field, Icon, Image, Input, render, SignIn, styles, Text, tokens, View } from "ui"
 import { createAuthClient } from "better-auth/client"
 import { deviceAuthorizationClient } from "better-auth/client/plugins"
 import { passkeyClient } from "@better-auth/passkey/client"
 import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as openedKey, output, PRF, prfKey, unwrap } from "./passkey.ts"
+
+/// The network's mark: its own icon, or the One App's (`icon` in `../worker.ts`).
+const mark = "/Logo.png"
 
 const look = styles({
   /// The consent page an assistant is let in on, as Google's and GitHub's are: its logo joined to ours.

@@ -7,12 +7,14 @@
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { asked, assistant, at, BELIEVED, browserDevice, copied, keep, who, type Ask, type Auth } from "./auth.ts";
+import { asked, assistant, at, BELIEVED, browserDevice, copied, keep, network, who, type Ask, type Auth } from "./auth.ts";
 
 export default {
   async fetch(request: Request, _env, ctx) {
     const url = new URL(request.url);
     if (url.pathname in ASSOCIATIONS) return Response.json(ASSOCIATIONS[url.pathname](), { headers: { "cache-control": "public, max-age=3600" } });
+    if (ICONS.includes(url.pathname)) return icon(url);
+    if (url.pathname === "/manifest.webmanifest") return manifest();
     if (request.method === "GET" && (url.pathname.includes("/.well-known/") || url.pathname === JWKS)) return discovery(url, ctx);
     const auth = await at(url.origin);
     if (url.pathname === "/privacy") return privacy(auth, url);
@@ -42,6 +44,28 @@ const ASSOCIATIONS: Record<string, () => unknown> = {
       target: { namespace: "android_app", ...target },
     })),
 };
+
+/**
+ * The network's icon, as a browser asks for it by name, its tab's and a Home Screen's (`/favicon.ico`,
+ * `/apple-touch-icon.png`), and as the network's pages draw it (`/Logo.png`): its own (`network` in `auth.ts`), or the
+ * One App's, which this part's build puts beside its pages (`package.json`).
+ */
+const ICONS = ["/Logo.png", "/favicon.ico", "/apple-touch-icon.png"];
+/** How long a browser keeps the network's icon and manifest before it asks again, in seconds. */
+const NAMED = 300;
+async function icon(url: URL) {
+  const { icon } = await network();
+  if (!icon) return env.ASSETS.fetch(new Request(url));
+  const png = Uint8Array.from(atob(icon.png), (char) => char.charCodeAt(0));
+  return new Response(png, { headers: { "content-type": "image/png", "cache-control": `public, max-age=${NAMED}` } });
+}
+
+/** The web app's manifest, by which a browser installs it, named and drawn as the network is. */
+async function manifest() {
+  const { name, icon } = await network();
+  const icons = [{ src: "/Logo.png", sizes: `${icon?.size ?? 336}x${icon?.size ?? 336}`, type: "image/png" }];
+  return Response.json({ name: name ?? "the One App", start_url: "/", display: "standalone", icons }, { headers: { "content-type": "application/manifest+json", "cache-control": `public, max-age=${NAMED}` } });
+}
 
 /**
  * The network's privacy page (`page/privacy.html`), with its address and the name its first owner goes by, who's
@@ -241,7 +265,7 @@ async function ask(request: Request, auth: Auth, url: URL) {
   } catch {
     return Response.json({ error: "An ask is JSON" }, { status: 400 });
   }
-  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "whose"].includes(what.ask ?? "");
+  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "network", "whose"].includes(what.ask ?? "");
   const acting = (await Promise.all([env.NETWORK.servers(), ...(ofNetwork ? [] : [env.NETWORK.servers(`${what.who}/`)])])).flat();
   if (!acting.includes(server)) return Response.json({ error: "Only a server acting for them asks this" }, { status: 403 });
   return Response.json(await asked(auth, url.origin, what));

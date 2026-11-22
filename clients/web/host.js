@@ -431,8 +431,10 @@ async function registerPush() {
 }
 // A notification tapped while a window of this address is open opens its app here (`sw.js`).
 navigator.serviceWorker?.addEventListener("message", ({ data }) => data?.open && emit("open", data.open))
-// Safari puts the web client on an iPhone's Home Screen as an app of its own, which a push reaches, by its manifest.
+// Safari puts the web client on an iPhone's Home Screen as an app of its own, which a push reaches, by its manifest,
+// which names it as the network is named (`apps/sign-in/edge/worker.ts`), as its tab is.
 document.head.append(Object.assign(document.createElement("link"), { rel: "manifest", href: "manifest.webmanifest" }))
+fetch("/manifest.webmanifest").then((answer) => answer.json()).then(({ name }) => { document.title = name })
 
 /// What a browser can't do, as it's said where it's asked.
 /** @param {string} why */

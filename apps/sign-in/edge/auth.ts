@@ -760,6 +760,36 @@ async function domains(): Promise<string[]> {
 }
 
 /**
+ * The network's name and icon, as its owner said (`network`): what its sign-in page and web app show, and its own apps
+ * are finished with. Its icon is a square PNG, as base64, with its size. Each is the One App's where there's none.
+ */
+export async function network(): Promise<{ name: string | null; icon: { png: string; size: number } | null }> {
+  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon')").all<{ name: string; value: string }>();
+  const kept = Object.fromEntries(results.map(({ name, value }) => [name, JSON.parse(value)]));
+  return { name: kept.name ?? null, icon: kept.icon ?? null };
+}
+
+/** The most an icon may be, as PNG's bytes. */
+const ICON_BYTES = 1024 * 1024;
+
+/** A network's icon as it's given, base64: its size, where it's a square PNG no bigger than `ICON_BYTES`. */
+function square(base64: string): number | string {
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  } catch {
+    return "An icon is a PNG as base64.";
+  }
+  if (bytes.length > ICON_BYTES) return "An icon is 1 MB at most.";
+  // PNG's signature, then its first chunk, IHDR, with its width and height.
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, at) => bytes[at] === byte);
+  const view = new DataView(bytes.buffer);
+  if (!png || bytes.length < 24) return "An icon is a PNG.";
+  const [width, height] = [view.getUint32(16), view.getUint32(20)];
+  return width === height ? width : "An icon is square.";
+}
+
+/**
  * Whether a Google account may join with no invitation: Google says it's a Workspace account of a domain the network's
  * owner named (its `hd` claim), and that its email, at that domain, is verified. An email at the domain alone isn't
  * enough, since anyone can make a Google account with any email.
@@ -813,6 +843,10 @@ export interface Ask {
   again?: boolean;
   /** With `domains`: the Google Workspace domains whose people join by signing in with Google. */
   domains?: unknown;
+  /** With `network`: the network's name, or null for the One App's. */
+  name?: unknown;
+  /** With `network`: the network's icon, a square PNG as base64, or null for the One App's. */
+  icon?: unknown;
 }
 
 export async function asked(auth: Auth, origin: string, { ask, who: name, building, ...about }: Ask) {
@@ -836,6 +870,24 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       await env.DB.prepare("insert into setting (name, value) values ('domains', ?) on conflict (name) do update set value = excluded.value").bind(JSON.stringify(domains)).run();
     }
     return { domains: await domains() };
+  }
+  // The network's name and icon, as its owner says: given either, it's that from then on, and null is the One App's.
+  if (ask === "network") {
+    const set = (name: string, value: unknown) =>
+      value === null
+        ? env.DB.prepare("delete from setting where name = ?").bind(name).run()
+        : env.DB.prepare("insert into setting (name, value) values (?, ?) on conflict (name) do update set value = excluded.value").bind(name, JSON.stringify(value)).run();
+    if (about.name !== undefined) {
+      const named = about.name === null ? null : String(about.name).trim().slice(0, 100);
+      await set("name", named || null);
+    }
+    if (about.icon !== undefined) {
+      const size = about.icon === null ? 0 : square(String(about.icon));
+      if (typeof size === "string") return { error: size };
+      await set("icon", about.icon === null ? null : { png: about.icon, size });
+    }
+    const { name, icon } = await network();
+    return { name, icon: icon && `${origin}/Logo.png` };
   }
   // Everyone who has joined, and everyone invited who hasn't yet, with the name each goes by.
   if (ask === "everyone") {
