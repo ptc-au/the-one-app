@@ -7397,7 +7397,6 @@ dependencies = [
  "etagere",
  "fixed_decimal",
  "futures-lite",
- "gloo-timers",
  "gtk",
  "iana-time-zone",
  "icu",
