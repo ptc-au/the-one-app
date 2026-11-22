@@ -73,6 +73,11 @@ async function presented(at, folder, scene, played, taps) {
   const locked = mac ? ["ioreg -n Root -d1", 'CGSSessionScreenIsLocked"=Yes'] : ['tasklist /FI "IMAGENAME eq LogonUI.exe" /NH', "LogonUI"]
   if (Bun.spawnSync(["ssh", ssh, locked[0]]).stdout.toString().includes(locked[1])) return { said: [], stderr: `${ssh}'s screen is locked, so a window there isn't shown: unlock it first`, failed: true }
   const base = onDevice()
+  // A GPU's driver that hung and failed its reset hangs every program that draws there, and each run on it is another
+  // hang (a Surface's Intel, 22 Nov): a device must start there before each run (`window --gpu`), and the first hang
+  // stops every run.
+  const gpu = Bun.spawnSync(["ssh", ssh, `"${base}${sep}${exe}" --gpu`], { stdout: "pipe", stderr: "pipe", timeout: 60000 })
+  if (gpu.exitCode !== 0) stop(`${ssh}'s GPU started no device: ${gpu.stderr.toString().trim() || "it didn't answer in a minute"}`)
   const name = `${basename(folder)}-${Math.random().toString(36).slice(2, 8)}`.replace(/[^\w-]/g, "")
   const run = `${base}${sep}${name}`
   const staged = join(folder, ".device")
@@ -116,10 +121,19 @@ async function presented(at, folder, scene, played, taps) {
   return saidThere(stdout, stderr)
 }
 
-/// What a window said there: its exit status, then a JSON line for each motion.
+/// What a window said there: its exit status, then a JSON line for each motion. A GPU that hung there (the window's
+/// thread stuck in its driver, which ends it with 3, or a frame or a wait that ran out) stops every run.
 const saidThere = (stdout, stderr) => {
   const [exit, ...said] = stdout.split("\n")
+  const hung = stderr.split("\n").find((line) => line.includes("the GPU hung"))
+  if (hung || exit.trim() === "3") stop(`${ssh}'s GPU hung: ${hung ?? "its window's thread was stuck in its driver"}`)
   return { said: said.filter((line) => line.trim().startsWith("{")).map((line) => JSON.parse(line)), stderr, failed: exit.trim() !== "0" }
+}
+
+/// Stops every run, saying why.
+function stop(why) {
+  console.log(`--present stopped: ${why}`)
+  process.exit(1)
 }
 
 

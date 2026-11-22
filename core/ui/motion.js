@@ -11,7 +11,8 @@
 // with the GPU's work in flight as it is there, which the headless harness never has: a wheel's notches and the
 // pointer's moves at their times, or a press where it starts, held or dragged. It fails where its frames' painting and
 // drawing, or its GPU, took longer than a refresh at their 95th percentile, and says each part (waiting for an image,
-// submitting, presenting).
+// submitting, presenting). A device must start on the GPU there before each run (`window --gpu`), and the first that
+// doesn't, or hangs, stops every run, as a driver that hung may hang everything that draws after it.
 //
 // `--glass tinted` draws glass as a weak GPU does (a plain tint, `ONE_GLASS`), and fails any frame that draws a backdrop or runs
 // a blur pass; `blurred` draws it as a strong one does, on a device whose own GPU would tint it.
