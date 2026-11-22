@@ -449,15 +449,18 @@ fn blend_color(color: vec4<f32>, alpha_factor: f32) -> vec4<f32> {
 
 // How far to move a colour at pixel `position` so that what changes slowly across pixels, as a gradient, a shadow's
 // edge or a blur does, shows no bands where its 8 bits a channel step: less than half a step either way, by blue
-// noise, whose dither the eye doesn't see as a pattern, as Skia dithers a gradient.
-fn dither(position: vec2<f32>) -> f32 {
-    return (textureLoad(t_noise, vec2<u32>(position) % 64u, 0).r - 0.5) / 255.0;
+// noise, whose dither the eye doesn't see as a pattern, as Skia dithers a gradient. The noise is laid from the pixel
+// nearest the top left of what's drawn (`anchor`, in the scene), not the frame's, so it moves with it: a frame that
+// moves the pixels it kept (a scroll's) has them as they'd be drawn where they're moved to.
+fn dither(position: vec2<f32>, anchor: vec2<f32>) -> f32 {
+    let at = vec2<i32>(floor(position)) - vec2<i32>(floor(anchor - globals.origin + 0.5));
+    return (textureLoad(t_noise, vec2<u32>(at & vec2<i32>(63)), 0).r - 0.5) / 255.0;
 }
 
-// `blend_color`, dithered at `position`: its colour, and its alpha where it's see-through, which is all of a
-// shadow's change.
-fn blend_color_dithered(color: vec4<f32>, alpha_factor: f32, position: vec2<f32>) -> vec4<f32> {
-    let noise = dither(position);
+// `blend_color`, dithered at `position` from `anchor` (`dither`): its colour, and its alpha where it's see-through,
+// which is all of a shadow's change.
+fn blend_color_dithered(color: vec4<f32>, alpha_factor: f32, position: vec2<f32>, anchor: vec2<f32>) -> vec4<f32> {
+    let noise = dither(position, anchor);
     let alpha = color.a * alpha_factor;
     let dithered = select(alpha, saturate(alpha + noise), alpha > 0.0 && alpha < 1.0);
     return blend_color(vec4<f32>(color.rgb + noise, 1.0), dithered);
@@ -636,7 +639,7 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     var background_color = gradient_color(quad.background, input.local, quad.bounds,
         input.background_solid, input.background_color0, input.background_color1);
     if (quad.background.tag == 1u) {
-        background_color = vec4<f32>(background_color.rgb + dither(input.position.xy), background_color.a);
+        background_color = vec4<f32>(background_color.rgb + dither(input.position.xy, quad.bounds.origin), background_color.a);
     }
 
     let unrounded = quad.corner_radii.top_left == 0.0 &&
@@ -1114,14 +1117,14 @@ fn fs_shadow(input: ShadowVarying) -> @location(0) vec4<f32> {
         if (outside >= 0.5) {
             return vec4<f32>(0.0);
         }
-        return masked(blend_color_dithered(input.color, saturate(0.5 - outside) * (1.0 - shadow_coverage(input.local, shadow)), input.position.xy), mask);
+        return masked(blend_color_dithered(input.color, saturate(0.5 - outside) * (1.0 - shadow_coverage(input.local, shadow)), input.position.xy, shadow.bounds.origin), mask);
     }
     // Outside its box, as CSS draws a shadow: a box with no fill of its own, a field's, shows none of it. Most of
     // what a large box's shadow covers is the box, which is passed over before its blur is worked out.
     if (outside <= -0.5) {
         return vec4<f32>(0.0);
     }
-    return masked(blend_color_dithered(input.color, shadow_coverage(input.local, shadow) * saturate(0.5 + outside), input.position.xy), mask);
+    return masked(blend_color_dithered(input.color, shadow_coverage(input.local, shadow) * saturate(0.5 + outside), input.position.xy, shadow.bounds.origin), mask);
 }
 
 // A shadow's tile: how much of each point its box covers, blurred, alone (`tiled` in renderer.rs).
@@ -1153,7 +1156,7 @@ fn fs_shadow_tile(input: ShadowVarying) -> @location(0) vec4<f32> {
     let point = select(select(corner, along - (size - tile), along > size - corner), along, along < corner);
     let uv = (point + margin) / vec2<f32>(textureDimensions(t_sprite));
     let alpha = textureSampleLevel(t_sprite, s_sprite, uv, 0.0).r;
-    return masked(blend_color_dithered(input.color, alpha * saturate(0.5 + outside), input.position.xy), mask);
+    return masked(blend_color_dithered(input.color, alpha * saturate(0.5 + outside), input.position.xy, shadow.bounds.origin), mask);
 }
 
 // How much of `point` a shadow's box covers, blurred.
@@ -1507,7 +1510,7 @@ fn fs_backdrop(input: BackdropVarying) -> @location(0) vec4<f32> {
     // Saturated as CSS's `saturate()`: away from its luminance, by the factor.
     let luminance = dot(sample.rgb, GRAYSCALE_FACTORS);
     let color = vec4<f32>(clamp(mix(vec3<f32>(luminance), sample.rgb, backdrop.saturation), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
-    return masked(blend_color_dithered(color, saturate(0.5 - distance) * backdrop.opacity, input.position.xy), mask);
+    return masked(blend_color_dithered(color, saturate(0.5 - distance) * backdrop.opacity, input.position.xy, backdrop.bounds.origin), mask);
 }
 
 // --- rasters (ours: a layer drawn once into a texture of its own, and drawn as that, as a compositor draws one) --- //

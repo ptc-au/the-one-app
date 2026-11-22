@@ -777,14 +777,11 @@ impl Renderer {
 }
 
 /// Packs images of `sizes` into textures no wider or taller than `largest`, on shelves, tallest first, each as wide
-/// as the widest or a square of their area, each from a multiple of the dither's tile (`dither` in shaders.wgsl), so
-/// it's dithered as it is in a texture of its own. → each texture's size, and where each image (by where it is in
-/// `sizes`) is in it.
+/// as the widest or a square of their area. → each texture's size, and where each image (by where it is in `sizes`)
+/// is in it.
 fn pack(sizes: &[[u32; 2]], largest: u32) -> Vec<([u32; 2], Vec<(usize, [u32; 2])>)> {
-    const TILE: u32 = 64;
-    let cell = |length: u32| length.next_multiple_of(TILE);
-    let area: f64 = sizes.iter().map(|[width, height]| f64::from(cell(*width)) * f64::from(cell(*height))).sum();
-    let wide = sizes.iter().map(|[width, _]| cell(*width)).max().unwrap_or(0).max(area.sqrt().ceil() as u32).min(largest);
+    let area: f64 = sizes.iter().map(|[width, height]| f64::from(*width) * f64::from(*height)).sum();
+    let wide = sizes.iter().map(|[width, _]| *width).max().unwrap_or(0).max(area.sqrt().ceil() as u32).min(largest);
     let mut order: Vec<usize> = (0..sizes.len()).collect();
     order.sort_by_key(|at| std::cmp::Reverse(sizes[*at][1]));
     let mut sheets: Vec<([u32; 2], Vec<(usize, [u32; 2])>)> = Vec::new();
@@ -801,7 +798,7 @@ fn pack(sizes: &[[u32; 2]], largest: u32) -> Vec<([u32; 2], Vec<(usize, [u32; 2]
         let (size, placed) = sheets.last_mut().expect("pushed above");
         placed.push((at, [x, y]));
         *size = [size[0].max(x + width), size[1].max(y + height)];
-        (x, shelf) = ((x + cell(width)).min(largest), shelf.max(cell(height)));
+        (x, shelf) = ((x + width).min(largest), shelf.max(height));
     }
     sheets
 }

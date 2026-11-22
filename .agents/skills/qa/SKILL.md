@@ -70,6 +70,7 @@ A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's
 build.js` and `cargo build -p renderer --example screenshot --features fake` (about 20 s for the gallery):
 
     bun motion.js --checks [<folder>…]
+    bun motion.js --checks --dark [<folder>…]
 
 A scene's `checks` (the `CheckStep` type in `core/ui/src/types/ui.d.ts`) are what people do with it and what must
 hold, as the UI SDK's own tests have them, played on the headless harness's window, a fake platform's under the loop
@@ -103,6 +104,10 @@ core/ui, after `bun build.js`:
 
     bun motion.js --out <scratch>/before [<folder>…]          # on main, before the change
     bun motion.js --out <scratch>/after --against <scratch>/before [<folder>…] [--watch]
+
+and the same again with `--dark` (an `--out` of its own): a frame drawn on what was kept is checked against the same
+drawn whole, and a light card on a near-white page leaves little to be wrong by, so on 22 Nov partial redraws that
+passed in light failed 4 motions in dark.
 
 Each motion gets a filmstrip, a position-over-time curve beside the finger's and before's, and the frames that went
 over their budget, and how many frames each tier of device in `core/ui/devices.json` would drop (with `--release`,
