@@ -79,6 +79,10 @@ export function finger(stretches, t, way) {
 export const swiftui = { spring: [500, 0], smooth: [500, 0], snappy: [500, 0.15], bouncy: [500, 0.3] }
 const DECELERATION = 0.998
 
+/// How far a fling at `velocity` (points a second) goes by its momentum, slowing as UIScrollView does: the UI library's
+/// `projected`.
+export const projected = (velocity) => ((velocity / 1000) * DECELERATION) / (1 - DECELERATION)
+
 /// Where a spring of `duration` ms and `bounce`, `from` its rest and moving `velocity` a second, is `t` ms later.
 export function spring([duration, bounce], from, velocity, t) {
   const response = Math.max(duration / 1000, 0.01)

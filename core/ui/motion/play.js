@@ -6,7 +6,7 @@ import { against, keeping, only, out, present, rates, ssh } from "./options.js"
 import { build, pageFolder } from "./pages.js"
 import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./harness.js"
-import { finger, ios, moves, selector, single, travel } from "./gesture.js"
+import { finger, ios, moves, projected, selector, single, travel } from "./gesture.js"
 import { apart, arrives, contactSheet, curve, cut, differs, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
 
 
@@ -141,6 +141,25 @@ async function play(built, scene, name, motion, hz, folder) {
     if (jump > 0 && step(jump) > Math.max(fingered, step(jump + 1)) + 1)
       failed.push(`it jumped ${step(jump).toFixed(0)} pt at frame ${jump + 1} (${frames[jump].at} ms) as it was let go, where the finger moved at most ${fingered.toFixed(0)} pt a refresh and the frame after ${step(jump + 1).toFixed(0)} pt`)
   }
+  // Let go, it goes on a refresh at a time from the frame that last drew it under the finger: no step's change as it's
+  // let go is more than twice the change before and after it, and half a point, as a spring sampled each refresh gives,
+  // where a frame that draws two refreshes of it lurches (a card swiped past its end at 120 Hz: 2.4 pt a refresh,
+  // then 0.1, -0.6). And flung toward where it rests hard enough that its momentum, slowing as UIScrollView's does,
+  // gets it there, it goes no faster than the finger last moved it, within half a point a refresh, as a fling eases
+  // in, where a page's spring sped a launcher's page swiped at 16.8 pt a refresh on to 34.
+  const letGo = events ? events.some((event) => event.kind === "up" || ["ended", "cancelled"].includes(event.phase)) : lift
+  const liftAt = letGo && way !== "still" && !motion.reducedMotion && !motion.frameMs ? frames.findIndex((frame) => frame.at >= end) : -1
+  if (liftAt > 2) {
+    const step = (n) => (n > 0 && n < values.length ? values[n] - values[n - 1] : 0)
+    const change = (n) => Math.abs(step(n + 1) - step(n))
+    const lurch = [0, 1, 2, 3].map((n) => liftAt + n).find((n) => n + 2 < values.length && change(n) > 2 * Math.max(change(n - 1), change(n + 1)) + 0.5)
+    if (lurch !== undefined) failed.push(`it lurched as it was let go at frame ${lurch + 2} (${frames[lurch + 1].at} ms): ${[-1, 0, 1, 2].map((n) => step(lurch + n).toFixed(1)).join(", ")} pt a refresh`)
+    const going = Math.max(...[0, 1, 2].map((n) => Math.abs(step(liftAt - n))))
+    const left = values.at(-1) - values[liftAt]
+    const flung = Math.sign(step(liftAt)) === Math.sign(left) && projected(going * hz) >= Math.abs(left)
+    const faster = flung ? values.findIndex((_, n) => n > liftAt && Math.abs(step(n)) > going + 0.5) : -1
+    if (faster >= 0) failed.push(`flung at ${going.toFixed(1)} pt a refresh, it sped on to ${Math.abs(step(faster)).toFixed(1)} at frame ${faster + 1} (${frames[faster].at} ms), where its momentum would carry it the ${Math.abs(left).toFixed(0)} pt to where it rests`)
+  }
   // What it opens is first drawn from where what it opens from is, its top and its middle there, as an iPhone's folder
   // grows out of its square and its apps out of the square's: within a point, or a step of its own motion, which may
   // have taken one before the frame it's first drawn on.
@@ -173,6 +192,12 @@ async function play(built, scene, name, motion, hz, folder) {
     const [from, to] = steady ? [notches[0].ms + (notches.at(-1).ms - notches[0].ms) / 2, notches.at(-1).ms] : [0, -1]
     const paced = values.map((value, n) => (n && frames[n - 1].at >= from + 1000 / hz && frames[n].at <= to + 1000 / hz ? Math.abs(value - values[n - 1]) : undefined)).filter((step) => step !== undefined)
     if (paced.length > 1 && Math.max(...paced) - Math.min(...paced) > 2) failed.push(`its steady notches moved it ${Math.min(...paced).toFixed(0)} to ${Math.max(...paced).toFixed(0)} pt a refresh as they turned, not a steady speed`)
+    // And slowing to rest from the last of its fastest steps, no step is a point or more longer than the one before, as
+    // an easing that only slows is drawn on whole points, where rounded alone a list's last steps went 1, 2, 0, 1 pt.
+    const moves = values.map((value, n) => (n ? Math.abs(value - values[n - 1]) : 0))
+    const fastest = moves.lastIndexOf(Math.max(...moves))
+    const surges = moves.findIndex((step, n) => n > fastest + 1 && step >= moves[n - 1] + 1)
+    if (surges >= 0) failed.push(`slowing to rest it sped up again at frame ${surges + 1} (${frames[surges].at} ms): ${moves.slice(surges - 2, surges + 2).map((step) => step.toFixed(0)).join(", ")} pt a refresh`)
   }
   // From the frame it first moves (by more than half a point: a node put on whole pixels first isn't moving yet), no
   // refresh shows the frame before it again (within a twentieth of a point) while it's more than 2 pt short of where it
