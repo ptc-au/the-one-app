@@ -63,6 +63,13 @@ impl Clock {
         Clock(Arc::new(Ticking { epoch_ms: Some(1_767_225_600_000.0), zone: None, started: Instant::now(), moved: Mutex::new(Moved { ahead: 0.0, paused: Some(0.0) }) }))
     }
 
+    /// The real date, paused at 0 until it's moved: a web page opened by a harness, which steps it as the native
+    /// harness steps its fixed clock, so what moves by itself (a spinner, a caret) is where it is for the same step on
+    /// every run, however long the machine took to draw each.
+    pub fn stopped() -> Clock {
+        Clock(Arc::new(Ticking { epoch_ms: None, zone: None, started: Instant::now(), moved: Mutex::new(Moved { ahead: 0.0, paused: Some(0.0) }) }))
+    }
+
     /// The same moment, shown in the time zone `zone` as a device in it would, by its IANA name.
     pub fn fixed_in(zone: &str) -> Clock {
         Clock(Arc::new(Ticking { zone: Some(zone.into()), ..Arc::into_inner(Clock::fixed().0).expect("one owner") }))

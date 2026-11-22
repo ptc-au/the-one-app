@@ -25,19 +25,27 @@ thread_local! {
     /// The page's place in itself it was opened at, a link's fragment, which a native host tells it in its host
     /// context (`link`).
     static LINK: RefCell<String> = const { RefCell::new(String::new()) };
+    /// The clock the page and each page in a frame of it share, as a native host's do.
+    static CLOCK: RefCell<Option<Clock>> = const { RefCell::new(None) };
+}
+
+/// The page's clock, which a page in a frame of it keeps too.
+pub(super) fn clock() -> Clock {
+    CLOCK.with_borrow_mut(|clock| clock.get_or_insert_with(Clock::real).clone())
 }
 
 /// Opens the page at `page` (where what it names by an address is from), at `link` in it, on `canvas`, `scale` device pixels to a CSS
 /// pixel, drawn with the design tokens and styles in `tables` (the UI library's tokens
 /// and styles, and its app's styles), in `theme` (`dark`, `light`, or as the device is), for a finger where `touch`,
-/// at the text size its person chose where it's a phone's or a tablet's (`text_size`, as their app has it,
+/// on a clock that's paused at 0 where `paused`, which a harness steps (`inspect`'s `clock`), at the text size its person chose where it's a phone's or a tablet's (`text_size`, as their app has it,
 /// `Screen::text_size`), as the frame's JS (`calls`) is told what it says of itself. The page's module is imported
 /// after, and says it ran (`started`).
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
-pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, link: String, tables: Vec<String>, theme: Option<String>, touch: bool, text_size: Option<f32>, calls: JsValue) -> Result<(), JsError> {
+pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, link: String, tables: Vec<String>, theme: Option<String>, touch: bool, text_size: Option<f32>, paused: bool, calls: JsValue) -> Result<(), JsError> {
     console_log();
     SCALE.set(scale);
+    CLOCK.set(Some(if paused { Clock::stopped() } else { Clock::real() }));
     LINK.set(link);
     let media = |query: &str| web_sys::window().and_then(|window| window.match_media(query).ok().flatten()).is_some_and(|list| list.matches());
     HOST.set(Some(Host { canvas, calls, dark: media("(prefers-color-scheme: dark)"), reduced_motion: media("(prefers-reduced-motion: reduce)") }));
@@ -45,7 +53,7 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     let tokens = load(&tables).map_err(|error| JsError::new(&format!("{error:#}")))?;
     let context = crate::render::context::Context::create().await.map_err(|error| JsError::new(&format!("{error:#}")))?;
     let mut windows = Windows::made(Display, Ok(context)).map_err(|error| JsError::new(&format!("{error:#}")))?;
-    let mut screen = Screen::new(Thread::new(Clock::real()), Some(Box::new(asked)));
+    let mut screen = Screen::new(Thread::new(clock()), Some(Box::new(asked)));
     screen.page = tokens;
     let page = url::Url::parse(&page).map_err(|error| JsError::new(&format!("{error}")))?;
     screen.fetch = Some(Box::new(move |src: &str| fetch(&page, src, None)));

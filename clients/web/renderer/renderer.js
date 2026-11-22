@@ -120,7 +120,7 @@
       body.remove()
       return size
     }
-    await renderer.open(canvas, devicePixelRatio, base.href, decodeURIComponent(page.hash.slice(1)), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, {
+    await renderer.open(canvas, devicePixelRatio, base.href, decodeURIComponent(page.hash.slice(1)), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, new URLSearchParams(location.search).has("paused"), {
       post: named ? alone(renderer) : (/** @type {object} */ message) => parent.postMessage(message, "*"),
       timer: (/** @type {[() => void, number]} */ [fired, delay]) => browser.setTimeout(fired, delay),
       untimer: (/** @type {number} */ handle) => browser.clearTimeout(handle),

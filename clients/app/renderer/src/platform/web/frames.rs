@@ -9,7 +9,7 @@ use super::draw::fetch;
 use super::page::data;
 use super::thread::{Thread, channel, wake};
 use super::{WINDOW, call_with, soon};
-use crate::js::{Clock, Posted};
+use crate::js::Posted;
 use crate::platform::Native;
 use crate::tree::{Kind, Mutation};
 use crate::Screen;
@@ -30,7 +30,7 @@ pub fn framed(node: f64, src: String, page: String, styles: String) -> Result<()
                 call_with("frameAsk", &[JsValue::from(node as f64), js_sys::JSON::parse(&message.to_string()).unwrap_or(JsValue::NULL)]);
                 None
             });
-            let mut screen = Screen::new(Thread::of(Clock::real(), Some(node)), Some(asked));
+            let mut screen = Screen::new(Thread::of(super::host::clock(), Some(node)), Some(asked));
             screen.page = tokens;
             screen.fetch = Some(Box::new(move |src: &str| fetch(&page, src, Some(node))));
             windows.with(WINDOW, |parent| parent.framed(node, &src, screen));

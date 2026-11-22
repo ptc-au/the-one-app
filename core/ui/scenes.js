@@ -156,7 +156,7 @@ function server(built, target, used) {
   return {
     url: (key) => `http://localhost:${listener.port}/host.html?scene=${encodeURIComponent(key)}`,
     // The renderer's frame, drawing the page at its address here.
-    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}${mutant ? `&mutant=${encodeURIComponent(mutant)}` : ""}#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
+    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}&paused${mutant ? `&mutant=${encodeURIComponent(mutant)}` : ""}#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
     stop: () => listener.stop(true),
   }
 }
@@ -233,6 +233,8 @@ async function press(frame, name) {
 /// machine takes to draw it on the CPU (SwiftShader): its picture is of what it came to rest on, never of a moment on the
 /// way there. This is only for a page that hangs, which fails the scene, saying what's pending.
 const HANGS_AFTER_MS = 120000
+/// A scene's whole web half (its taps, each pictured, its text) that takes longer than this hung.
+const WEB_HANGS_AFTER_MS = 10 * 60000
 
 /// A scene drawn by our renderer on the web, in headless Chromium's WebGPU, as `web.png`, once its first frame is drawn
 /// and what moves as it opens has settled, on the native harness's clock, language and time zone, each tap pressed
@@ -269,10 +271,18 @@ async function web(browser, serve, key, scene, folder) {
     }
     await frame.evaluate(() => new Promise((shown) => requestAnimationFrame(() => requestAnimationFrame(shown))))
   }
-  if (drawn) await settled()
-  for (const name of drawn ? scene.taps : []) await press(frame, name).then(settled)
+  // Its clock is paused at 0 as it opens (`paused`), and stepped a second after it's drawn and after each tap, as the
+  // native harness's is, so what moves by itself (a spinner, a caret's blink) is where the same steps put it on every
+  // run, however long a loaded machine took to draw each frame: it was where the real time since it opened had it.
+  const step = () => frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ step: 1000 }))
+  if (drawn) await settled().then(step).then(settled)
+  for (const name of drawn ? scene.taps : []) await press(frame, name).then(settled).then(step).then(settled)
   // The page's own time runs on here, as a native host's clock is stepped by it: a state that comes in seconds is there.
-  if (drawn && scene.wait) await page.waitForTimeout(scene.wait).then(settled)
+  if (drawn && scene.wait) {
+    await page.waitForTimeout(scene.wait).then(settled)
+    for (let seconds = 0; seconds < Math.ceil(scene.wait / 1000); seconds++) await step()
+    await settled()
+  }
   for (const [url, times] of failed) {
     if (times > 1) continue
     problems.push(failing(`${url} failed on the network once and wasn't fetched again, so it's drawn broken`))
@@ -431,6 +441,7 @@ function native(built, scene, folder, used) {
     role === "text" ? { text: name ?? "", states: {}, children: [] } : { role: role ?? undefined, name: name ?? undefined, states: Object.fromEntries(Object.entries({ ...more, ...states }).map(([state, value]) => [state, String(value)])), children: children.map(semantic) }
   const tree = outline({ states: {}, children: (Array.isArray(nodes) ? nodes : [nodes]).map(semantic) })
   writeFileSync(join(folder, "native.txt"), tree)
+  writeFileSync(join(folder, "native-answers.jsonl"), run.stdout)
   const measured = run.stderr.toString().match(/^measured (.*)$/m)
   const said = answered(run.stdout.toString())
   const after = ssh ? DRAWN.length : 0
@@ -627,6 +638,30 @@ function levels(one, other) {
   return differ ? { differ, most } : undefined
 }
 
+/// How two drawings of a scene differ, from one run to the next of the same build: the first thing that isn't the same
+/// (a picture's pixels, a tree's line, what each node's query says), or nothing. A scene is drawn twice, on a harness
+/// each, and any difference fails it: a check that passes on a rerun is broken, so what leaks in (real time, an
+/// ordering, a clock nothing pins, a wait on time rather than state) is fixed where it comes from.
+function otherwise(folder, again, files) {
+  for (const file of files) {
+    const [a, b] = [folder, again].map((one) => (existsSync(join(one, file)) ? readFileSync(join(one, file)) : undefined))
+    if (a && b && a.equals(b)) continue
+    if (!a || !b) return `${file} was drawn ${a ? "once" : "only the second time"}`
+    if (!file.endsWith(".png")) {
+      const off = first(a.toString(), b.toString())
+      return `${file} differs, first at line ${off?.at}: "${off?.a}" and "${off?.b}"`
+    }
+    const [one, two] = [a, b].map((bytes) => PNG.sync.read(bytes))
+    if (one.width !== two.width || one.height !== two.height) return `${file} is ${one.width}×${one.height}, then ${two.width}×${two.height}`
+    let [differ, most] = [0, 0]
+    for (let at = 0; at < one.data.length; at += 4) {
+      const by = Math.max(...[0, 1, 2, 3].map((channel) => Math.abs(one.data[at + channel] - two.data[at + channel])))
+      if (by) [differ, most] = [differ + 1, Math.max(most, by)]
+    }
+    return `${file} is drawn otherwise in ${differ} pixels, by up to ${most} levels`
+  }
+}
+
 /// Where two trees first differ, as a line of each.
 function first(one = "", other = "") {
   const [a, b] = [one.split("\n"), other.split("\n")]
@@ -684,13 +719,38 @@ for (const target of targets) {
   for (const scene of (await scenesOf(target, built)).filter((scene) => !only || scene.name.toLowerCase().includes(only))) {
     const folder = join(out, name, scene.name.replace(/[^\w.-]+/g, "-"))
     mkdirSync(folder, { recursive: true })
+    // Each scene is drawn twice, on a harness (and a browser page) of its own each, in `again`: the second is only
+    // compared, and any difference between the two fails the scene.
+    const again = join(folder, "again")
+    mkdirSync(again, { recursive: true })
     const drawn = native(built, scene, folder, used)
-    const onWeb = !onTheWeb ? {} : await web(webgpu, serve, `${name}/${scene.name}`, scene, folder).catch(async (error) => {
-      await webgpu.close().catch(() => {})
-      webgpu = await chromium.launch({ args: webgpuArgs })
-      return { missing: String(error) }
-    })
+    const drawnAgain = native(built, scene, again, used)
+    const onWebs = []
+    for (const where of onTheWeb ? [folder, again] : []) {
+      // A page that never answers (a browser whose GPU process starved) fails the scene, saying so, where it held the run for ever.
+      const hung = Symbol()
+      let timer
+      const gone = new Promise((resolve) => (timer = setTimeout(resolve, WEB_HANGS_AFTER_MS, hung)))
+      const result = await Promise.race([web(webgpu, serve, `${name}/${scene.name}`, scene, where), gone]).catch((error) => ({ failed: String(error) }))
+      clearTimeout(timer)
+      if (result === hung || result.failed) {
+        process.exitCode = 1
+        webgpu.close().catch(() => {})
+        webgpu = await chromium.launch({ args: webgpuArgs })
+      }
+      onWebs.push(result === hung ? { missing: `it hung for ${WEB_HANGS_AFTER_MS / 60000} minutes` } : result.failed ? { missing: result.failed } : result)
+    }
+    const [onWeb = {}, onWebAgain] = onWebs
     const said = [`${name} · ${scene.name}`]
+    for (const [run, twice, files] of [["native", drawnAgain, ["native.png", "native.txt", "native-text.txt", "native-answers.jsonl"]], ["web", onWebAgain, ["web.png", "web-text.txt"]]]) {
+      if (!twice) continue
+      const first = run === "native" ? drawn : onWeb
+      const off = first.missing || twice.missing ? (first.missing === twice.missing ? undefined : `${first.missing ?? "drew"} the first time, ${twice.missing ?? "drew"} the second`) : otherwise(folder, again, files)
+      if (off) {
+        said.push(`  ${run}, drawn twice, FAILS: ${off}`)
+        process.exitCode = 1
+      }
+    }
     // A row is drawn in its card by the `List` it's in: one outside any has none, and floats on its screen's background.
     if (name !== "gallery" && drawn.tree !== undefined) for (const row of strayRows(drawn.tree)) said.push(`  a row isn't in a List, so it has no card: ${row}`)
     // A person reads a scene's words: nothing of the build's or the platform's is among them.
