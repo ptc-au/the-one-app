@@ -57,9 +57,11 @@ defmodule Backups.Destination do
 
   def remove(opened, name), do: s3(opened, :delete, name) |> ok(name)
 
-  @doc "The names starting with `prefix`, in order."
-  def list(%{destination: %{"kind" => "folder"} = destination, call: call}, prefix),
-    do: Service.call(call, Disk, :list, [destination["folder"], prefix], destination["machine"])
+  @doc "The names starting with `prefix`, in order, each with when it was last written, in milliseconds: `{name, modified}`."
+  def list(%{destination: %{"kind" => "folder"} = destination, call: call}, prefix) do
+    for [name, modified] <- Service.call(call, Disk, :list, [destination["folder"], prefix], destination["machine"]),
+        do: {name, modified}
+  end
 
   def list(opened, prefix, next \\ nil) do
     params =
@@ -71,8 +73,12 @@ defmodule Backups.Destination do
         {listed, _} = :xmerl_scan.string(:binary.bin_to_list(listed))
 
         names =
-          for name <- texts(listed, ~c"//*[local-name()='Contents']/*[local-name()='Key']"),
-              do: String.replace_prefix(name, folder(opened), "")
+          for object <- :xmerl_xpath.string(~c"//*[local-name()='Contents']", listed) do
+            [name] = texts(object, ~c"./*[local-name()='Key']")
+            [modified] = texts(object, ~c"./*[local-name()='LastModified']")
+            {:ok, modified, _} = DateTime.from_iso8601(modified)
+            {String.replace_prefix(name, folder(opened), ""), DateTime.to_unix(modified, :millisecond)}
+          end
 
         case texts(listed, ~c"//*[local-name()='NextContinuationToken']") do
           [next] -> names ++ list(opened, prefix, next)

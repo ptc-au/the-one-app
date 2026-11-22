@@ -102,11 +102,12 @@ defmodule Backups do
       required: ~w(name at took blobs bytes sent sent_bytes)
     }
 
-    # A backup just made, at a destination, and how many older ones went by the rule of what's kept.
+    # A backup just made, at a destination, how many older ones went by the rule of what's kept, and how many objects
+    # that no backup holds were removed, from a backup that was cut short.
     made = %{
       backup
-      | properties: Map.merge(backup.properties, %{destination: destination, gone: %{type: "integer"}}),
-        required: ["destination", "gone" | backup.required]
+      | properties: Map.merge(backup.properties, %{destination: destination, gone: %{type: "integer"}, orphans: %{type: "integer"}}),
+        required: ["destination", "gone", "orphans" | backup.required]
     }
 
     [

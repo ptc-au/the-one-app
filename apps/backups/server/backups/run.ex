@@ -13,7 +13,9 @@ defmodule Backups.Run do
   rest is read: every snapshot a backup holds has the log that follows it, and the backup holds the database as it
   was at some moment, whatever was written meanwhile.
 
-  Old backups go by the rule `Backups` says, and with them the objects no backup kept holds any more.
+  Old backups go by the rule `Backups` says, and with them the objects no backup kept holds any more, and the
+  orphans: an object sent but not yet recorded when a backup was cut short stays there, which no backup holds, until
+  it's older than any backup that could still record it (`@orphaned`).
 
   A backup under way is a row of `runs`, written before anything is sent, so every app and agent sees it, and a second
   one to the same destination, as the hourly job and Back Up Now at once, is refused. It goes when the backup is done
@@ -42,6 +44,9 @@ defmodule Backups.Run do
   # How often a backup under way says it still is, and how long after it last did it's taken to have been cut short.
   @beat 30_000
   @stale 120_000
+  # How much older than the backup that's pruning an object no backup holds has to be to be an orphan of a backup
+  # that's over: one cut short sends no more within minutes (`@stale`), as its next transaction fails.
+  @orphaned 3_600_000
 
   @doc "How long after its last `beat` a backup under way is taken to have been cut short, in milliseconds."
   def stale, do: @stale
@@ -239,7 +244,7 @@ defmodule Backups.Run do
 
       # The run holds `runs` until it has pruned, as restic holds its lock: a backup started meanwhile would send
       # objects that no backup in `backups` holds yet, which pruning removes.
-      gone = prune(call, opened, destination)
+      {gone, orphans} = prune(call, opened, destination, began)
       transaction(call, &query(&1, "delete from runs where destination = ?", [id]))
       OneCore.Call.changed(call)
 
@@ -252,7 +257,8 @@ defmodule Backups.Run do
         bytes: bytes,
         sent: length(sent),
         sent_bytes: sent_bytes,
-        gone: gone
+        gone: gone,
+        orphans: orphans
       }
     rescue
       failed ->
@@ -419,43 +425,45 @@ defmodule Backups.Run do
     end
   end
 
-  # Removes the backups the rule doesn't keep, and then the objects no backup kept holds. Gives how many went.
-  defp prune(call, opened, destination) do
-    backups =
-      transaction(call, &query(&1, "select name, at from backups where destination = ? order by at desc", [destination["id"]]))
-
+  # Removes the backups the rule doesn't keep, then the objects no backup kept holds, and those that no backup was
+  # ever kept with: an object sent but not yet recorded when a backup was cut short (`@orphaned`). Gives how many
+  # backups went and how many objects of neither kind were there.
+  defp prune(call, opened, destination, began) do
+    id = destination["id"]
+    backups = transaction(call, &query(&1, "select name, at from backups where destination = ? order by at desc", [id]))
     gone = backups -- retained(backups, System.os_time(:millisecond))
 
-    if gone == [] do
-      0
-    else
-      for %{"name" => name} <- gone, do: Destination.remove(opened, "backups/" <> name)
+    for %{"name" => name} <- gone, do: Destination.remove(opened, "backups/" <> name)
 
-      unheld =
-        transaction(call, fn db ->
-          for %{"name" => name} <- gone,
-              do: query(db, "delete from backups where destination = ? and name = ?", [destination["id"], name])
+    transaction(call, fn db ->
+      for %{"name" => name} <- gone, do: query(db, "delete from backups where destination = ? and name = ?", [id, name])
+    end)
 
-          held =
-            for %{"listed" => listed} <- query(db, "select listed from backups where destination = ?", [destination["id"]]),
-                %{"object" => object} <- listed(listed),
-                into: MapSet.new(),
-                do: object
+    # What's listed is read before what's recorded, so an object that's recorded after it's listed isn't an orphan.
+    sent = Destination.list(opened, "objects/")
 
-          for %{"object" => object} <- query(db, "select object from objects where destination = ?", [destination["id"]]),
-              not MapSet.member?(held, object),
-              do: object
-        end)
-
-      for object <- unheld, do: Destination.remove(opened, "objects/" <> object)
-
+    {held, recorded} =
       transaction(call, fn db ->
-        for object <- unheld,
-            do: query(db, "delete from objects where destination = ? and object = ?", [destination["id"], object])
+        {for(
+           %{"listed" => listed} <- query(db, "select listed from backups where destination = ?", [id]),
+           %{"object" => object} <- listed(listed),
+           into: MapSet.new(),
+           do: object
+         ), for(%{"object" => object} <- query(db, "select object from objects where destination = ?", [id]), into: MapSet.new(), do: object)}
       end)
 
-      length(gone)
-    end
+    unheld = MapSet.difference(recorded, held)
+
+    orphans =
+      for {"objects/" <> object, modified} <- sent, not MapSet.member?(recorded, object), modified < began - @orphaned, do: object
+
+    for object <- Enum.concat(unheld, orphans), do: Destination.remove(opened, "objects/" <> object)
+
+    transaction(call, fn db ->
+      for object <- unheld, do: query(db, "delete from objects where destination = ? and object = ?", [id, object])
+    end)
+
+    {length(gone), length(orphans)}
   end
 
   @doc """
@@ -586,7 +594,7 @@ defmodule Backups.Run do
 
     name =
       backup ||
-        List.last(Destination.list(opened, "backups/")) ||
+        with({name, _modified} <- List.last(Destination.list(opened, "backups/")), do: name) ||
         raise("#{destination["name"]} has no backup yet.")
 
     name = String.replace_prefix(name, "backups/", "")

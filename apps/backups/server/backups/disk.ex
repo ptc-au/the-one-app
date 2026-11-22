@@ -44,6 +44,7 @@ defmodule Backups.Disk do
     |> Enum.map(&Path.relative_to(&1, folder))
     |> Enum.filter(&(String.starts_with?(&1, prefix) and not String.ends_with?(&1, ".writing")))
     |> Enum.sort()
+    |> Enum.map(&[&1, File.stat!(Path.join(folder, &1), time: :posix).mtime * 1000])
   end
 
   # A name is the backup's own, so it stays inside the folder.
