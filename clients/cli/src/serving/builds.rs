@@ -125,14 +125,15 @@ pub(super) async fn download(client: &Client) -> Result<Map<String, Value>> {
 }
 
 /// Downloads the build of `name` the network gives, `build`, by its link into `file`, once it's checked it's the
-/// platform's, and checks it's the size and SHA-256 it said. A download whose connection fails is tried again, after
-/// 2 s and then 4 s, as curl's `--retry` does: a home router's NAT, or GitHub, now and then drops a connection, and one
-/// dropped would leave the server behind until the next build.
+/// platform's, and checks it's the size and SHA-256 it said. A download that fails, or stalls (`STALLED`), is tried
+/// again soon, waiting twice as long each time, as curl's `--retry` does: a home router's NAT, or GitHub, now and then
+/// drops a connection, or leaves it open with nothing coming. On 22 Nov a Mac just back online waited 18 minutes on
+/// one that had stalled, until the connection was reset, and its try 2 s later downloaded it.
 pub(super) async fn fetch(name: &str, build: &Value, file: &Path) -> Result<()> {
     signed(name, build)?;
-    for wait in [2, 4] {
+    for wait in [2, 4, 8, 16, 32, 60] {
         match download_to(build, file).await {
-            Err(error) if error.is::<reqwest::Error>() => {
+            Err(error) => {
                 eprintln!("The build {} didn't download ({error:#}); trying again in {wait} s", build["build"]);
                 tokio::time::sleep(Duration::from_secs(wait)).await;
             }
@@ -142,6 +143,10 @@ pub(super) async fn fetch(name: &str, build: &Value, file: &Path) -> Result<()> 
     download_to(build, file).await
 }
 
+/// How long a download may go with nothing arriving before it's taken as failed: a connection can stay open with
+/// nothing coming, and nothing else ends it.
+const STALLED: Duration = Duration::from_secs(30);
+
 /// Downloads `build` by its link into `file`, and checks it's the size and SHA-256 it said.
 pub(super) async fn download_to(build: &Value, file: &Path) -> Result<()> {
     let link = &build["link"];
@@ -150,10 +155,11 @@ pub(super) async fn download_to(build: &Value, file: &Path) -> Result<()> {
     for (name, value) in link["headers"].as_object().into_iter().flatten() {
         request = request.header(name, value.as_str().unwrap_or_default());
     }
-    let mut response = request.send().await?.error_for_status()?;
+    let stalled = || format!("nothing arrived for {} s", STALLED.as_secs());
+    let mut response = tokio::time::timeout(STALLED, request.send()).await.map_err(|_| anyhow::anyhow!(stalled()))??.error_for_status()?;
     let mut out = tokio::fs::File::create(file).await?;
     let (mut hash, mut size) = (Sha256::new(), 0);
-    while let Some(part) = response.chunk().await? {
+    while let Some(part) = tokio::time::timeout(STALLED, response.chunk()).await.map_err(|_| anyhow::anyhow!(stalled()))?? {
         hash.update(&part);
         size += part.len() as u64;
         out.write_all(&part).await?;
