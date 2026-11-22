@@ -130,6 +130,8 @@ impl Windows {
         if self.context.lost() {
             self.recover();
         }
+        // Glyphs not drawn lately go, before anything's painted (`Atlas::trim`).
+        self.atlas.trim();
         // Each window waiting for its pipelines has its renderer once they're compiled, on whatever turns the loop: a
         // harness's own turns too, as well as the windows' thread woken as they are (`Context::prepare`).
         #[cfg(not(target_arch = "wasm32"))]
@@ -424,11 +426,10 @@ impl Windows {
                     }
                     // One whose page isn't there yet (`opening`) shows its loading state, its spinner turning, never an
                     // empty window: a phone's first start showed black for 5 s and more as its page was read (21 Nov).
-                    Err(_) if window.pending => {
-                        crate::view::paint_loading(since(window.opened), QUIET, FADES_IN, appearance(), room, scale, &mut self.text, &self.atlas, &mut window.scene);
-                        window.moving = true;
+                    Err(_) => {
+                        window.paint_missing(&mut self.text, &self.atlas);
+                        window.moving = window.pending;
                     }
-                    Err(why) => crate::view::paint_message(why, appearance(), room, scale, &mut self.text, &self.atlas, &mut window.scene),
                 }
                 // What covers it as it opens, made as it's first drawn: its snapshot, or its canvas, which a window whose
                 // page isn't there yet (`opening`) has drawn bare.

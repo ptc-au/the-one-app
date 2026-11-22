@@ -9,7 +9,7 @@ use super::context::Context;
 use crate::geometry::{Bounds, DevicePixels, Point, Size};
 use crate::text::RenderGlyphParams;
 use anyhow::Result;
-use etagere::BucketedAtlasAllocator;
+use etagere::AtlasAllocator;
 use parking_lot::Mutex;
 use std::{borrow::Cow, collections::HashMap, ops};
 
@@ -25,14 +25,46 @@ struct AtlasState {
     device: wgpu::Device,
     max_texture_size: i32,
     storage: AtlasStorage,
-    tiles_by_key: HashMap<AtlasKey, AtlasTile>,
+    tiles_by_key: HashMap<AtlasKey, Kept>,
     uploads: Vec<PendingUpload>,
-    /// How many times what's in a tile has been drawn over (a video's next frame): a frame whose sprites are the same
-    /// bytes as another's, with this the same too, looks the same. A tile added changes none a frame drew before, as
-    /// none is ever let go of and its room given to another.
+    /// How many times what's in a tile has been drawn over (a video's next frame), or its room given to another (a
+    /// glyph let go of, `trim`): a frame whose sprites are the same bytes as another's, with this the same too, looks
+    /// the same. A tile added changes none a frame drew before.
     generation: u64,
-    /// How many textures it has made, whose bind groups a renderer keeps (`Renderer::atlas_group`).
+    /// How many times its textures have changed, one made or let go of, whose bind groups a renderer keeps
+    /// (`Renderer::atlas_group`).
     made: u64,
+    /// The loop's turns it's been through (`trim`), by which it's told when each tile was last drawn.
+    turn: u64,
+    /// The most its textures may take, in bytes (`budget`).
+    budget: u64,
+    /// A texture was made past its budget since its last turn, so the glyphs not drawn lately go at its next.
+    over: bool,
+    /// How many times it's let glyphs go (`trim`).
+    evictions: u64,
+}
+
+/// A tile, and the turn it was last drawn in.
+struct Kept {
+    tile: AtlasTile,
+    used: u64,
+}
+
+/// How many of the loop's turns a glyph isn't drawn in before it may go: a few seconds of what moves, longer while
+/// nothing does, as WebRender keeps what's cached for a number of frames.
+const STALE: u64 = 600;
+
+/// The most an atlas's textures may take before the glyphs not drawn lately go to make room, as WebRender's texture
+/// cache and glyphon's atlas let theirs go: a 16th of what its device's pages' JS may have (`js::memory_limit`, itself a
+/// 16th of the device's memory), 16 MB on a phone of 4 GB and 64 on a computer of 16. A session that opens every app's
+/// every screen and plays every motion, light and dark, draws 38,000 glyphs (7 MB) and 680 pictures (17 MB) (21 Nov),
+/// so on a phone the glyphs it no longer shows go, never what's on screen; what's drawn lately is kept past it.
+fn budget() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    return crate::js::memory_limit() as u64 / 16;
+    // The browser counts a page's textures, its own budget.
+    #[cfg(target_arch = "wasm32")]
+    return 16 << 20;
 }
 
 impl Atlas {
@@ -45,6 +77,10 @@ impl Atlas {
             uploads: Vec::new(),
             generation: 0,
             made: 0,
+            turn: 0,
+            budget: budget(),
+            over: false,
+            evictions: 0,
         }))
     }
 
@@ -55,7 +91,8 @@ impl Atlas {
         let mut state = self.0.lock();
         let mut uploaded = 0;
         for upload in std::mem::take(&mut state.uploads) {
-            let texture = &state.storage[upload.id];
+            // One for a texture let go of since (`trim`) is for a glyph gone with it.
+            let Some(texture) = state.storage.get(upload.id) else { continue };
             let (width, height) = (upload.bounds.size.width.0 as u32, upload.bounds.size.height.0 as u32);
             let row = width * texture.bytes_per_pixel;
             // A copy's rows are a multiple of 256 bytes apart, and it starts at a multiple of 512 (Direct3D 12's
@@ -85,7 +122,7 @@ impl Atlas {
         uploaded
     }
 
-    /// How many textures it has made (`AtlasState::made`).
+    /// How many times its textures have changed (`AtlasState::made`).
     pub(crate) fn made(&self) -> u64 {
         self.0.lock().made
     }
@@ -100,22 +137,63 @@ impl Atlas {
         self.0.lock().generation
     }
 
-    /// What it holds, for the inspector's `profile`: its `tiles` (glyphs and pictures), its `textures`, the `bytes`
-    /// they take on the GPU, and how much of them its tiles fill (`filled`, 0 to 1).
+    /// How many times it's let glyphs go (`trim`): what kept a tile of it from a frame before (a scene, a layer) draws
+    /// afresh once this changes, its glyphs put in again.
+    pub(crate) fn evictions(&self) -> u64 {
+        self.0.lock().evictions
+    }
+
+    /// What it holds, for the inspector's `profile`: its `tiles` (`glyphs` and pictures), its `textures`, the `bytes`
+    /// they take on the GPU and its `budget`, how much of them its tiles fill (`filled`, 0 to 1), and how many
+    /// times it's let glyphs go (`evictions`).
     pub fn usage(&self) -> serde_json::Value {
         let lock = self.0.lock();
-        let textures: Vec<&AtlasTexture> = lock.storage.monochrome_textures.iter().chain(&lock.storage.polychrome_textures).collect();
-        let size = |texture: &AtlasTexture| texture.allocator.size().area() as u64;
-        let bytes: u64 = textures.iter().map(|texture| size(texture) * u64::from(texture.bytes_per_pixel)).sum();
-        let area: u64 = textures.iter().map(|texture| size(texture)).sum();
+        let textures: Vec<&AtlasTexture> = lock.storage.textures().collect();
+        let area: u64 = textures.iter().map(|texture| texture.allocator.size().area() as u64).sum();
         let filled: u64 = textures.iter().map(|texture| texture.allocator.allocated_space() as u64).sum();
         let filled = if area == 0 { 0.0 } else { (filled as f64 / area as f64 * 1000.0).round() / 1000.0 };
-        serde_json::json!({"tiles": lock.tiles_by_key.len(), "textures": textures.len(), "bytes": bytes, "filled": filled})
+        let glyphs = lock.tiles_by_key.keys().filter(|key| matches!(key, AtlasKey::Glyph(_))).count();
+        serde_json::json!({"tiles": lock.tiles_by_key.len(), "glyphs": glyphs, "textures": textures.len(), "bytes": lock.storage.bytes(), "budget": lock.budget, "filled": filled, "evictions": lock.evictions})
+    }
+
+    /// A turn of the loop, before anything's painted in it: where a texture was made past its budget since the last,
+    /// every glyph not drawn in the last `STALE` turns goes, and each texture left empty with them, as glyphon's atlas
+    /// and WebRender's texture cache let theirs go; what's drawn after puts any of them it draws in again. Never in the
+    /// middle of a frame, so no scene being made, or drawn from what a frame kept (a layer's), loses a glyph it has: one
+    /// kept from a frame before draws afresh (`evictions`).
+    pub(crate) fn trim(&self) {
+        let mut lock = self.0.lock();
+        let state = &mut *lock;
+        state.turn += 1;
+        if !std::mem::take(&mut state.over) {
+            return;
+        }
+        let stale = state.turn.saturating_sub(STALE);
+        let storage = &mut state.storage;
+        let before = state.tiles_by_key.len();
+        state.tiles_by_key.retain(|key, kept| {
+            let keep = !matches!(key, AtlasKey::Glyph(_)) || kept.used >= stale;
+            if !keep && let Some(texture) = storage.get_mut(kept.tile.texture_id) {
+                texture.allocator.deallocate(etagere::AllocId::deserialize(kept.tile.tile_id.0));
+            }
+            keep
+        });
+        if state.tiles_by_key.len() == before {
+            return;
+        }
+        for slot in storage.monochrome_textures.iter_mut().chain(&mut storage.polychrome_textures) {
+            if slot.as_ref().is_some_and(|texture| texture.allocator.is_empty()) {
+                *slot = None;
+                state.made += 1;
+            }
+        }
+        state.generation += 1;
+        state.evictions += 1;
     }
 
     /// The view of texture `id`, which a batch of sprites samples.
     pub(crate) fn view(&self, id: AtlasTextureId) -> wgpu::TextureView {
-        self.0.lock().storage[id].view.clone()
+        self.0.lock().storage.get(id).expect("a frame draws only the tiles it has, none of which goes while it's made (`trim`)").view.clone()
     }
 
     /// Writes `data`, `size` pixels in its format (a video's frame, BGRA), into `tile`, inside its clear pixel all round,
@@ -133,8 +211,10 @@ impl Atlas {
         build: &mut dyn FnMut() -> Result<Option<(Size<DevicePixels>, Cow<'a, [u8]>)>>,
     ) -> Result<Option<AtlasTile>> {
         let mut lock = self.0.lock();
-        if let Some(tile) = lock.tiles_by_key.get(key) {
-            return Ok(Some(tile.clone()));
+        let turn = lock.turn;
+        if let Some(kept) = lock.tiles_by_key.get_mut(key) {
+            kept.used = turn;
+            return Ok(Some(kept.tile.clone()));
         }
         let Some((size, bytes)) = build()? else {
             return Ok(None);
@@ -146,17 +226,20 @@ impl Atlas {
         }
         let tile = lock.allocate(size, key.texture_kind());
         lock.uploads.push(PendingUpload { id: tile.texture_id, bounds: tile.bounds, data: bytes.into_owned() });
-        lock.tiles_by_key.insert(key.clone(), tile.clone());
+        lock.tiles_by_key.insert(key.clone(), Kept { tile: tile.clone(), used: turn });
         Ok(Some(tile))
     }
 }
 
 impl AtlasState {
     fn allocate(&mut self, size: Size<DevicePixels>, kind: AtlasTextureKind) -> AtlasTile {
-        if let Some(tile) = self.storage[kind].iter_mut().rev().find_map(|texture| texture.allocate(size)) {
+        if let Some(tile) = self.storage[kind].iter_mut().rev().flatten().find_map(|texture| texture.allocate(size)) {
             return tile;
         }
-        self.push_texture(size, kind).allocate(size).expect("a new texture is at least as large as the tile")
+        let texture = self.push_texture(size, kind);
+        let tile = texture.allocate(size).expect("a new texture is at least as large as the tile");
+        self.over |= self.storage.bytes() > self.budget;
+        tile
     }
 
     fn push_texture(&mut self, min_size: Size<DevicePixels>, kind: AtlasTextureKind) -> &mut AtlasTexture {
@@ -181,27 +264,51 @@ impl AtlasState {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.made += 1;
+        // In the place of one let go of (`trim`), where there's one.
         let list = &mut self.storage[kind];
-        list.push(AtlasTexture {
-            id: AtlasTextureId { index: list.len() as u32, kind },
-            allocator: BucketedAtlasAllocator::new(size.into()),
+        let index = list.iter().position(Option::is_none).unwrap_or(list.len());
+        if index == list.len() {
+            list.push(None);
+        }
+        list[index].insert(AtlasTexture {
+            id: AtlasTextureId { index: index as u32, kind },
+            allocator: AtlasAllocator::new(size.into()),
             texture,
             view,
             bytes_per_pixel: format.block_copy_size(None).unwrap_or(4),
-        });
-        list.last_mut().expect("just pushed")
+        })
     }
 }
 
-/// Its textures of each kind, none of which goes while it's kept: a texture's id is where it is in its list.
+/// Its textures of each kind: a texture's id is where it is in its list, a place left empty where one was let go of
+/// (`Atlas::trim`).
 #[derive(Default)]
 struct AtlasStorage {
-    monochrome_textures: Vec<AtlasTexture>,
-    polychrome_textures: Vec<AtlasTexture>,
+    monochrome_textures: Vec<Option<AtlasTexture>>,
+    polychrome_textures: Vec<Option<AtlasTexture>>,
+}
+
+impl AtlasStorage {
+    fn textures(&self) -> impl Iterator<Item = &AtlasTexture> {
+        self.monochrome_textures.iter().chain(&self.polychrome_textures).flatten()
+    }
+
+    /// The bytes its textures take on the GPU.
+    fn bytes(&self) -> u64 {
+        self.textures().map(|texture| texture.allocator.size().area() as u64 * u64::from(texture.bytes_per_pixel)).sum()
+    }
+
+    fn get(&self, id: AtlasTextureId) -> Option<&AtlasTexture> {
+        self[id.kind].get(id.index as usize)?.as_ref()
+    }
+
+    fn get_mut(&mut self, id: AtlasTextureId) -> Option<&mut AtlasTexture> {
+        self[id.kind].get_mut(id.index as usize)?.as_mut()
+    }
 }
 
 impl ops::Index<AtlasTextureKind> for AtlasStorage {
-    type Output = Vec<AtlasTexture>;
+    type Output = Vec<Option<AtlasTexture>>;
     fn index(&self, kind: AtlasTextureKind) -> &Self::Output {
         match kind {
             AtlasTextureKind::Monochrome => &self.monochrome_textures,
@@ -219,16 +326,9 @@ impl ops::IndexMut<AtlasTextureKind> for AtlasStorage {
     }
 }
 
-impl ops::Index<AtlasTextureId> for AtlasStorage {
-    type Output = AtlasTexture;
-    fn index(&self, id: AtlasTextureId) -> &Self::Output {
-        &self[id.kind][id.index as usize]
-    }
-}
-
 struct AtlasTexture {
     id: AtlasTextureId,
-    allocator: BucketedAtlasAllocator,
+    allocator: AtlasAllocator,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     bytes_per_pixel: u32,

@@ -100,11 +100,12 @@ impl Windows {
         let (room, scale) = (window.room(), window.parts[0].native.scale());
         let device = Size { width: DevicePixels((room.width.0 * scale).round() as i32), height: DevicePixels((room.height.0 * scale).round() as i32) };
         let Ok(screen) = &mut window.screen else {
-            // One whose page isn't there yet, or didn't open, is pictured as it was last drawn: its loading state, or why.
+            // One whose page isn't there yet, or didn't open, is pictured as it shows: its loading state, or why.
             if request.op != "snap" {
                 let why = window.screen.as_ref().err().filter(|why| !why.is_empty()).map_or("it's still loading", String::as_str);
                 return reply(crate::inspect::answer(&request.id, Err(anyhow::anyhow!("its page isn't there: {why}"))));
             }
+            window.paint_missing(&mut self.text, &self.atlas);
             let mut renderer = Renderer::offscreen(&self.context, self.atlas.clone(), device);
             renderer.draw(&window.scene, &[[0.0, 0.0]]);
             renderer.finish();

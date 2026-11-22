@@ -51,6 +51,18 @@ impl Window {
         self.shown && !self.hidden && (!self.panel || self.visible)
     }
 
+    /// Paints what it shows while it has no page: its loading state while its page is still to come (`pending`), its
+    /// spinner turning, never an empty window (a phone's first start showed black for 5 s and more as its page was
+    /// read, 21 Nov); or why it didn't open.
+    pub(super) fn paint_missing(&mut self, text: &mut crate::text::TextSystem, atlas: &Atlas) {
+        let (room, scale) = (self.room(), self.parts[0].native.scale());
+        match &self.screen {
+            Err(_) if self.pending => crate::view::paint_loading(since(self.opened), super::cover::QUIET, super::cover::FADES_IN, appearance(), room, scale, text, atlas, &mut self.scene),
+            Err(why) => crate::view::paint_message(why, appearance(), room, scale, text, atlas, &mut self.scene),
+            Ok(_) => {}
+        }
+    }
+
     /// How big its page is laid out: a panel's as its page asked, the rest as big as their window.
     pub(super) fn room(&self) -> Size<Pixels> {
         if self.panel { self.room } else { self.parts[0].native.size() }

@@ -247,6 +247,8 @@ pub struct Screen {
     frame: u64,
     /// What the last frame showed, which a frame that would show the same doesn't paint again.
     seen: Option<Seen>,
+    /// How many times its atlas had let glyphs go as it last painted (`Atlas::evictions`).
+    evictions: u64,
     /// The key of the shortcut that summoned it, and when it was last pressed (`summoned`).
     shortcut: Option<(String, web_time::Instant)>,
     /// Where each node listening for `layout` was last told it is.
@@ -390,6 +392,7 @@ impl Screen {
             styled: States::default(),
             frame: 0,
             seen: None,
+            evictions: 0,
             shortcut: None,
             laid_out: HashMap::new(),
             focus: Focus::default(),

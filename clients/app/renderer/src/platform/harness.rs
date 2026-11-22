@@ -572,9 +572,14 @@ impl Windows {
         Some(window.screen.as_mut().ok()?.cost(renderer))
     }
 
-    /// What window `id` last drew, the GPU it drew it with and its atlas.
-    pub fn drawn(&self, id: WindowId) -> Option<(&crate::render::scene::Scene, &Context, &Arc<Atlas>)> {
-        Some((&self.windows.get(&id)?.scene, &self.context, &self.atlas))
+    /// What window `id` shows, painted afresh, as an offscreen picture of it is (the scene it last drew may have
+    /// glyphs its atlas let go of since, `Atlas::trim`), the GPU it drew it with and its atlas.
+    pub fn drawn(&mut self, id: WindowId) -> Option<(crate::render::scene::Scene, &Context, &Arc<Atlas>)> {
+        let window = self.windows.get_mut(&id)?;
+        let (room, scale) = (window.room(), window.parts[0].native.scale());
+        let mut scene = crate::render::scene::Scene::default();
+        window.screen.as_mut().ok()?.paint_afresh(room, scale, &mut self.text, &self.atlas, &mut scene);
+        Some((scene, &self.context, &self.atlas))
     }
 }
 

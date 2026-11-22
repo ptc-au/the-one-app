@@ -71,6 +71,12 @@ impl Screen {
     /// drew a quarter refresh late for a link that stopped moved a step and a quarter, and the next three quarters.
     /// → whether it painted anything, which a frame that changed nothing doesn't: the scene drawn last is it.
     pub fn paint(&mut self, at: Option<Instant>, size: Size<Pixels>, scale: f32, text: &mut TextSystem, atlas: &Atlas, scene: &mut Scene) -> bool {
+        // Its atlas let glyphs go since it last painted, which what it kept from then (its scene, its layers) may draw:
+        // it's all drawn afresh, each glyph it draws put in again.
+        if std::mem::replace(&mut self.evictions, atlas.evictions()) != self.evictions {
+            self.layers.clear();
+            self.seen = None;
+        }
         self.tell_room(size);
         self.paint_frames(at, scale, text, atlas);
         let started = crate::platform::on_cpu();

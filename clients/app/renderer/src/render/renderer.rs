@@ -102,9 +102,10 @@ pub struct Renderer {
     /// How many frames it's submitted, and how many of them the GPU has finished (`Queue::on_submitted_work_done`).
     frames: u64,
     finished: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`).
+    /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`), and how
+    /// many times its atlas had let glyphs go then (`Atlas::evictions`).
     #[cfg(feature = "fake")]
-    scene: Option<Scene>,
+    scene: Option<(Scene, u64)>,
 }
 
 
@@ -465,7 +466,7 @@ impl Renderer {
         let drawn = self.draw_frame(scene, origins);
         #[cfg(feature = "fake")]
         {
-            self.scene = Some(scene.clone());
+            self.scene = Some((scene.clone(), self.atlas.evictions()));
         }
         let on_cpu = crate::platform::on_cpu().saturating_sub(started);
         self.on_cpu.set(self.on_cpu.get() + on_cpu);
@@ -481,10 +482,11 @@ impl Renderer {
         self.rasters = other.rasters.clone();
     }
 
-    /// The scene it last drew.
+    /// The scene it last drew, while what it drew it with is all still in its atlas: none once glyphs it may have drawn
+    /// have gone since (`Atlas::trim`).
     #[cfg(feature = "fake")]
     pub fn scene(&self) -> Option<&Scene> {
-        self.scene.as_ref()
+        self.scene.as_ref().filter(|(_, evictions)| *evictions == self.atlas.evictions()).map(|(scene, _)| scene)
     }
 
     /// The GPU time of the last frame it has, summed over its passes and copies, and its blurs' (a backdrop's glass), where the
