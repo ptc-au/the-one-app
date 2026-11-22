@@ -235,6 +235,25 @@ impl Screen {
             .collect()
     }
 
+    /// The semantic tree with each frame's page's in its place (`grafted`) and each node's `rect` where it's drawn in
+    /// this window, `by` being where its own page's origin is in it.
+    pub(super) fn grafted_placed(&self, read: Vec<Value>, by: Point<f32>) -> Vec<Value> {
+        read.into_iter()
+            .flat_map(|mut node| {
+                if let Some(id) = node.get("frame").and_then(Value::as_u64) {
+                    return self.frames.get(&id).map(|child| child.screen.grafted_placed(child.screen.tree.semantics(0), point(by.x + child.rect.origin.x, by.y + child.rect.origin.y))).unwrap_or_default();
+                }
+                if let Some(rect) = node["id"].as_u64().and_then(|id| self.rect(id)) {
+                    node["rect"] = serde_json::json!([rect.x + by.x, rect.y + by.y, rect.width, rect.height]);
+                }
+                if let Some(children) = node.get_mut("children").and_then(Value::as_array_mut) {
+                    *children = self.grafted_placed(std::mem::take(children), by);
+                }
+                vec![node]
+            })
+            .collect()
+    }
+
     /// The inspector's tree (`inspect::tree`), with what each frame's page has in the frame's place, where it's drawn
     /// in this window.
     pub(super) fn inspected_tree(&self) -> Value {

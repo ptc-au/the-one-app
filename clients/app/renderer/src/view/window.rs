@@ -6,13 +6,24 @@ impl Screen {
     /// The semantic tree, as an agent and a screen reader read it, each frame's page's in its place, after the
     /// window's own: its notice, while it's drawn.
     pub fn semantics(&self) -> Value {
+        self.semantics_by(|read| self.grafted(read))
+    }
+
+    /// The semantic tree (`semantics`) with each node's `rect` where it's drawn in this window: a frame's page's nodes by
+    /// their own page's screen, moved to where the frame is (`grafted_placed`), where each looked up in this one's was another
+    /// node's, or none, by which ids the two happened to share.
+    pub fn semantics_placed(&self) -> Value {
+        self.semantics_by(|read| self.grafted_placed(read, point(0.0, 0.0)))
+    }
+
+    fn semantics_by(&self, graft: impl FnOnce(Vec<Value>) -> Vec<Value>) -> Value {
         let mut out = Vec::new();
         if let Some(notice) = &self.notice {
             let action = notice.action.as_ref().filter(|_| self.chrome.action.is_some());
             let children: Vec<Value> = action.map(|(label, _)| json!({"id": NOTICE_ACTION, "role": "button", "name": label, "actions": ["click"]})).into_iter().collect();
             out.push(json!({"id": NOTICE, "role": "status", "live": "polite", "name": notice.text, "children": children}));
         }
-        out.extend(self.grafted(self.tree.semantics(0)));
+        out.extend(graft(self.tree.semantics(0)));
         json!(out)
     }
 

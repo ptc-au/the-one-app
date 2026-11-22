@@ -19,7 +19,7 @@ mod video;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 
-use serde_json::Value;
+
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::prelude::*;
 
@@ -181,21 +181,9 @@ fn turn() {
     }
 }
 
-/// The screen's semantic tree (`Screen::semantics`), each node with where it was drawn (`rect`), as JSON.
+/// The screen's semantic tree (`Screen::semantics_placed`), each node with where it was drawn (`rect`), as JSON.
 fn semantics(screen: &Screen) -> String {
-    fn placed(screen: &Screen, node: &mut Value) {
-        if let Some(rect) = node["id"].as_u64().and_then(|id| screen.rect(id)) {
-            node["rect"] = serde_json::json!([rect.x, rect.y, rect.width, rect.height]);
-        }
-        for child in node["children"].as_array_mut().into_iter().flatten() {
-            placed(screen, child);
-        }
-    }
-    let mut tree = screen.semantics();
-    for node in tree.as_array_mut().into_iter().flatten() {
-        placed(screen, node);
-    }
-    tree.to_string()
+    screen.semantics_placed().to_string()
 }
 
 /// Runs what's queued now, not in a microtask: a press that gives a field the keyboard focuses its field in the
