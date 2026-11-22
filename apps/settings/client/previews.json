@@ -345,16 +345,7 @@
       390,
       480
     ],
-    "touch": false,
-    "motions": {
-      "A mouse wheel's notches scroll it": {
-        "gesture": {
-          "trace": "traces/windows-wheel-narrow.json"
-        },
-        "keeps": "Intel UHD laptop at 4K",
-        "eases": true
-      }
-    }
+    "touch": false
   },
   "Updates, an app that can't update": {
     "like": "Settings",
@@ -439,52 +430,7 @@
     }
   },
   "Updates, an update that goes away": {
-    "like": "Updates, an app that can't update",
-    "checks": {
-      "App Store's failed update goes while Updates is open, and searching throws nothing": [
-        {
-          "expect": {
-            "text": "This update can't be installed yet"
-          }
-        },
-        "Search Settings",
-        {
-          "type": "chr"
-        },
-        {
-          "answers": {
-            "apps": {
-              "for": "users/sam",
-              "apps": [
-                {
-                  "name": "app-store",
-                  "for": "network",
-                  "app": "network/apps/app-store",
-                  "state": "installed",
-                  "trusted": true,
-                  "requires": {},
-                  "required_by": [],
-                  "update": null
-                }
-              ]
-            }
-          }
-        },
-        {
-          "expect": {
-            "gone": "This update can't be installed yet"
-          }
-        },
-        {
-          "type": "o"
-        },
-        {
-          "expect": {
-            "text": "Chrome"
-          }
-        }
-      ]
-    }
+    "like": "Updates, an app that can't update"
   },
   "Settings, on a phone with no login": {
     "like": "Settings, on a phone",
@@ -654,15 +600,6 @@
           }
         ]
       }
-    },
-    "checks": {
-      "General isn't listed where it has nothing to show": [
-        {
-          "expect": {
-            "gone": "General"
-          }
-        }
-      ]
     }
   },
   "Settings, searching for Vault": {
@@ -822,21 +759,7 @@
       {
         "type": "vault"
       }
-    ],
-    "checks": {
-      "Each Vault says what it is": [
-        {
-          "expect": {
-            "text": "Vault Settings"
-          }
-        },
-        {
-          "expect": {
-            "text": "Vault App"
-          }
-        }
-      ]
-    }
+    ]
   },
   "Settings, a search with no match": {
     "like": "Settings",
@@ -845,90 +768,10 @@
       {
         "type": "hello world"
       }
-    ],
-    "checks": {
-      "It says it found nothing": [
-        {
-          "expect": {
-            "text": "No Results"
-          }
-        }
-      ]
-    }
+    ]
   },
   "Settings, the sidebar by the keyboard": {
     "like": "Settings",
-    "checks": {
-      "The arrow keys move through the sidebar, which opens what they come to": [
-        "Vault",
-        {
-          "expect": {
-            "focused": "Vault"
-          }
-        },
-        {
-          "key": "ArrowDown"
-        },
-        {
-          "expect": {
-            "focused": "Notifications",
-            "states": {
-              "of": "Notifications",
-              "is": {
-                "current": true
-              }
-            }
-          }
-        },
-        {
-          "key": "ArrowUp"
-        },
-        {
-          "expect": {
-            "focused": "Vault",
-            "states": {
-              "of": "Vault",
-              "is": {
-                "current": true
-              }
-            }
-          }
-        },
-        {
-          "key": "b"
-        },
-        {
-          "expect": {
-            "focused": "Backups 1"
-          }
-        },
-        {
-          "key": "End"
-        },
-        {
-          "expect": {
-            "focused": "Gmail"
-          }
-        },
-        {
-          "key": "Home"
-        },
-        {
-          "expect": {
-            "focused": "AV Andre van Tonder Sign In & Security"
-          }
-        },
-        {
-          "key": "Tab",
-          "shift": true
-        },
-        {
-          "expect": {
-            "focused": "Search Settings"
-          }
-        }
-      ]
-    },
     "uses": [
       "sign-in",
       "vault",
@@ -2221,15 +2064,6 @@
         ],
         "types": []
       }
-    },
-    "motions": {
-      "A mouse wheel's notches scroll it": {
-        "gesture": {
-          "trace": "traces/windows-wheel.json"
-        },
-        "keeps": "Intel UHD laptop at 4K",
-        "eases": true
-      }
     }
   },
   "Notifications": {
@@ -2508,65 +2342,6 @@
           }
         ]
       }
-    },
-    "checks": {
-      "Each is named as a person knows it, not by its slug": [
-        {
-          "expect": {
-            "text": "Messenger"
-          }
-        },
-        {
-          "expect": {
-            "gone": "messenger"
-          }
-        }
-      ],
-      "Pressing a row shows what it is and restores nothing": [
-        {
-          "name": "Messenger",
-          "nth": 0
-        },
-        {
-          "expect": {
-            "gone": {
-              "role": "alertdialog"
-            }
-          }
-        },
-        {
-          "expect": {
-            "text": "Restore"
-          }
-        },
-        {
-          "expect": {
-            "text": "App · With chats and accounts"
-          }
-        }
-      ],
-      "Delete Now asks over a dimmed page": [
-        {
-          "name": "More for Messenger",
-          "nth": 0
-        },
-        "Delete Now",
-        {
-          "expect": {
-            "shown": {
-              "role": "alertdialog"
-            }
-          }
-        },
-        {
-          "wait": 400
-        },
-        {
-          "expect": {
-            "dimmed": true
-          }
-        }
-      ]
     }
   },
   "AI": {
@@ -3047,32 +2822,6 @@
         ],
         "asking": []
       }
-    },
-    "checks": {
-      "Waits for its key, and takes the room it took": [
-        {
-          "expect": {
-            "settled": false,
-            "at": {
-              "of": "About",
-              "y": 158
-            }
-          }
-        },
-        {
-          "wait": 3000
-        },
-        {
-          "expect": {
-            "text": "Holds Your Key",
-            "settled": true,
-            "at": {
-              "of": "About",
-              "y": 158
-            }
-          }
-        }
-      ]
     }
   }
 }

@@ -46,7 +46,7 @@ const MUTANTS = {
   "text-stretched": { bug: "text drawn from a stretched picture", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "late-tap": { bug: "a tap delivered a frame late", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
   "stale-rect": { bug: "a stale inspector rect", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
-  "wrong-node": { bug: "a selector matching the wrong node", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
+  "wrong-node": { bug: "a selector matching the wrong node", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Alike")] },
   "web-clock": { bug: "the web clock running during the gate", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
   "web-blank": { bug: "a blank web canvas", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
   "spring-rest": { bug: "spring rest at 0.1 pt", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
@@ -58,9 +58,9 @@ const MUTANTS = {
   "hit-scroll": { bug: "what's in a scroll taking a press where it'd be unscrolled", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   // Planted hangs (22 Nov, a Surface's Intel driver hung on our frames): the app recovers on a new device, or stops
   // saying why, never freezes, and the headless renderer fails.
-  "gpu-hang": { bug: "a fence that never signals: the GPU hung on a frame, which the system never says", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
+  "gpu-hang": { bug: "a fence that never signals: the GPU hung on a frame, which the system never says", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
   "present-hang": { bug: "a present that never returns: the GPU's driver hung", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
-  "picture-retry": { bug: "a picture that failed to decode left blank, never tried again (f0db8c31f)", plays: [checks("apps/home-screen", "App Library, by a finger")] },
+  "picture-retry": { bug: "a picture that failed to decode left blank, never tried again (f0db8c31f)", plays: [checks("clients/app/renderer/tests/gallery", "Images/SVG tiles")] },
 }
 
 if (args.includes("--list")) {

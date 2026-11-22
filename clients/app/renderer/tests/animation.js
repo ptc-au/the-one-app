@@ -21,8 +21,8 @@
 // every tile it didn't draw, so what's drawn again sits beside other tiles, and each motion played twice must draw the same
 // frames (within `SAME` levels) packed either way.
 //
-// A folder is the gallery (clients/app/renderer/tests/gallery, its scenes in `*.scenes.tsx`) or an app's (apps/<app>, in
-// `client/scenes.json`), as `screenshot.js` takes them; with none, the gallery and every app with a motion. A motion is
+// A folder is the gallery (clients/app/renderer/tests/gallery, its scenes in `*.scenes.tsx`) or, for `--checks`, an app's (apps/<app>, its previews in
+// `client/previews.json`), as `screenshot.js` takes them; with none, the gallery, and with `--checks` every app's previews too. A motion is
 // `{ from, gesture, follow }` (the `Motion` type in src/types/ui.d.ts): the press goes down on what `from` names, moves
 // as `gesture` says, and what `follow` names is watched move, with what scrolls under the press. Each is played at
 // each rate of `--hz` (a display's frames a second: 60 and 120 unless said) by the inspector's `replay`, through the
@@ -85,7 +85,7 @@ export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animat
 export { build, COMPONENTS, copied, library, pageFolder, stale, usedFolder } from "./animation/pages.js"
 
 /// Every folder with motions, or with `--checks` every folder with scenes: the gallery, and each app's.
-const everything = () => [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")) && (checking || readFileSync(join(app, "client/scenes.json"), "utf8").includes('"motions"')))]
+const everything = () => [here("gallery"), ...(checking ? readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json"))) : [])]
 
 // Run, rather than imported for what it shares (calibrate.js).
 if (import.meta.main) {

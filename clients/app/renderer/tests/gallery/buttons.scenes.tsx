@@ -34,6 +34,19 @@ const Counted = () => {
   )
 }
 
+/// Two buttons of the same words, each counting its own presses: which one a selector names, by its `nth`, is the one pressed.
+const Alike = () => {
+  const [first, setFirst] = createSignal(0)
+  const [second, setSecond] = createSignal(0)
+  return (
+    <View style={look.column}>
+      <Button onPress={() => setFirst(first() + 1)}>Add</Button>
+      <Button onPress={() => setSecond(second() + 1)}>Add</Button>
+      <Text>{`First ${first()}, second ${second()}`}</Text>
+    </View>
+  )
+}
+
 export default {
   // What people expect of a button, from the UI SDK's own tests (tests/specs/button.spec.ts at the commit button.ts
   // names).
@@ -45,6 +58,12 @@ export default {
       "One that's off does nothing": [{ role: "button", name: "Delete" }, { expect: { text: "Pressed 0 times" } }],
       // Its pressed look is drawn on the frame the press comes in, as a Mac's buttons' is, not faded in, nor a refresh on.
       "Held down, it looks pressed at once": [{ down: "Save" }, { expect: { drawn: { of: { role: "button", name: "Save" }, opacity: 0.7 } }, within: 0 }, { up: true }, { expect: { text: "Pressed 1 time" } }],
+    },
+  },
+  "Buttons/Alike": {
+    render: () => <Alike />,
+    checks: {
+      "The one a selector counts to is pressed": [{ role: "button", name: "Add", nth: 1 }, { expect: { text: "First 0, second 1" } }],
     },
   },
   "Buttons/Variants": () => (

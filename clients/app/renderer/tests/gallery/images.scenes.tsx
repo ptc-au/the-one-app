@@ -26,18 +26,23 @@ const tiles = [
 ] as const
 
 export default {
-  "Images/SVG tiles": () => (
-    <View style={look.column}>
-      <For each={tiles}>
-        {(tile_) => (
-          <View style={look.row}>
-            <Image src={tile(tile_[0], tile_[1])} alt="" style={look.tile} />
-            <Text>{tile_[1]}</Text>
-          </View>
-        )}
-      </For>
-    </View>
-  ),
+  // Under the seeds a check is played with, a picture's first decode is cut short for one in three: it's tried again, and
+  // drawn, never left blank.
+  "Images/SVG tiles": {
+    checks: { "Every tile is drawn": [{ expect: { text: "#3b82f6" } }] },
+    render: () => (
+      <View style={look.column}>
+        <For each={tiles}>
+          {(tile_) => (
+            <View style={look.row}>
+              <Image src={tile(tile_[0], tile_[1])} alt="" style={look.tile} />
+              <Text>{tile_[1]}</Text>
+            </View>
+          )}
+        </For>
+      </View>
+    ),
+  },
   "Images/Slow to decode": () => <Image src={blurred} alt="" style={look.large(358, 268)} />,
   // A picture whose bytes aren't one, beside one that is: tried again, then shown broken, never as nothing.
   "Images/Broken": () => (

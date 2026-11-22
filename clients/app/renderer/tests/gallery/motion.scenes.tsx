@@ -65,13 +65,13 @@ const Pushed = () => {
   )
 }
 
-// What moves under a pointer or a finger, each with the gestures core/ui/animation.js plays on it, frame by frame.
+// What moves under a pointer or a finger, each with the gestures animation.js plays on it, frame by frame.
 export default {
   "Motion/Card dragged along": {
     touch: true,
     motions: {
-      "Swiped and let go": { from: { role: "group", name: "Swipe me" }, follow: { role: "group", name: "Swipe me" }, gesture: { swipe: [160, 0], speed: 600 } },
-      "Dragged with pauses": { from: { role: "group", name: "Swipe me" }, follow: { role: "group", name: "Swipe me" }, gesture: { drag: [200, 0], pauses: 2, speed: 400 } },
+      "Swiped and let go": { from: { role: "group", name: "Swipe me" }, follow: { role: "group", name: "Swipe me" }, gesture: { swipe: [160, 0], speed: 600 }, keeps: "Intel UHD laptop at 4K" },
+      "Dragged with pauses": { from: { role: "group", name: "Swipe me" }, follow: { role: "group", name: "Swipe me" }, gesture: { drag: [200, 0], pauses: 2, speed: 400 }, keeps: "mid browser on WebGPU" },
     },
     render: () => (
       <View style={look.page}>
@@ -100,7 +100,7 @@ export default {
   "Motion/Long list": {
     touch: true,
     motions: {
-      Flung: { from: { x: 195, y: 600 }, gesture: { fling: [0, -300] } },
+      Flung: { from: { x: 195, y: 600 }, gesture: { fling: [0, -300] }, keeps: "older iPhone" },
       "Pulled past its top": { from: { x: 195, y: 300 }, gesture: { swipe: [0, 240], speed: 800 } },
     },
     render: () => <List each={notes}>{(note) => <Row heading={note()} />}</List>,

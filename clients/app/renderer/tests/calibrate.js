@@ -5,7 +5,7 @@
 // which draws on its own GPU over ssh with Direct3D 12, and `--example window` for `--window`).
 //
 // It draws every scene of the gallery there, the first frames of each as it opens and every frame of each of its
-// motions at 60 Hz, and every motion of the apps' that keeps a tier (`keeps`) as animation.js plays them, each waited for
+// motions at 60 Hz, and every motion of the gallery's that keeps a tier (`keeps`) as animation.js plays them, each waited for
 // on its GPU, as the headless renderer times its passes there (`gpu_ms`), at two device pixels a point, as a phone's or a
 // laptop's at 4K is. Each frame's work (`work`: the pixels of each kind of thing drawn, the pixels copied, the bytes
 // uploaded, and its draw calls and render passes) is the same on any device; how long its GPU took, and its thread
@@ -118,11 +118,10 @@ say(["scp", "-rq", `${host}:${remote.replaceAll("\\", "/")}`, join(out, "back")]
 say(["ssh", host, gone])
 console.log(`${scenes.length} scenes drawn on ${name} in ${Math.round((performance.now() - started) / 1000)} s`)
 
-// The apps' motions that keep a tier, played there as animation.js plays them (and with `--window`, in a real window), each
-// motion's frames kept in a folder of its own: `<app>/<scene>/<motion>/60hz/frames.json` (and `presented.json`).
-const apps = readdirSync(here("../../../../apps")).map((app) => here(`../../../../apps/${app}`)).filter((app) => existsSync(join(app, "client/scenes.json")) && readFileSync(join(app, "client/scenes.json"), "utf8").includes('"keeps"'))
+// The gallery's motions that keep a tier, played there as animation.js plays them (and with `--window`, in a real window), each
+// motion's frames kept in a folder of its own: `gallery/<scene>/<motion>/60hz/frames.json` (and `presented.json`).
 const playThere = (folder, ...more) => {
-  const played = Bun.spawnSync(["bun", here("animation.js"), ...apps, "--keeps", "--hz", "60", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
+  const played = Bun.spawnSync(["bun", here("animation.js"), gallery, "--keeps", "--hz", "60", "--ssh", host, "--out", join(out, folder), ...more], { cwd: here("."), stdout: "pipe", stderr: "pipe" })
   if (!existsSync(join(out, folder))) throw new Error(`animation.js played nothing there: ${played.stderr.toString().trim()}`)
 }
 playThere("motions", "--headless", headless)

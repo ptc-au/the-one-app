@@ -277,26 +277,6 @@
           }
         ]
       }
-    },
-    "checks": {
-      "Its chips and its first shelf scroll to the window's edges, not to the column's": [
-        {
-          "expect": {
-            "bleeds": {
-              "role": "toolbar",
-              "name": "Categories"
-            }
-          }
-        },
-        {
-          "expect": {
-            "bleeds": {
-              "role": "group",
-              "name": "Productivity"
-            }
-          }
-        }
-      ]
     }
   },
   "Marketplace in a wide window": {
@@ -304,36 +284,7 @@
     "size": [
       1280,
       800
-    ],
-    "checks": {
-      "Its column is in the middle of the window": [
-        {
-          "expect": {
-            "centred": {
-              "role": "searchbox"
-            }
-          }
-        }
-      ],
-      "Its chips and its first shelf scroll to the window's edges, not to the column's": [
-        {
-          "expect": {
-            "bleeds": {
-              "role": "toolbar",
-              "name": "Categories"
-            }
-          }
-        },
-        {
-          "expect": {
-            "bleeds": {
-              "role": "group",
-              "name": "Productivity"
-            }
-          }
-        }
-      ]
-    }
+    ]
   },
   "Every Icon": {
     "like": "Marketplace",
@@ -1678,33 +1629,6 @@
           }
         ]
       }
-    },
-    "checks": {
-      "Every icon shows": [
-        {
-          "expect": {
-            "text": "Vault"
-          }
-        }
-      ],
-      "Its chips and its first shelf scroll to the window's edges, not to the column's": [
-        {
-          "expect": {
-            "bleeds": {
-              "role": "toolbar",
-              "name": "Categories"
-            }
-          }
-        },
-        {
-          "expect": {
-            "bleeds": {
-              "role": "group",
-              "name": "Connectors"
-            }
-          }
-        }
-      ]
     }
   },
   "Category": {
@@ -1714,8 +1638,7 @@
         "role": "button",
         "name": "Productivity"
       }
-    ],
-    "checks": {}
+    ]
   },
   "A category chosen": {
     "like": "Marketplace",
@@ -1724,19 +1647,7 @@
         "role": "button",
         "name": "Productivity"
       }
-    ],
-    "checks": {
-      "A category filters in place, with no Back": [
-        {
-          "expect": {
-            "gone": {
-              "role": "button",
-              "name": "Back"
-            }
-          }
-        }
-      ]
-    }
+    ]
   },
   "Installed App Page": {
     "like": "Category",

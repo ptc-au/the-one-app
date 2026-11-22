@@ -194,8 +194,8 @@ export const phone = ({ touch, safeArea, ...scene }) => {
 /// A folder's scenes that have motions, or with `all`, every one an app's page draws, each with its page, link,
 /// answers, taps, size and touch.
 export async function scenesOf(target, built, folder, all = false) {
-  if (existsSync(join(target, "client/scenes.json"))) {
-    const scenes = JSON.parse(readFileSync(join(target, "client/scenes.json"), "utf8"))
+  if (existsSync(join(target, "client/previews.json"))) {
+    const scenes = JSON.parse(readFileSync(join(target, "client/previews.json"), "utf8"))
     const whole = (scene) => (scene.like ? { ...whole(scenes[scene.like]), taps: undefined, ...scene, answers: { ...whole(scenes[scene.like]).answers, ...scene.answers } } : scene)
     return Object.entries(scenes)
       .map(([name, scene]) => ({ name, ...whole(scene) }))

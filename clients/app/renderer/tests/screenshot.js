@@ -5,8 +5,8 @@
 // `--out`: what a change did to how things look, drawn before it (on main) and after.
 //
 // A folder is the gallery (clients/app/renderer/tests/gallery, its scenes the components': `*.scenes.tsx`) or an app's (apps/<app>,
-// its scenes its screens', in `client/scenes.json`); with none, the gallery and every app that has scenes. An app's
-// scenes are what each screen shows, by name, and what it's given to show it, as the tools' answers a client would
+// its previews, its screens in each state, in `client/previews.json`); with none, the gallery and every app that has previews. None holds an expectation of its own: the checks here run over every one. An app's
+// previews hold what each screen shows, by name, and what it's given to show it, as the tools' answers a client would
 // give (record.js's answers): `{ "Inbox": { "answers": { "notifications_inbox": { … } } } }`, with any of `page` (its
 // page, `client/index.html` unless said, and a link after `#`), `component` (a component its client exports, drawn alone, in
 // place of a page, as another app's page draws it), `uses` (other apps whose components the page draws, as Settings draws its sections: each is built, and served beside the page as `/<app>/client/`), `taps` (what's done first: pressed by what each is named or
@@ -77,7 +77,7 @@ const ssh = option("--ssh")
 // Only the scenes whose names have these words, as animation.js's `--scene`.
 const only = option("--scene")?.toLowerCase()
 const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--headless", "--scene", "--glass", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
-const targets = folders.length ? folders : [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/scenes.json")))]
+const targets = folders.length ? folders : [here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json")))]
 let headless = join(root, `target/${flag("--release") ? "release" : "debug"}/examples/headless`)
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
 // page written for this one, so there's nothing yet to compare.
@@ -92,8 +92,8 @@ headless = copied(headless, out)
 /// A target's scenes, each its name, page, link, answers, taps and size, and where a wheel's notch eases what it
 /// scrolls (`wheel`: a motion's `eases`, at its trace's first wheel's point).
 async function scenesOf(target, built) {
-  if (existsSync(join(target, "client/scenes.json"))) {
-    const all = JSON.parse(readFileSync(join(target, "client/scenes.json"), "utf8"))
+  if (existsSync(join(target, "client/previews.json"))) {
+    const all = JSON.parse(readFileSync(join(target, "client/previews.json"), "utf8"))
     const whole = (scene) => (scene.like ? { ...whole(all[scene.like]), taps: undefined, ...scene, answers: { ...whole(all[scene.like]).answers, ...scene.answers } } : scene)
     return Object.entries(all).map(([name, scene]) => {
       const { component, uses = [], answers = {}, taps = [], size = sized ?? [390, 844], touch, timeZone = "UTC", errors, safeArea, wait = 0, checks } = whole(scene)
@@ -817,7 +817,7 @@ for (const line of lint()) {
 const drawnTargets = await Promise.all(targets.map(async (target) => {
   const name = basename(target)
   const built = join(out, name, "build")
-  const scenes = existsSync(join(target, "client/scenes.json")) ? JSON.parse(readFileSync(join(target, "client/scenes.json"), "utf8")) : {}
+  const scenes = existsSync(join(target, "client/previews.json")) ? JSON.parse(readFileSync(join(target, "client/previews.json"), "utf8")) : {}
   const unbuilt = await build(target, built)
   if (unbuilt) return [`${name}: ${unbuilt}`]
   // The apps whose components its scenes draw, which its build built.

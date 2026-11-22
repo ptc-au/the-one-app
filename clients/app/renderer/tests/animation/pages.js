@@ -98,7 +98,7 @@ async function install(client) {
 export async function build(target, built) {
   const packages = await install(join(target, "client"))
   if (packages) return `its packages didn't install\n${packages}`
-  const scenes = existsSync(join(target, "client/scenes.json")) ? JSON.parse(readFileSync(join(target, "client/scenes.json"), "utf8")) : {}
+  const scenes = existsSync(join(target, "client/previews.json")) ? JSON.parse(readFileSync(join(target, "client/previews.json"), "utf8")) : {}
   const ofComponent = (scene) => !!scene && (scene.component || ofComponent(scenes[scene.like]))
   if (!Object.keys(scenes).length || Object.values(scenes).some((scene) => !ofComponent(scene))) {
     const made = await spawned(["bun", library("build/app.js"), target, built, relative(root, target)])

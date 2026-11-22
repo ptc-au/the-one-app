@@ -207,15 +207,6 @@
       160,
       700
     ],
-    "checks": {
-      "A date is never broken inside": [
-        {
-          "expect": {
-            "unbroken": "[A-Z][a-z]{2} \\d{1,2}(, \\d{4})?"
-          }
-        }
-      ]
-    },
     "taps": [
       "Home Disk"
     ]

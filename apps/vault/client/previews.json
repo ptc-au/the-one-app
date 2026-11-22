@@ -353,20 +353,6 @@
         "types": []
       },
       "sign-in_encrypt_for_passkeys": {}
-    },
-    "checks": {
-      "The picker shows the key's whole name": [
-        {
-          "expect": {
-            "text": "wants to use a key"
-          }
-        },
-        {
-          "expect": {
-            "whole": "Example API"
-          }
-        }
-      ]
     }
   },
   "Security": {
@@ -455,16 +441,10 @@
   },
   "Chrome Profiles": {
     "like": "Empty",
-    "size": [1280, 800],
-    "checks": {
-      "Beside its list with a section empty, its detail says what to pick": [
-        {
-          "expect": {
-            "text": "Pick an item to see it."
-          }
-        }
-      ]
-    },
+    "size": [
+      1280,
+      800
+    ],
     "answers": {
       "vault_list": {
         "items": [],

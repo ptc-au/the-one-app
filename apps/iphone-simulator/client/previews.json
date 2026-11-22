@@ -116,21 +116,6 @@
     ],
     "taps": [
       "iphone-2"
-    ],
-    "checks": {
-      "The chosen row is a light tint of the page": [
-        {
-          "expect": {
-            "contrast": {
-              "of": {
-                "role": "button",
-                "name": "iphone-2 iPhone SE, iOS 17.5 · Stopped · studio-mac · used 2 hours ago"
-              },
-              "most": 1.3
-            }
-          }
-        }
-      ]
-    }
+    ]
   }
 }

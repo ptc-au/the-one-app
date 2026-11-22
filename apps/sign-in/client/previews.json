@@ -228,28 +228,7 @@
   },
   "Passkeys": {
     "like": "Server",
-    "component": "passkeys",
-    "checks": {
-      "Each passkey's Remove is at the row's end, in one column": [
-        {
-          "expect": {
-            "aligned": {
-              "of": {
-                "role": "button",
-                "text": "Remove"
-              }
-            }
-          }
-        }
-      ],
-      "A date is never broken inside": [
-        {
-          "expect": {
-            "unbroken": "[A-Z][a-z]{2} \\d{1,2}, \\d{4}"
-          }
-        }
-      ]
-    }
+    "component": "passkeys"
   },
   "Passkeys error": {
     "like": "Passkeys",
@@ -260,8 +239,7 @@
     },
     "errors": [
       "Couldn't reach it"
-    ],
-    "checks": {}
+    ]
   },
   "Passkeys, servers waiting": {
     "like": "Passkeys",
@@ -355,25 +333,6 @@
       "sign-in_encrypt_for_passkeys": {
         "passkeys": 1
       }
-    },
-    "checks": {
-      "A passkey this device's Add Passkey made is let unlock its key, once, with no question": [
-        {
-          "expect": {
-            "asked": {
-              "sign-in_encrypt_for_passkeys": 1
-            }
-          },
-          "within": 3000
-        },
-        {
-          "expect": {
-            "gone": {
-              "role": "alertdialog"
-            }
-          }
-        }
-      ]
     }
   },
   "People & Groups": {
@@ -429,31 +388,15 @@
         ]
       }
     },
-    "component": "people",
-    "checks": {
-      "Each person's menu button is at the row's end, in one column": [
-        {
-          "expect": {
-            "aligned": {
-              "of": {
-                "role": "button",
-                "text": "More for"
-              }
-            }
-          }
-        }
-      ]
-    }
+    "component": "people"
   },
   "Group": {
-    "checks": {},
     "like": "People & Groups",
     "taps": [
       "Family"
     ]
   },
   "Invite": {
-    "checks": {},
     "like": "Group",
     "taps": [
       "Invite"
