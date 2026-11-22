@@ -171,7 +171,7 @@ defmodule OneCore.Apps.Lifecycle do
 
       if wrote == :ok or OneCore.User.first_owner() == who do
         Server.notify_servers(["network"])
-        failed = for name <- @starting, why = starting(name, who), do: "#{name}: #{why}"
+        failed = starting(@starting, who)
 
         case Hooks.validate("owner", %{"who" => who}, {nil, "network"}) do
           {:refuse, why} ->
@@ -192,8 +192,23 @@ defmodule OneCore.Apps.Lifecycle do
     end
   end
 
+  # Installs the apps a network starts with, those that use none of the others at once, then those that use only
+  # these, and so on, each set side by side: an app installs the ones it uses that aren't there as part of its own
+  # install, so two at once that use the same one would race for it. Each that wasn't installed, with why.
+  defp starting(names, who), do: starting(names, who, [], [])
+
+  defp starting([], _who, _installed, failed), do: failed
+
+  defp starting(names, who, installed, failed) do
+    uses = fn name -> for(used <- Map.keys(Requires.requires("network/apps/#{name}")), used in @starting, do: used) end
+    {now, later} = Enum.split_with(names, &(uses.(&1) -- installed == []))
+    tried = Task.async_stream(now, &{&1, install_starting(&1, who)}, timeout: :infinity)
+    failed = failed ++ for {:ok, {name, why}} <- tried, why != nil, do: "#{name}: #{why}"
+    starting(later, who, installed ++ now, failed)
+  end
+
   # Installs one of the apps a network starts with for it, unless it's there: `nil`, or why it wasn't.
-  defp starting(name, who) do
+  defp install_starting(name, who) do
     case Installed.read("network")[name] do
       %{"state" => "installed"} ->
         nil
