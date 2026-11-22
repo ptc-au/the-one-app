@@ -607,7 +607,7 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
     rateLimit: { enabled: true, storage: "database", customRules: { "/device": false } },
     // Cloudflare says where a request came from in a header of its own. Its cookies are named the One App's, since a
     // browser sends a parent domain's cookies too, and another Better Auth there names its own `better-auth.*`,
-    // which it would send first: a network at v2.ptcau.app wasn't signed in by its own after another's on ptcau.app.
+    // which it would send first: a network at a subdomain wasn't signed in by its own after another's on its parent domain.
     advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] }, cookiePrefix: "one" },
     plugins: [
       jwt({ disableSettingJwtHeader: true }),
