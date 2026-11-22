@@ -65,6 +65,15 @@ impl Scene {
 
     pub(crate) fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
         let mut primitive = primitive.into();
+        // What it's cut to has its edges on whole device pixels, half up, as browsers snap a clip: a pixel is in it where
+        // its middle is, and an edge through a row of middles (a list's at 674.5) kept or cut that row by how the GPU's
+        // arithmetic rounded, otherwise wherever it's moved (a generated scene, `motion.js --generated 1 --from 1`).
+        let mask = primitive.content_mask_mut();
+        let edge = |at: f32| ScaledPixels((at + 0.5).floor());
+        let bounds = mask.bounds;
+        let (left, top) = (edge(bounds.origin.x.0), edge(bounds.origin.y.0));
+        let (right, bottom) = (edge(bounds.origin.x.0 + bounds.size.width.0), edge(bounds.origin.y.0 + bounds.size.height.0));
+        mask.bounds = Bounds { origin: crate::geometry::Point { x: left, y: top }, size: crate::geometry::Size { width: ScaledPixels(right.0 - left.0), height: ScaledPixels(bottom.0 - top.0) } };
         let clipped_bounds = primitive.bounds().intersect(&primitive.content_mask().bounds);
         if clipped_bounds.is_empty() || primitive.shows_nothing() {
             return;
@@ -447,6 +456,18 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => sprite.opacity <= 0.0,
             Primitive::Raster(raster) => raster.opacity <= 0.0,
             Primitive::Backdrop(_) => false,
+        }
+    }
+
+    fn content_mask_mut(&mut self) -> &mut ContentMask<ScaledPixels> {
+        match self {
+            Primitive::Shadow(shadow) => &mut shadow.content_mask,
+            Primitive::Quad(quad) => &mut quad.content_mask,
+            Primitive::Underline(underline) => &mut underline.content_mask,
+            Primitive::MonochromeSprite(sprite) => &mut sprite.content_mask,
+            Primitive::PolychromeSprite(sprite) => &mut sprite.content_mask,
+            Primitive::Backdrop(backdrop) => &mut backdrop.content_mask,
+            Primitive::Raster(raster) => &mut raster.content_mask,
         }
     }
 
