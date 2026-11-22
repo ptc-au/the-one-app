@@ -230,9 +230,30 @@ defmodule Backups do
       %{
         name: "now",
         task_support: :optional,
-        description: "Backs up now, to one destination or to each, and answers when it's done with what was sent",
+        description:
+          "Backs up now, to one destination or to each, and answers when it's done with what was sent. A destination that's being backed up to already isn't backed up to again: it's said under `running`, with its progress",
         inputs: %{type: "object", properties: %{destination: destination}},
-        outputs: %{type: "object", properties: %{backups: %{type: "array", items: made}}, required: ["backups"]}
+        outputs: %{
+          type: "object",
+          properties: %{
+            backups: %{type: "array", items: made},
+            running: %{
+              type: "array",
+              description: "Destinations a backup is under way to, begun before this call, which carries on",
+              items: %{
+                type: "object",
+                properties: %{
+                  destination: destination,
+                  at: %{type: "integer", description: "When it began"},
+                  machine: %{type: ["string", "null"], description: "The machine running it"},
+                  blobs: %{type: "integer", description: "How many blobs it has read so far"}
+                },
+                required: ~w(destination at machine blobs)
+              }
+            }
+          },
+          required: ["backups", "running"]
+        }
       },
       %{
         name: "schedule",
@@ -593,19 +614,31 @@ defmodule Backups do
     destinations = transaction(call, fn db -> if inputs["destination"], do: named(db, inputs["destination"]), else: destinations(db) end)
     if destinations == [], do: raise("There's nowhere to back up to yet: add a destination first.")
     try do
-      made =
-        Enum.zip_with(destinations, Run.each(call, destinations), fn
-          destination, :running -> {:failed, "It's backing up to #{destination["name"]} already."}
-          _destination, made -> made
-        end)
+      made = Enum.zip(destinations, Run.each(call, destinations))
 
-      case for({:failed, why} <- made, do: why) do
-        [] -> %{backups: made}
-        failed -> raise Enum.join(failed, "\n")
+      case for({_destination, {:failed, why}} <- made, do: why) do
+        [] ->
+          %{
+            backups: for({_destination, %{} = backup} <- made, do: backup),
+            running: for({destination, :running} <- made, do: running(call, destination))
+          }
+
+        failed ->
+          raise Enum.join(failed, "\n")
       end
     after
       stand(call)
     end
+  end
+
+  # A backup under way to `destination`: when it began, where, and how many blobs it has read so far, which a backup
+  # cut short and the one that takes its place keep (`Run`).
+  defp running(call, destination) do
+    transaction(call, fn db ->
+      [%{"at" => at, "server" => server}] = query(db, "select at, server from runs where destination = ?", [destination["id"]])
+      [%{"blobs" => blobs}] = query(db, "select count(*) as blobs from listed where destination = ?", [destination["id"]])
+      %{destination: destination["name"], at: at, machine: Service.name(server), blobs: blobs}
+    end)
   end
 
   defp owned("schedule", %{"every" => every}, call) do
