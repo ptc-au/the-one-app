@@ -52,11 +52,16 @@ const newer = (a, b) => Number(/\+(\d+)/.exec(a)?.[1] ?? 0) > Number(/\+(\d+)/.e
 const liveEdge = await said();
 if (!allowDowngrade && liveEdge?.version && newer(liveEdge.version, built.version))
   throw new Error(`The edge at ${at.host} is ${liveEdge.version}, newer than this build, ${built.version}: nothing was deployed. Deploy that or a newer build, or \`--allow-downgrade\` to go back on purpose`);
-// A network that moved to another address redirects its old one there, and a deploy to the old one would take its name
-// back from the new: Wrangler replaces every Custom Domain of the edge with the one it's deployed to.
-const moved = await fetch(at, { redirect: "manual", cache: "no-store" }).then((answer) => answer.headers.get("location"), () => null);
-if (moved && new URL(moved, at).host !== at.host)
-  throw new Error(`${at.host} redirects to ${new URL(moved, at).host}, where its network moved: nothing was deployed. Deploy to https://${new URL(moved, at).host}`);
+// Wrangler replaces every Custom Domain of the edge with the one it's deployed to, so a deploy to a network's old
+// address takes its name off the edge where it moved (PTC's, from v2.ptcau.app to ptcau.app, 22 Nov): one to an address
+// the edge doesn't answer at, where it answers at another, deploys nothing. A network moves by removing its old name
+// from the edge first.
+const edgeName = built.workers.find(({ kind }) => kind === "edge").name;
+const domains = await fetch(`https://api.cloudflare.com/client/v4/accounts/${zone.account.id}/workers/domains?service=${edgeName}`, { headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } });
+if (!domains.ok) throw new Error(`Cloudflare didn't say where the edge answers (${domains.status}), so nothing was deployed`);
+const elsewhere = (await domains.json()).result.map((/** @type {{hostname: string}} */ domain) => domain.hostname).filter((hostname) => hostname !== at.hostname);
+if (elsewhere.length)
+  throw new Error(`The edge answers at ${elsewhere.join(", ")}, not ${at.hostname}: nothing was deployed. Deploy to https://${elsewhere[0]}, or remove that name from the edge first to move the network`);
 const wrangler = (/** @type {string[]} */ ...args) => Bun.spawn(["bun", "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
 const config = (/** @type {string} */ name, file = "wrangler.jsonc") => `workers/${name}/${file}`;
 
