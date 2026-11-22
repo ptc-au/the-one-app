@@ -35,14 +35,23 @@ async function play(built, scene, name, motion, hz, folder) {
     const [dx, dy] = stretches.reduce(([x, y], stretch) => [x + (stretch.dx ?? 0), y + (stretch.dy ?? 0)], [0, 0])
     const ms = stretches.reduce((sum, stretch) => sum + stretch.ms, 0)
     const played = events
-      ? events.flatMap((event) => (event.kind === "wheel" ? [{ at: event.ms, op: "scroll", x: event.x, y: event.y, dx: event.dx, dy: event.dy }] : event.kind === "move" ? [{ at: event.ms, op: "hover", x: event.x, y: event.y }] : []))
+      ? events.flatMap((event) => (event.kind === "wheel" ? [{ at: event.ms, op: "scroll", x: event.x, y: event.y, dx: event.dx, dy: event.dy, notchesX: event.notchesX, notchesY: event.notchesY }] : event.kind === "move" ? [{ at: event.ms, op: "hover", x: event.x, y: event.y }] : []))
       : [dx || dy ? { at: 0, op: "drag", ...selector(motion.from), dx, dy, ms } : { at: 0, op: "tap", ...selector(motion.from) }]
     const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
     writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
     const shown = await presentThere(at, folder, scene, played, taps.filter((tap) => tap.op !== "clock"))
+    // A window the display doesn't show (it's off, or another window is over it) takes no time to present, where one
+    // shown takes a few tenths of a ms (a Surface's 0.3 to 0.55 at its 95th percentile), and its frames come every
+    // other refresh: what it says isn't what a person sees, so it says nothing.
+    const unseen = shown.said.length > 0 && shown.said.every((round) => round.present_ms < 0.05)
+    if (unseen) {
+      process.exitCode = 1
+      writeFileSync(join(folder, "presented.json"), "[]")
+      return { said: `  ${hz} Hz presented FAILS: its window wasn't shown (no frame took any time to present: the display is off, or another window is over it)` }
+    }
     writeFileSync(join(folder, "presented.json"), JSON.stringify(shown.said))
     const said = (value) => `${value} ms`
-    const lines = shown.said.map((round, n) => `  ${hz} Hz presented, motion ${n + 1}: ${round.frames} frames, p95 painting ${said(round.paint_ms)}, drawing ${said(round.draw_ms)} (waiting for an image ${said(round.acquire_ms)}, submitting ${said(round.submit_ms)}, presenting ${said(round.present_ms)}), GPU ${said(round.gpu_ms)}, render passes p95 ${round.passes} (most ${round.most_passes})`)
+    const lines = shown.said.map((round, n) => `  ${hz} Hz presented, motion ${n + 1}: ${round.frames} frames, p95 painting ${said(round.paint_ms)}, drawing ${said(round.draw_ms)} (waiting for an image ${said(round.acquire_ms)}, submitting ${said(round.submit_ms)}, presenting ${said(round.present_ms)}), GPU ${said(round.gpu_ms)} (median ${said(round.gpu_median_ms)}), ${round.long} refreshes missed, render passes p95 ${round.passes} (most ${round.most_passes})`)
     if (!shown.said.length) lines.push(`  ${hz} Hz presented: nothing said: ${shown.stderr.trim().split("\n").at(-1)}`)
     const memory = shown.stderr.split("\n").map((line) => line.trim()).filter((line) => line.startsWith('{"memory"')).map((line) => JSON.parse(line).memory.gpu).at(-1)
     if (memory) lines.push(`  ${hz} Hz presented, the GPU at its end: ${memory.encoders} command encoders, ${((memory.reserved ?? 0) / 1e6).toFixed(1)} MB reserved (${((memory.allocated ?? 0) / 1e6).toFixed(1)} MB allocated)`)

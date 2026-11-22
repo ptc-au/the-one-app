@@ -37,6 +37,8 @@ pub struct Frames {
     pub submit: Duration,
     pub present: Duration,
     pub gpu: Option<Duration>,
+    /// The median of the GPU's times, of which `gpu` is the 95th percentile.
+    pub gpu_median: Option<Duration>,
     /// Of `gpu`, its blurs': what's behind a backdrop's glass.
     pub blur: Option<Duration>,
     /// The 95th percentile and the most of a frame's render passes (`Renderer::passes`).
@@ -154,6 +156,7 @@ impl Timing {
             acquire: at(frames.iter().map(|frame| frame.acquire).collect(), 0.95),
             submit: at(frames.iter().map(|frame| frame.submit).collect(), 0.95),
             present: at(frames.iter().map(|frame| frame.present).collect(), 0.95),
+            gpu_median: (!gpu.is_empty()).then(|| at(gpu.clone(), 0.5)),
             gpu: (!gpu.is_empty()).then(|| at(gpu, 0.95)),
             blur: (!blur.is_empty()).then(|| at(blur, 0.95)),
             passes: {
