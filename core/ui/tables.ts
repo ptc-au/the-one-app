@@ -280,8 +280,10 @@ export function themeTokens(made: Made): Record<string, Entry> {
   return Object.fromEntries([...now].map(([id, token]) => [id, tokenEntry(token)]))
 }
 
-/** An app's style table as a native host has it: its styles, and its tokens where it has its own. */
-export const stylesTable = (made: Made): Table => ({ v: RUNTIME_VERSION, styles: made.table, ...(made.tokens.size ? { tokens: themeTokens(made) } : {}) })
+/** An app's style table as a native host has it: its styles, and its tokens where it has its own, each by its id in
+ * order, as the build's files are made in whatever order they finish: so the same source builds the same table. */
+export const stylesTable = (made: Made): Table => ({ v: RUNTIME_VERSION, styles: sorted(made.table), ...(made.tokens.size ? { tokens: sorted(themeTokens(made)) } : {}) })
+const sorted = <T>(table: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(table).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
 
 /** A style as the web and a host have it: its id, and its classes by property; its CSS and entry in `made`. `dynamic` is
  * the properties it takes as values, each by its parameter: a style table's entry is what's static, and the call gives the
