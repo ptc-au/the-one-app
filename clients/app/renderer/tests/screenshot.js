@@ -52,7 +52,7 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, built, COMPONENTS, decoded, differs, copied, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
+import { build, built, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -766,7 +766,7 @@ const browsers = []
 const pages = pLimit(Math.max(1, Math.floor(jobs / (lavapipe ? 4 : 2))))
 /// `scene` drawn on the web on a browser no other page is on, once one of `pages` is free.
 const webDrawn = (serve, key, scene, folder) =>
-  pages(async () => {
+  pages(() => machine(async () => {
     const browser = browsers.pop() ?? (await chromium.launch({ args: webgpuArgs }))
     // A page that never answers (a browser whose GPU process starved) fails the scene, saying so, where it held the run for ever.
     const hung = Symbol()
@@ -781,7 +781,7 @@ const webDrawn = (serve, key, scene, folder) =>
     process.exitCode = 1
     browser.close().catch(() => {})
     return { missing: result === hung ? `it hung for ${WEB_HANGS_AFTER_MS / 60000} minutes` : result.failed }
-  })
+  }))
 // The renderer's frame, built once for every scene drawn on the web (clients/web/renderer/build.js).
 const rendererFrame = join(out, "renderer")
 // The gate's own, which can put a bug back (`renderer::mutants`) when its address names one: `ONE_MUTANT`'s, from

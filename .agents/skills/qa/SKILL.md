@@ -63,8 +63,10 @@ It draws every scene and preview, or those of the folders named, on a native hos
 builds, or takes the one any worktree on the machine built from the same (`tooling/cached-build`; `--release` for a
 release build: a debug build draws several times slower), on the machine's
 GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every one in about a minute. Like animation.js, it
-runs headless renderers side by side, twice its share of the cores (8 on the Linux machine, shared by about 4 agents), and says
-what it found in the same order whatever finished first; `--jobs <n>` sets how many. Each is a persistent worker
+runs headless renderers side by side, at most half the machine's pool (8 on the Linux machine), and says
+what it found in the same order whatever finished first; `--jobs <n>` sets how many. The pool is the machine's, shared by
+every pass any agent runs, as make's jobserver is (`animation/machine.js`: a core each, 16 there), so three agents' passes
+take turns rather than load it to 50. Each is a persistent worker
 (`--persistent_worker`, Bazel's protocol) that keeps its GPU and draws one run after another, every run else its own;
 together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,

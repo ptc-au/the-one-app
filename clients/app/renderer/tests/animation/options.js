@@ -1,6 +1,6 @@
 // What a run is asked (the command line), where it runs, and the most a headless renderer may use.
 import { fileURLToPath } from "node:url"
-import { availableParallelism } from "node:os"
+import { machine, machineJobs } from "./machine.js"
 import { join, resolve } from "node:path"
 import pLimit from "p-limit"
 
@@ -36,14 +36,13 @@ export const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--ou
 // GPU and CPU draw each frame, as calibrate.js has them, and its tier is judged by the times it took there.
 export const ssh = option("--ssh")
 export const present = flag("--present")
-/// How many agents usually share a machine, each running a pass: its cores are theirs between them.
-const AGENTS = 4
-/// How many headless renderers a pass runs at once (`--jobs`): twice this machine's share of its cores, as a headless renderer waits for
-/// about half of its run (the Surface's pipelines compiling, `ONE_PIPELINES_MS`, and its GPU), or on `--ssh`'s device
-/// one, whose GPU each frame's time is of. Every headless renderer and build a pass starts, here and in screenshot.js, takes
-/// one (`slot`).
-export const jobs = ssh ? 1 : Number(option("--jobs") ?? Math.max(2, Math.floor((2 * availableParallelism()) / AGENTS)))
-export const slot = pLimit(jobs)
+/// How many headless renderers a pass runs at most at once (`--jobs`): half the machine's pool, as each keeps a worker
+/// of 300 MB while its pass runs, or on `--ssh`'s device one, whose GPU each frame's time is of. Every headless
+/// renderer and build a pass starts, here and in screenshot.js, takes one (`slot`), and one of the machine's, shared
+/// with every other pass on it (`machine`).
+export const jobs = ssh ? 1 : Number(option("--jobs") ?? Math.max(2, Math.floor(machineJobs / 2)))
+const local = pLimit(jobs)
+export const slot = (job) => local(() => machine(job))
 // For clients/app/renderer/tests/mutants.js, which runs passes a few at once, and has no packages of its own.
 export { pLimit }
 export let headless = ssh ? option("--headless") && resolve(option("--headless")) : undefined

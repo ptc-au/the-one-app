@@ -8,7 +8,7 @@ const MINUTES = 10
 /// The most every headless renderer on the machine may use together, whoever started them, as a share of its memory:
 /// past it the system stops one of them, never another program (22 Nov: the machine's 26 GB ran out, and the
 /// system stopped an agent).
-const TOGETHER = 0.4
+export const TOGETHER = 0.4
 /// `command` within that memory, in a systemd scope of its own in the slice they all share, on Linux where systemd
 /// is; elsewhere as it is.
 const capped = (command) => (Bun.which("systemd-run") ? ["systemd-run", "--user", "--scope", "--quiet", "--slice=headless.slice", "-p", `MemoryMax=${MEMORY}`, "-p", "MemorySwapMax=0", ...command] : command)
