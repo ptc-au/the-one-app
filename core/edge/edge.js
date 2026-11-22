@@ -1,6 +1,6 @@
 // Runs a network's edge on this machine, with nothing deployed, builds it to be deployed, or deploys it to Cloudflare:
 //
-//     bun edge.js dev [what `wrangler dev` takes]
+//     bun edge.js dev [--live] [what `wrangler dev` takes]
 //     bun edge.js build <folder>
 //     bun edge.js deploy https://<the network's address>
 //
@@ -181,21 +181,9 @@ const migrate = async (/** @type {{worker: any}} */ { worker }, /** @type {strin
     if (failed) process.exit(failed);
   }
 };
-if (what === "dev") {
-  const kept = rest.indexOf("--persist-to");
-  for (const [at, part] of workers.entries()) await migrate(part, partConfigs[at], ["--local", ...(kept >= 0 ? rest.slice(kept, kept + 2) : [])]);
-  process.exit(await wrangler("dev", ...[edgeConfig, relayConfig, ...partConfigs].flatMap((config) => ["-c", config]), ...rest));
-}
-// What's deployed is built from those: each Worker bundled as Wrangler bundles it as it deploys (`--dry-run --outdir`),
-// with a config that deploys that bundle as it is, beside its assets and its D1 migrations, and the order they're
-// deployed in (`deploy.js`): a Worker after the ones it's bound to.
-const out = what === "build" ? resolve(rest[0]) : `${built}/edge`;
-rmSync(out, { recursive: true, force: true });
-mkdirSync(`${out}/workers`, { recursive: true });
-cpSync(web, `${out}/web`, { recursive: true });
-for (const file of ["deploy.js", "package.json", "bun.lock"]) cpSync(`${here}/${file}`, `${out}/${file}`);
-const listed = [];
-const bundle = async (/** @type {string} */ config, /** @type {any} */ worker, /** @type {string} */ kind, /** @type {string} */ from) => {
+// Each Worker bundled as Wrangler bundles it as it deploys (`--dry-run --outdir`), in `<out>/workers/<its name>`, with a
+// config that runs that bundle as it is, beside its assets and its D1 migrations.
+const bundle = async (/** @type {string} */ out, /** @type {string} */ config, /** @type {any} */ worker, /** @type {string} */ kind, /** @type {string} */ from) => {
   const at = `${out}/workers/${worker.name}`;
   await $`bun x wrangler deploy --dry-run --outdir ${at}/bundle -c ${config}`.cwd(here).quiet();
   // Its modules, not the source map or the README Wrangler writes beside them, which says when it was built.
@@ -214,6 +202,39 @@ const bundle = async (/** @type {string} */ config, /** @type {any} */ worker, /
     return { ...database, migrations_dir: `migrations/${database.binding}` };
   });
   await Bun.write(`${at}/wrangler.jsonc`, JSON.stringify(shipped, null, 2));
+  return { at, shipped, d1 };
+};
+// Each Worker, with its config as written here, what it is, and the folder it's built from: the tail parts first, since
+// the rest name them as their tail consumers, then the relay, the other parts and the edge.
+const each = workers.map(({ part, worker, tail }, at) => [partConfigs[at], tail ? worker : tailed(worker), tail ? "tail" : "part", part]);
+const all = [...each.filter(([, , kind]) => kind === "tail"), [relayConfig, relayed, "relay", built], ...each.filter(([, , kind]) => kind === "part"), [edgeConfig, full, "edge", built]];
+// A local network's edge runs its Workers as they're deployed, bundled as it starts, which takes a second or two
+// beside its migrations, where `wrangler dev` bundling them itself kept esbuild watching their source, about 110 MB
+// more. `--live` runs them from their source instead, which `wrangler dev` builds again as it's saved, for working on
+// the edge itself.
+if (what === "dev") {
+  const live = rest.includes("--live");
+  const args = rest.filter((arg) => arg !== "--live");
+  const kept = args.indexOf("--persist-to");
+  const migrated = (async () => {
+    for (const [at, part] of workers.entries()) await migrate(part, partConfigs[at], ["--local", ...(kept >= 0 ? args.slice(kept, kept + 2) : [])]);
+  })();
+  const configs = live
+    ? [edgeConfig, relayConfig, ...partConfigs]
+    : (await Promise.all(all.map((worker) => bundle(built, ...worker)))).map(({ at }) => `${at}/wrangler.jsonc`).reverse();
+  await migrated;
+  process.exit(await wrangler("dev", ...configs.flatMap((config) => ["-c", config]), ...args));
+}
+// What's deployed is built from those, each tagged, and the order they're deployed in (`deploy.js`): a Worker after
+// the ones it's bound to.
+const out = what === "build" ? resolve(rest[0]) : `${built}/edge`;
+rmSync(out, { recursive: true, force: true });
+mkdirSync(`${out}/workers`, { recursive: true });
+cpSync(web, `${out}/web`, { recursive: true });
+for (const file of ["deploy.js", "package.json", "bun.lock"]) cpSync(`${here}/${file}`, `${out}/${file}`);
+const listed = [];
+const ship = async (/** @type {string} */ config, /** @type {any} */ worker, /** @type {string} */ kind, /** @type {string} */ from) => {
+  const { at, shipped, d1 } = await bundle(out, config, worker, kind, from);
   // It's tagged with a hash of its bundle and config, as the build Wrangler would upload, so a deploy that changes
   // nothing of it is told (the relay's, which ends every connection it holds, is skipped then).
   const hash = new Bun.CryptoHasher("sha256").update(JSON.stringify(shipped));
@@ -226,11 +247,7 @@ const bundle = async (/** @type {string} */ config, /** @type {any} */ worker, /
     await Bun.write(`${at}/bare.jsonc`, JSON.stringify({ ...bare, services: [], durable_objects: { ...shipped.durable_objects, bindings } }, null, 2));
   }
 };
-// The tail parts go first, since the rest name them as their tail consumers, then the relay, the other parts and the edge.
-for (const [at, { part, worker, tail }] of workers.entries()) if (tail) await bundle(partConfigs[at], worker, "tail", part);
-await bundle(relayConfig, relayed, "relay", built);
-for (const [at, { part, worker, tail }] of workers.entries()) if (!tail) await bundle(partConfigs[at], tailed(worker), "part", part);
-await bundle(edgeConfig, full, "edge", built);
+for (const worker of all) await ship(...worker);
 await Bun.write(`${out}/workers.json`, JSON.stringify({ version, workers: listed }, null, 2));
 if (what === "build") process.exit(0);
 

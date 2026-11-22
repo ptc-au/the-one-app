@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts a whole network on this machine, to build or test with, and says how to use it:
 #
-#     tooling/network <folder> [--standby] [--owner <name>]
+#     tooling/network <folder> [--standby] [--owner <name>] [--live-edge]
 #
 # It needs what `mise install` and `rustup` install, and on Linux WebKitGTK (`libwebkit2gtk-4.1-dev`), which the
 # app's window is built on.
@@ -19,7 +19,8 @@
 # Another device signs in at its address by the code it shows, which `one sign-in approve` approves as whoever ONE_AS
 # names.
 #
-# Its edge runs here too (`core/edge/`), as every network has one: its Workers in `wrangler dev`, with a bucket in
+# Its edge runs here too (`core/edge/`), as every network has one: its Workers in `wrangler dev`, bundled as they're
+# deployed (`bun edge.js dev`), with a bucket in
 # the machine's S3 store, which every network here shares, in `~/.local/state/one-networks`. Servers keep their blobs through the presigner there, people sign in at its address, and
 # whoever holds a sharing link has a way in.
 #
@@ -27,6 +28,8 @@
 #   `server` and `standby`, as two machines would be called what each is.
 # --owner <name> starts a network people sign in to instead: that user is its first owner, it says
 #   where they join, with a passkey, and nobody acts as anyone by saying so.
+# --live-edge runs the edge's Workers from their source, which `wrangler dev` builds again as each is saved, to work on
+#   the edge (`core/edge/`, an app's `edge/`) without starting again.
 #
 # Where there's no desktop, as under `xvfb-run`, start the app inside `dbus-run-session`: GTK otherwise waits half a
 # minute for a desktop that isn't there.
@@ -37,12 +40,13 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 # The tools this needs are the ones `mise.toml` names.
 command -v mix >/dev/null || exec mise exec -C "$root" -- "$0" "$@"
 
-usage="tooling/network <folder> [--standby] [--owner <name>]"
-folder= standby= owner=
+usage="tooling/network <folder> [--standby] [--owner <name>] [--live-edge]"
+folder= standby= owner= live=()
 while (($#)); do
   case $1 in
     --standby) standby=yes ;;
     --owner) owner=${2-} && shift ;;
+    --live-edge) live=(--live) ;;
     -*) echo "$usage" >&2 && exit 1 ;;
     *) folder=$1 ;;
   esac
@@ -136,7 +140,7 @@ bucket=$(cat "$store/address")
   if (!response.ok && response.status !== 409) throw new Error(`the bucket answered ${response.status}`);')
 # `wrangler dev` gives the presigner its secrets from the environment.
 (cd "$root/core/edge" && BUCKET=http://$bucket/$name ACCESS_KEY_ID=$access SECRET_ACCESS_KEY=$secret FIRST_SERVER=$first \
-  WRANGLER_SEND_METRICS=false exec bun run dev --port "$gateway" \
+  WRANGLER_SEND_METRICS=false exec bun edge.js dev "${live[@]}" --port "$gateway" \
   --inspector-port "$(free_port)" --persist-to "$folder/edge") >"$folder/edge.log" 2>&1 &
 started+=($!)
 answers "$!" "http://localhost:$gateway/ping" "$folder/edge.log"

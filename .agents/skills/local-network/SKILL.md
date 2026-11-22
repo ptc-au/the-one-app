@@ -3,7 +3,7 @@ name: local-network
 description: Use to run a whole network of your own on this machine, to try a change, call its tools as different users, or open the app against it, without touching the owner's live network.
 ---
 
-    tooling/network <folder> [--standby] [--owner <name>]
+    tooling/network <folder> [--standby] [--owner <name>] [--live-edge]
 
 Its header says what each flag does. It builds what isn't built (the UI library, then the server's `mix compile` as it
 starts, which builds the Rust workspace's debug build with `cargo build`), starts the server, and prints how to use it once it's
@@ -20,6 +20,9 @@ Run it in the background and let your harness tell you when it ends; put the fol
   and app NIFs), the UI library built again and served, and an app deployed as `one deploy --files-from` deploys
   it. A build error is that request's error, saying so, as is a changed One Core NIF, which needs a start again.
   What only a start builds (a supervisor's children) stays as it was until then.
+- The edge (`core/edge/`, an app's `edge/`) changed: start it with `--live-edge`, and `wrangler dev` builds each Worker
+  again as it's saved. Without it, the edge runs its Workers bundled as they're deployed, which saves about 110 MB,
+  and an edge change takes a start again.
 - The deps or the config changed, or a request says to: stop it and start it again in the same folder.
 - A commit, or a rebase that moves it, builds `one` again once (about 5 s): a build is named by its commit.
 
@@ -99,7 +102,9 @@ and the edge's state, and the client's home; but the bucket, which is one of the
 `~/.local/state/one-networks` with its `bucket.log`, its bucket named in the folder's `edge.env`. Starting again in the
 same folder carries on with what's there; a new network in a folder you emptied has a new bucket, and the old one is
 removed. The store is started by the first network that needs it and stops once the last one has: never stop it
-yourself, as other agents' networks are in it.
+yourself, as other agents' networks are in it. What its servers build of its apps (their entrypoints, compiled Elixir
+and downloaded NIFs) is every server's on the machine, in `~/.cache/one_core` (`OneCore.BuildCache`), so a new network
+beside another builds none of it again; it's safe to delete, and goes by itself once unused for a month.
 
 Start it in the background, however you like (`setsid`, `mise exec`); its PID is then in `<folder>/pid`.
 Stop it with `kill $(cat <folder>/pid)`, which stops all of it. Started again in the same folder it keeps its ports,
