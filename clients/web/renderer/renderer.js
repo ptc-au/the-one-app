@@ -115,9 +115,10 @@
       unopened,
     })
     step("opened")
-    // What a harness asks, as a native window's inspector answers: `settle` before it takes a picture, `query` of what's drawn.
+    // What a harness asks, as a native window's inspector answers: `settle` before it takes a picture, `query` of what's
+    // drawn, and `whole` to have its frame drawn again whole, beside the one drawn on what it kept.
     const inspect = (/** @type {object} */ request) => renderer.inspect(JSON.stringify({ v: 1, id: 0, ...request }))
-    Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }) } })
+    Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), whole: () => renderer.whole() } })
     addEventListener("message", ({ source, data }) => source === parent && !answered(data) && renderer.message(data))
     // The canvas as the DOM says it is, in device pixels, and how many to a CSS pixel (the display's and the zoom),
     // and what happens on it.

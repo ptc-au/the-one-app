@@ -120,6 +120,21 @@ pub fn inspect(request: String) -> js_sys::Promise {
     })
 }
 
+/// Draws the window's frame again whole, as a harness asks (core/ui's scenes.js): its renderer lets go of what it kept
+/// (`Renderer::idle`: the frame on its canvas, its blurs), so the next is drawn afresh, to compare with the one drawn on
+/// what it kept, as the native harness compares each frame with one drawn whole (`Windows::whole`).
+#[wasm_bindgen]
+pub fn whole() {
+    let _ = Native::get().map(|native| {
+        native.run(|windows| {
+            if let Some(renderer) = windows.windows.get_mut(&WINDOW).and_then(|window| window.renderer.as_mut()) {
+                renderer.idle();
+            }
+            windows.with(WINDOW, |_| ());
+        })
+    });
+}
+
 /// The runtime version this renderer draws (`crate::RUNTIME_VERSION`), which a page's entrypoint names.
 #[wasm_bindgen]
 pub fn runtime_version() -> u32 {

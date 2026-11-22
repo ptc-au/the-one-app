@@ -23,7 +23,8 @@
 // one's Direct3D 12, as motion.js plays there: where each node is laid out there and here, and how much of the
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
 // semantic tree as text (src/drawing-primitives/outline.ts) too. It says, scene by scene, how much of the pictures
-// differs (a web picture more than 1% from its native one fails, `WEB_DIFFERS_MOST`) and whether the text in sight is the same (any
+// differs (a web picture more than 1% from its native one fails, `WEB_DIFFERS_MOST`, as does one drawn on what its frame kept
+// that differs from the same drawn whole, `web-whole.png`, by more than a level) and whether the text in sight is the same (any
 // difference fails, however small the pictures'), and keeps them all in `--out` to look at. A native host that can't draw a page yet (an older runtime
 // version) gives nothing, which it says. It says too how quickly the native host drew each (the harness's
 // `--measure`): its first frame, a frame when nothing changes, as its first field is typed in and as its first list
@@ -268,6 +269,19 @@ async function web(browser, serve, key, scene, folder) {
     process.exitCode = 1
   }
   if (drawn) await page.screenshot({ path: join(folder, "web.png") })
+  // The frame drawn on what it kept from the frames before is the one drawn whole, within a level, as the native harness
+  // checks each frame of each motion (`unlike_whole`), where nothing on it moves (a spinner turns between pictures).
+  if (drawn) await settled().then(() => page.screenshot({ path: join(folder, "web-again.png") }))
+  if (drawn && !levels(join(folder, "web.png"), join(folder, "web-again.png"))) {
+    await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.whole())
+    await settled()
+    await page.screenshot({ path: join(folder, "web-whole.png") })
+    const unlike = levels(join(folder, "web.png"), join(folder, "web-whole.png"))
+    if (unlike) {
+      problems.push(`its frame differs from the same drawn whole (web-whole.png) in ${unlike.differ} pixels, by up to ${unlike.most} levels`)
+      process.exitCode = 1
+    }
+  }
   // What its screen reader reads: each text and name in sight (the native query's), and all of them, as the native tree's
   // are checked for words that aren't a person's.
   const { words, names } = drawn
@@ -562,6 +576,18 @@ function inked(file) {
   let ink = 0
   for (let at = 0; at < data.length; at += 4) if (Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b), Math.abs(data[at + 3] - a)) > 2) ink++
   return ink / (data.length / 4)
+}
+
+/// How many pixels of two pictures of a size differ by more than a level in a channel, and by how much at most, or
+/// nothing where none does.
+function levels(one, other) {
+  const [a, b] = [one, other].map((file) => PNG.sync.read(readFileSync(file)))
+  let [differ, most] = [0, 0]
+  for (let at = 0; at < a.data.length; at += 4) {
+    const by = Math.max(...[0, 1, 2, 3].map((channel) => Math.abs(a.data[at + channel] - b.data[at + channel])))
+    if (by > 1) [differ, most] = [differ + 1, Math.max(most, by)]
+  }
+  return differ ? { differ, most } : undefined
 }
 
 /// Where two trees first differ, as a line of each.
