@@ -28,7 +28,9 @@
 //     any ──a newer build──► (none), and servers first
 //
 // A server that's asleep or gone as an update begins, or goes while it's under way, is skipped, and caught up under
-// the same rules once it's back. Each server prepares and goes as it's told (`clients/cli/src/serving.rs`): this
+// the same rules once it's back. So is one that doesn't say it began within a minute of being told (`ANSWER`): a server
+// that's here says so at once, and the relay may still hold the connection of a machine that has gone, or one that
+// can't take a build. It's back once it's heard from again: it connects, or says what it is. Each server prepares and goes as it's told (`clients/cli/src/serving.rs`): this
 // decides only when.
 //
 // It hears only through the relay's Durable Object, which calls it: a build released (`core.ts`) or Update Now (`/relay/update`), what each server says of itself as it changes (`/relay/seen`), and a
@@ -103,7 +105,12 @@ interface State {
   /** When it was published, in ms since 1970. */
   published?: number;
   servers: Taking[];
-  /** Asleep or gone as it began, or since: each is caught up once it's back. */
+  /** When they were told to prepare it, in ms since 1970. */
+  told?: number;
+  /**
+   * Asleep, gone or silent as it began, or since: each is left out of every update until it's heard from again, and
+   * then caught up.
+   */
   skipped: string[];
   waiting_for?: "quiet" | null;
   /** Update Now was asked, so a lone server restarts without waiting for a quiet moment. */
@@ -138,6 +145,8 @@ interface EdgeUpdate {
 /** How long every server has to prepare, and a server that restarts to be back, as `serving.rs`'s `START`, and more. */
 const PREPARING = 10 * 60_000;
 const RESTARTING = 5 * 60_000;
+/** How long a server told to prepare has to say it began, as one that's here does at once. */
+const ANSWER = 60_000;
 /** How long a server has to deploy the edge, as `deploy.js` takes a few minutes, with its check and a rollback. */
 const DEPLOYING_EDGE = 10 * 60_000;
 /** How long a server that went back waits before it tries again, after its first time, its second, and every time after. */
@@ -180,8 +189,11 @@ export class NetworkUpdater extends DurableObject<Env> {
       } else state.now = true;
       // And the edge's, which tried once for this build, tries again.
       if (state.edge_update?.status !== "deploying") state.edge_update = null;
+    } else if ("seen" in input) {
+      if (presence[input.seen]?.connected) state.skipped = state.skipped.filter((key) => key !== input.seen);
     } else if ("reported" in input) {
       const { key, ...said } = input.reported;
+      state.skipped = state.skipped.filter((skipped) => skipped !== key);
       reported[key] = { ...reported[key], ...said };
       await this.ctx.storage.put(`reported ${key}`, reported[key]);
       const taking = state.servers.find((server) => server.key === key);
@@ -244,12 +256,16 @@ export class NetworkUpdater extends DurableObject<Env> {
     state.build = build;
     const known = Object.keys(reported).filter((key) => this.takes(key, presence, reported));
     const behind = known.filter((key) => !on(state, reported[key]));
+    const away = (key: string) => !presence[key]?.server_ready || state.skipped.includes(key);
+    // One already preparing this pair has begun.
+    const begun = (key: string) => reported[key].server_update_status !== "up_to_date" && on(state, { ...reported[key], version: reported[key].next_build ?? undefined, program: reported[key].next_program });
     Object.assign(state, {
       network_update_status: "preparing",
       build,
       published,
-      servers: behind.filter((key) => presence[key]?.server_ready).map((key) => ({ key })),
-      skipped: behind.filter((key) => !presence[key]?.server_ready),
+      servers: behind.filter((key) => !away(key)).map((key) => ({ key, ...(begun(key) && { begun: true }) })),
+      told: Date.now(),
+      skipped: behind.filter(away),
       waiting_for: null,
       now: false,
       went_back: [],
@@ -277,7 +293,9 @@ export class NetworkUpdater extends DurableObject<Env> {
       const wentBack = new Set((state.went_back ?? []).map(({ server }) => server));
       const back =
         state.build &&
-        Object.keys(reported).some((key) => this.takes(key, presence, reported) && !wentBack.has(key) && !on(state, reported[key]) && presence[key]?.server_ready);
+        Object.keys(reported).some(
+          (key) => this.takes(key, presence, reported) && !wentBack.has(key) && !state.skipped.includes(key) && !on(state, reported[key]) && presence[key]?.server_ready,
+        );
       if (back) this.begin(state, state.build!, presence, reported);
       return;
     }
@@ -292,8 +310,9 @@ export class NetworkUpdater extends DurableObject<Env> {
       if (server.begun && server.ready === undefined && said.server_update_status === "up_to_date" && !on(state, said) && said.went_back)
         this.wentBack(state, server.key, said.name, said.went_back);
     }
-    // One that's gone, but for one restarting to take it, is caught up once it's back.
-    const gone = state.servers.filter((server) => server.ready === undefined && !presence[server.key]?.connected && server.went === undefined);
+    // One that's gone, but for one restarting to take it, or that hasn't said it began, is caught up once it's back.
+    const silent = (server: Taking) => !server.begun && server.prepared === undefined && !!state.told && Date.now() >= state.told + ANSWER;
+    const gone = state.servers.filter((server) => server.ready === undefined && server.went === undefined && (!presence[server.key]?.connected || silent(server)));
     state.skipped.push(...gone.map((server) => server.key));
     state.servers = state.servers.filter((server) => !gone.includes(server));
 
@@ -434,7 +453,8 @@ export class NetworkUpdater extends DurableObject<Env> {
  */
 function alarmAt(state: State): number | null {
   const retries = state.network_update_status === "up_to_date" ? (state.went_back ?? []).flatMap(({ retry_at }) => (retry_at ? [retry_at] : [])) : [];
-  const at = Math.min(state.until ?? Infinity, state.edge_update?.until ?? Infinity, ...retries);
+  const unsaid = state.network_update_status === "preparing" && state.servers.some((server) => !server.begun && server.prepared === undefined);
+  const at = Math.min(state.until ?? Infinity, state.edge_update?.until ?? Infinity, unsaid && state.told ? state.told + ANSWER : Infinity, ...retries);
   return at === Infinity ? null : at;
 }
 
