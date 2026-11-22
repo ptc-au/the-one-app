@@ -256,7 +256,7 @@ impl Renderer {
                             (clip.origin.y.0 + clip.size.height.0 - origin[1]).floor().clamp(0.0, size.1 as f32) as u32,
                         ];
                         let radii = &scroll.mask.corner_radii;
-                        let reach = radii.top_left.0.max(radii.top_right.0).max(radii.bottom_right.0).max(radii.bottom_left.0);
+                        let reach = crate::geometry::corner_reach(radii.top_left.0.max(radii.top_right.0).max(radii.bottom_right.0).max(radii.bottom_left.0), clip.size.width.0.min(clip.size.height.0));
                         damage::Scroll { id: scroll.id, rect, by: scroll.by.map(|by| by.round() as i64), corners: if reach > 0.0 { reach.ceil() as u32 + 1 } else { 0 } }
                     })
                     .filter(|scroll| scroll.rect[0] < scroll.rect[2] && scroll.rect[1] < scroll.rect[3])

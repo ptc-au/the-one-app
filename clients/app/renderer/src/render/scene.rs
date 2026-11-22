@@ -635,15 +635,15 @@ impl PrimitiveBatch<'_> {
         let (mask, mask_radii) = (&quad.content_mask.bounds, &quad.content_mask.corner_radii);
         let edges = |bounds: &Bounds<ScaledPixels>| (bounds.origin.x.0, bounds.origin.y.0, bounds.origin.x.0 + bounds.size.width.0, bounds.origin.y.0 + bounds.size.height.0);
         let ((left, top, right, bottom), (mask_left, mask_top, mask_right, mask_bottom)) = (edges(bounds), edges(mask));
-        // A clip's corners are circles (`mask_coverage` in shaders.wgsl), a box's continuous (`corner_reach`).
-        let reach = |one: ScaledPixels, other: ScaledPixels| corner_reach(one.0.max(other.0), bounds.size.width.0.min(bounds.size.height.0));
+        // A box's corners and its clip's are both continuous, bending as far as their reach (`corner_reach`).
+        let reach = |bounds: &Bounds<ScaledPixels>, one: ScaledPixels, other: ScaledPixels| corner_reach(one.0.max(other.0), bounds.size.width.0.min(bounds.size.height.0));
         let rows = [
-            (top + reach(radii.top_left, radii.top_right).max(widths.top.0)).max(mask_top + mask_radii.top_left.0.max(mask_radii.top_right.0)),
-            (bottom - reach(radii.bottom_left, radii.bottom_right).max(widths.bottom.0)).min(mask_bottom - mask_radii.bottom_left.0.max(mask_radii.bottom_right.0)),
+            (top + reach(bounds, radii.top_left, radii.top_right).max(widths.top.0)).max(mask_top + reach(mask, mask_radii.top_left, mask_radii.top_right)),
+            (bottom - reach(bounds, radii.bottom_left, radii.bottom_right).max(widths.bottom.0)).min(mask_bottom - reach(mask, mask_radii.bottom_left, mask_radii.bottom_right)),
         ];
         let columns = [
-            (left + reach(radii.top_left, radii.bottom_left).max(widths.left.0)).max(mask_left + mask_radii.top_left.0.max(mask_radii.bottom_left.0)),
-            (right - reach(radii.top_right, radii.bottom_right).max(widths.right.0)).min(mask_right - mask_radii.top_right.0.max(mask_radii.bottom_right.0)),
+            (left + reach(bounds, radii.top_left, radii.bottom_left).max(widths.left.0)).max(mask_left + reach(mask, mask_radii.top_left, mask_radii.bottom_left)),
+            (right - reach(bounds, radii.top_right, radii.bottom_right).max(widths.right.0)).min(mask_right - reach(mask, mask_radii.top_right, mask_radii.bottom_right)),
         ];
         Some((rows, columns))
     }

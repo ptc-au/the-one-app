@@ -28,6 +28,7 @@ const look = styles({
   later: { position: "relative" },
   plain: { flexShrink: 0 },
   rounded: { width: 120, height: 120, overflow: "hidden", borderRadius: tokens.radius.large },
+  round: { width: 260, height: 260, overflow: "hidden", borderRadius: 80 },
   inner: { width: "100%", height: "100%", overflow: "hidden", borderRadius: tokens.radius.small },
   fill: { width: "100%", height: "100%" },
   page: { width: 120, height: "100%", flexShrink: 0 },
@@ -111,7 +112,8 @@ const HitAreas = () => {
 const square = (fill: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${fill}"/></svg>`)}`
 
 /// Boxes rounded, with `overflow: hidden`, each with what's in it reaching into its corners, which its rounding cuts as
-/// CSS's does: a picture, a card that slides, words, a box rounded less inside it, and pages.
+/// CSS's does: a picture, a card that slides, words, a box rounded less inside it, a picture in a box rounded far more,
+/// and pages.
 const Rounded = () => {
   const [slid, slide] = createSignal(false)
   return (
@@ -131,6 +133,9 @@ const Rounded = () => {
           <View style={look.inner}>
             <Image src={square("#e5484d")} alt="" style={look.fill} />
           </View>
+        </View>
+        <View aria-label="Round" style={look.round}>
+          <Image src={square("#8e4ec6")} alt="" style={look.fill} />
         </View>
         <View aria-label="Pages" style={look.rounded}>
           <ScrollView style={look.pages}>
@@ -236,7 +241,7 @@ export default {
   "Styling/Rounded corners clip": {
     render: () => <Rounded />,
     checks: {
-      "Nothing in a rounded box shows past its corners": cases.map((name) => ({ expect: { rounded: { of: name, radius: 18 } } })),
+      "Nothing in a rounded box shows past its corners": [...cases.map((name) => ({ expect: { rounded: { of: name, radius: 18 } } })), { expect: { rounded: { of: "Round", radius: 80 } } }],
       "Nor as its card slides": [{ role: "button", name: "Slide" }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }],
     },
   },

@@ -209,18 +209,22 @@ fn mask_radii(mask: ContentMask) -> vec4<f32> {
 
 // How much of a pixel its mask leaves, from how far its middle is inside each of the mask's edges (left, right, top,
 // bottom: `distance_from_clip_rect_impl`) and the mask's corners' `radii`: none outside its box, and in a rounded
-// corner as much as is inside its arc, smoothed as a quad's own corner is.
+// corner as much as is inside its curve, the continuous corner a quad's own is drawn with (`continuous_corner`),
+// smoothed as that is, so what a rounded box clips is cut where its own background is. A circle of the radius
+// reaches up to 2.3% of it past that curve, so a picture in a box rounded 80 pt showed 1.8 pt past the box's corner.
 fn mask_coverage(distances: vec4<f32>, radii: vec4<f32>) -> f32 {
     if (any(distances < vec4<f32>(0.0))) {
         return 0.0;
     }
     let left = distances.x < distances.y;
     let radius = select(select(radii.z, radii.w, left), select(radii.y, radii.x, left), distances.z < distances.w);
-    let from_centre = vec2<f32>(radius) - vec2<f32>(min(distances.x, distances.y), min(distances.z, distances.w));
+    let half_size = vec2<f32>(distances.x + distances.y, distances.z + distances.w) / 2.0;
+    let from_centre = vec2<f32>(corner_reach(radius, half_size)) - vec2<f32>(min(distances.x, distances.y), min(distances.z, distances.w));
+    // Clear of the corner's curve, which is most of what's clipped, before its exponent is worked out.
     if (any(from_centre <= vec2<f32>(0.0))) {
         return 1.0;
     }
-    return saturate(0.5 - (length(from_centre) - radius));
+    return saturate(0.5 - quad_sdf_impl(from_centre, continuous_corner(radius, half_size)));
 }
 
 // `color`, premultiplied as `blend_color` gives it, with only `coverage` of it drawn.

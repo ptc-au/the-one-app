@@ -288,7 +288,8 @@ pub const CONTINUOUS_CORNER_REACH: f32 = 1.528665;
 /// How far from its corner a box's continuous corner of `radius` bends, where its shorter side is `shorter`: 1.528665
 /// radii, or as much as fits and at least the radius, as `continuous_corner` in shaders.wgsl draws it. Past it, the
 /// box's edge is straight. What it covers for certain is still all that's a radius in from its edges: the curve's
-/// middle is a circle's, a third of a radius in from the corner, so the curve never reaches that far in.
+/// middle is a circle's, a third of a radius in from the corner, so the curve never reaches that far in. A box's
+/// background and its clip (`mask_coverage`) both have this corner.
 pub fn corner_reach(radius: f32, shorter: f32) -> f32 {
     if radius <= 0.0 {
         return 0.0;
@@ -372,6 +373,9 @@ impl ContentMask<f32> {
         let (mask, inside_end) = (self.bounds.bottom_right(), inside.bottom_right());
         let across = if at == 1 || at == 2 { mask.x - inside_end.x } else { inside.origin.x - self.bounds.origin.x }.max(0.0);
         let down = if at >= 2 { mask.y - inside_end.y } else { inside.origin.y - self.bounds.origin.y }.max(0.0);
+        // Inside its arc, a circle's. The mask is clipped with a continuous corner (`corner_reach`), which is inside
+        // that circle, so a box kept inside the circle reaches at most 2.3% of the radius past the mask; one radius
+        // per corner of the box can't follow the mask's own curve where their corners don't meet.
         let kept = |x: f32, y: f32| x >= radius || y >= radius || (radius - x).hypot(radius - y) <= radius + 0.01;
         // Its corner is clear of the rounding (past it along an edge, or inside its arc), and so is the rest of it.
         if kept(across, down) {

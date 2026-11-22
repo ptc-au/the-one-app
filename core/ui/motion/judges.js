@@ -304,7 +304,9 @@ export function requests(steps, folder, answers = {}) {
         })
       }
       // What's named, rounded `radius` points and clipping what's in it (`overflow: hidden`), shows nothing past its
-      // rounding, as CSS clips it: each corner, more than a pixel outside its arc, is the colour 2 points outside its box.
+      // rounding, the continuous corner its own background is drawn with (the renderer's `continuous_corner`): each
+      // corner, more than a pixel outside its curve, is the colour 2 points outside its box. Clipped to a circle, a
+      // picture in a box rounded 80 pt showed 1.8 px past the box's own corner, 2.3% of its radius.
       if (rounded) {
         let found, points, missing
         out.push({ request: { op: "window" }, judge: (answer) => void (points = answer?.result?.width) })
@@ -317,15 +319,26 @@ export function requests(steps, folder, answers = {}) {
             const { data, width } = PNG.sync.read(Buffer.from(answer.result.png, "base64"))
             const scale = width / points
             const colour = (column, row) => [0, 1, 2].map((c) => data[(row * width + column) * 4 + c])
-            const [r, across] = [rounded.radius, Math.ceil(rounded.radius * scale)]
+            const r = rounded.radius
+            const reach = Math.max(r, Math.min(1.528665 * r, found.width / 2, found.height / 2))
+            const exponent = -Math.LN2 / Math.log(1 - (1 - Math.SQRT1_2) * (r / reach))
+            const across = Math.ceil(reach * scale)
+            // How far a point `dx` and `dy` in from the corner's centre (`reach` in from each edge) is outside its curve.
+            const past = (dx, dy) => {
+              const most = Math.max(dx, dy)
+              const [ux, uy] = [dx / most, dy / most]
+              const norm = (ux ** exponent + uy ** exponent) ** (1 / exponent)
+              return (most * norm - reach) / Math.hypot((ux / norm) ** (exponent - 1), (uy / norm) ** (exponent - 1))
+            }
             const [left, top, right, bottom] = [found.x, found.y, found.x + found.width, found.y + found.height]
             for (const [x, y, sx, sy] of [[left, top, 1, 1], [right, top, -1, 1], [right, bottom, -1, -1], [left, bottom, 1, -1]]) {
               const outside = colour(Math.round((x - sx * 2) * scale), Math.round((y - sy * 2) * scale))
-              const [cx, cy] = [x + sx * r, y + sy * r]
+              const [cx, cy] = [x + sx * reach, y + sy * reach]
               for (let i = 0; i < across; i++)
                 for (let j = 0; j < across; j++) {
                   const [column, row] = [sx > 0 ? Math.round(x * scale) + i : Math.round(x * scale) - 1 - i, sy > 0 ? Math.round(y * scale) + j : Math.round(y * scale) - 1 - j]
-                  if ((Math.hypot((column + 0.5) / scale - cx, (row + 0.5) / scale - cy) - r) * scale <= 1.5) continue
+                  const [dx, dy] = [sx * (cx - (column + 0.5) / scale), sy * (cy - (row + 0.5) / scale)]
+                  if (dx <= 0 || dy <= 0 || past(dx, dy) * scale <= 1.5) continue
                   const there = colour(column, row)
                   if (there.some((c, at) => Math.abs(c - outside[at]) > 24)) return `${named(rounded.of)} shows rgb(${there}) past its ${r} pt rounding, at ${column}, ${row} px, where what's around it is rgb(${outside})`
                 }
