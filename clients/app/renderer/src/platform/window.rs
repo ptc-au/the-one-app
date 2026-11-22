@@ -3,7 +3,7 @@ use super::*;
 /// Fits `screen` to window `id`, its `native` window: the `room` its page is laid out in, what it's told of its system
 /// and device and of its window's title row (`WindowOptions::title_row`), and the windows' thread woken as its page
 /// posts.
-#[cfg_attr(not(any(target_os = "linux", target_os = "windows")), allow(unused_variables))]
+#[cfg_attr(any(not(any(target_os = "linux", target_os = "windows")), feature = "fake"), allow(unused_variables))]
 pub(super) fn fit(screen: &mut Screen, native: &NativeWindow, id: WindowId, room: Size<Pixels>, rail: bool, title_row: bool, pressure: Pressure) {
     screen.room = Size { width: room.width.0, height: room.height.0 };
     screen.rail = rail;
@@ -34,6 +34,7 @@ pub(super) fn fit(screen: &mut Screen, native: &NativeWindow, id: WindowId, room
             screen.window_buttons = (Vec::new(), vec![crate::WindowButton::Minimize, crate::WindowButton::Maximize, crate::WindowButton::Close]);
         }
     }
+    #[cfg(not(feature = "fake"))]
     if let Some(native) = Native::started() {
         let native = std::sync::Mutex::new(native);
         screen.on_post(Arc::new(move || native.lock().unwrap_or_else(std::sync::PoisonError::into_inner).run(move |windows| windows.posted(id))));

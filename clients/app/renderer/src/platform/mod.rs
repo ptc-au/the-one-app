@@ -26,7 +26,9 @@
 //! - **A surface to present on**: a frame presented each tick while something moves, and nothing while it's still.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
+#[cfg(not(feature = "fake"))]
+use std::sync::OnceLock;
 
 use crate::geometry::{DevicePixels, Pixels, Point, Size};
 use crate::render::{atlas::Atlas, context::Context, renderer::{Draw, Renderer}};
@@ -65,6 +67,7 @@ mod cover;
 #[cfg(feature = "fake")]
 mod headless;
 mod input;
+#[cfg(not(feature = "fake"))]
 mod native;
 mod open;
 mod pages;
@@ -196,7 +199,7 @@ fn text_menu_of(menu: crate::view::TextMenu, window: WindowId) -> muda::Menu {
 
 /// What was chosen in a menu of a window's own (`text_menu_of`), by muda's id, which the app's menu events hand on:
 /// its window is told its key, as pressed there. → whether it was one of those.
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(all(any(target_os = "macos", target_os = "windows", target_os = "linux"), not(feature = "fake")))]
 pub fn menu_chosen(id: &str) -> bool {
     let Some((window, key)) = id.strip_prefix("one-text:").and_then(|rest| rest.split_once(':')) else { return false };
     let (Ok(window), Some(native)) = (window.parse::<WindowId>(), Native::started()) else { return true };
@@ -280,18 +283,19 @@ pub struct Glass {
     pub opacity: f32,
 }
 
-/// Where to send the windows' thread a job.
+/// Where to send the windows' thread a job. The fake platform has none: its test drives the windows itself
+/// (`Windows::fake`).
+#[cfg(not(feature = "fake"))]
 #[derive(Clone)]
 pub struct Native(Sender);
 
+#[cfg(not(feature = "fake"))]
 static STARTED: OnceLock<Result<Native, String>> = OnceLock::new();
 
 #[cfg(all(any(target_os = "linux", target_os = "macos"), not(feature = "fake")))]
 type Sender = calloop::channel::Sender<Job>;
 #[cfg(all(target_os = "windows", not(feature = "fake")))]
 type Sender = windows::Sender;
-#[cfg(feature = "fake")]
-type Sender = std::sync::mpsc::Sender<Job>;
 #[cfg(target_os = "android")]
 type Sender = android::Sender;
 #[cfg(target_os = "ios")]
@@ -456,8 +460,9 @@ pub struct Windows {
     on_blank: Option<Box<dyn FnMut(String)>>,
 }
 
-/// A 60 Hz display's refresh: the fake platform's own thread's (`native`), and where a system has no display to ask
-/// (a Mac's with none attached, a browser before it's shown two frames in a row).
+/// A 60 Hz display's refresh, where a system has no display to ask (a Mac's with none attached, a browser before it's
+/// shown two frames in a row).
+#[cfg(not(feature = "fake"))]
 const FRAME: std::time::Duration = std::time::Duration::from_micros(16_667);
 
 /// Now, as the windows' loop tells the time a frame or an input came: the system's, or on the fake platform its

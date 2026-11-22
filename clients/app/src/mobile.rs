@@ -107,8 +107,7 @@ pub(crate) struct Phone(pub(crate) AppHandle);
 impl Shell for Phone {
     /// A phone gives each app a folder of its own, which only the app is told. An iPhone's app keeps its client in
     /// the folder it shares with its notification extension instead, its App Group, which `main.mm` says as ONE_HOME
-    /// when iOS gives it one, as it does only to an app signed with it, and otherwise in its own (`phone::home`). So
-    /// does Linux's.
+    /// when iOS gives it one, as it does only to an app signed with it, and otherwise in its own (`phone::home`).
     fn home(&self) -> anyhow::Result<std::path::PathBuf> {
         #[cfg(target_os = "android")]
         return Ok(self.0.path().app_data_dir()?);
@@ -151,11 +150,7 @@ impl Shell for Phone {
     }
 
     fn listen(&self, client: Arc<Client>) {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
         spawn(notifications::listen(self.0.clone(), client));
-        // Linux has no push, so it hears them as a computer does.
-        #[cfg(target_os = "linux")]
-        spawn(notifications::listen(client, ::client::NAME, |opens| app().shell.emit("open", json!(opens))));
     }
 
     /// An iPhone's status bar, which would otherwise follow the device and show dark on dark. Android's bars are
@@ -204,12 +199,6 @@ pub(crate) fn window(app: &AppHandle) -> Result<tauri::WebviewWindow, Box<dyn st
             }
         });
     let window = window.build()?;
-    // A page whose web process ended loads again, as Tauri has iOS's (`tauri-runtime-wry`): Linux's (the `phone` feature).
-    #[cfg(target_os = "linux")]
-    window.with_webview(|webview| {
-        use webkit2gtk::WebViewExt;
-        webview.inner().connect_web_process_terminated(|view, _| view.reload());
-    })?;
     #[cfg(target_os = "ios")]
     cover(&window)?;
     #[cfg(target_os = "ios")]

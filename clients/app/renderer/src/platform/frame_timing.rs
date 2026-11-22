@@ -93,6 +93,7 @@ impl Timing {
     }
 
     /// This thread spent `time` applying what the page changed.
+    #[cfg(not(feature = "fake"))]
     pub(crate) fn applied(&mut self, time: Duration) {
         self.applied += time;
     }

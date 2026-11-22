@@ -71,6 +71,7 @@ impl Context {
         std::thread::spawn(move || {
             for (format, _) in slots {
                 super::renderer::Pipelines::shared(&device, &queue, &compiled, format);
+                #[cfg(not(feature = "fake"))]
                 if let Some(native) = crate::platform::Native::started() {
                     native.run(crate::platform::Windows::compiled);
                 }

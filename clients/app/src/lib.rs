@@ -69,14 +69,11 @@ pub fn run() {
 }
 
 #[cfg(mobile)]
-#[cfg_attr(any(target_os = "android", target_os = "ios"), tauri::mobile_entry_point)]
+#[tauri::mobile_entry_point]
 pub fn run() {
     use tauri::http::{Response, StatusCode, header};
     let started = Instant::now();
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_deep_link::init());
-    // A phone's push, which Linux has none of.
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    let builder = builder.plugin(notifications::plugin());
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_deep_link::init()).plugin(notifications::plugin());
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_haptics::init());
     #[cfg(target_os = "ios")]

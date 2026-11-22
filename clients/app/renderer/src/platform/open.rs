@@ -157,6 +157,7 @@ impl Windows {
     }
 
     /// Window `id`'s app's JS posted what it changed: it's applied, and drawn on the loop's turn.
+    #[cfg(not(feature = "fake"))]
     pub(super) fn posted(&mut self, id: WindowId) {
         let started = web_time::Instant::now();
         if let Some(window) = self.windows.get_mut(&id)

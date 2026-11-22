@@ -251,7 +251,6 @@ dependencies = [
  "tokio",
  "tray-icon",
  "url",
- "webkit2gtk",
  "windows",
 ]
 

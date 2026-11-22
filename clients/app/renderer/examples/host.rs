@@ -10,6 +10,9 @@
 use std::sync::mpsc;
 
 use renderer::geometry::{Pixels, Size};
+#[cfg(feature = "fake")]
+compile_error!("the host example draws in a system's windows: build it without --features fake");
+
 use renderer::platform::{Event, Native, WindowOptions};
 
 fn main() -> anyhow::Result<()> {
