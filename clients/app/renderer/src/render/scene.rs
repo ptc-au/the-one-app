@@ -29,6 +29,9 @@ pub struct Scene {
     /// What scrolls in it (`Scrolled`), each where it clips what's in it and how far it's scrolled, by which a frame
     /// moves the pixels it kept of one that scrolled (`damage::scrolled`).
     pub(crate) scrolls: Vec<Scrolled>,
+    /// Of each quad, where occlusion drew it only in bands (`occlude`): the mask it had whole, and whether it's its
+    /// first band, as damage compares it whole, so a card scrolling over a still background doesn't change it.
+    pub(crate) bands: Vec<Option<(ContentMask<ScaledPixels>, bool)>>,
 }
 
 /// A box whose content scrolls: its node, what it clips its content to, and how far its content is moved up and to
@@ -61,12 +64,13 @@ impl Scene {
         self.rasters.clear();
         self.recordings.clear();
         self.scrolls.clear();
+        self.bands.clear();
     }
 
     pub(crate) fn insert_primitive(&mut self, primitive: impl Into<Primitive>) {
         let mut primitive = primitive.into();
         let clipped_bounds = primitive.bounds().intersect(&primitive.content_mask().bounds);
-        if clipped_bounds.is_empty() {
+        if clipped_bounds.is_empty() || primitive.shows_nothing() {
             return;
         }
         let order = self.primitive_bounds.insert(clipped_bounds);
@@ -237,8 +241,8 @@ impl Scene {
     }
 
     pub fn finish(&mut self) {
-        self.occlude();
         self.sort();
+        self.occlude();
         self.gather();
     }
 
@@ -322,6 +326,7 @@ impl Scene {
     /// around it. A GPU's fill rate is what a scrolled page spends, and a long list drew its window and its card both,
     /// whole, every frame. Nothing goes where something blurs what's behind it (a backdrop), which reads what's under.
     fn occlude(&mut self) {
+        self.bands.clear();
         if !self.backdrops.is_empty() {
             return;
         }
@@ -348,10 +353,15 @@ impl Scene {
         }
         let area = |bounds: &Bounds<ScaledPixels>| bounds.size.width.0 * bounds.size.height.0;
         let mut kept = Vec::with_capacity(self.quads.len());
+        let mut bands = Vec::with_capacity(self.quads.len());
         for quad in std::mem::take(&mut self.quads) {
             let whole = quad.content_mask.bounds.intersect(&quad.bounds);
             let mut pieces = vec![whole];
-            if quad.transformation == TransformationMatrix::unit() {
+            // Cut by each that covers it, again until none cuts it: one covering little of it whole (a sidebar on its
+            // window) may cover all of a band another cut it to.
+            let mut cutting = quad.transformation == TransformationMatrix::unit();
+            while cutting {
+                cutting = false;
                 for (_, covered) in opaque.iter().filter(|(order, _)| *order > quad.order) {
                     pieces = pieces
                         .into_iter()
@@ -361,6 +371,7 @@ impl Scene {
                             if under.is_empty() || area(&under) < area(&shown) / 4.0 {
                                 return vec![shown];
                             }
+                            cutting = true;
                             let (left, top) = (shown.origin, shown.bottom_right());
                             let (low, high) = (under.origin, under.bottom_right());
                             let band = |x0: f32, y0: f32, x1: f32, y1: f32| Bounds::from_corners(crate::geometry::Point { x: px(x0), y: px(y0) }, crate::geometry::Point { x: px(x1), y: px(y1) });
@@ -379,9 +390,12 @@ impl Scene {
             }
             // Drawn whole, it keeps its mask, rounded corners and all; a band of it is cut to that band too.
             let mask = |shown: Bounds<ScaledPixels>| if shown == whole { quad.content_mask } else { quad.content_mask.intersect(&ContentMask::from(shown)) };
+            let cut = pieces != [whole];
+            bands.extend((0..pieces.len()).map(|at| cut.then_some((quad.content_mask, at == 0))));
             kept.extend(pieces.into_iter().map(|shown| Quad { content_mask: mask(shown), ..quad.clone() }));
         }
         self.quads = kept;
+        self.bands = bands;
     }
 
     pub(crate) fn batches(&self) -> impl Iterator<Item = PrimitiveBatch<'_>> {
@@ -458,6 +472,24 @@ impl Primitive {
             Primitive::PolychromeSprite(sprite) => sprite.bounds,
             Primitive::Backdrop(backdrop) => backdrop.bounds,
             Primitive::Raster(raster) => raster.bounds,
+        }
+    }
+
+    /// Whether it draws nothing, wholly see-through: a box faded all the way out (a page's cover gone, a layer at 0)
+    /// still cost a GPU every pixel of it.
+    fn shows_nothing(&self) -> bool {
+        match self {
+            Primitive::Shadow(shadow) => shadow.color.a <= 0.0,
+            Primitive::Quad(quad) => {
+                let widths = &quad.border_widths;
+                let bordered = quad.border_color.a > 0.0 && [widths.top, widths.right, widths.bottom, widths.left].iter().any(|width| width.0 > 0.0);
+                quad.background.tag == 0 && quad.background.solid.a <= 0.0 && !bordered
+            }
+            Primitive::Underline(underline) => underline.color.a <= 0.0,
+            Primitive::MonochromeSprite(sprite) => sprite.color.a <= 0.0,
+            Primitive::PolychromeSprite(sprite) => sprite.opacity <= 0.0,
+            Primitive::Raster(raster) => raster.opacity <= 0.0,
+            Primitive::Backdrop(_) => false,
         }
     }
 

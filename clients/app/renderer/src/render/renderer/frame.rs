@@ -136,16 +136,31 @@ impl Renderer {
         // it's drawn, by which a frame is drawn again only where they changed (`damage`), and a blur that's behind them
         // changed only in part is taken again there (`Blur::damaged`); what it is scrolled back, where it's in a box that
         // scrolls (the innermost whose clip it's inside, the last painted of those as big), by which a frame moves what it kept of one (`damage::scrolled`);
-        // and the rows and columns of it that are each the same all along, where it's a box of one colour.
+        // the rows and columns of it that are each the same all along, where it's a box of one colour; and whether it's
+        // compared: a quad occlusion drew only in bands (`Scene::bands`) is compared whole, once, as a card scrolling
+        // over a still background changes it nowhere the card isn't drawn too.
         let scrolling = |extent: &Bounds<ScaledPixels>| {
             let inside = |clip: &Bounds<ScaledPixels>| extent.origin.x.0 >= clip.origin.x.0 && extent.origin.y.0 >= clip.origin.y.0 && extent.origin.x.0 + extent.size.width.0 <= clip.origin.x.0 + clip.size.width.0 && extent.origin.y.0 + extent.size.height.0 <= clip.origin.y.0 + clip.size.height.0;
             scene.scrolls.iter().rev().filter(|scroll| inside(&scroll.mask.bounds)).min_by(|a, b| (a.mask.bounds.size.width.0 * a.mask.bounds.size.height.0).total_cmp(&(b.mask.bounds.size.width.0 * b.mask.bounds.size.height.0)))
         };
-        type Thing = (u64, Bounds<ScaledPixels>, Option<(u64, u64)>, Option<([f32; 2], [f32; 2])>);
+        type Thing = (u64, Bounds<ScaledPixels>, Option<(u64, u64)>, Option<([f32; 2], [f32; 2])>, bool);
+        // Where each batch's quads start among the scene's, by which a quad's bands are found.
+        let mut quads = 0;
+        let starts: Vec<usize> = batches
+            .iter()
+            .map(|batch| {
+                let start = quads;
+                if let PrimitiveBatch::Quads(all) = batch {
+                    quads += all.len();
+                }
+                start
+            })
+            .collect();
         let things: Vec<Vec<Thing>> = batches
             .iter()
             .zip(&instances)
-            .map(|(batch, (offset, _))| {
+            .zip(&starts)
+            .map(|((batch, (offset, _)), first_quad)| {
                 use std::hash::Hash;
                 let (texture, stride) = match batch {
                     PrimitiveBatch::Quads(_) => (None, std::mem::size_of::<super::super::scene::Quad>()),
@@ -163,9 +178,20 @@ impl Renderer {
                     .into_iter()
                     .enumerate()
                     .map(|(at, extent)| {
+                        let banded = match batch {
+                            PrimitiveBatch::Quads(all) => scene.bands.get(first_quad + at).copied().flatten().map(|(mask, first)| (super::super::scene::Quad { content_mask: mask, ..all[at].clone() }, first)),
+                            _ => None,
+                        };
+                        if let Some((whole, first)) = banded {
+                            let one = PrimitiveBatch::Quads(std::slice::from_ref(&whole));
+                            let extent = one.extents()[0];
+                            let print = hash(&|hasher| (std::mem::discriminant(batch), texture, super::super::scene::drawn(&whole)).hash(hasher));
+                            let moved = scrolling(&extent).and_then(|scroll| one.unscrolled(0, scroll.by, &scroll.mask).map(|bytes| (scroll.id, hash(&|hasher| (std::mem::discriminant(batch), texture, &bytes).hash(hasher)))));
+                            return (print, extent, moved, one.even(0), first);
+                        }
                         let print = hash(&|hasher| (std::mem::discriminant(batch), texture, &self.data[start + at * stride + order..start + (at + 1) * stride]).hash(hasher));
                         let moved = scrolling(&extent).and_then(|scroll| batch.unscrolled(at, scroll.by, &scroll.mask).map(|bytes| (scroll.id, hash(&|hasher| (std::mem::discriminant(batch), texture, &bytes).hash(hasher)))));
-                        (print, extent, moved, batch.even(at))
+                        (print, extent, moved, batch.even(at), true)
                     })
                     .collect()
             })
@@ -235,8 +261,8 @@ impl Renderer {
                 // Each thing it draws, in order, a backdrop with the blur behind it, what it is scrolled back and where
                 // it's the same all along; and what scrolls in it, in its device pixels.
                 let mut shown = damage::Shown::default();
-                for (at, one, (thing, extent, moved, even)) in reaching.iter().enumerate().flat_map(|(at, batch)| things[*batch].iter().enumerate().map(move |(one, thing)| (at, one, thing))) {
-                    if !extent.intersects(&area) {
+                for (at, one, (thing, extent, moved, even, compared)) in reaching.iter().enumerate().flat_map(|(at, batch)| things[*batch].iter().enumerate().map(move |(one, thing)| (at, one, thing))) {
+                    if !compared || !extent.intersects(&area) {
                         continue;
                     }
                     shown.prints.push((blurs[at].get(one).and_then(|blur| blur.behind).map_or(*thing, |behind| hash(&|hasher| std::hash::Hash::hash(&(thing, behind), hasher))), device(extent)));
