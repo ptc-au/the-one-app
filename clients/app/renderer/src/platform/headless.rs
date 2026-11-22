@@ -50,9 +50,10 @@ impl Windows {
     }
 
     /// The display's link ticks `starts` refreshes after it's started from now on, and with `pauses`, (ticks,
-    /// refreshes), not for that many once it's ticked that many (`fake::Link`); 0 and none for one that ticks at once.
-    pub fn set_link(&self, starts: u32, pauses: Option<(u32, u32)>) {
-        self.display.set_link(fake::Link { starts, pauses });
+    /// refreshes), not for that many once it's ticked that many, each tick saying its refresh up to `late_ms` late
+    /// (`fake::Link`); 0, none and 0 for one that ticks at once, on time.
+    pub fn set_link(&self, starts: u32, pauses: Option<(u32, u32)>, late_ms: f64) {
+        self.display.set_link(fake::Link { starts, pauses, late_ms });
     }
 
     /// The display refreshes `hz` times a second from now on.
@@ -93,7 +94,7 @@ impl Windows {
     /// compositor shows its window then, its backdrop an empty box, until the next frame.
     pub fn tick(&mut self) {
         if self.display.ticks() {
-            self.display.tick(now() + self.display.refresh());
+            self.display.tick(now() + self.display.refresh() + std::time::Duration::from_secs_f64(self.display.late_ms() / 1000.0));
         }
         for id in self.display.summoned() {
             let Some(window) = self.windows.get_mut(&id) else { continue };

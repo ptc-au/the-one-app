@@ -87,13 +87,19 @@ fn placed(menu: &crate::view::TextMenu, width: f32) -> crate::geometry::Bounds<f
 const LATE: u64 = 5;
 
 /// How a display link ticks once it's started (`Display::set_link`): `starts` refreshes after, and with `pauses`,
-/// (ticks, refreshes), not for that many refreshes once it's ticked that many. The default ticks at every refresh, from
-/// the first.
+/// (ticks, refreshes), not for that many refreshes once it's ticked that many. Each tick says its refresh up to
+/// `late_ms` late, by turns (`LATE_BY`), as a link that times its tick as its thread wakes does (Windows' compositor
+/// clock, a few tenths of a ms after the refresh, more or less each time). The default ticks at every refresh, from
+/// the first, on time.
 #[derive(Clone, Copy, Default, PartialEq)]
 pub struct Link {
     pub starts: u32,
     pub pauses: Option<(u32, u32)>,
+    pub late_ms: f64,
 }
+
+/// How late each tick in turn says its refresh, of a link's `late_ms`: later, then sooner, than the one before.
+const LATE_BY: [f64; 4] = [1.0, 0.2, 0.6, 0.0];
 
 pub struct NativeWindow {
     id: WindowId,
@@ -287,15 +293,18 @@ impl Display {
         (self.link.set(link), self.running.set(None));
     }
 
+    /// How late its link's tick at the refresh due now says it (`Link::late_ms`), in ms.
+    pub fn late_ms(&self) -> f64 {
+        let link = self.link.get();
+        link.late_ms * LATE_BY[self.running.get().unwrap_or(0) as usize % LATE_BY.len()]
+    }
+
     /// Whether its link ticks at the refresh due now: while the loop asks for frames, once it's started and unless
     /// it's paused, and with the default link at every refresh.
     pub fn ticks(&self) -> bool {
         let link = self.link.get();
-        if link == Link::default() {
-            return true;
-        }
         let Some(run) = self.wanted.get().then(|| self.running.get().map_or(0, |run| run + 1)) else {
-            return false;
+            return link.starts == 0 && link.pauses.is_none();
         };
         self.running.set(Some(run));
         run.checked_sub(link.starts).is_some_and(|ticked| !link.pauses.is_some_and(|(after, refreshes)| (after..after + refreshes).contains(&ticked)))

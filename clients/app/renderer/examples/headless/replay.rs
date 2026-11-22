@@ -87,11 +87,12 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
     // With `frame_ms`, each frame takes that long to draw, as on a device others load, which presses it as a window's
     // late frames do.
     windows.set_frame_ms(request.f64("frame_ms").unwrap_or(0.0));
-    // With `link`, `{starts, pauses: [ticks, refreshes]}`, the display's link ticks as a real one does: a Mac's starts
-    // two or three refreshes after it's asked for frames, and a ProMotion display's stops a while as if idle.
+    // With `link`, `{starts, pauses: [ticks, refreshes], late_ms}`, the display's link ticks as a real one does: a
+    // Mac's starts two or three refreshes after it's asked for frames, a ProMotion display's stops a while as if idle,
+    // and Windows' compositor clock says each refresh a few tenths of a ms late, more or less each time.
     let link = request.inputs.get("link");
     let pauses = link.and_then(|link| link["pauses"].as_array()).map(|pauses| (pauses[0].as_u64().unwrap_or(0) as u32, pauses[1].as_u64().unwrap_or(0) as u32));
-    windows.set_link(link.and_then(|link| link["starts"].as_u64()).unwrap_or(0) as u32, pauses);
+    windows.set_link(link.and_then(|link| link["starts"].as_u64()).unwrap_or(0) as u32, pauses, link.and_then(|link| link["late_ms"].as_f64()).unwrap_or(0.0));
     let refresh = 1000.0 / hz;
     let begun = renderer::platform::fake_time();
     let (mut next, mut frames, mut drawn, mut presents) = (0, Vec::new(), windows.frames(id), windows.presents(id));
@@ -259,7 +260,7 @@ pub(crate) fn replay(windows: &mut Windows, id: renderer::platform::WindowId, re
         windows.set_refresh(1.0 / own.as_secs_f64());
     }
     windows.set_frame_ms(0.0);
-    windows.set_link(0, None);
+    windows.set_link(0, None, 0.0);
     // What's tracked was there in some frame, or its selector matches nothing, which isn't a node that's gone.
     if let (Some(selector), Some(query)) = (&tracking, &track)
         && query.get("node").is_none()

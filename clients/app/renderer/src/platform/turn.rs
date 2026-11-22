@@ -190,7 +190,7 @@ impl Windows {
         }
         // The display's link says when the frame begun at its tick shows (`FrameClock`).
         if let Some(shows) = self.display.frame() {
-            self.clock.tick(shows);
+            self.clock.tick(shows, self.refresh());
             if self.check.is_some() {
                 self.record.tick(shows);
             }
@@ -390,7 +390,7 @@ impl Windows {
             let (width, height) = (device.width.0 as u32, device.height.0 as u32);
             if let Some(shows) = window.shows
                 && window.summoned.is_none()
-                && frame_clock::waits(now(), shows)
+                && self.clock.waits(now(), refresh, shows)
                 // Mutant: a frame drawn as each change comes, several in a refresh, as before fbb4e1c9e.
                 && !crate::mutants::mutant("double-frame")
             {

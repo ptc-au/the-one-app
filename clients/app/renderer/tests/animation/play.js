@@ -12,9 +12,10 @@ import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lul
 
 
 /// How the display's link ticks at `hz`, as a real one: a Mac's starts three refreshes after it's asked for frames,
-/// and a ProMotion display's (120 Hz, a Mac's or an iPhone's) stops for four once it's ticked eight, as if idle. The
+/// a ProMotion display's (120 Hz, a Mac's or an iPhone's) stops for four once it's ticked eight, as if idle, and
+/// Windows' compositor clock says each refresh up to half a ms late, as its thread wakes (a Surface's, 22 Nov). The
 /// loop's own clock stands in for it meanwhile.
-const link = (hz) => ({ starts: 3, ...(hz > 60 ? { pauses: [8, 4] } : {}) })
+const link = (hz) => ({ starts: 3, late_ms: 0.5, ...(hz > 60 ? { pauses: [8, 4] } : {}) })
 
 /// A motion played at `hz` on a scene: its frames, filmstrip and curve kept in `folder`. → what it says, and its row in
 /// the contact sheet.
