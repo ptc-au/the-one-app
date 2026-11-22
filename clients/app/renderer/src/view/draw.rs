@@ -438,6 +438,11 @@ impl Screen {
                 self.tell(id, "dragtransitionend", json!({}));
             }
         }
+        for id in self.transitions.ended() {
+            if self.tree.nodes.get(&id).is_some_and(|node| node.listens("transitionend")) {
+                self.tell(id, "transitionend", json!({}));
+            }
+        }
         // What's going is gone once nothing in it moves, having been drawn going.
         let still = self.transitions.moving();
         let gone: Vec<Id> = self.tree.going().filter(|id| self.going.contains(id) && !still.iter().any(|moving| self.within(*moving, *id))).collect();

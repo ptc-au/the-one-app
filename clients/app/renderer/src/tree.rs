@@ -110,6 +110,7 @@ impl Node {
             "drag" => "onDrag",
             "dragend" => "onDragEnd",
             "dragtransitionend" => "onDragTransitionEnd",
+            "transitionend" => "onTransitionEnd",
             _ => return false,
         };
         self.is(prop)

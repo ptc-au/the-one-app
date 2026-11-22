@@ -208,6 +208,13 @@ enum Curve {
     Sprung { start: f64, velocity: f64, spring: Spring },
 }
 
+/// How much of its way a spring has left when it has all but arrived, which the eye reads as there, as SwiftUI's
+/// `.logicallyComplete` is before it's removed (where `near` is how near it's drawn to rest): a twenty-fifth, and in
+/// points never more than `SETTLED_PX`, however far it went, so what waits for an icon to land (a name beside it)
+/// isn't drawn while one that flew far is still a few frames from its place, going faster than a person reads as still.
+const SETTLED: f64 = 0.04;
+const SETTLED_PX: f64 = 8.0;
+
 /// A value's number, where it's one: what a spring moves in its own unit.
 fn number(value: &Value) -> Option<f32> {
     match *value {
@@ -272,6 +279,24 @@ impl Moving {
         if self.done(now) { self.to.clone() } else { self.state(now).0 }
     }
 
+    /// Whether it has all but arrived (`SETTLED`): it's what `transitionend` waits for, a little before it's drawn at rest.
+    fn settled(&self, now: f64) -> bool {
+        match self.curve {
+            Curve::Eased { .. } => self.done(now),
+            Curve::Sprung { start, velocity, spring } => match (number(&self.from), number(&self.to)) {
+                (Some(from), Some(to)) if alike(&self.from, &self.to) => {
+                    let (at, speed) = self.state(now);
+                    let left = SETTLED * f64::from((from - to).abs());
+                    number(&at).is_some_and(|at| Spring::arrived(f64::from(at - to), speed, if matches!(self.to, Value::Px(_)) { left.min(SETTLED_PX) } else { left }))
+                }
+                _ => {
+                    let (off, speed) = spring.at(1.0, if alike(&self.from, &self.to) { velocity } else { 0.0 }, ((now - start) / 1000.0).max(0.0));
+                    Spring::arrived(off, speed, SETTLED)
+                }
+            },
+        }
+    }
+
     fn done(&self, now: f64) -> bool {
         match self.curve {
             Curve::Eased { start, duration, .. } => now - start >= f64::from(duration),
@@ -318,6 +343,10 @@ pub(crate) struct Transitions {
     dragged: HashMap<Id, Dragged>,
     /// The nodes let go whose spring has come to rest since the page was last told (`settled`).
     rested: Vec<Id>,
+    /// The nodes with a transition begun that has yet to all but arrive, and those that have since the page was last
+    /// told (`ended`).
+    ending: HashSet<Id>,
+    ended: Vec<Id>,
     /// The nodes moving by their keyframes (`Look::animation`), which are styled again each frame they're drawn.
     animated: HashSet<Id>,
     /// Where each node that moves as it's laid out again (`layout`) was laid out last, in the window, unscrolled, and
@@ -451,6 +480,7 @@ impl Transitions {
             let moving = Moving { from, to, curve };
             set(computed, property, moving.at(now));
             self.moving.insert(key, moving);
+            self.ending.insert(id);
         }
         // Coming in, with less motion: what would have slid or grown in fades in instead.
         let moved_in = entering.is_some_and(|entering| PROPERTIES.iter().any(|(property, moves)| *moves && get(entering, property) != get(computed, property)));
@@ -459,6 +489,7 @@ impl Transitions {
             let moving = Moving { from: Value::Number(0.0), to: Value::Number(computed.look.opacity), curve };
             set(computed, "opacity", moving.at(now));
             self.moving.insert((id, "opacity"), moving);
+            self.ending.insert(id);
         }
     }
 
@@ -600,6 +631,7 @@ impl Transitions {
         self.laid.remove(&id);
         self.flips.remove(&id);
         self.animated.remove(&id);
+        self.ending.remove(&id);
         if self.drawn.remove(&id) {
             for (property, _) in PROPERTIES {
                 self.values.remove(&(id, property));
@@ -645,6 +677,15 @@ impl Transitions {
 
     /// Ends a frame: forgets what's arrived. → whether anything's still moving.
     pub fn finish(&mut self, now: f64) -> bool {
+        let unsettled: HashSet<Id> = self.moving.iter().filter(|(_, moving)| !moving.settled(now)).map(|((id, _), _)| *id).collect();
+        let ended = &mut self.ended;
+        self.ending.retain(|id| {
+            let ending = unsettled.contains(id);
+            if !ending {
+                ended.push(*id);
+            }
+            ending
+        });
         self.moving.retain(|_, moving| !moving.done(now));
         let rested = &mut self.rested;
         self.dragged.retain(|id, dragged| {
@@ -661,6 +702,12 @@ impl Transitions {
     /// The nodes let go whose spring has come to rest since this was last asked, as Motion's `onDragTransitionEnd`.
     pub fn settled(&mut self) -> Vec<Id> {
         std::mem::take(&mut self.rested)
+    }
+
+    /// The nodes whose transitions have all but arrived (`SETTLED`) since this was last asked, each once, as CSS's
+    /// `transitionend`, but for a node and not each of its properties.
+    pub fn ended(&mut self) -> Vec<Id> {
+        std::mem::take(&mut self.ended)
     }
 
     /// How many properties are still on their way, for the inspector's `settle`.

@@ -140,6 +140,10 @@ export type ViewProps = Listens & {
   /** Let go, it has sprung to rest where its style puts it, as Motion's `onDragTransitionEnd`: what waits for it to
    * settle (a pager's arrows) shows then. A host before this one doesn't say it. */
   onDragTransitionEnd?: () => void
+  /** What its style moved (`transition`) has all but arrived, within a twenty-fifth of its way and 8 points, as SwiftUI's
+   * `.logicallyComplete`, once for the node, as CSS's `transitionend` but not each property: what waits for it to land
+   * (captions beside an icon) shows then. A host before this one doesn't say it. */
+  onTransitionEnd?: () => void
 }
 export declare function View(props: ViewProps): Element
 
