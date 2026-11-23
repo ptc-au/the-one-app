@@ -85,15 +85,15 @@ export const { render: mount, effect, memo, createComponent, createElement, crea
 
 /** What the person did, from the host, to the handler it's for: `click` to `onClick`, `keydown` to `onKeyDown`, with
  * what the DOM's event would say of it: an `input`'s editing state as `editing`, and its text as
- * `currentTarget.value`; its action key's `action`; a key as `key` with its modifiers; how far a `scroll` has
+ * `currentTarget.value`; its action key's `action`; a key as `key` and `code` with its modifiers; how far a `scroll` has
  * scrolled as `currentTarget.scrollTop`; and a pointer where it is and where the node is drawn
  * (`currentTarget.getBoundingClientRect()`). What a host does with a key by itself isn't the page's, so
  * `preventDefault()` does nothing here. What a handler throws is reported (`reportError`), as a browser's listener's is. */
-export function event({ id, name, editing, action, key, shiftKey, altKey, ctrlKey, metaKey, scrollTop, scrollLeft, rect, ...told }: Event) {
+export function event({ id, name, editing, action, key, code, shiftKey, altKey, ctrlKey, metaKey, scrollTop, scrollLeft, rect, ...told }: Event) {
   const handler = nodes.get(id)?.deref()?.handlers[name]
   const target = { value: editing?.text ?? "", scrollTop: scrollTop ?? 0, scrollLeft: scrollLeft ?? 0, getBoundingClientRect: () => rect ?? { x: 0, y: 0, width: 0, height: 0 } }
   try {
-    handler?.({ ...told, currentTarget: target, target, editing, action, key: key ?? "", shiftKey: !!shiftKey, altKey: !!altKey, ctrlKey: !!ctrlKey, metaKey: !!metaKey, preventDefault() {} })
+    handler?.({ ...told, currentTarget: target, target, editing, action, key: key ?? "", code: code ?? "", shiftKey: !!shiftKey, altKey: !!altKey, ctrlKey: !!ctrlKey, metaKey: !!metaKey, preventDefault() {} })
   } catch (error) {
     reportError(error)
   }

@@ -880,7 +880,7 @@ define_class!(
 impl View {
     /// ⌘ and `key`, with Shift if `shift`, as a menu's command is its key.
     fn command(&self, key: &str, shift: bool) {
-        self.ivars().shared.send(Input::Key(Key { key: key.to_owned(), shift, alt: false, ctrl: false, meta: true }));
+        self.ivars().shared.send(Input::Key(Key { key: key.to_owned(), code: crate::inspect::code_of(key), shift, alt: false, ctrl: false, meta: true }));
     }
 
     fn new(main: MainThreadMarker, frame: NSRect, shared: Arc<Shared>) -> Retained<View> {

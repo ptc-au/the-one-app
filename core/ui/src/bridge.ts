@@ -26,7 +26,7 @@ const keys = new Set<(event: Page.Keyed) => void>()
   // every key (`keydown`), as the DOM's `document` does, whatever has the keyboard.
   event(told: Event) {
     event(told)
-    if (told.name === "keydown" && told.id === 0) for (const listener of keys) listener({ key: told.key ?? "", shiftKey: !!told.shiftKey, altKey: !!told.altKey, ctrlKey: !!told.ctrlKey, metaKey: !!told.metaKey, preventDefault() {} })
+    if (told.name === "keydown" && told.id === 0) for (const listener of keys) listener({ key: told.key ?? "", code: told.code ?? "", shiftKey: !!told.shiftKey, altKey: !!told.altKey, ctrlKey: !!told.ctrlKey, metaKey: !!told.metaKey, preventDefault() {} })
   },
   message(message: { id?: number; method?: string; result?: unknown; error?: { message: string } }) {
     if (message.method === "notifications/one/changed") tell()

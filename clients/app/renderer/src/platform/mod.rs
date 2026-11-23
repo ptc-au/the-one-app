@@ -204,7 +204,7 @@ pub fn menu_chosen(id: &str) -> bool {
     let Some((window, key)) = id.strip_prefix("one-text:").and_then(|rest| rest.split_once(':')) else { return false };
     let (Ok(window), Some(native)) = (window.parse::<WindowId>(), Native::started()) else { return true };
     let mac = cfg!(target_os = "macos");
-    let key = crate::inspect::Key { key: key.to_owned(), shift: false, alt: false, ctrl: !mac, meta: mac };
+    let key = crate::inspect::Key { key: key.to_owned(), code: crate::inspect::code_of(key), shift: false, alt: false, ctrl: !mac, meta: mac };
     native.run(move |windows| windows.input(window, 0, Input::Key(key)));
     true
 }

@@ -48,10 +48,10 @@ pub fn wheel(x: f32, y: f32, dx: f32, dy: f32, nx: f32, ny: f32) {
     input(Input::Wheel(point(x, y), point(dx, dy), None, (nx != 0.0 || ny != 0.0).then(|| point(nx, ny))));
 }
 
-/// A key, as the DOM's `KeyboardEvent.key` names it, with the modifiers held.
+/// A key, as the DOM's `KeyboardEvent.key` names it, with the modifiers held, and where it is, its `code`.
 #[wasm_bindgen]
-pub fn key(key: String, shift: bool, alt: bool, ctrl: bool, meta: bool) {
-    input(Input::Key(crate::inspect::Key { key, shift, alt, ctrl, meta }));
+pub fn key(key: String, shift: bool, alt: bool, ctrl: bool, meta: bool, code: Option<String>) {
+    input(Input::Key(crate::inspect::Key { key, code: code.unwrap_or_default(), shift, alt, ctrl, meta }));
 }
 
 /// What the frame's text input plugin says, as Flutter's engine calls its framework's `TextInputClient`.

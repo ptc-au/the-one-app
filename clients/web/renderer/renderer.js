@@ -219,7 +219,7 @@
       // A key while a video was last pressed is its screen's.
       if (!field && streams.key(event)) return event.preventDefault()
       if (field || event.key === "Tab" || event.key === " " || event.key.startsWith("Arrow") || (chord && event.key.length === 1)) event.preventDefault()
-      renderer.key(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey)
+      renderer.key(event.key, event.shiftKey, event.altKey, event.ctrlKey, event.metaKey, event.code)
     })
     addEventListener("focus", () => renderer.focused(true))
     addEventListener("blur", () => renderer.focused(false))

@@ -116,9 +116,10 @@ export interface Event {
   editing?: Editing
   /** What an `input`'s action key did, with `action`. */
   action?: TextInputAction
-  /** The key, with `keydown`, as the DOM's `KeyboardEvent.key` names it (`Enter`, `Escape`, `ArrowDown`, `a`), and
-   * which modifiers were held. */
+  /** The key, with `keydown`, as the DOM's `KeyboardEvent.key` names it (`Enter`, `Escape`, `ArrowDown`, `a`), where
+   * it is as its `code` names it (`KeyA`, `Space`), and which modifiers were held. */
   key?: string
+  code?: string
   shiftKey?: boolean
   altKey?: boolean
   ctrlKey?: boolean

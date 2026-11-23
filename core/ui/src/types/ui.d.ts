@@ -61,10 +61,12 @@ export type Wheeled = {
   notchesY?: number
 }
 
-/** What a key pressed is told, as the DOM's `KeyboardEvent`: `preventDefault()` keeps what the key does by itself
- * in a field (a caret moved, the focus moved on by Tab) from happening, on the DOM. */
+/** What a key pressed is told, as the DOM's `KeyboardEvent`: `key` what it means, `code` where it is on the keyboard
+ * ("KeyK", "Space"), as a shortcut is recorded, since ⌥K on a Mac means "˚"; `preventDefault()` keeps what the key
+ * does by itself in a field (a caret moved, the focus moved on by Tab) from happening, on the DOM. */
 export type Keyed = {
   key: string
+  code: string
   shiftKey: boolean
   altKey: boolean
   ctrlKey: boolean
@@ -630,6 +632,9 @@ export type Client = {
   computerUse?: { on: boolean }
   /** Whether a computer's app opens when its person logs in, as the system says; null where this device or build has none. */
   login?: boolean | null
+  /** A computer's launcher's shortcut, in global-hotkey's words (`alt+Space`, `shift+control+KeyK`): what it is now,
+   * null while it has none, and what it is where its person hasn't chosen one; null on a phone. */
+  shortcut?: { keys: string | null; default: string } | null
   theme: "light" | "dark" | null
   pinsShortcuts?: boolean
   settings?: boolean
@@ -652,6 +657,11 @@ export type ClientChange = {
   serve?: boolean
   /** A computer's app opens when its person logs in, or not. */
   login?: boolean
+  /** A computer's launcher's shortcut, in global-hotkey's words, or null for its default: refused with why, where the
+   * system keeps it for itself or won't let the app have it. */
+  shortcut?: string | null
+  /** Lets go of the launcher's shortcut while another is recorded, so pressing it records it, or takes it again. */
+  shortcutPaused?: boolean
   update?: boolean
   push?: boolean
   settings?: "accessibility" | "app"

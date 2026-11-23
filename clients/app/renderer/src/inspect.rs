@@ -459,9 +459,40 @@ pub fn settled(pending: &[Value], paused: bool) -> bool {
     })
 }
 
-/// What a `key` request presses, as the DOM's `KeyboardEvent` has it.
+/// The `code` of the key that means `key` on a US keyboard, as a request that names only what it means is pressed
+/// there: a letter's `KeyK`, a digit's `Digit1`, `Space`, and a named key's own name (Enter, ArrowLeft, F5).
+pub fn code_of(key: &str) -> String {
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(letter), None) if letter.is_ascii_alphabetic() => format!("Key{}", letter.to_ascii_uppercase()),
+        (Some(digit), None) if digit.is_ascii_digit() => format!("Digit{digit}"),
+        (Some(' '), None) => "Space".to_owned(),
+        (Some(mark), None) => {
+            let code = match mark {
+                '`' | '~' => "Backquote",
+                '-' | '_' => "Minus",
+                '=' | '+' => "Equal",
+                '[' | '{' => "BracketLeft",
+                ']' | '}' => "BracketRight",
+                '\\' | '|' => "Backslash",
+                ';' | ':' => "Semicolon",
+                '\'' | '"' => "Quote",
+                ',' | '<' => "Comma",
+                '.' | '>' => "Period",
+                '/' | '?' => "Slash",
+                _ => "",
+            };
+            code.to_owned()
+        }
+        _ => key.to_owned(),
+    }
+}
+
+/// What a `key` request presses, as the DOM's `KeyboardEvent` has it: `key` what it means, `code` where it is on the
+/// keyboard ("KeyK", "Space"), which a shortcut is recorded by, as ⌥K on a Mac means "˚".
 pub struct Key {
     pub key: String,
+    pub code: String,
     pub shift: bool,
     pub alt: bool,
     pub ctrl: bool,
@@ -471,11 +502,12 @@ pub struct Key {
 impl Key {
     pub fn of(request: &Request) -> anyhow::Result<Key> {
         let Some(key) = request.str("key") else { bail!("say which key, as the DOM names it: Enter, Escape, Tab, a") };
-        Ok(Key { key: key.to_owned(), shift: request.bool("shift"), alt: request.bool("alt"), ctrl: request.bool("ctrl"), meta: request.bool("meta") })
+        let code = request.str("code").map_or_else(|| code_of(key), str::to_owned);
+        Ok(Key { key: key.to_owned(), code, shift: request.bool("shift"), alt: request.bool("alt"), ctrl: request.bool("ctrl"), meta: request.bool("meta") })
     }
 
     /// What its `keydown` event says of it.
     pub fn told(&self) -> Value {
-        json!({"key": self.key, "shiftKey": self.shift, "altKey": self.alt, "ctrlKey": self.ctrl, "metaKey": self.meta})
+        json!({"key": self.key, "code": self.code, "shiftKey": self.shift, "altKey": self.alt, "ctrlKey": self.ctrl, "metaKey": self.meta})
     }
 }

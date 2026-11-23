@@ -351,7 +351,7 @@ fn handle_msg(hwnd: HWND, state: &State, msg: u32, wparam: WPARAM, lparam: LPARA
             Some(0)
         }
         WM_KEYDOWN | WM_SYSKEYDOWN => {
-            if let Some(key) = keyboard::key(VIRTUAL_KEY(wparam.0 as u16)) {
+            if let Some(key) = keyboard::key(VIRTUAL_KEY(wparam.0 as u16), lparam.0) {
                 push(Input::Key(key));
             }
             // Alt's own keys (Alt-F4, Alt-Space's window menu) stay Windows'.
@@ -372,7 +372,7 @@ fn handle_msg(hwnd: HWND, state: &State, msg: u32, wparam: WPARAM, lparam: LPARA
             } else if unsafe { text_input_has_client(plugin) } {
                 unsafe { text_input_text(plugin, units.as_ptr(), units.len()) };
             } else {
-                push(Input::Key(keyboard::typed(typed)));
+                push(Input::Key(keyboard::typed(typed, lparam.0)));
             }
             Some(0)
         }
