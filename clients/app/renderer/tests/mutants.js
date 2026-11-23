@@ -56,6 +56,7 @@ const MUTANTS = {
   "unlatched": { bug: "a finger's moves scrolling whatever came under where it landed, a card's list taking a page's fling (23 Nov)", plays: [animation("clients/app/renderer/tests/gallery", "Lists in cards about to move")] },
   "end-held": { bug: "a fling held at its end for the refresh it reached it in, then stretching on", plays: [animation("clients/app/renderer/tests/gallery", "Lists in cards about to move")] },
   "rest-undrawn": { bug: "a layer carried along drawn from its picture half a pixel aside in a motion's last frame, left so at rest (the App Library after a wheel's spin, 23 Nov)", plays: [animation("apps/home-screen", "Launcher, five pages")] },
+  "layout-size": { bug: "a node told where it is only as its size changes, a popover Help's key opened under the tips' ? opening where the ? was before its window grew (Andre's Mac's launcher, 23 Nov)", plays: [checks("apps/settings", "its tips by F1")] },
   "tile-squeezed": { bug: "a tile shown in part drawn from all of it, squeezed", plays: [checks("clients/app/renderer/tests/gallery", "Motion/Long list")] },
   "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   "leaving-loop": { bug: "what's closed with a spinner in it never gone, its see-through scrim taking every press (Vault on Andre's Mac and ptcau.app in Chrome, 23 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Over the page/A sheet closed as something's under way")] },

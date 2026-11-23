@@ -561,20 +561,23 @@ impl Screen {
             self.hover(at);
             self.again |= self.states.hovered != before;
         }
-        // Where each node that listens for `layout` is, as its layout settles and whenever its size changes, and again
-        // as it shows after it wasn't drawn, as a browser's ResizeObserver tells an element shown after `display: none`
-        // (a menu's items, kept unseen while it's closed, measured as it opens), and as it starts listening again, as
-        // a ResizeObserver tells what it's just been asked to observe.
+        // Where each node that listens for `layout` is, as its layout settles and whenever where the layout puts it in
+        // the window changes, its size or its place (what it's in moved, the window grew), as React Native's `onLayout`
+        // and a browser's `getBoundingClientRect` have it, not as a scroll or its own move draws it elsewhere; again as it
+        // shows after it wasn't drawn, as a browser's ResizeObserver tells an element shown after `display: none` (a
+        // menu's items, kept unseen while it's closed, measured as it opens); and as it starts listening again, as a
+        // ResizeObserver tells what it's just been asked to observe. Told only of its size, a popover Help's key opened
+        // under the tips' ? opened where the ? was before its window grew (Andre's Mac's launcher, 23 Nov).
         let (rects, tree) = (&self.rects, &self.tree);
         self.laid_out.retain(|id, _| rects.get(id).is_some() && tree.nodes.get(id).is_some_and(|node| node.listens("layout")));
-        let listening: Vec<(Id, Rect)> = self
+        let listening: Vec<(Id, Rect, [f32; 4])> = self
             .tree
             .laid_out()
-            .filter_map(|id| Some((id, *self.rects.get(&id)?)))
-            .filter(|(id, rect)| self.laid_out.get(id).is_none_or(|was| (was.width, was.height) != (rect.width, rect.height)))
+            .filter_map(|id| Some((id, *self.rects.get(&id)?, self.laid_place(id)?)))
+            .filter(|(id, _, place)| self.laid_out.get(id) != Some(place))
             .collect();
-        for (id, rect) in listening {
-            self.laid_out.insert(id, rect);
+        for (id, rect, place) in listening {
+            self.laid_out.insert(id, place);
             self.tell(id, "layout", json!({"rect": {"x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height}}));
             self.again = true;
         }
@@ -587,6 +590,23 @@ impl Screen {
                 self.again = true;
             }
         }
+    }
+
+    /// Where the layout puts node `id` in the window, unscrolled and unmoved by any transform: its left, top, width and
+    /// height. (Mutant: its size alone, as it was.)
+    fn laid_place(&self, id: Id) -> Option<[f32; 4]> {
+        let taffy = &self.layout.taffy;
+        let mut node = self.layout.kept.get(&id)?.node;
+        let laid = taffy.layout(node).ok()?;
+        if crate::mutants::mutant("layout-size") {
+            return Some([0.0, 0.0, laid.size.width, laid.size.height]);
+        }
+        let mut at = laid.location;
+        while let Some(parent) = taffy.parent(node) {
+            let location = taffy.layout(parent).ok()?.location;
+            (at.x, at.y, node) = (at.x + location.x, at.y + location.y, parent);
+        }
+        Some([at.x, at.y, laid.size.width, laid.size.height])
     }
 
     /// Whether what it did as it painted (a dialog taking the keyboard) changed it, so it's painted again.

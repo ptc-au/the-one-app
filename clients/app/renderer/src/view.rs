@@ -271,8 +271,8 @@ pub struct Screen {
     evictions: u64,
     /// The key of the shortcut that summoned it, and when it was last pressed (`summoned`).
     shortcut: Option<(String, web_time::Instant)>,
-    /// Where each node listening for `layout` was last told it is.
-    laid_out: HashMap<Id, Rect>,
+    /// Where in the layout each node listening for `layout` was when it was last told where it is (`Screen::place`).
+    laid_out: HashMap<Id, [f32; 4]>,
     /// Whether each node listening for `intersection` was last told it's near the window.
     intersecting: HashMap<Id, bool>,
     /// Each picture drawn, decoded in the background.
