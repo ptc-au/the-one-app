@@ -37,11 +37,40 @@ defmodule GoogleAccount do
 
   # A Google account is an item of the person's Vault, listed under Accounts, and added by signing in.
   @impl true
-  def hooks, do: ["vault.types"]
+  def hooks, do: ["vault.types", "privacy.sections"]
 
   @impl true
   def hook("vault.types", _about, _call),
     do: [%{name: "Google account", section: "Accounts", prefix: "Google ", create: %{tool: "sign_in"}}]
+
+  # What the network's privacy page says of Google accounts, which Google's verification of the network's sign-in asks
+  # for at its address.
+  def hook("privacy.sections", _about, _call) do
+    [
+      %{
+        heading: "Google accounts",
+        order: 4,
+        text: """
+        If you sign a Google account in to this network's Gmail, Google Calendar, Google Drive, Google Docs or Google Sheets:
+
+        - Your Google data is used only by those apps, to do what you, or an AI assistant you let act as you, ask of them, for you.
+        - It isn't sold, shared with anyone else or used for advertising.
+        - It isn't used to train AI models.
+        - No one reads it unless you ask them to, to keep the network secure, or where the law requires it.
+
+        The use of information received from Google APIs follows the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including its Limited Use requirements.
+        """
+      },
+      %{
+        heading: "Removing access and data",
+        order: 5,
+        text: """
+        - To stop the network using a Google account, remove the account under Accounts in your Vault, or remove the network's access in [your Google Account](https://myaccount.google.com/connections).
+        - A removed account stays in Recently Deleted for 30 days, then it's deleted for good.
+        """
+      }
+    ]
+  end
 
   # What each Google app asks of Google, so one sign-in lets every one in.
   @impl true

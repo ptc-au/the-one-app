@@ -84,8 +84,9 @@ defmodule OneCore.Apps.Lifecycle do
   # The apps a network starts with, which whoever makes its first owner installs for it, each after the ones it
   # uses: database and encryption keep what the others keep, permissions decides who may do what, sign-in says whose
   # each device is, sandbox runs untrusted apps, vault keeps accounts and secrets, soft-delete keeps what's
-  # deleted, notifications tells people things, and home-screen is the launcher every client opens first.
-  @starting ~w(database encryption permissions sign-in sandbox vault soft-delete notifications home-screen)
+  # deleted, notifications tells people things, privacy is the network's privacy page, which an outside service's sign-in
+  # links to, and home-screen is the launcher every client opens first.
+  @starting ~w(database encryption permissions sign-in sandbox vault soft-delete notifications privacy home-screen)
 
   # Where the core is published, whose releases a new network's first server is installed from, with the apps at the
   # same commit.

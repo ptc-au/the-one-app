@@ -6,7 +6,6 @@
   "paths": [
     "sign-in",
     ".well-known",
-    "privacy",
     "Logo.png",
     "Logo-dark.png",
     "favicon.ico",

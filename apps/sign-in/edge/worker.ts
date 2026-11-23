@@ -1,9 +1,8 @@
 // Signing in's edge function. It serves the sign-in page and what the page asks (`/sign-in/`), and is the OAuth
 // provider that MCP's authorization asks for (`/.well-known`). It says who a request at the network's address is
 // from (`Who`), which the network's MCP endpoint asks (`core/edge/mcp/mcp.ts`): an assistant somewhere else with the
-// token a person let it have, or a browser signed in here, the web client. It serves the network's privacy page too
-// (`/privacy`), which an OAuth client's consent screen links to, naming the network's owner, and the files that let
-// the network's apps use its passkeys and open its links (`ASSOCIATIONS`).
+// token a person let it have, or a browser signed in here, the web client. It serves the files that let the network's
+// apps use its passkeys and open its links (`ASSOCIATIONS`).
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { bytesToHex } from "@noble/hashes/utils.js";
@@ -17,7 +16,6 @@ export default {
     if (url.pathname === "/manifest.webmanifest") return manifest();
     if (request.method === "GET" && (url.pathname.includes("/.well-known/") || url.pathname === JWKS)) return discovery(url, ctx);
     const auth = await at(url.origin);
-    if (url.pathname === "/privacy") return privacy(auth, url);
     if (url.pathname === "/sign-in/ask") return ask(request, auth, url);
     if (url.pathname === "/sign-in/logo") return logo(auth, url);
     if (url.pathname.startsWith("/sign-in/auth/") || url.pathname.startsWith("/.well-known/")) return auth.handler(request);
@@ -67,22 +65,6 @@ async function manifest() {
   const { name, icon } = await network();
   const icons = [{ src: "/apple-touch-icon.png", sizes: `${icon?.size ?? 180}x${icon?.size ?? 180}`, type: "image/png" }];
   return Response.json({ name: name ?? ONE_APP, start_url: "/", display: "standalone", icons }, { headers: { "content-type": "application/manifest+json", "cache-control": `public, max-age=${NAMED}` } });
-}
-
-/**
- * The network's privacy page (`page/privacy.html`), with its address and the name its first owner goes by, who's
- * responsible for what it keeps: the one they chose as they joined, or the one they're `users/<name>` by.
- */
-async function privacy(auth: Auth, url: URL) {
-  const page = await env.ASSETS.fetch(new URL("/sign-in/privacy", url));
-  const first = (await env.NETWORK.owner())?.replace(/^users\//, "");
-  const [user] = first ? await (await auth.$context).adapter.findMany<{ name: string; called?: string | null }>({ model: "user", where: [{ field: "name", value: first }] }) : [];
-  const fill = (text: string) => ({ element: (element: Element) => void element.setInnerContent(text) });
-  const rewriter = new HTMLRewriter()
-    // It's at `/privacy`, and its files are beside the sign-in page's, before whatever names them.
-    .on("html", { element: (html) => void html.prepend(`<base href="/sign-in/">`, { html: true }) })
-    .on("[data-network]", fill(url.host));
-  return (user ? rewriter.on("[data-owner]", fill(user.called || user.name)) : rewriter).transform(page);
 }
 
 /**

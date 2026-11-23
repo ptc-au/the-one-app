@@ -62,3 +62,7 @@ body {
   color: inherit;
   text-underline-offset: 0.15em;
 }
+/* An app's list and another's under one heading are one list, whose items are paragraphs. */
+.privacy li > p {
+  margin: 0;
+}

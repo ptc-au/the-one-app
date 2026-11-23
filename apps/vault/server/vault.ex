@@ -76,12 +76,16 @@ defmodule Vault do
 
 
   @impl true
-  def hooks, do: ["settings.sections"]
+  def hooks, do: ["settings.sections", "privacy.sections"]
 
   # The Vault is a section of Settings: your accounts, passwords and keys, and what apps keep here.
   @impl true
   def hook("settings.sections", _about, _call),
     do: [%{in: "settings", name: "Vault", component: "accounts", icon: "client/icon.svg", group: "network", order: 3}]
+
+  # What the network's privacy page says of it, where it says what's kept.
+  def hook("privacy.sections", _about, _call),
+    do: [%{heading: "What's kept, and where", order: 3, text: "Accounts and passwords someone adds are kept in their Vault."}]
 
   @impl true
   def tools do

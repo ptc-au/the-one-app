@@ -400,7 +400,7 @@ defmodule SignIn do
   end
 
   @impl true
-  def hooks, do: ["device", "owner", "settings.sections"]
+  def hooks, do: ["device", "owner", "settings.sections", "privacy.sections"]
 
   @impl true
   # A device the copy doesn't have is copied again first, as a device that was just let in asks. One the edge doesn't
@@ -424,6 +424,32 @@ defmodule SignIn do
       %{in: "settings", name: "Devices", component: "devices", icon: "client/icon.svg", group: "network", order: 1},
       %{in: "settings", name: "AI", component: "ai", icon: "client/connect.svg", group: "general", order: 3}
     ] ++ if(Call.owns?(%{call | subject: "network"}), do: [people], else: [])
+  end
+
+  # What the network's privacy page says of who runs it, and how to ask them (`privacy.sections`).
+  def hook("privacy.sections", _about, call) do
+    owner = owner_name(call)
+    host = address() |> URI.parse() |> Map.fetch!(:host)
+
+    [
+      %{
+        order: 0,
+        text: "#{host} is a private network that belongs to #{owner}. Only they and the people they invite use it. It isn't a public service."
+      },
+      %{
+        heading: "Who's responsible",
+        order: 1,
+        text: "This network is run by #{owner}, who is responsible for the data kept in it."
+      },
+      %{
+        heading: "What's kept, and where",
+        order: 2,
+        text:
+          "What people keep here, and what the network's apps keep for them, is stored in the network's own storage bucket and on its servers, which its owner and its people run."
+      },
+      %{heading: "Removing access and data", order: 8, text: "- To have anything else deleted, ask #{owner}."},
+      %{heading: "Questions", order: 9, text: "Contact #{owner}."}
+    ]
   end
 
   # Only a network that has an address and isn't being built has people sign in. One being built acts as whoever a
@@ -579,15 +605,7 @@ defmodule SignIn do
       do: raise("Only a member of the network sees who's in it.")
 
     people =
-      for "users/" <> name = user <- users do
-        case Artifact.read(call.own, "people/" <> name) do
-          {:ok, stored, _tag} ->
-            Map.merge(%{"called" => nil, "email" => nil}, Map.put(JSON.decode!(stored), "who", user))
-
-          :absent ->
-            %{"who" => user, "called" => nil, "email" => nil}
-        end
-      end
+      for user <- users, do: Map.put(stored(call, user), "who", user)
 
     %{people: people}
   end
@@ -740,6 +758,24 @@ defmodule SignIn do
   defp joins(name, link), do: "users/#{name} joins at #{link} within a week. It's shown once, so pass it on now."
 
   # Devices are a person's, whoever a call runs for.
+  # What the network has of a person: the name they go by and their email, `nil` for what it hasn't.
+  defp stored(call, "users/" <> name) do
+    case Artifact.read(call.own, "people/" <> name) do
+      {:ok, stored, _tag} -> Map.merge(%{"called" => nil, "email" => nil}, JSON.decode!(stored))
+      :absent -> %{"called" => nil, "email" => nil}
+    end
+  end
+
+  # How the network's first owner is named where it says who runs it: the name they go by, or the one they're
+  # `users/<name>` by, markdown's special characters escaped, since it's written into words that are.
+  defp owner_name(call) do
+    with "users/" <> name = owner <- OneCore.User.first_owner() do
+      (stored(call, owner)["called"] || name) |> String.replace(~r/[\\`*_{}\[\]()#+\-.!<>|~&]/, "\\\\\\0")
+    else
+      _ -> "the network's owner"
+    end
+  end
+
   defp person(%Call{actor: "users/" <> _ = by}), do: by
   defp person(_call), do: raise("This is a person's to ask, and nobody is asking.")
 

@@ -1,0 +1,21 @@
+{
+  "name": "privacy",
+  "description": "Privacy's edge function: the network's privacy page, which anyone opens without signing in, made of what each of its apps says of the data it keeps.",
+  "private": true,
+  "type": "module",
+  "paths": [
+    "privacy"
+  ],
+  "scripts": {
+    "build": "bun ../../../core/ui/dist/build/app.js \"$PWD/page\" \"$PWD/files/privacy\"",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "markdown-it": "14.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261116.1",
+    "@types/markdown-it": "14.1.2",
+    "typescript": "7.0.2"
+  }
+}
