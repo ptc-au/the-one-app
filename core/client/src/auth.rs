@@ -1,10 +1,10 @@
-//! How a device gets into its network and stays there: the network's address and the token it shows there
-//! (`Network`, `NetworkConfig`), asking to be let in by a code (`DeviceAuthorization`, RFC 8628), and renewing its
-//! token while it's in (`sessions`).
+//! How a device gets into its network and stays there: the network's address, in its home's `network`, and the token
+//! it shows there, in `token` beside it (`Network`, `NetworkConfig`), asking to be let in by a code
+//! (`DeviceAuthorization`, RFC 8628), and renewing its token while it's in (`sessions`).
 
 use std::fs;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -67,14 +67,17 @@ impl Network {
 
 /// What a client keeps of its network, in the file `network` of its home: the network's address, which whatever
 /// set the client up put there, where a device asks there to be let in, once it has looked, and once the device is
-/// someone's, its token to the relay there, whose it is and the build it was when it got that, which it said as it
-/// asked.
+/// someone's, whose it is and the build it was when it got that, which it said as it asked. Its token to the relay
+/// there is kept in the file `token` beside it (`keep_token`), so that anyone reading `network` for an address
+/// prints nothing secret.
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct NetworkConfig {
     pub(crate) address: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     authorization_server: Option<AuthorizationServer>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The token this device shows its network's relay, kept in the file `token` of its home (`token`, `keep_token`),
+    /// never in `network`.
+    #[serde(skip)]
     pub(crate) token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) who: Option<String>,
@@ -298,15 +301,67 @@ async fn ask(
     }
 }
 
+/// The file a client's token is kept in, beside its `network`: it holds the token and nothing else, and only this
+/// module reads or writes it (`token`, `keep_token`, `forget_token`).
+fn token_file(home: &Path) -> PathBuf {
+    home.join("token")
+}
+
+/// The token kept in `home`, where it's there.
+fn token(home: &Path) -> Option<String> {
+    fs::read_to_string(token_file(home)).ok()
+}
+
+/// Keeps `token` in `home`, in the file beside `network` that holds nothing else, which its owner alone may read.
+fn keep_token(home: &Path, token: &str) -> Result<()> {
+    let file = token_file(home);
+    write(&file, token.as_bytes())?;
+    #[cfg(unix)]
+    fs::set_permissions(&file, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    Ok(())
+}
+
+/// Drops the token kept in `home`, where it was kept: a device that's nobody's, or someone else's, has none.
+fn forget_token(home: &Path) -> Result<()> {
+    match fs::remove_file(token_file(home)) {
+        Err(error) if error.kind() != ErrorKind::NotFound => return Err(error.into()),
+        _ => Ok(()),
+    }
+}
+
 impl NetworkConfig {
     /// What a client of the network at `address` keeps before it has joined it.
     pub(crate) fn at(address: &str) -> Self {
         Self { address: address.to_owned(), authorization_server: None, token: None, who: None, build: None }
     }
 
-    /// What's kept in `home`, if it's there whole.
-    fn read(home: &Path) -> Option<Self> {
-        serde_json::from_slice(&fs::read(home.join("network")).ok()?).ok()
+    /// What's kept in `home`, where there's a `network` in it: `network`, and the token in `token` beside it. A
+    /// `network` from before the token had a file of its own still holds it: it's moved to `token` now, once, and
+    /// `network` is written again without it.
+    pub(crate) fn read(home: &Path) -> Result<Option<Self>> {
+        let kept = match fs::read(home.join("network")) {
+            Ok(kept) => kept,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error).with_context(|| format!("couldn't read {}", home.join("network").display())),
+        };
+        let mut kept: Value = serde_json::from_slice(&kept).context("`network` isn't a network's address")?;
+        let mut config: Self = serde_json::from_value(kept.clone()).context("`network` isn't a network's address")?;
+        config.token = token(home);
+        if let Some(held) = kept.as_object_mut().and_then(|kept| kept.remove("token")) {
+            config.token = config.token.or_else(|| held.as_str().map(str::to_owned));
+            config.write(home)?;
+        }
+        Ok(Some(config))
+    }
+
+    /// Keeps this in `home`: the token in `token` beside `network`, or it dropped where this has none, and `network`,
+    /// which holds nothing secret. It's the only way `network` is written.
+    fn write(&self, home: &Path) -> Result<()> {
+        match &self.token {
+            Some(token) => keep_token(home, token)?,
+            None => forget_token(home)?,
+        }
+        write(&home.join("network"), &serde_json::to_vec(self)?)
     }
 
     /// How long the token this client has lasts before it's renewed, by when it says it ends: nothing if it has none.
@@ -332,7 +387,7 @@ impl NetworkConfig {
         let (_, response) = ask_edge(&mcp, key, "application/json", ask.to_string()).await?;
         if response["error"]["code"] == NOBODY {
             if self.token.take().is_some() {
-                write(&home.join("network"), &serde_json::to_vec(self)?)?;
+                self.write(home)?;
             }
             return Ok(false);
         }
@@ -352,7 +407,7 @@ impl NetworkConfig {
         let requested = DeviceAuthorization::request(&server, key, command).await;
         // What it found is kept for the next time, and what didn't answer is looked for again then.
         self.authorization_server = requested.is_ok().then_some(server);
-        write(&home.join("network"), &serde_json::to_vec(self)?)?;
+        self.write(home)?;
         requested
     }
 
@@ -364,7 +419,7 @@ impl NetworkConfig {
         };
         let someone_else = self.who.as_deref() != Some(who);
         (self.token, self.who, self.build) = (Some(token.to_owned()), Some(who.to_owned()), Some(BUILD.to_owned()));
-        if someone_else { self.keep(home) } else { write(&home.join("network"), &serde_json::to_vec(self)?) }
+        if someone_else { self.keep(home) } else { self.write(home) }
     }
 
     /// Keeps this in `home`, and nothing it kept for whoever's the device was before.
@@ -375,7 +430,7 @@ impl NetworkConfig {
                 _ => {}
             }
         }
-        write(&home.join("network"), &serde_json::to_vec(self)?)
+        self.write(home)
     }
 }
 
@@ -467,7 +522,7 @@ impl Client {
     /// it: nothing for a network on one machine.
     fn config(&self) -> Option<NetworkConfig> {
         let address = self.address.as_deref()?;
-        Some(NetworkConfig::read(&self.home).unwrap_or_else(|| NetworkConfig::at(address)))
+        Some(NetworkConfig::read(&self.home).ok().flatten().unwrap_or_else(|| NetworkConfig::at(address)))
     }
 
     /// Asks its network's address for this device's token, one ask at a time, while it's still where `from` is with

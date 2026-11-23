@@ -458,16 +458,14 @@ impl Client {
         tools: Vec<Arc<dyn DeviceTools>>,
     ) -> Result<Arc<Self>> {
         let home = home.into();
-        let config = match fs::read(home.join("network")) {
-            Ok(network) => {
-                Some(serde_json::from_slice::<NetworkConfig>(&network).context("`network` isn't a network's address")?)
-            }
+        let config = match NetworkConfig::read(&home).context("couldn't read `network`")? {
+            Some(config) => Some(config),
             // An app made for one network knows its address.
-            Err(error) if error.kind() == ErrorKind::NotFound => bundled()?,
-            Err(error) => return Err(error).context("couldn't read `network`"),
+            None => bundled()?,
         };
         let key = key(&home.join("key"))?;
-        // What a program of this device was on before is kept with its token: one that's now on another was updated.
+        // What a program of this device was on before is kept in its `network`, beside its token: one that's now on
+        // another was updated.
         let updated = config.as_ref().and_then(|config| config.build.clone()).filter(|was| was != BUILD);
         // A device with a token is in, and renews it as it goes, but one whose token has ended renews it before
         // anything is asked with it, as no server takes it, and carries on with it if its network doesn't answer.
