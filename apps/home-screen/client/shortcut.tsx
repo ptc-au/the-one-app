@@ -174,20 +174,20 @@ export function ShortcutControl(props: { onChanged?: (keys: string) => void }) {
   // Away from the page, it stops recording, so the shortcut is never left let go of.
   createEffect(visible, (shown) => void (!shown && cancel()))
 
-  const choose = (chosen: string | null) => {
-    stop()
+  // Saved, recording stops; refused, it goes on, the keys refused shown with why, as the mockup has it, so another
+  // can be pressed at once.
+  const choose = (chosen: string | null) =>
     client({ shortcut: chosen }).then(
       () =>
         client().then((now) => {
+          stop()
           setKept(now.shortcut ?? null)
-          setPressed(undefined)
           setSaves(saves() + 1)
           setHint({ text: "Saved. Try it now.", tone: "good" })
           if (now.shortcut?.keys) props.onChanged?.(now.shortcut.keys)
         }),
       (error: Error) => setHint({ text: error.message, tone: "warn" }),
     )
-  }
 
   onCleanup(
     keydown((event) => {
