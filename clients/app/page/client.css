@@ -897,7 +897,10 @@ iframe[data-move] {
   border-radius: var(--radius-xl);
   background: oklch(0.25 0 0);
   color: var(--label);
-  box-shadow: var(--shadow-lifted);
+  /* A rim of light, as what's raised has in dark, since black hides its shadow. */
+  box-shadow:
+    var(--shadow-lifted),
+    inset 0 0 0 0.5px var(--border);
   transform-origin: 100% 100%;
   pointer-events: auto;
   transition:
