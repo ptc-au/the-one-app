@@ -12,7 +12,7 @@ defmodule OneCore.Apps.Update do
   Its task ending first, as its server stopping ends it, is done where the version it took went live before, and fails
   where it didn't. A trusted app updates by itself; an untrusted one waits for Update, once an agent has read what
   changed. Each is one blob in the app's artifact, `update`: none while it's up to date, then its `state`,
-  `available`, `updating` (at a `stage`) or `failed` (`why`), with the `commit` it offers or takes, the git `source`
+  `available`, `updating` (at a `stage`), `failed` (`why`), or `unchecked` (`why`) where its source can't be read, with the `commit` it offers or takes, the git `source`
   and `ref` it's at, the `commits` since the version running, and while it's updating, the server taking it (`by`)
   and the `task` that does, the MCP task whose end, however it ends, ends updating (`OneCore.Apps.Lifecycle`). Only
   servers acting for whoever the app is write it, as any of its blobs; `move/2` is the transition table, and each move is made with `OneCore.Artifact.update/3`, so two
@@ -49,7 +49,7 @@ defmodule OneCore.Apps.Update do
 
   @doc """
   The transition table, from up to date (`nil`): `{:newer, offer, trusted, by, task}`, a newer commit found, which a
-  trusted app takes at once and an untrusted one offers; `:current`, nothing newer than what runs, which drops an offer or a failure left behind; `{:update, by, task}` (Update, and Try Again); `{:stage,
+  trusted app takes at once and an untrusted one offers; `:current`, nothing newer than what runs, which drops an offer or a failure left behind; `{:unchecked, why}`, its source couldn't be read; `{:update, by, task}` (Update, and Try Again); `{:stage,
   stage}`; `:done`; and `{:fail, why}`. `by` is the server that takes it, which alone runs it, as `task`.
   """
   def move(record, event)
@@ -66,7 +66,16 @@ defmodule OneCore.Apps.Update do
   end
 
   # What runs is as new as the source: an offer or a failure still kept is of a commit it has gone past.
-  def move(%{"state" => state}, :current) when state in ~w(available failed), do: {:ok, nil}
+  def move(%{"state" => state}, :current) when state in ~w(available failed unchecked), do: {:ok, nil}
+
+  # Its source couldn't be read, as a private repo isn't from a server git can't sign in there: said once, and again
+  # only where why changed, over nothing newer kept.
+  def move(%{"state" => "unchecked", "why" => why} = record, {:unchecked, why}), do: {:ok, record}
+
+  def move(record, {:unchecked, why}) when record == nil or :erlang.map_get("state", record) == "unchecked",
+    do: {:ok, %{"state" => "unchecked", "why" => why, "at" => System.system_time(:millisecond)}}
+
+  def move(record, {:unchecked, _why}), do: {:ok, record}
 
   def move(%{"state" => state} = record, {:update, by, task}) when state in ~w(available failed),
     do: {:ok, record |> Map.merge(%{"by" => by, "task" => task}) |> moved("updating", "fetching")}
@@ -78,6 +87,7 @@ defmodule OneCore.Apps.Update do
   def move(%{"state" => "updating"} = record, {:fail, why}), do: {:ok, record |> moved("failed") |> Map.put("why", why)}
 
   def move(nil, {:update, _by, _task}), do: {:error, "It's up to date."}
+  def move(%{"state" => "unchecked", "why" => why}, {:update, _by, _task}), do: {:error, "Its updates can't be checked: #{why}"}
   def move(%{"state" => "updating", "stage" => stage}, _event), do: {:error, "It's updating (#{stage}). Wait until it's done."}
   def move(%{"state" => state}, event), do: {:error, "An update that's #{state} can't be moved by #{inspect(event)}."}
 

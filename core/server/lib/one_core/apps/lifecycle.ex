@@ -715,9 +715,16 @@ defmodule OneCore.Apps.Lifecycle do
            end) do
       record
     else
+      # Said in its update, and logged once until why changes, where it was logged at every check.
       {:error, why} ->
-        Logger.warning("#{artifact}'s git source wasn't checked: #{why}")
-        Update.read(artifact)
+        was = Update.read(artifact)
+
+        case Update.change(artifact, {:unchecked, why}) do
+          ^was -> was
+          record ->
+            Logger.warning("#{artifact}'s git source wasn't checked: #{why}")
+            told(artifact, record)
+        end
 
       # Nothing at the source is newer than what runs. An offer or a failure still kept is of a commit it has gone
       # past since, as a deploy from a later one does, and is no update.

@@ -64,9 +64,9 @@ defmodule OneCore.Tools.Definitions do
   @app_update %{
     type: ["object", "null"],
     description:
-      "The app's update, or null while it's up to date: `available` (an untrusted one's, waiting for Update), `updating`, or `failed` (why, Try Again), its version before still running",
+      "The app's update, or null while it's up to date: `available` (an untrusted one's, waiting for Update), `updating`, `failed` (why, Try Again), its version before still running, or `unchecked` (why): its git source can't be read from the network's servers, as a private repo they can't sign in to, so it's deployed again by hand",
     properties: %{
-      state: %{type: "string", enum: ["available", "updating", "failed"]},
+      state: %{type: "string", enum: ["available", "updating", "failed", "unchecked"]},
       stage: %{type: ["string", "null"], enum: ["fetching", "building", "starting", nil]},
       commit: %{type: "string", description: "The newer commit at its git source"},
       commits: %{
