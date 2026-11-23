@@ -106,21 +106,36 @@ defmodule SignIn do
       %{
         name: "network",
         description: """
-        Says the network's name and icon, as its sign-in page and its web app show them and as its own apps are
-        finished with, or, given `name` or `icon`, makes them those. Without them, it's the One App's
+        Says the network's name, icon and logo, as its sign-in page and its web app show them and as its own apps are
+        finished with, or, given `name`, `icon` or `logo`, makes them those. Its icon is on a tile of its own, as a Home
+        Screen, a tab and its apps show it; its logo is its mark alone, as its sign-in page draws it, one for a light
+        page and one for a dark (either alone shows on both). Without them, it's the One App's
         """,
         inputs: %{
           type: "object",
           properties: %{
             name: %{type: ["string", "null"], description: "Its name, like The PTC App: null for the One App's"},
-            icon: %{type: ["string", "null"], description: "Its icon, a square PNG up to 1 MB, as base64: null for the One App's"}
+            icon: %{type: ["string", "null"], description: "Its icon, a square PNG up to 1 MB, as base64: null for the One App's"},
+            logo: %{
+              type: ["object", "null"],
+              description: "Its logo, each a square PNG up to 1 MB, as base64: null for the One App's",
+              properties: %{
+                light: %{type: "string", description: "Its mark as a light page shows it"},
+                dark: %{type: "string", description: "Its mark as a dark page shows it"}
+              }
+            }
           }
         },
         outputs: %{
           type: "object",
           properties: %{
             name: %{type: ["string", "null"]},
-            icon: %{type: ["string", "null"], description: "Where its icon is, if it has one of its own"}
+            icon: %{type: ["string", "null"], description: "Where its icon is, if it has one of its own"},
+            logo: %{
+              type: ["object", "null"],
+              description: "Where its logo is, for a light page and a dark, if it has one of its own",
+              properties: %{light: %{type: "string"}, dark: %{type: "string"}}
+            }
           },
           required: ["name", "icon"]
         }
@@ -459,7 +474,7 @@ defmodule SignIn do
 
   # Whoever invites names the network, and any member sees what it's called.
   def call("network", inputs, call) do
-    given = Map.take(inputs, ["name", "icon"])
+    given = Map.take(inputs, ["name", "icon", "logo"])
 
     if given == %{} do
       if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
@@ -467,7 +482,7 @@ defmodule SignIn do
       Call.reach(call, Artifact.name(call.own), "editor")
     end
 
-    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon"])
+    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo"])
   end
 
   # Whoever invites takes out, and nobody takes themselves out. Only an owner takes out an owner, as only a super
