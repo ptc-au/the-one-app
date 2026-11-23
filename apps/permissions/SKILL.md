@@ -45,6 +45,15 @@ Its words:
   only an owner adds an owner, a group's member or a parent. `unshare` refuses to remove the last owner of the network or of a group. Whoever asks shares only what they may themselves,
   whoever the call runs for. `shared` lists an artifact's tuples,
   and `check` says whether someone may reach it.
+- `transfer` moves something an app made (`users/alice/made/git-repos/notes`) to another owner, `--to users/bob`,
+  `groups/family` or `network`, as GitHub's transfer of a repo does: it's then
+  `users/bob/made/git-repos/notes`, with its history, its other shares and its links, and whoever it was whose has
+  nothing of it unless it's shared back. Its owner, or the network's owner, moves it, and a transfer to someone it
+  isn't the mover's to give to (a network's owner owns everything, so anyone) waits in `transfers` until they, or
+  whoever owns the group or network it's to, `accept` it (or `decline`: whoever asked takes it back too). They're
+  notified, never emailed. Its old name says where it went (`moved`). It's refused where the app that made it doesn't
+  hook `permissions.transferred`, which it's told of the move by to keep what it lists true, and for what's encrypted:
+  the key stays its first owner's, since a key reaches another only by their passkey.
 - `forget` removes every tuple that names someone taken out of the network, so whoever joins by their name next
   inherits nothing. Taking someone out (`sign-in_remove_person`) calls it, and it refuses anyone still in.
 - `groups` lists the groups whoever asks is in, each with what it's called, its members and owners.

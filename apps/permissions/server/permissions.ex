@@ -7,8 +7,17 @@ defmodule Permissions do
   Nothing here knows how anyone signs in. Who asks is the call's actor, as One Core says it: a member runs a call
   for a group or the network, and may share, list and check only what they may themselves. A scheduled job is asked
   by nobody, so it's whoever it runs for.
+
+  An artifact an app made for someone (`users/alice/made/notes/7`) is moved to whoever else it's to belong to with
+  `transfer`, as GitHub's transfer of a repo and Google Workspace's data transfer do: its blobs go to the new owner's
+  place by their names (`Bucket.move/2`), the tuples that name it follow it, and its old name says where it went
+  (`moved`, which the `reach` hook answers with) for as long as nothing else is made there. A transfer to someone
+  whose it doesn't already is the actor's (a network's owner owns everything, so anyone) waits in `transfers` for
+  that someone to `accept` it, as GitHub's does. The apps that hook `permissions.transferred` keep what they made a
+  list of in step.
   """
   @behaviour OneCore.App
+  alias OneCore.{Bucket, Hooks, User}
 
   # One Core asks it who may reach what: without it, only the network's first owner reaches anything.
   @impl true
@@ -32,8 +41,13 @@ defmodule Permissions do
     "create index tuples_by_who on tuples (who, relation)",
     # What each group is called, as whoever made it wrote it. A group made before this is called what it's named.
     "create table names (artifact text primary key, called text not null) without rowid",
-    "insert into names select distinct artifact, substr(artifact, 8) from tuples where artifact like 'groups/%'"
+    "insert into names select distinct artifact, substr(artifact, 8) from tuples where artifact like 'groups/%'",
+    # A transfer waiting to be accepted: one for an artifact at a time, and who it's to.
+    "create table transfers (artifact text primary key, receiver text not null, sender text not null, at integer not null) without rowid",
+    # Where an artifact went, by its old name: the old name says so while nothing's been made there since.
+    "create table moved (old text primary key, new text not null) without rowid"
   ]
+  @made ~r{^(users/[^/]+|groups/[^/]+|network)/made/([^/]+)/([A-Za-z0-9_-]+)$}
 
   # What's followed from one who or artifact to the next: the groups a who is a member of, and an artifact's
   # parents.
@@ -48,7 +62,21 @@ defmodule Permissions do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.29.52", "database" => "to keep who may reach what"}
+  def requires, do: %{"core" => ">= 0.34.539", "database" => "to keep who may reach what"}
+
+  @impl true
+  def offers do
+    [
+      %{
+        name: "transferred",
+        kind: :collect,
+        description:
+          "An artifact an app made was moved to another owner: `artifact` is its name until now and `to` its name " <>
+            "now. An app that keeps a list of what it made keeps it true from it. A transfer waits for the answers, " <>
+            "and says which apps didn't give one."
+      }
+    ]
+  end
 
   @impl true
   def tools do
@@ -63,6 +91,17 @@ defmodule Permissions do
     reaching = %{type: "string", enum: ~w(viewer editor owner), description: "The relation. viewer if left out"}
     tuple = %{type: "object", properties: %{artifact: artifact, relation: relation, who: who}}
     tuple = Map.put(tuple, :required, ["artifact", "relation", "who"])
+
+    transfer = %{
+      type: "object",
+      properties: %{
+        artifact: artifact,
+        to: %{type: "string", description: "Whose it is to be"},
+        now: %{type: "string", description: "What it's named once it's moved"},
+        state: %{type: "string", enum: ~w(moved waiting), description: "waiting for them to accept, or moved"}
+      },
+      required: ["artifact", "to", "now", "state"]
+    }
 
     [
       %{
@@ -195,6 +234,58 @@ defmodule Permissions do
         }
       },
       %{
+        name: "transfer",
+        description:
+          "Moves something an app made to another owner, a person, a group or the network, who it's then " <>
+            "`<owner>/made/<app>/<name>` of: its history, its other shares and its links go with it, and its old " <>
+            "name says where it went. Its owner moves it, and the network's owner moves anything, to anyone at once. " <>
+            "Anyone else's waits for whoever it's to be moved to to `accept` it. Whatever is encrypted for its owner " <>
+            "isn't moved: the key stays theirs",
+        inputs: %{
+          type: "object",
+          properties: %{
+            artifact: %{type: "string", description: "What an app made, as its app names it: users/alice/made/notes/7"},
+            to: %{type: "string", description: "Whose it is to be: users/<name>, groups/<name> or network"}
+          },
+          required: ["artifact", "to"]
+        },
+        outputs: transfer
+      },
+      %{
+        name: "transfers",
+        read_only: true,
+        description: "Lists the transfers waiting to be accepted that you asked for, or that are to you or a group you own",
+        inputs: %{type: "object", properties: %{}},
+        outputs: %{
+          type: "object",
+          properties: %{transfers: %{type: "array", items: Map.merge(transfer, %{properties: Map.put(transfer.properties, :by, %{type: "string", description: "Who asked for it"})})}},
+          required: ["transfers"]
+        }
+      },
+      %{
+        name: "moved",
+        read_only: true,
+        description: "Says where an artifact you could read went, if it was moved to another owner and nothing has been made at its old name since",
+        inputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]},
+        outputs: %{
+          type: "object",
+          properties: %{now: %{type: ["string", "null"], description: "What it's named now, or null for what wasn't moved"}},
+          required: ["now"]
+        }
+      },
+      %{
+        name: "accept",
+        description: "Accepts a transfer waiting for you, or a group you own: it's moved to them now",
+        inputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]},
+        outputs: transfer
+      },
+      %{
+        name: "decline",
+        description: "Declines a transfer waiting for you or a group you own, or takes back one you asked for",
+        inputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]},
+        outputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]}
+      },
+      %{
         name: "link",
         description: "Makes a sharing link to an artifact. Whoever holds it reaches the artifact without signing in",
         inputs: %{
@@ -253,9 +344,18 @@ defmodule Permissions do
   end
 
   def hook("reach", %{"who" => who, "relation" => relation, "artifact" => artifact}, call) do
-    if transaction(call, &may?(&1, who, relation, artifact)),
-      do: :ok,
-      else: {:refuse, "#{who} isn't #{a(relation)} of #{artifact}. Whoever owns it shares it, with permissions_share."}
+    transaction(call, fn db ->
+      cond do
+        now = gone(db, artifact) ->
+          {:refuse, "#{artifact} was moved to #{now}. Use that name."}
+
+        may?(db, who, relation, artifact) ->
+          :ok
+
+        true ->
+          {:refuse, "#{who} isn't #{a(relation)} of #{artifact}. Whoever owns it shares it, with permissions_share."}
+      end
+    end)
   end
 
   @impl true
@@ -301,10 +401,7 @@ defmodule Permissions do
       if not (member?(db, asking(call), artifact) or may?(db, asking(call), "viewer", artifact)),
         do: raise("#{asking(call)} isn't in #{artifact}, nor sees it, so doesn't see who has it.")
 
-      up = followed(db, @parents, up(artifact), [])
-      tuples = "select who as next from tuples where artifact = ? and relation in (?, ?, ?)"
-      named = for at <- up, %{"next" => who} <- query(db, tuples, [at | Map.fetch!(@enough, relation)]), do: who
-      %{users: Enum.sort(Enum.filter(followed(db, @members, named, []), &(user?(&1) or &1 == "everyone")))}
+      %{users: users_with(db, artifact, relation)}
     end)
   end
 
@@ -384,6 +481,95 @@ defmodule Permissions do
     end)
   end
 
+  # An artifact's owner moves it, and so does the network's, to anyone. Whoever it's to be, if it isn't the actor's to
+  # give it to, accepts it first. It goes to the new owner's place by the same name, `<owner>/made/<app>/<name>`.
+  def call("transfer", %{"artifact" => artifact, "to" => to}, call) do
+    by = asking(call)
+    now = renamed!(artifact, to)
+    exists!(call, to)
+
+    {waits, receivers} =
+      transaction(call, fn db ->
+        reaches!(db, by, "owner", artifact)
+        movable!(db, artifact, now)
+        waits = not mine?(db, by, to)
+
+        if waits do
+          at = System.system_time(:millisecond)
+          query(db, "insert or replace into transfers (artifact, receiver, sender, at) values (?, ?, ?, ?)", [artifact, to, by, at])
+        end
+
+        {waits, receivers(db, to) -- [by]}
+      end)
+
+    if waits do
+      told(call, receivers, "#{named(by)} wants to move #{short(artifact)} to #{whom(to)}", "Accept it, or decline it, in #{app_of(artifact)}.")
+      %{artifact: artifact, to: to, now: now, state: "waiting"}
+    else
+      moved!(call, artifact, to, now)
+      told(call, receivers, "#{short(artifact)} is #{if(user?(to), do: "yours", else: whose(to))} now", "#{named(by)} moved it to #{whom(to)}. It's at #{now}.")
+      %{artifact: artifact, to: to, now: now, state: "moved"}
+    end
+  end
+
+  def call("transfers", _inputs, call) do
+    by = asking(call)
+
+    transaction(call, fn db ->
+      waiting = query(db, "select artifact, receiver, sender from transfers order by at", [])
+
+      transfers =
+        for %{"artifact" => artifact, "receiver" => to, "sender" => sender} <- waiting,
+            sender == by or mine?(db, by, to),
+            do: %{artifact: artifact, to: to, now: renamed!(artifact, to), state: "waiting", by: sender}
+
+      %{transfers: transfers}
+    end)
+  end
+
+  def call("moved", %{"artifact" => artifact}, call) do
+    transaction(call, fn db ->
+      reaches!(db, asking(call), "viewer", artifact)
+      %{now: gone(db, artifact)}
+    end)
+  end
+
+  def call("accept", %{"artifact" => artifact}, call) do
+    by = asking(call)
+
+    {to, sender} =
+      transaction(call, fn db ->
+        %{"receiver" => to, "sender" => sender} = waiting!(db, artifact)
+        if not mine?(db, by, to), do: raise("Only #{whom(to)}, or whoever owns it, accepts #{artifact}.")
+        if not may?(db, sender, "owner", artifact), do: raise("#{sender} doesn't own #{artifact} any more, so it isn't theirs to move.")
+        movable!(db, artifact, renamed!(artifact, to))
+        {to, sender}
+      end)
+
+    now = renamed!(artifact, to)
+    moved!(call, artifact, to, now)
+    told(call, [sender] -- [by], "#{short(artifact)} was moved to #{whom(to)}", "#{named(by)} accepted it. It's at #{now}.")
+    %{artifact: artifact, to: to, now: now, state: "moved"}
+  end
+
+  def call("decline", %{"artifact" => artifact}, call) do
+    by = asking(call)
+
+    {to, sender} =
+      transaction(call, fn db ->
+        %{"receiver" => to, "sender" => sender} = waiting!(db, artifact)
+
+        if by != sender and not mine?(db, by, to),
+          do: raise("Only #{named(sender)}, who asked for it, or #{whom(to)}, or whoever owns it, declines #{artifact}.")
+
+        query(db, "delete from transfers where artifact = ?", [artifact])
+        {to, sender}
+      end)
+
+    told(call, [sender] -- [by], "#{short(artifact)} wasn't moved to #{whom(to)}", "#{named(by)} declined it.")
+    %{artifact: artifact}
+  end
+
   # The link is random, after whose the artifact is, and the tuple names it by its hash, as One Core names whoever
   # shows it. So the tuples don't hold the link, and nothing but the link gives it.
   def call("link", %{"artifact" => artifact} = inputs, call) do
@@ -397,6 +583,152 @@ defmodule Permissions do
       query(db, "insert into tuples (artifact, relation, who) values (?, ?, ?)", [artifact, relation, who])
       %{link: link, who: who, relation: relation, artifact: artifact}
     end)
+  end
+
+  # What an artifact is called once it's moved to `to`: `<to>/made/<app>/<name>`. Raises for what no app made for someone,
+  # for what isn't a user, a group or the network, and for what's `to`'s already.
+  defp renamed!(artifact, to) do
+    case Regex.run(@made, artifact) do
+      [_, from, app, id] ->
+        cond do
+          User.owner(to) != to -> raise("#{to} isn't a user, a group or the network: users/<name>, groups/<name>, network")
+          from == to -> raise("#{artifact} is #{whose(to)} already.")
+          true -> "#{to}/made/#{app}/#{id}"
+        end
+
+      nil ->
+        raise("#{artifact} isn't something an app made for someone: users/alice/made/notes/7")
+    end
+  end
+
+  # Raises unless `to` is a user in the network, a group that's made, or the network.
+  defp exists!(call, to) do
+    here =
+      case to do
+        # Whoever sign-in lists, or whom the network's tuples name: a network being built lists nobody.
+        "users/" <> _ ->
+          to in for(%{"who" => who} <- OneCore.Call.tool(call, "sign-in", "everyone", %{})["people"], do: who) or
+            to in OneCore.Call.tool(call, "permissions", "members", %{"of" => "network"})["members"]
+        "groups/" <> _ -> transaction(call, &(query(&1, "select 1 from tuples where artifact = ? limit 1", [to]) != []))
+        "network" -> true
+      end
+
+    if not here, do: raise("#{to} isn't in this network.")
+  end
+
+  # Raises unless the artifact can be moved to `now` as it is: it's there and not moved already, its app says it can be, nothing is at its new
+  # name, and nothing of it is encrypted for its owner, whose key it's under: a key reaches someone else only by their
+  # passkey, so it stays where it is.
+  defp movable!(db, artifact, now) do
+    blobs = Bucket.list(artifact <> "/")
+    [_, owner, app, _id] = Regex.run(@made, artifact)
+    version = OneCore.Apps.running(owner)[app]
+
+    cond do
+      moved = gone(db, artifact) ->
+        raise("#{artifact} was moved to #{moved} already.")
+
+      # What an app made may be tied to what it keeps, as the Vault's items are to its database, so only an app that
+      # hears of the move (`permissions.transferred`) says it's safe to move what it made.
+      not (version && "permissions.transferred" in version.hooks) ->
+        raise("#{app} doesn't say that what it made can be moved to someone else, so #{artifact} stays #{whose(owner)}. An app says so by hooking permissions.transferred.")
+
+      blobs == [] ->
+        raise("There's nothing at #{artifact}.")
+
+      Bucket.list(now <> "/") != [] ->
+        raise("#{now} is something already. Whoever owns it renames or removes it first.")
+
+      Bucket.size("#{owner}/made/encryption/encrypted/#{artifact}") != :absent or
+          Enum.any?(blobs, &String.starts_with?(&1, artifact <> "/keys/")) ->
+        raise(
+          "#{artifact} is encrypted, and its key is #{whose(owner)}. A key reaches someone else only by their passkey " <>
+            "and nothing hands one on yet, so it stays #{whose(owner)}."
+        )
+
+      true ->
+        :ok
+    end
+  end
+
+  # Moves the artifact: its blobs to the new name, then its tuples and where it went, and what waited for it is done.
+  # Then every app that hooks the move is told, and one that couldn't hear it fails the call, saying who: it's moved
+  # all the same.
+  defp moved!(call, artifact, to, now) do
+    from = User.owner(artifact)
+    Bucket.move(artifact <> "/", now <> "/")
+
+    transaction(call, fn db ->
+      in_it = fn column -> "(#{column} = ? or substr(#{column}, 1, length(?) + 1) = ? || '/')" end
+      rename = "? || substr(%s, length(?) + 1)"
+
+      query(db, "update or replace tuples set artifact = #{String.replace(rename, "%s", "artifact")} where #{in_it.("artifact")}", [now, artifact, artifact, artifact, artifact])
+      query(db, "update or replace tuples set who = #{String.replace(rename, "%s", "who")} where relation = 'parent' and #{in_it.("who")}", [now, artifact, artifact, artifact, artifact])
+      # Whoever it was whose, and whoever it's whose now, have it by its name: a tuple that says so is no more than that.
+      query(db, "delete from tuples where relation = 'owner' and who in (?, ?) and #{in_it.("artifact")}", [from, to, now, now, now])
+      query(db, "delete from moved where old = ?", [now])
+      query(db, "update moved set new = ? where new = ?", [now, artifact])
+      query(db, "insert or replace into moved (old, new) values (?, ?)", [artifact, now])
+      query(db, "delete from transfers where artifact = ?", [artifact])
+    end)
+
+    {:ok, _heard, unheard} = Hooks.collect("permissions.transferred", %{"artifact" => artifact, "to" => now}, {call.actor, to})
+
+    if unheard != %{},
+      do: raise("#{artifact} is moved to #{now}, but these didn't hear it: #{Enum.map_join(unheard, ", ", fn {app, why} -> "#{app} (#{why})" end)}.")
+  end
+
+  defp waiting!(db, artifact) do
+    case query(db, "select receiver, sender from transfers where artifact = ?", [artifact]) do
+      [waiting] -> waiting
+      [] -> raise("Nothing is waiting to move #{artifact}. `transfers` lists what is.")
+    end
+  end
+
+  # Whether `who` is `to`, or owns it: a group's or the network's owner, whoever a user is told apart from, or the
+  # network's owner for anyone. It's who gives something to `to`, and who accepts it for them.
+  defp mine?(db, who, to), do: who == to or may?(db, who, "owner", to)
+
+  # What an artifact was moved to, if it was and nothing has been made at its old name since: its name there, below a moved
+  # artifact's name.
+  defp gone(db, artifact) do
+    names = up(artifact)
+    marks = Enum.map_join(names, ", ", fn _ -> "?" end)
+
+    Enum.find_value(query(db, "select old, new from moved where old in (#{marks})", names), fn %{"old" => old, "new" => new} ->
+      if Bucket.list(old <> "/") == [], do: new <> String.replace_prefix(artifact, old, "")
+    end)
+  end
+
+  # Whoever accepts what's to be moved to `to`: a user, or the owners of a group or of the network.
+  defp receivers(_db, "users/" <> _ = user), do: [user]
+  defp receivers(db, to), do: Enum.filter(users_with(db, to, "owner"), &user?/1)
+
+  # Tells each of them, as the network does, so whoever asks needn't share a group with them, which a person must to tell
+  # someone. It's a notification, never an email.
+  defp told(_call, [], _title, _text), do: :ok
+
+  defp told(call, users, title, text) do
+    as = %{call | actor: nil, subject: "network"}
+    for to <- users, do: OneCore.Call.tool(as, "notifications", "send", %{"title" => title, "text" => text, "to" => to})
+    :ok
+  end
+
+  # How people say an artifact and whoever it is: its app and its name, a name, `the family group`.
+  defp short(artifact), do: artifact |> String.split("/") |> Enum.take(-2) |> Enum.join("/")
+  defp app_of(artifact), do: artifact |> String.split("/") |> Enum.at(-2) |> String.split("-") |> Enum.map_join(" ", &String.capitalize/1)
+  defp named(who), do: who |> String.split("/") |> List.last()
+  defp whom("network"), do: "the network"
+  defp whom("groups/" <> name), do: "the #{name} group"
+  defp whom("users/" <> name), do: name
+  defp whose(who), do: whom(who) <> "'s"
+
+  # The users, and `everyone`, who have the relation to an artifact, through the groups they're in.
+  defp users_with(db, artifact, relation) do
+    up = followed(db, @parents, up(artifact), [])
+    tuples = "select who as next from tuples where artifact = ? and relation in (?, ?, ?)"
+    named = for at <- up, %{"next" => who} <- query(db, tuples, [at | Map.fetch!(@enough, relation)]), do: who
+    Enum.sort(Enum.filter(followed(db, @members, named, []), &(user?(&1) or &1 == "everyone")))
   end
 
   # Raises unless whoever asks may write or remove a tuple with this relation to the artifact: an owner or an
