@@ -12,6 +12,9 @@ defmodule HomeScreen do
   (Gmail, Database), is only ever in the App Library, where it opens its section in Settings: there's nothing of it
   to put on a page. The App Store is an app like any other, in its app's category.
 
+  A tip a client shows a person once, wherever they are (`tip`), is kept with their pages, so a second device
+  doesn't show it again.
+
   Every tool here is asked for whoever's Home Screen it is, as an app opened from it is. What draws them is this
   app's `client/`: its app in the category `launcher`, which a client shows first.
   """
@@ -42,9 +45,18 @@ defmodule HomeScreen do
       %{in: "settings", name: "General", component: "general", icon: "client/general.svg", group: "general", order: 4, needs: "login"}
     ]
 
+  # The tips a client shows each person once (`tip`).
+  @tips ["pull-home"]
+
   @impl true
   def tools do
     none = %{type: "object", properties: %{}}
+
+    seen = %{
+      type: "object",
+      properties: %{seen: %{type: "array", items: %{type: "string"}, description: "The tips you've seen"}},
+      required: ["seen"]
+    }
 
     entrypoint = %{
       type: "object",
@@ -171,6 +183,26 @@ defmodule HomeScreen do
         }
       },
       %{
+        name: "tips",
+        read_only: true,
+        description: """
+        The tips a client shows each person once, on whichever device they're on, that you've seen: `pull-home`, the
+        rail's "Pull to go home", shown the first time an app opens on a phone, a tablet or the mobile web.
+        """,
+        inputs: none,
+        outputs: seen
+      },
+      %{
+        name: "tip",
+        description: "Says whether you've seen a tip (`tips`): `true` once you have, and `false` to see it again.",
+        inputs: %{
+          type: "object",
+          properties: %{name: %{type: "string", enum: @tips}, seen: %{type: "boolean"}},
+          required: ["name", "seen"]
+        },
+        outputs: seen
+      },
+      %{
         name: "arrange",
         description: """
         Arranges your Home Screen's pages: each page's apps and widgets, in order, and whether it's hidden (`pages`),
@@ -293,6 +325,22 @@ defmodule HomeScreen do
       widgets: widgets,
       apps: for(app <- apps, do: %{app: app.app, name: app.name})
     }
+  end
+
+  def call("tips", _inputs, call) do
+    with {:ok, tips, _tag} <- Artifact.read(Call.make(call, "home"), "tips"),
+         do: %{seen: JSON.decode!(tips)},
+         else: (:absent -> %{seen: []})
+  end
+
+  def call("tip", %{"name" => name, "seen" => seen}, call) when name in @tips and is_boolean(seen) do
+    tips =
+      Artifact.update(Call.make(call, "home"), "tips", fn tips ->
+        tips = if tips, do: JSON.decode!(tips), else: []
+        JSON.encode!(if seen, do: Enum.uniq([name | tips]), else: List.delete(tips, name))
+      end)
+
+    %{seen: JSON.decode!(tips)}
   end
 
   def call("arrange", inputs, call) do
