@@ -25,7 +25,7 @@ defmodule Database do
 
     job = Lease.job(lease)
 
-    case :gen_statem.call(lease, {call.own.codec, {:transaction, schema, fun, job}}) do
+    case ask(lease, {call.own.codec, {:transaction, schema, fun, job}}, :codec_changed) do
       {:ok, result} ->
         if job, do: Lease.marked()
         result
@@ -126,7 +126,7 @@ defmodule Database do
           true -> :alone
         end
 
-      took = :gen_statem.call(lease, {:take_over, server, why})
+      took = ask(lease, {:take_over, server, why}, :ok)
       app = Lease.app(call.own)
       holder = server && (OneCore.Servers.name(server) || server)
 
@@ -186,7 +186,7 @@ defmodule Database do
   def schedule(%Call{} = call, jobs, fire) when is_list(jobs) and is_function(fire, 1) do
     lease = Lease.of(call)
 
-    case :gen_statem.call(lease, {call.own.codec, {:schedule, jobs, fire, System.os_time(:second)}}) do
+    case ask(lease, {call.own.codec, {:schedule, jobs, fire, System.os_time(:second)}}, :codec_changed) do
       # What's due is being made, and its timers' alarm says when the next is, so the clock comes back then.
       :ok ->
         alarm(call, transaction(call, fn db -> query(db, timers()) && next(db) end))
@@ -208,6 +208,15 @@ defmodule Database do
         taken_over(call, lease, server)
         schedule(call, jobs, fire)
     end
+  end
+
+  # A lease stops, `:normal`, as it answers the first call with another codec than its own (`Database.Lease`), and
+  # whatever was waiting in its queue then is never run: its caller exits with `:normal`. That is `ended`, what a
+  # lease that closed answers the call that closed it, so the call goes to the one the next call opens.
+  defp ask(lease, request, ended) do
+    :gen_statem.call(lease, request)
+  catch
+    :exit, {:normal, {:gen_statem, :call, [^lease | _]}} -> ended
   end
 
   # A database that was open under its artifact's codec before has closed, for the next call to open it.
