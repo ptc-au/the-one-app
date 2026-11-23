@@ -18,8 +18,9 @@ import { deviceAuthorizationClient } from "better-auth/client/plugins"
 import { passkeyClient } from "@better-auth/passkey/client"
 import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as openedKey, output, PRF, prfKey, unwrap, wrap } from "./passkey.ts"
 
-/// The network's mark: its own logo, or the One App's (`icon` in `../worker.ts`).
+/// The network's mark: its own logo, for a light page and a dark one, or the One App's (`icon` in `../worker.ts`).
 const mark = "/Logo.png"
+const markDark = "/Logo-dark.png"
 // The tab is named as the network is, which a password manager may name what it saves here by.
 fetch("/manifest.webmanifest")
   .then((response) => response.json())
@@ -663,7 +664,7 @@ function Logos(props: { app: App }) {
         {(logo) => <Image src={logo()} alt="" style={look.logo} />}
       </Show>
       <Text style={look.joins} aria-hidden="true">···</Text>
-      <Image src={mark} alt="" style={look.logo} />
+      <Image src={mark} srcDark={markDark} alt="" style={look.logo} />
     </View>
   )
 }
@@ -713,6 +714,7 @@ render(
   () => (
     <SignIn
       mark={shows().mark ?? mark}
+      markDark={markDark}
       heading={shows().heading}
       note={shows().note}
       code={shows().code}

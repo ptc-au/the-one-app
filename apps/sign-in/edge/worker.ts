@@ -47,16 +47,17 @@ const ASSOCIATIONS: Record<string, () => unknown> = {
 
 /**
  * The network's icon, as a browser asks for it by name, its tab's and a Home Screen's (`/favicon.ico`,
- * `/apple-touch-icon.png`), and its logo as the network's pages draw it (`/Logo.png`), its icon where it has none: its
- * own (`network` in `auth.ts`), or the One App's, which this part's build puts beside its pages (`package.json`).
+ * `/apple-touch-icon.png`), and its logo as the network's pages draw it on a light page and a dark one (`/Logo.png`,
+ * `/Logo-dark.png`), its icon where it has none: its own (`network` in `auth.ts`), or the One App's, which this part's
+ * build puts beside its pages (`package.json`), whose logo is the same on both.
  */
-const ICONS = ["/Logo.png", "/favicon.ico", "/apple-touch-icon.png"];
+const ICONS = ["/Logo.png", "/Logo-dark.png", "/favicon.ico", "/apple-touch-icon.png"];
 /** How long a browser keeps the network's icon and manifest before it asks again, in seconds. */
 const NAMED = 300;
 async function icon(url: URL) {
   const { icon, logo } = await network();
-  const picture = url.pathname === "/Logo.png" ? (logo ?? icon) : icon;
-  if (!picture) return env.ASSETS.fetch(new Request(url));
+  const picture = { "/Logo.png": logo?.light ?? logo?.dark, "/Logo-dark.png": logo?.dark ?? logo?.light }[url.pathname] ?? icon;
+  if (!picture) return env.ASSETS.fetch(new Request(new URL(url.pathname === "/Logo-dark.png" ? "/Logo.png" : url.pathname, url)));
   const png = Uint8Array.from(atob(picture.png), (char) => char.charCodeAt(0));
   return new Response(png, { headers: { "content-type": "image/png", "cache-control": `public, max-age=${NAMED}` } });
 }
