@@ -14,14 +14,18 @@
   // The apps that use this network's passkeys, and open the links of its listed in APP_LINKS, which iOS and Android
   // check against the files this serves (`/.well-known/apple-app-site-association`, `/.well-known/assetlinks.json`).
   // They're the One App's own build: on iPhone, its team and bundle ID; on Android, its package and the SHA-256 of
-  // the certificate it's signed with, the Android SDK's debug keystore on the Linux machine that builds it, as it has
-  // no release keystore yet. A network that builds an app of its own names that here instead.
+  // the certificates it's signed with: the platform's Android release key, which signs every network's APK
+  // (`tooling/android-apk`), and the Android SDK's debug keystore on the Linux machine that builds a developer's. A
+  // network that builds an app of its own names that here instead.
   "vars": {
     "APPLE_APPS": ["X96JC3HCV7.app.theone.client"],
     "ANDROID_APPS": [
       {
         "package_name": "app.theone.client",
-        "sha256_cert_fingerprints": ["0D:54:3D:D7:FC:04:A3:56:BE:47:9F:60:17:A5:7A:DD:23:17:7E:7F:D1:BC:FC:74:36:E8:66:FE:E5:4A:3A:55"]
+        "sha256_cert_fingerprints": [
+          "3F:61:03:F3:33:E3:F9:C8:B9:34:1D:F3:61:83:14:C1:C0:C2:73:4B:DD:C5:EF:A5:0F:D0:89:85:F0:2E:BE:65",
+          "0D:54:3D:D7:FC:04:A3:56:BE:47:9F:60:17:A5:7A:DD:23:17:7E:7F:D1:BC:FC:74:36:E8:66:FE:E5:4A:3A:55"
+        ]
       }
     ],
     // A request for a key in Vault, which opens it in the app.
