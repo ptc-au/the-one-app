@@ -48,8 +48,19 @@ defmodule OneCore.Servers do
   """
   def acts_for?(key, who), do: Enum.any?(acts_for(key), &(&1 in [who, @network]))
 
-  @doc "Who the server whose key is `key` acts for: its owner first, and whoever its owner chose."
-  def members(key), do: cached({:members, key}, fn -> read("servers/#{key}/members", []) end)
+  @doc """
+  Who the server whose key is `key` acts for: its owner first, and whoever its owner chose. One that hasn't said yet,
+  as one joining hasn't before it first starts, is read again when next asked: kept, it would be nobody's server here
+  once it had started, and what it says as it starts, that it's theirs (`OneCore.Server`), ignored as a stranger's.
+  """
+  def members(key) do
+    Cache.fetch(__MODULE__, {:members, key}, fn ->
+      case read("servers/#{key}/members", nil) do
+        nil -> {:ignore, []}
+        members -> {:commit, members}
+      end
+    end)
+  end
 
   @doc "Who the server whose key is `key` acts for, both having said so: each member of it that has it on their list."
   def acts_for(key), do: Enum.filter(members(key), &(key in listed(&1)))
