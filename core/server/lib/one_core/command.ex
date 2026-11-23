@@ -19,14 +19,15 @@ defmodule OneCore.Command do
   Runs `[program | args]` for at most `timeout` seconds. Gives its exit code, -1 where it was stopped (its errors
   then end "(stopped after <timeout>s)"), and all it printed and wrote as errors, in `stdout` and `stderr`.
 
-  Options: `env`, the variables it's given beside this server's, as `{name, value}`s; `cd`, the folder it runs in;
+  Options: `env`, the variables it's given beside this server's, as `{name, value}`s, a `nil` value taking away one
+  of this server's; `cd`, the folder it runs in;
   `in`, a file it's given as its input, where it reads one; `binary`, whether what it prints isn't text; `each`,
   `{fun, first}`, which is given each line it prints and what it gave for the line before, `first` for the first.
   """
   def run([program | args], timeout, options \\ []) do
     errors = Path.join(System.tmp_dir!(), "one-command-#{System.unique_integer([:positive])}")
     {shell, arguments, env, shared} = shell(program, args, errors, options)
-    env = for {name, value} <- Keyword.get(options, :env, []) ++ env, do: {String.to_charlist(name), String.to_charlist(value)}
+    env = for {name, value} <- Keyword.get(options, :env, []) ++ env, do: {String.to_charlist(name), if(value, do: String.to_charlist(value), else: false)}
 
     port =
       Port.open(

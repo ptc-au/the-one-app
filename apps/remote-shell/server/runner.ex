@@ -36,7 +36,11 @@ defmodule RemoteShell.Runner do
   def run(service, command, dir, timeout, by) do
     dir = dir || System.user_home!()
     if not File.dir?(dir), do: raise("There's no folder #{dir} on this device")
-    %{exit: exit, stdout: stdout, stderr: stderr} = OneCore.Command.run(["sh", "-c", command], timeout, cd: dir)
+    # Run as its person's own shell runs it, as ssh does, without what tells this server which client and server it
+    # is (`ONE_HOME`, `ONE_DEVICE`…): with them, another network's app started here took the One App's home for its
+    # own, found that app running there and quit (The PTC App on Andre's Mac, 23 Nov).
+    unset = for {"ONE_" <> _ = name, _} <- System.get_env(), do: {name, nil}
+    %{exit: exit, stdout: stdout, stderr: stderr} = OneCore.Command.run(["sh", "-c", command], timeout, cd: dir, env: unset)
     ran = %{time: System.system_time(:millisecond), command: command, dir: dir, exit: exit, by: by}
     File.write!(Path.join(OneCore.Service.folder(service), "ran.jsonl"), JSON.encode!(ran) <> "\n", [:append])
     %{exit: exit, stdout: OneCore.Command.clip(stdout, @max_bytes), stderr: OneCore.Command.clip(stderr, @max_bytes)}
