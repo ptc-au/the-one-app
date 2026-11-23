@@ -258,9 +258,19 @@ rm "$work/distribution.p12" "$work/distribution.password"
 
 echo "Uploading $number ($build) as $identifier"
 ipa=$work/app.ipa
+# Apple's 409 says a build of that number is there already, which another release's upload of it made as this one
+# began: it's taken, as it is when it's found before.
 upload=$(asc /v1/buildUploads POST "$(jq -nc --arg app "$app" --arg number "$number" '{data: {type: "buildUploads",
   attributes: {cfBundleShortVersionString: $number, cfBundleVersion: $number, platform: "IOS"},
-  relationships: {app: {data: {type: "apps", id: $app}}}}}')" | jq -r .data.id)
+  relationships: {app: {data: {type: "apps", id: $app}}}}}')" 2>"$work/upload.error") || {
+  cat "$work/upload.error" >&2
+  if grep -q 'said 409' "$work/upload.error"; then
+    latest=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-version&limit=1&fields%5Bbuilds%5D=version" | jq -r '.data[0].attributes.version // empty')
+    ((${latest%%.*} < number)) || { echo "TestFlight has $latest, which has $build's changes" && exit 0; }
+  fi
+  exit 1
+}
+upload=$(jq -r .data.id <<<"$upload")
 file=$(asc /v1/buildUploadFiles POST "$(jq -nc --arg upload "$upload" --argjson size "$(stat -c %s "$ipa")" '{data: {type: "buildUploadFiles",
   attributes: {fileName: "app.ipa", fileSize: $size, uti: "com.apple.ipa", assetType: "ASSET"},
   relationships: {buildUpload: {data: {type: "buildUploads", id: $upload}}}}}')")

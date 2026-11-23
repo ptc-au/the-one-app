@@ -232,17 +232,20 @@ if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
   done
 fi
 # The machine's lock goes first, as waiting for Apple holds up nothing here: the next client release (19 Nov: 164 s).
-# It's given the status the release ends with.
+# It's given the status the release ends with. A network's installers don't depend on its iPhone's upload, or on any
+# other's: every network's desktop apps update from them, so each is made whatever the uploads did (23 Nov: one 409
+# from Apple skipped every network's), and each failure is said on its own, at the end.
 iphone_done() {
-  local status=$1
+  local status=$1 failed= at network
   exec 9>&-
-  local pid failed=
-  for pid in "${iphones[@]}"; do wait "$pid" || failed=1; done
-  [[ -z $failed ]] || { echo "An iPhone's app didn't reach TestFlight." >&2 && exit 1; }
-  [[ $status != 0 ]] || for network in "${networks[@]}"; do
-    tooling/installers "$network" > >(sed "s|^|installers $(basename "$network"): |") 2>&1 || failed=1
+  for at in "${!iphones[@]}"; do
+    wait "${iphones[at]}" || { echo "$(basename "${networks[at]}")'s iPhone app didn't reach TestFlight." >&2 && failed=1; }
   done
-  [[ -z $failed ]] || { echo "A network's installers weren't published." >&2 && exit 1; }
+  [[ $status != 0 ]] || for network in "${networks[@]}"; do
+    tooling/installers "$network" > >(sed "s|^|installers $(basename "$network"): |") 2>&1 ||
+      { echo "$(basename "$network")'s installers weren't published." >&2 && failed=1; }
+  done
+  [[ -z $failed ]] || exit 1
 }
 trap 'iphone_done $?' EXIT
 
