@@ -99,7 +99,7 @@ scenes.forEach((scene, n) => {
 })
 cpSync(here("../../../../core/ui/dist/client"), join(batch, "ui"), { recursive: true, dereference: true })
 cpSync(headless, join(batch, exe))
-for (const face of FACES) cpSync(face, join(batch, basename(face)))
+if (!mac) for (const face of FACES) cpSync(face, join(batch, basename(face)))
 const script = mac ? "run.sh" : "run.cmd"
 writeFileSync(join(batch, script), mac ? ['cd "$(dirname "$0")"', "export ONE_GLASS=blurred", ...lines].join("\n") : ["@echo off", "cd /d %~dp0", 'set "ONE_GLASS=blurred"', ...lines].join("\r\n"))
 

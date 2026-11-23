@@ -14,7 +14,8 @@ impl Windows {
             context.prepare();
             let atlas = Arc::new(Atlas::new(&context));
             // The system's fonts where ours lack a character: a fake platform has only those the headless renderer's host is
-            // given for it (`fake::fallback_fonts`), so it draws the same everywhere.
+            // given for it (`fake::fallback_fonts`), so it draws the same everywhere, but on a Mac, which finds the system's
+            // as a Mac's windows do (Core Text's cascade, `text::fallback`).
             #[allow(unused_mut)]
             let mut fonts = crate::fonts()?;
             #[cfg(feature = "fake")]
@@ -23,7 +24,7 @@ impl Windows {
             #[cfg(any(feature = "fake", target_arch = "wasm32"))]
             fonts.push(crate::view::monospace()?);
             #[allow(unused_mut)]
-            let mut text = TextSystem::new(crate::FONT, fonts, !cfg!(feature = "fake"));
+            let mut text = TextSystem::new(crate::FONT, fonts, !cfg!(feature = "fake") || cfg!(target_vendor = "apple"));
             #[cfg(any(feature = "fake", target_arch = "wasm32"))]
             text.monospace(crate::view::MONOSPACE.0);
             Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, clock: Default::default(), check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false, expecting: false, unseen: now(), unseen_told: false, on_blank: None })

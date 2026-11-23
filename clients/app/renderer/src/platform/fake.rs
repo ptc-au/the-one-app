@@ -609,9 +609,13 @@ pub fn now() -> web_time::Instant {
 
 /// The faces a Linux device falls back to where Allo hasn't a character, a symbol's (⇧, ⋮) and an emoji's, from the
 /// headless renderer's host (Debian's and Ubuntu's `fonts-dejavu-core` and `fonts-noto-color-emoji`), so it draws what a device
-/// does and not a gap; on a device it's sent to that hasn't them (`animation.js --ssh`, a Windows one), from beside it,
-/// where they're sent with it, so it draws the same glyphs as here.
+/// does and not a gap; on a Windows device it's sent to (`animation.js --ssh`), from beside it, where they're sent with
+/// it, so it draws the same glyphs as here. On a Mac, none: it has no Linux faces to be given, and draws what Allo
+/// hasn't (⌥, ←, an emoji) in the system's own, as a Mac's windows do (`Windows::made`).
 pub fn fallback_fonts() -> anyhow::Result<Vec<Vec<u8>>> {
+    if cfg!(target_vendor = "apple") {
+        return Ok(Vec::new());
+    }
     let beside = |path: &str| Some(std::env::current_exe().ok()?.parent()?.join(std::path::Path::new(path).file_name()?));
     ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"]
         .into_iter()

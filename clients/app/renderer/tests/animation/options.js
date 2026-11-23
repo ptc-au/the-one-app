@@ -60,8 +60,8 @@ export function built() {
 export const lavapipe = flag("--lavapipe")
 export const env = { ...process.env, ...(glass ? { ONE_GLASS: glass } : {}), ...(atlas ? { ONE_ATLAS: atlas } : {}), ...(lavapipe ? { VK_ICD_FILENAMES: "/usr/share/vulkan/icd.d/lvp_icd.json", LP_NUM_THREADS: process.env.LP_NUM_THREADS ?? "2" } : {}) }
 
-/// The faces the headless renderer falls back to where its own font hasn't a character, this machine's, which a device it's sent
-/// to is sent beside it (renderer's `fake::fallback_fonts`).
+/// The faces the headless renderer falls back to where its own font hasn't a character, this machine's, which a Windows device
+/// it's sent to is sent beside it (renderer's `fake::fallback_fonts`); a Mac's are its own.
 export const FACES = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf"]
 
 /// `--watch` plays the headless renderer a pass copied (`copied`), not the one it was given.

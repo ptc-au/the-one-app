@@ -31,7 +31,8 @@ function onDevice() {
   rmSync(staged, { recursive: true, force: true })
   cpSync(library("client"), join(staged, "ui"), { recursive: true, dereference: true })
   cpSync(headless, join(staged, exe))
-  for (const face of FACES) cpSync(face, join(staged, basename(face)))
+  // A Mac draws them in its own faces, as its windows do.
+  if (!mac) for (const face of FACES) cpSync(face, join(staged, basename(face)))
   const sent = Bun.spawnSync(["sh", "-c", `tar -C "${staged}" -cf - . | ssh ${ssh} '${mac ? "" : `mkdir "${remote}" && `}tar -xf - -C "${remote}"'`], { stdout: "pipe", stderr: "pipe" })
   if (sent.exitCode !== 0) throw new Error(`${ssh}: the headless renderer didn't go there: ${sent.stderr.toString().trim()}`)
   process.on("exit", () => Bun.spawnSync(["ssh", ssh, mac ? `rm -rf "${remote}"` : `rmdir /s /q "${remote}"`]))
