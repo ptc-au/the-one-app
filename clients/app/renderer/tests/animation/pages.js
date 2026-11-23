@@ -1,6 +1,7 @@
 // Building a folder into what the headless renderer loads: the UI library, an app's client and its page.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
+import { cachedBuild, digest } from "./cache.js"
 import { root, slot, ui } from "./options.js"
 
 /// When a file under `paths` last changed, the latest.
@@ -91,18 +92,35 @@ async function install(client) {
   if (made.exitCode !== 0) return made.stderr.trim()
 }
 
+/// What a folder is built from: the files git has in it (`tooling/input-hash` and core/ui/build.js's rule), each by its
+/// content, so packages installed in it, and what it's built into, are not.
+function sources(folder) {
+  const listed = Bun.spawnSync(["git", "-C", folder, "ls-files", "-co", "--exclude-standard", "-z", "--", "."], { stdout: "pipe" }).stdout.toString()
+  return listed.split("\0").filter((file) => file && existsSync(join(folder, file))).sort().map((file) => [file, digest(join(folder, file))])
+}
+
+/// What `source` builds into `out` as a server builds it (its pages and modules, from its packages, which `client`'s
+/// manifest names), kept for every worktree on the machine by everything it reads: `source`'s files, the UI library's
+/// build (app.js, and the package versions it asks for), the folder it's said to be in (its sourcemaps name it), and bun.
+/// → why it didn't build, if it didn't.
+const bundle = (source, out, client = source) =>
+  cachedBuild([sources(source), digest(library("build")), relative(root, source), Bun.version], out, async () => {
+    const packages = await install(client)
+    if (packages) return `its packages didn't install\n${packages}`
+    const made = await spawned(["bun", library("build/app.js"), source, out, relative(root, source)])
+    if (made.exitCode !== 0) return `didn't build\n${made.stderr.trim()}`
+  })
+
 /// Builds `target` into `built` as a server builds an app: its packages, its page where one of its scenes draws a page
 /// (an app whose scenes are all of components has none, and may have no page at all), what it keeps as it is, and its
 /// client into COMPONENTS, with a page beside each module a scene names, that draws it. → why it didn't build, if it didn't.
 export async function build(target, built) {
-  const packages = await install(join(target, "client"))
-  if (packages) return `its packages didn't install\n${packages}`
   const scenes = existsSync(join(target, "client/previews.json")) ? JSON.parse(readFileSync(join(target, "client/previews.json"), "utf8")) : {}
   const ofComponent = (scene) => !!scene && (scene.component || ofComponent(scenes[scene.like]))
   if (!Object.keys(scenes).length || Object.values(scenes).some((scene) => !ofComponent(scene))) {
-    const made = await spawned(["bun", library("build/app.js"), target, built, relative(root, target)])
+    const unbuilt = await bundle(target, built, join(target, "client"))
+    if (unbuilt) return unbuilt
     servedAsIs(target, built)
-    if (made.exitCode !== 0) return `didn't build\n${made.stderr.trim()}`
   }
   for (const app of new Set(Object.values(scenes).flatMap((scene) => [...(scene.uses ?? []), ...Object.values(scene.opens ?? {})]))) {
     const unbuilt = await usedApp(app, built)
@@ -111,8 +129,8 @@ export async function build(target, built) {
   const named = [...new Set(Object.values(scenes).map((scene) => scene.component).filter(Boolean))]
   if (!named.length) return
   const at = join(built, COMPONENTS)
-  const made = await spawned(["bun", library("build/app.js"), join(target, "client"), at, relative(root, join(target, "client"))])
-  if (made.exitCode !== 0) return `its components didn't build\n${made.stderr.trim()}`
+  const unbuilt = await bundle(join(target, "client"), at)
+  if (unbuilt) return `its components: ${unbuilt}`
   for (const component of named) {
     writeFileSync(join(at, `${component}.scene.js`), `import { ListStyle, render } from "/ui/client/ui.js"
 import Shown from "./${component}.js"
@@ -139,10 +157,8 @@ function usedApp(app, built) {
       (async () => {
         rmSync(folder, { recursive: true, force: true })
         const client = join(root, "apps", app, "client")
-        const packages = await install(client)
-        if (packages) return `${app}'s packages didn't install: ${packages}`
-        const made = await spawned(["bun", library("build/app.js"), client, folder, relative(root, client)])
-        if (made.exitCode !== 0) return `${app}'s components didn't build: ${made.stderr.trim()}`
+        const unbuilt = await bundle(client, folder)
+        if (unbuilt) return `${app}'s components: ${unbuilt}`
       })(),
     )
   return usedApps.get(folder)

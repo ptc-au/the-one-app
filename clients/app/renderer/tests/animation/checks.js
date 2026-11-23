@@ -125,22 +125,25 @@ async function agrees(built, scene, folder) {
     const answers = done.answers.slice(1 + taps.length)
     if (crashed(answers.at(-1))) return { fresh: crashed(answers.at(-1)) }
     const moved = unmoved(answers[3 + OVER.length], join(folder, "moved"))
-    const faint = illegible(answers[0], answers.slice(1, 1 + OVER.length), answers[1 + OVER.length], scene.size[0], folder)
-    if (faint) return { moved, fresh: faint }
+    const { words, faint } = illegible(answers[0], answers.slice(1, 1 + OVER.length), answers[1 + OVER.length], scene.size[0])
+    if (faint) return { moved, fresh: faint, words }
     let n = 4 + OVER.length
     for (const [what, ops] of changes) {
       const memory = ops.findIndex((op) => op.op === "memory")
       const held = memory < 0 ? 0 : images(answers[n + memory])
-      if (held > IMAGES_HIDDEN) return { moved, fresh: `${what}: hidden, it still holds ${(held / 1e6).toFixed(1)} MB of images its window's size (its surface's, the frame it kept, its blurs)` }
+      if (held > IMAGES_HIDDEN) return { moved, words, fresh: `${what}: hidden, it still holds ${(held / 1e6).toFixed(1)} MB of images its window's size (its surface's, the frame it kept, its blurs)` }
       n += ops.length + 1
       const own = join(folder, what.replace(/[^\w.-]+/g, "-"))
       mkdirSync(own, { recursive: true })
       const why = unlike(answers[n++], own)
-      if (why) return { moved, fresh: `${what}: ${why} (${own})` }
+      if (why) return { moved, words, fresh: `${what}: ${why} (${own})` }
     }
-    return { moved }
+    return { moved, words }
   }
-  return judgedRun(at, folder, scene, asked, 0, ["agrees", sceneBy(scene)], judging, (said) => !said.fresh && !said.moved)
+  const said = await judgedRun(at, folder, scene, asked, 0, ["agrees", sceneBy(scene)], judging, (said) => !said.fresh && !said.moved)
+  // Every text's contrast, kept with the verdict, so it's there to look at however the run came to be judged.
+  if (said.words) writeFileSync(join(folder, "words.json"), JSON.stringify(said.words))
+  return said
 }
 
 /// The least contrast (WCAG's ratio) a text drawn whole and in sight may have with what's behind it: the faintest any
@@ -153,16 +156,15 @@ const OVER = ["dialog", "alertdialog"]
 
 /// Why some of a scene's words can't be read, if they can't: a text in sight, opaque, and inside what's `over` the page
 /// where something is, whose ink stands off what's behind it at under LEGIBLE (`legibility`), of the `query` and `snap`
-/// answers, in a window `points` wide. Every text's is kept in `folder`'s `words.json`.
-function illegible(query, over, snap, points, folder) {
-  if (!snap?.result?.png) return `no picture to read its words in: ${snap?.error ?? query?.error}`
+/// answers, in a window `points` wide. → every text's contrast, and why some can't be read, if they can't.
+function illegible(query, over, snap, points) {
+  if (!snap?.result?.png) return { faint: `no picture to read its words in: ${snap?.error ?? query?.error}` }
   const picture = PNG.sync.read(Buffer.from(snap.result.png, "base64"))
   const covering = new Set(over.flatMap((answer) => (answer?.result?.nodes ?? []).map((node) => node.node)))
   const texts = (query?.result?.nodes ?? []).filter((node) => (!covering.size || covering.has(node.node)) && ["text", "raw-text"].includes(node.kind) && node.name?.trim() && node.rect && node.opacity > 0.99 && node.seen > 0.99 && node.rect.width >= 2 && node.rect.height >= 4)
   const read = texts.map((node) => ({ name: node.name, rect: node.rect, contrast: legibility(picture, points, node.rect) })).filter((text) => text.contrast !== undefined)
-  writeFileSync(join(folder, "words.json"), JSON.stringify(read))
   const faint = read.filter((text) => text.contrast < LEGIBLE)
-  return faint.length ? `its words can't be read: ${faint.slice(0, 3).map((text) => `"${text.name}" stands off what's behind it at ${text.contrast.toFixed(2)}:1, under ${LEGIBLE}:1`).join(", ")}${faint.length > 3 ? `, and ${faint.length - 3} more` : ""}` : undefined
+  return { words: read, faint: faint.length ? `its words can't be read: ${faint.slice(0, 3).map((text) => `"${text.name}" stands off what's behind it at ${text.contrast.toFixed(2)}:1, under ${LEGIBLE}:1`).join(", ")}${faint.length > 3 ? `, and ${faint.length - 3} more` : ""}` : undefined }
 }
 
 /// Plays every check of `targets`' scenes, every target and scene at once, its headless renderers as many at once as `jobs`.

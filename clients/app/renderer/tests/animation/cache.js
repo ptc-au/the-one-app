@@ -15,7 +15,7 @@ const RETRY_MS = 50
 const sha = (data) => createHash("sha256").update(data).digest("hex")
 /// Each file's and folder's digest, by its real path, while it's as it was: a pass's scenes share their app's build.
 const digests = new Map()
-function digest(path) {
+export function digest(path) {
   const real = realpathSync(path)
   const stat = statSync(real)
   const { mtimeMs, size } = stat
@@ -31,9 +31,18 @@ function digest(path) {
 const DRAWING = ["ONE_GLASS", "ONE_ATLAS", "ONE_MUTANT", "ONE_PIPELINES_MS", "ONE_WINDOW_MS", "VK_ICD_FILENAMES", "LP_NUM_THREADS"]
 const drawing = (env) => DRAWING.map((name) => [name, env[name]])
 
-/// What a run of the headless renderer at `headless` with `args` in `env` is by: the renderer, each argument (a path that
-/// exists by what's in it, an output by its name) and what changes how it draws.
-const runKey = (headless, args, env, outputs) => sha(JSON.stringify([digest(headless), args.map((arg) => (outputs.includes(arg) ? `out:${basename(arg)}` : existsSync(arg) ? `in:${digest(arg)}` : arg)), drawing(env)]))
+/// An argument as a run is by it: an output by its name, a path that exists by what's in it, and so the path of an
+/// `--open app=<path>` (`<name>=<absolute path>`), so a worktree's own isn't part of it.
+function argument(arg, outputs) {
+  if (outputs.includes(arg)) return `out:${basename(arg)}`
+  if (existsSync(arg)) return `in:${digest(arg)}`
+  const [, name, path] = arg.match(/^([\w-]+)=(\/.*)$/s) ?? []
+  return path && existsSync(path) ? `${name}=in:${digest(path)}` : arg
+}
+
+/// What a run of the headless renderer at `headless` with `args` in `env` is by: the renderer, each argument and what
+/// changes how it draws.
+const runKey = (headless, args, env, outputs) => sha(JSON.stringify([digest(headless), args.map((arg) => argument(arg, outputs)), drawing(env)]))
 
 let pruned = false
 /// Keeps no more than MOST, the least recently used going first, once a pass.
@@ -41,7 +50,7 @@ function prune() {
   pruned = true
   const all = readdirSync(KEPT).filter((key) => !key.includes(".")).map((key) => {
     const at = join(KEPT, key)
-    return { at, used: statSync(at).mtimeMs, size: readdirSync(at).reduce((sum, file) => sum + statSync(join(at, file)).size, 0) }
+    return { at, used: statSync(at).mtimeMs, size: readdirSync(at, { recursive: true }).reduce((sum, file) => sum + statSync(join(at, file)).size, 0) }
   })
   let total = all.reduce((sum, one) => sum + one.size, 0)
   for (const one of all.sort((a, b) => a.used - b.used)) {
@@ -120,4 +129,37 @@ export async function verdict(headless, args, env, outputs, by, judge, passed) {
     renameSync(`${file}.${process.pid}`, file)
   }
   return said
+}
+
+/// What `make()` builds into `folder`, kept by `inputs` (everything it builds from: its sources, the build's own code and
+/// settings, the tools' versions), as a build cache keeps a build: what was built from the same before, by any worktree
+/// on the machine, is copied into `folder` and not built again; only one builds a given one at a time, so a pass that
+/// starts as another's does waits for its. Only a build that went is kept. → why it didn't build, if it didn't.
+export async function cachedBuild(inputs, folder, make) {
+  mkdirSync(KEPT, { recursive: true })
+  if (!pruned) prune()
+  const at = join(KEPT, sha(JSON.stringify(["build", inputs])))
+  const lock = openSync(`${at}.lock`, "a")
+  while (flock(lock, LOCK_EX | LOCK_NB) !== 0) await Bun.sleep(RETRY_MS)
+  try {
+    if (existsSync(join(at, "built"))) {
+      rmSync(folder, { recursive: true, force: true })
+      cpSync(join(at, "built"), folder, { recursive: true })
+      const now = new Date()
+      utimesSync(at, now, now)
+      return
+    }
+    const why = await make()
+    if (!why) {
+      const making = `${at}.${process.pid}`
+      rmSync(making, { recursive: true, force: true })
+      mkdirSync(making)
+      cpSync(folder, join(making, "built"), { recursive: true })
+      renameSync(making, at)
+    }
+    return why
+  } finally {
+    flock(lock, LOCK_UN)
+    closeSync(lock)
+  }
 }
