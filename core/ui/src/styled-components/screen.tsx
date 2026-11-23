@@ -10,6 +10,7 @@ import { messages } from "../words.ts"
 import { ActionBar, type Action } from "./actions.tsx"
 import { ListKeys, ListStyle } from "./list.tsx"
 import { Empty } from "./states.tsx"
+import { Tips, type Tip } from "./tips.tsx"
 import { Choose, Collect } from "./collect.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { pixels, tokens } from "../tokens.ts"
@@ -161,8 +162,10 @@ export const Blank = createContext<(change: number) => void>(() => {})
 /// of what scrolls, as iOS's large titles and Android's large top app bar are, and goes under the bar as it scrolls,
 /// the bar's small one taking its place, every step of it following the scroll; what scrolls under the bar gives it
 /// its material and a hairline. With `largeTitle` the screen's page draws its name large itself, as iOS's App Store's
-/// pages do, and the bar's shows as that scrolls away.
-export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: JSX.Element }) {
+/// pages do, and the bar's shows as that scrolls away. With `tips` (2 to 4 `Tip`s: `{ title, body, keys?, picture? }`)
+/// its bar has a ? that shows them (`Tips`): at the end of a computer's title bar, where it stays, never in the
+/// footer's pills, and under a finger just before `action`.
+export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: JSX.Element }) {
   const opened = useContext(Opened)
   const leave = useContext(Leave)
   const inDetail = useContext(InDetail)
@@ -215,7 +218,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; bac
   const footed = () => panelled && actions().length > 0
   // On a computer, a screen that says nothing in its bar, in a window whose title bar already names it (a dialog's),
   // has no bar; under a finger the bar keeps clear of the status bar.
-  const barred = () => !computer || !!props.heading || !!props.action || backed() || titled() || (computer && !!history())
+  const barred = () => !computer || !!props.heading || !!props.action || !!props.tips?.length || backed() || titled() || (computer && !!history())
   return (
     <View style={look.screen}>
       <Show when={barred()}>
@@ -252,12 +255,18 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; bac
           <Heading level={1} aria-hidden={named() ? undefined : "true"} style={[look.title, computer && look.computerTitle, titleShown() < 1 && look.faded(titleShown())]}>
             {props.heading}
           </Heading>
+          <Show when={!computer && props.tips?.length}>
+            <Tips tips={props.tips!} />
+          </Show>
           <Show when={props.action}>
             <BarEnd value={true}>
               <Collect value={panelled ? collect : null}>
                 <View style={look.action}>{props.action}</View>
               </Collect>
             </BarEnd>
+          </Show>
+          <Show when={computer && props.tips?.length}>
+            <Tips tips={props.tips!} />
           </Show>
         </View>
       </View>

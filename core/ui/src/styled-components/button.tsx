@@ -20,6 +20,7 @@ import cornersIn from "@phosphor-icons/core/assets/regular/corners-in.svg?raw"
 import cornersOut from "@phosphor-icons/core/assets/regular/corners-out.svg?raw"
 import dotsThree from "@phosphor-icons/core/assets/regular/dots-three.svg?raw"
 import dotsThreeCircle from "@phosphor-icons/core/assets/regular/dots-three-circle.svg?raw"
+import downloadSimple from "@phosphor-icons/core/assets/regular/download-simple.svg?raw"
 import file from "@phosphor-icons/core/assets/regular/file.svg?raw"
 import gearSix from "@phosphor-icons/core/assets/fill/gear-six-fill.svg?raw"
 import magnifyingGlass from "@phosphor-icons/core/assets/regular/magnifying-glass.svg?raw"
@@ -38,6 +39,7 @@ import terminalWindow from "@phosphor-icons/core/assets/regular/terminal-window.
 import minus from "@phosphor-icons/core/assets/regular/minus.svg?raw"
 import minusCircle from "@phosphor-icons/core/assets/regular/minus-circle.svg?raw"
 import plusCircle from "@phosphor-icons/core/assets/regular/plus-circle.svg?raw"
+import question from "@phosphor-icons/core/assets/regular/question.svg?raw"
 import squaresFour from "@phosphor-icons/core/assets/regular/squares-four.svg?raw"
 import x from "@phosphor-icons/core/assets/regular/x.svg?raw"
 
@@ -61,6 +63,7 @@ const svgs = {
   "terminal-window": terminalWindow,
   "dots-three": dotsThree,
   "dots-three-circle": dotsThreeCircle,
+  "download-simple": downloadSimple,
   file,
   "gear-six": gearSix,
   "magnifying-glass": magnifyingGlass,
@@ -70,6 +73,7 @@ const svgs = {
   "pencil-simple": pencilSimple,
   plus,
   "plus-circle": plusCircle,
+  question,
   "squares-four": squaresFour,
   trash,
   "warning-circle": warningCircle,

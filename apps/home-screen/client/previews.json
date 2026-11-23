@@ -2794,5 +2794,183 @@
         "$error": "users/mira isn't a member of groups/family. Whoever owns it adds them, with permissions_share."
       }
     }
+  },
+  "Launcher, its tips": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "target": "macos-aarch64"
+      }
+    },
+    "taps": [
+      "Tips"
+    ],
+    "checks": {
+      "← and → flip through them, and Escape closes them and gives the ? the keyboard back": [
+        {
+          "key": "ArrowRight"
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "heading",
+              "name": "Just start typing"
+            }
+          }
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "heading",
+              "name": "Open it from anywhere"
+            }
+          }
+        },
+        {
+          "key": "ArrowLeft"
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "heading",
+              "name": "Open it from anywhere"
+            }
+          }
+        },
+        {
+          "key": "Escape"
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Tips"
+            }
+          }
+        },
+        {
+          "expect": {
+            "focused": {
+              "role": "button",
+              "name": "Tips"
+            }
+          }
+        }
+      ],
+      "a dot goes to its tip": [
+        "Tip 4 of 4",
+        {
+          "expect": {
+            "shown": {
+              "role": "heading",
+              "name": "Every app, in one place"
+            }
+          }
+        }
+      ],
+      "a press outside closes them": [
+        {
+          "press": {
+            "x": 300,
+            "y": 500
+          }
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Tips"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "Launcher, its last tip": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "target": "macos-aarch64"
+      }
+    },
+    "taps": [
+      "Tips",
+      {
+        "key": "ArrowRight"
+      },
+      {
+        "key": "ArrowRight"
+      },
+      {
+        "key": "ArrowRight"
+      }
+    ]
+  },
+  "Launcher in a browser, its tips": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "one/client": {
+        "device": "web",
+        "network": "https://home.example.com",
+        "theme": null,
+        "launcher": true,
+        "web": true
+      }
+    },
+    "taps": [
+      "Tips"
+    ]
+  },
+  "Home, its tips": {
+    "like": "Home, two pages",
+    "taps": [
+      "Tips"
+    ],
+    "checks": {
+      "a press on what's around the sheet closes it": [
+        {
+          "press": {
+            "x": 200,
+            "y": 300
+          }
+        },
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Tips"
+            }
+          }
+        }
+      ],
+      "its Close closes it": [
+        "Close",
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Tips"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "Home, its last tip": {
+    "like": "Home, two pages",
+    "taps": [
+      "Tips",
+      "Tip 4 of 4"
+    ]
   }
 }

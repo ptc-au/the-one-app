@@ -1,10 +1,10 @@
 // The pills: the owner's name, which opens the list of every owner, and the page dots with the App Library's glyph.
 import { For, Show } from "solid-js"
-import { type Element, haptic, Icon, Menu, Pressable, type Pressed, Text, View } from "ui"
+import { type Element, haptic, Icon, Menu, Pressable, type Pressed, Text, type Tip, Tips, View } from "ui"
 import { BAR, DOTS } from "./layout.ts"
 import { type Kind } from "./machine.ts"
 import { looks } from "./looks.ts"
-import { home, state, seen, along, rolled, at, screensOf, lastOf, editingNow, editingOwner, launcher } from "./store.ts"
+import { home, state, seen, along, rolled, at, screensOf, lastOf, editingNow, editingOwner, launcher, device } from "./store.ts"
 import { type Owner } from "./owners.ts"
 
 /// A window onto a row for each owner, which rolls as the owners move up and down, `at` in owners, each row `height`
@@ -160,6 +160,38 @@ export function DotsPill(props: { owners: Owner[]; laid: Kind[][]; glyph?: boole
           </View>
         </Pressable>
       </Show>
+    </View>
+  )
+}
+
+/// The ?, round and of glass as the pills are, at the end of the owner pill's row: the Home Screen's tips, for a
+/// phone's Home and for the launcher's card, which a computer's shortcut summons from anywhere, ⌥Space on a Mac and
+/// Super+Alt+Space elsewhere (computer.rs). Not while pages are edited, as Done is there.
+export function TipsPill() {
+  const shortcut = (): Tip[] => {
+    const { target, web } = device()
+    if (web) return []
+    const mac = target?.startsWith("macos")
+    const keys = mac ? ["⌥", "Space"] : [target?.startsWith("windows") ? "Win" : "Super", "Alt", "Space"]
+    return [{ title: "Open it from anywhere", body: `Press ${keys.join(mac ? "" : "+")} in any app to bring this back.`, keys }]
+  }
+  const tips = (): Tip[] =>
+    launcher()
+      ? [
+          ...shortcut(),
+          { title: "Just start typing", body: "Type a few letters to find any app or widget.", picture: "tip-search.svg" },
+          { title: "Turn the page", body: "Use ← and → or swipe with two fingers.", keys: ["left", "right"] },
+          { title: "Every app, in one place", body: "Past your last page, the App Library has them all.", picture: "tip-library.svg" },
+        ]
+      : [
+          { title: "Swipe for more pages", body: "Swipe left and right to move between your pages.", picture: "tip-pages.svg" },
+          { title: "Touch and hold to edit", body: "Move apps, add widgets, or take an app off a page.", picture: "tip-touch.svg" },
+          { title: "Switch whose Home", body: "Swipe up or down, or tap the name at the top.", picture: "tip-owners.svg" },
+          { title: "Every app, in one place", body: "Past your last page, the App Library has them all.", picture: "tip-library.svg" },
+        ]
+  return (
+    <View style={[looks.pill, looks.glass, looks.ownerPill]}>
+      <Tips tips={tips()} />
     </View>
   )
 }

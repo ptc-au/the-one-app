@@ -283,7 +283,10 @@ export declare function TextInput(props: TextInputProps): Element
 
 export declare function render(code: () => Element): () => void
 
-export declare function Screen(props: { heading?: Element; action?: Element; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: Element }): Element
+/** One of a screen's tips: one idea in a few words, a sentence, and keys drawn as keycaps or a picture of the app's own. */
+export type Tip = { title: string; body: string; keys?: string[]; picture?: string }
+export declare function Screen(props: { heading?: Element; action?: Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: Element }): Element
+export declare function Tips(props: { tips: Tip[] }): Element
 export declare function Section(props: { heading?: Element; "aria-label"?: string; children?: Element }): Element
 /** A row that scrolls sideways from the window's edge to its edge, its first item where the screen's column starts (`style` may say its `gap`). */
 export declare function Shelf(props: { role?: "group" | "toolbar" | "list"; "aria-label"?: string; style?: Styles<"gap">; children?: Element }): Element
@@ -636,6 +639,10 @@ export type Client = {
   transparent?: boolean
   /** Whether it's a Mac (or an iPhone or iPad), whose keys are ⌘ where a PC's are Ctrl. */
   mac?: boolean
+  /** An app's build's kind of machine, as builds are named (`macos-aarch64`, `windows-x86_64`, `linux-x86_64`). */
+  target?: string
+  /** Whether it's a browser, which the network's download page has the app for. */
+  web?: boolean
 }
 /** What `client(change)` changes. */
 export type ClientChange = {

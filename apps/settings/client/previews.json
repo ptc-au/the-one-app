@@ -2895,5 +2895,17 @@
         "passkeys": []
       }
     }
+  },
+  "Settings, its tips": {
+    "like": "Settings",
+    "taps": [
+      "Tips"
+    ]
+  },
+  "Settings on a phone, its tips": {
+    "like": "Settings, on a phone",
+    "taps": [
+      "Tips"
+    ]
   }
 }

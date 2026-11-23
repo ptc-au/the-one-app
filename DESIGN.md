@@ -43,6 +43,7 @@ What users see, as the project's owner decided it. Only their decisions are here
 - One build makes every target's: the web's CSS (variables and atomic classes), and for our renderer token and style tables, which travel with the UI library and each app over the air, versioned. A host knows kinds of token and the conditions, never a token's name or value.
 - Every UI library component is written once, on those primitives, and is the same code on every host; its look stays exactly the one described here.
 - Everything written this way updates over the air.
+- A screen may teach itself with 2 to 4 tips behind a ? (23 Nov), which never pops up by itself: at the end of a computer's title bar (it stays there, never in the footer's pills), in the launcher's card's top corner level with the owner pill, at the end of a phone's owner pill's row, and in an app's bar on a phone just before its own button. A popover under it on a computer, a sheet swiped through under a finger, each tip a few words, a sentence, and keys or a small picture. In a browser it ends with Get the App, to the network's download page.
 
 ## App windows (18 Nov)
 

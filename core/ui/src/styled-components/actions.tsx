@@ -128,10 +128,10 @@ export const askMac = () => {
   client().then((said) => setMac(!!said.mac), () => {})
 }
 
-/** How a key's shown: ⌘ or Ctrl, ⇧ and the rest as a Mac's menus show them, a letter in capitals; Return, which fonts
- * don't all have a glyph for, is an icon (`Keys`). */
-const shown = (key: string): string =>
-  ({ mod: mac() ? "⌘" : "Ctrl", shift: "⇧", alt: mac() ? "⌥" : "Alt", ctrl: mac() ? "⌃" : "Ctrl", escape: "esc", backspace: "⌫", delete: "⌦", tab: "⇥", up: "↑", down: "↓", left: "←", right: "→" })[key.toLowerCase()] ?? key.toUpperCase()
+/** How a key's shown: ⌘ or Ctrl, ⇧ and the rest as a Mac's menus show them, a letter in capitals, a word (Space) as
+ * it's written; Return, which fonts don't all have a glyph for, is an icon (`Keys`). */
+export const shown = (key: string): string =>
+  ({ mod: mac() ? "⌘" : "Ctrl", shift: "⇧", alt: mac() ? "⌥" : "Alt", ctrl: mac() ? "⌃" : "Ctrl", escape: "esc", backspace: "⌫", delete: "⌦", tab: "⇥", up: "↑", down: "↓", left: "←", right: "→" })[key.toLowerCase()] ?? (key.length === 1 ? key.toUpperCase() : key)
 
 /** Whether a key pressed is these keys, `mod` being ⌘ on a Mac and Ctrl elsewhere (`askMac` first). */
 export const pressed = (keys: string[], event: Keyed) => {

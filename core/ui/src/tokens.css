@@ -78,6 +78,8 @@
   --footer: 3.5rem;
   --form-label: 9.5rem;
   --key: 1.125rem;
+  --tips: 17rem;
+  --tip-picture: 6.75rem;
   --action-panel: 20rem;
   --row: 2.375rem;
   --grouped-row: 2.875rem;
@@ -202,6 +204,7 @@
     --sheet: 28rem;
     --grabber: 0.25rem;
     --grabber-gap: 0.5rem;
+    --tip-picture: 8.25rem;
     --row: 3.25rem;
     --grouped-row: 3.25rem;
     --sidebar-row: 3.25rem;

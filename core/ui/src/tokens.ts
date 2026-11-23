@@ -341,6 +341,9 @@ export const tokens = {
     formLabel: length(rem(9.5)),
     /** A key's chip, as ⌘ and K are shown beside what they do. */
     key: length(rem(1.125)),
+    /** A screen's tips' popover, and how tall a tip's keys or picture are, as a sheet draws them larger. */
+    tips: length(rem(17)),
+    tipPicture: length({ default: rem(6.75), touch: rem(8.25) }),
     /** The action panel's width. */
     actionPanel: length(rem(20)),
     /** How tall a row in a list is at least: what's pressed, and a little room. */

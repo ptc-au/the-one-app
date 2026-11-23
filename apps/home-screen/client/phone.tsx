@@ -8,7 +8,7 @@ import { state, at, editingNow, room, laidPage } from "./store.ts"
 import { type Owner } from "./owners.ts"
 import { HomePage } from "./pages.tsx"
 import { Library } from "./library.tsx"
-import { OwnerPill, DotsPill } from "./pills.tsx"
+import { OwnerPill, DotsPill, TipsPill } from "./pills.tsx"
 import { type Screens } from "./screens.ts"
 import { type Paging } from "./paging.ts"
 
@@ -81,6 +81,9 @@ export function Phone(props: { owners: Owner[]; layout: Screens; paging: Paging 
         <View inert={library() || undefined} style={[looks.topRow, ...withHome(), looks.top(room().safe.top), looks.tall(TOP_ROW)]}>
           <View style={[looks.live, looks.opacity((editingNow() ? 0.6 : 1) * opacity())]}>
             <OwnerPill owners={props.owners} />
+          </View>
+          <View inert={editingNow() || undefined} style={[looks.tipsEnd, looks.opacity(editingNow() ? 0 : opacity())]}>
+            <TipsPill />
           </View>
         </View>
         {/* The dots, floating over Home as an iPhone's are, and going with it to the App Library, which has none. */}

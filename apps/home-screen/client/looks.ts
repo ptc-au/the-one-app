@@ -91,6 +91,8 @@ export const looks = styles({
   screens: { position: "absolute", top: 0, start: 0, flexDirection: "row" },
   placedPage: (top: number, start: number, scale: number) => ({ top, start, scale }),
   topRow: { position: "absolute", zIndex: 6, start: 0, end: 0, alignItems: "center", justifyContent: "center", pointerEvents: "none" },
+  // The ?, at the end of a phone's owner pill's row, in line with the pages' first and last columns' edges.
+  tipsEnd: { position: "absolute", top: 0, bottom: 0, end: tokens.grid[4], justifyContent: "center", pointerEvents: "auto", transitionProperty: ["opacity"], transition: tokens.motion.snappy },
   bottomRow: { position: "absolute", zIndex: 6, start: 0, end: 0, alignItems: "center", pointerEvents: "none" },
   broken: { justifyContent: "center", padding: tokens.grid[5] },
   // A page's apps and widgets: each where it's laid, moved as it's carried and swung as it jiggles.
@@ -195,9 +197,10 @@ export const looks = styles({
   ownerName: { font: tokens.type.medium, fontWeight: tokens.weight.medium, lineClamp: 1, maxWidth: sizes.ownerName },
   caret: { color: tokens.colour.secondaryLabel, scale: 0.75 },
   ownerItem: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2] },
-  // The launcher's chevrons, fading in and out under the pointer, and its way to the App Library and back.
+  // The launcher's chevrons, fading in and out under the pointer, and in its card's corners, the tips and its way to the
+  // App Library and back.
   turn: { position: "absolute", zIndex: 6, alignItems: "center", justifyContent: "center", transitionProperty: ["opacity"], transition: tokens.motion.snappy },
-  libraryToggle: { position: "absolute", zIndex: 6, end: tokens.grid[4], justifyContent: "center", transitionProperty: ["opacity"], transition: tokens.motion.snappy },
+  corner: { position: "absolute", zIndex: 6, end: tokens.grid[4], justifyContent: "center", transitionProperty: ["opacity"], transition: tokens.motion.snappy },
   libraryGlyph: { height: "100%", justifyContent: "center", paddingStart: tokens.grid[0.5], paddingEnd: tokens.grid[1], color: tokens.colour.secondaryLabel },
   lit: { color: tokens.colour.label },
   editBar: { position: "absolute", zIndex: 7, flexDirection: "row", alignItems: "center", justifyContent: "space-between", pointerEvents: "none" },

@@ -123,6 +123,13 @@ const initials = (name: string) =>
     .map((word) => [...word][0]!.toUpperCase())
     .join("")
 
+/// What the ? in the sidebar's bar says.
+const tips = [
+  { title: "Find a setting fast", body: "Type a few letters in Search to find a setting or an app." },
+  { title: "Every app has a page", body: "Open an app under Apps to see who has it, update it or remove it." },
+  { title: "Updates in one place", body: "Updates shows when this device or an app has a new version ready." },
+]
+
 /// The sidebar: search, whoever's looking, the apps' sections by group, then every app A to Z.
 function Sidebar(props: { shown?: string }) {
   const [words, setWords] = createSignal("")
@@ -144,7 +151,7 @@ function Sidebar(props: { shown?: string }) {
   // What a search found: sections, Updates or apps.
   const found = () => groups.slice(1).some((group) => of(group).length) || own() || apps().some((app) => wanted(app.title))
   return (
-    <Screen heading="Settings">
+    <Screen heading="Settings" tips={tips}>
       <Search placeholder="Search settings…" aria-label="Search Settings" value={words()} onChangeText={setWords} />
       <Show when={person() && !words()}>
         <List>
