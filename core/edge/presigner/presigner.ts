@@ -427,6 +427,20 @@ async function chosen(env: Env, key: string): Promise<string[]> {
 /** Whom each server chose, as the bucket gave it, and when it was asked for. */
 const choices = new Map<string, { at: number; members: string[] }>();
 
+/**
+ * What the network's own app `app` keeps as the blob `name` (`OneCore.Artifact`), or null where it keeps none: the
+ * network's installers, as its Software Update publishes them, which the network's update reads to know which build its
+ * own app is (`updater/core.ts`). The presigner is the edge's holder of the bucket's credentials, so the rest of the
+ * edge asks it, as it asks for the network's owner.
+ */
+export async function networkApp(env: Env, app: string, name: string): Promise<string | null> {
+  const key = `${NETWORK}own/${app}/${name}`;
+  const got = await bucket(env).fetch(blob(env, key));
+  if (got.status === 404) return null;
+  if (!got.ok) throw new Error(`The bucket answered ${got.status} for ${key}`);
+  return got.text();
+}
+
 /** The list of servers kept under `prefix`, `null` if there's none yet. */
 async function list(env: Env, prefix: string): Promise<string[] | null> {
   const got = await bucket(env).fetch(blob(env, `${prefix}servers`));
