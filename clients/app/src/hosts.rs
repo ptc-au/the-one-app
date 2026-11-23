@@ -356,7 +356,9 @@ pub(crate) async fn resource(address: &str) -> Result<String, String> {
 
 /// What an app's native window changes of this device (`client({ ... })` in the UI library), answered as the window
 /// page answers a web view's (`respond` in bridge.js): its person signs it out, a phone's push tries again, a phone's
-/// Settings page opens, it becomes a server or stops being one, or it takes its update.
+/// Settings page opens, it becomes a server or stops being one, it takes its update, or on a computer the launcher's
+/// shortcut is chosen (`shortcut`, global-hotkey's words, or null for its default), or let go of while another is
+/// recorded (`shortcutPaused`).
 async fn change(args: &Value) -> Result<Value, String> {
     use crate::*;
     if args["leave"] == true {
@@ -378,6 +380,21 @@ async fn change(args: &Value) -> Result<Value, String> {
         return crate::login::set(on == true).map(|()| json!({"message": ""})).map_err(|error| format!("{error:#}"));
         #[cfg(mobile)]
         return Err(format!("This device has no login items ({on})."));
+    }
+    if let Some(keys) = args.get("shortcut") {
+        #[cfg(not(mobile))]
+        return crate::computer::change_shortcut(keys.as_str().map(str::to_owned)).await;
+        #[cfg(mobile)]
+        return Err(format!("This device has no shortcut ({keys})."));
+    }
+    if let Some(paused) = args.get("shortcutPaused") {
+        #[cfg(not(mobile))]
+        {
+            crate::computer::pause_shortcut(paused == true);
+            return Ok(json!({}));
+        }
+        #[cfg(mobile)]
+        return Err(format!("This device has no shortcut ({paused})."));
     }
     if let Some(on) = args.get("serve") {
         return serve(on == true).await.map(|message| json!({"message": message}));

@@ -40,7 +40,8 @@ pub(crate) async fn refresh(view: String) -> Result<(), String> {
 /// This device's key, as its network knows it, the network's address, if it has one, the build it's on and its kind
 /// of machine, as builds are named, its server's key, if it's a server, and whether a phone is woken by its
 /// notifications (`notifications::Push`), whether it opens its own Settings page for the app (`settings`, an iPhone's;
-/// Android's is opened by its activity), and whether its person turned Computer Use on, on a phone that has it.
+/// Android's is opened by its activity), whether its person turned Computer Use on, on a phone that has it, and on a
+/// computer the launcher's shortcut (`computer::shortcut_now`).
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) fn client() -> Result<Value, String> {
     let views = views()?;
@@ -54,7 +55,16 @@ pub(crate) fn client() -> Result<Value, String> {
         "settings": cfg!(target_os = "ios"),
         "computerUse": computer_use_client::phone(),
         "login": login(),
+        "shortcut": shortcut(),
     }))
+}
+
+/// The launcher's shortcut, on a computer; null on a phone, which has none.
+fn shortcut() -> Value {
+    #[cfg(not(mobile))]
+    return crate::computer::shortcut_now();
+    #[cfg(mobile)]
+    Value::Null
 }
 
 /// Whether the app opens when this device's person logs in, as the system says; null on a device that has no such
