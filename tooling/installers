@@ -49,8 +49,9 @@ one=$(latest windows-x86_64 one) build=$(jq -r .build <<<"$one")
 if has windows "$build"; then
   echo "windows: $name Setup.exe is $build already"
 else
-  fetched "$one" "$work/one.exe"
   windows=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.windows.conf.json ]] && echo "$work/app/tauri.windows.conf.json"))
+  program=$work/$(jq -r '.mainBinaryName // "one"' <<<"$windows").exe
+  fetched "$one" "$program"
   jq -c --arg address "$(cat "$work/app/address")" \
     '{address: $address, name: .productName, identifier, command: .mainBinaryName} | with_entries(select(.value != null))' \
     <<<"$windows" >"$work/network"
@@ -64,9 +65,9 @@ else
     icon=$work/icon.ico && convert "$work/app/icons/icon.png" -define icon:auto-resize=256,128,64,48,32,24,16 "$icon"
     named+=(-DICON="$icon")
   fi
-  ICON=$icon NAME=$(jq -r '.productName // empty' <<<"$windows") VERSION=${build%%+*} "$root/tooling/windows-name" "$work/one.exe"
-  "$root/tooling/windows-sign" "$work/one.exe"
-  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$work/one.exe" "${named[@]}" -DOUTFILE="$work/$name Setup.exe" -DSIGN="$root/tooling/windows-sign" \
+  ICON=$icon NAME=$(jq -r '.productName // empty' <<<"$windows") VERSION=${build%%+*} "$root/tooling/windows-name" "$program"
+  "$root/tooling/windows-sign" "$program"
+  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$program" "${named[@]}" -DOUTFILE="$work/$name Setup.exe" -DSIGN="$root/tooling/windows-sign" \
     -DCOPYRIGHT="$(grep -m1 '^Copyright' "$root/LICENSE")" "$root/clients/app/installer.nsi"
   one software-update publish_installer --platform windows --name "$name Setup.exe" --build "$build" --file-from "$work/$name Setup.exe" >/dev/null
   echo "windows: published $name Setup.exe, $build"
