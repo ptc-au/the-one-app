@@ -30,6 +30,10 @@ defmodule OneCore.Tools.Builds do
   # talk; and `apps`, whether what runs on the server that answers is what's installed, `synced`, or it's `syncing`
   # (`OneCore.Apps.sync/2`).
   defp list(by, owner) do
+    # `by`'s devices are theirs, which a group's server reads by the network's word that it acts for them, asked for
+    # here: a call from a device asks it as it comes in, and one passed on to a server that's asked about itself
+    # (`server`) doesn't, so the edge refused its read of them.
+    Apps.here?(by) || raise "This server doesn't act for #{by}, so it can't say which of their devices it has seen"
     keys = OneCore.Apps.covering(owner)
     devices = Bucket.list("#{by}/devices/")
     # Each blob is a trip across the internet where the bucket is far away, so they're all read at once.
