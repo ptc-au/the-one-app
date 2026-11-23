@@ -20,13 +20,16 @@ accounts through this one. `apps` lists the ones the person has.
 - `accounts` lists the accounts, each with whether it can be used now. Every tool of a Google app takes
   `account`: an address, or a part only it has. Left out, it's the first `accounts` lists.
 
-The first sign-in needs the item "Google client" in the person's Vault: `client_id` (not secret) and
+The first sign-in needs the item "Google client", in the person's Vault or, for everyone without one, in the
+network's (`ONE_SUBJECT=network`), as a workplace keeps one for its staff, where nobody then sets anything up: `client_id` (not secret) and
 `client_secret` of a Google Cloud OAuth client of the Web application kind, whose authorized redirect URI is the
 network's address followed by `/vault/callback`, with `oauth2.googleapis.com` its site, where its secret goes. When
 you make the client in a browser of yours, save it straight from there with `vault_save_from_browser` (the client's
 JSON download, `client_id` from `web.client_id` with `secret: false` and `client_secret` from `web.client_secret`,
-`hosts: ["oauth2.googleapis.com"]`), never reading it, and have the person switch it on for Google Account in the
+`hosts: ["oauth2.googleapis.com"]`), never reading it, and have the person (for the network's, an owner) switch it on for Google Account in the
 Vault, since an app signs in only with a client switched on for it. On its OAuth consent screen (Google Auth Platform, Branding), the Privacy policy link is
 the network's address followed by `/privacy`, the page every network serves naming its owner; once that's set,
-publish the app In production (Audience), unverified, so Google stops signing its accounts out every 7 days. When the person has it, ask for it with `vault_request`;
+publish the app In production (Audience), unverified, so Google stops signing its accounts out every 7 days; or,
+where everyone signing in is in the Google Workspace that owns the project, make its Audience Internal, which needs
+neither. When the person has it, ask for it with `vault_request`;
 never ask for it in the chat.

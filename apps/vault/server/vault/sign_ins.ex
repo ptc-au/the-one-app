@@ -20,7 +20,7 @@ defmodule Vault.SignIns do
   signature, as it came straight from the service's token address over TLS (OpenID Connect Core 3.1.3.7).
   """
 
-  alias OneCore.{Call, User}
+  alias OneCore.{Artifact, Call, User}
   alias Vault.{Access, Items, Store}
 
   @moves %{"started" => ~w(ok cancelled failed)}
@@ -53,8 +53,9 @@ defmodule Vault.SignIns do
 
     Store.quietly("Starting the sign-in", fn ->
       {state, verifier} = {"#{Base.url_encode64(call.subject, padding: false)}.#{Store.random(24)}", Store.random(48)}
-      # An app signs in with a client its person switched on for it, and nothing else of theirs.
-      found = Access.may!(Items.find!(call, db, service.client), {:app, app})
+      # An app signs in with a client switched on for it, and nothing else of its person's.
+      {at, at_db, found} = client(call, db, service.client)
+      found = Access.may!(found, {:app, app})
       client = Items.fields(found)
 
       client["client_id"] ||
@@ -66,7 +67,7 @@ defmodule Vault.SignIns do
         do: raise("#{service.client}'s sign-ins go only to its sites, and #{service.name}'s token address isn't one. Its person adds it, in the Vault.")
 
       own!(service, found["hosts"])
-      service = %{service | authorize: authorize!(call, db, service, found, client, app)}
+      service = %{service | authorize: authorize!(at, at_db, service, found, client, app)}
       if not String.contains?(item, "{{"), do: ours!(Items.find(call, db, item), app, service.name)
 
       Store.transaction(call, db, fn d ->
@@ -160,7 +161,7 @@ defmodule Vault.SignIns do
   # Swaps the code for tokens, which the service gives once, and keeps them in the item, for the app that began it.
   defp signed!(call, db, sign_in, service, code) do
     code || raise "#{service["name"]} sent no code back."
-    client = Items.fields(Items.find!(call, db, service["client"]))
+    client = client_fields(call, db, service["client"])
     tokens = exchange(service, client, code, sign_in["verifier"], address() <> "/vault/callback")
     name = signed_in(sign_in["item"], service, tokens)
     app = sign_in["app"]
@@ -233,6 +234,37 @@ defmodule Vault.SignIns do
     end
   end
 
+  # The client a sign-in uses, with the call and the Vault it's in, for what's written into it: its person's own, or
+  # else the network's, which its owners keep once for everyone in it, as a workplace registers one OAuth client for
+  # all its staff. Its secret goes only into this sign-in's requests to the service, and is never shown.
+  defp client(call, db, name) do
+    if found = Items.find(call, db, name), do: {call, db, found}, else: network_client(call, name)
+  end
+
+  defp network_client(call, name) do
+    network = %{call | subject: "network", actor: nil, forwarded: true}
+    db = network_vault(call, network, name)
+    {network, db, Items.find(network, db, name) || raise("There's no item named #{name} in your Vault or the network's.")}
+  end
+
+  # The network's Vault, opened on this server, which opens its person's too. Where it can't, a server that opens both
+  # runs the whole call, never one that opens only the network's, which would run it as the network's.
+  defp network_vault(call, network, name) do
+    Store.own(network)
+  rescue
+    error in RuntimeError -> reraise "There's no item named #{name} in your Vault, and the network's can't be opened: #{error.message}", __STACKTRACE__
+  catch
+    :throw, {Call, :forwarding_loop} ->
+      encryption = Store.encryption(call)
+      vault = Artifact.name(Store.items_artifact(network))
+      held = encryption.servers(%Artifact{prefix: vault <> "/"})
+      both = Enum.filter(held, &(&1 in encryption.should(vault) and &1 in OneCore.Apps.covering(call.subject))) -- [call.server]
+      if both != [], do: :no_response = Call.forward(call, both)
+      raise "There's no item named #{name} in your Vault, and no server that opens both it and the network's answered."
+  end
+
+  defp client_fields(call, db, name), do: Items.fields(elem(client(call, db, name), 2))
+
   # Where its person signs in to the service: the client's own sign-in page, which the client item keeps. A client
   # kept before items kept it takes the first page an app it was switched on for names, and keeps it from then on, so
   # no other app sends its person anywhere else with it. It's a web page over https that names nobody before its
@@ -261,7 +293,7 @@ defmodule Vault.SignIns do
 
     if opened == [], do: raise("This sign-in was opened already, in another browser. Start it again.")
     service = service(JSON.decode!(sign_in["service"]))
-    client = Items.fields(Items.find!(call, db, service.client))
+    client = client_fields(call, db, service.client)
     url = link(service, client["client_id"], address() <> "/vault/callback", sign_in["state"], sign_in["verifier"])
     %{service: service.name, status: "started", began: JSON.decode!(sign_in["began"]), apps: JSON.decode!(sign_in["apps"]), url: url}
   end
@@ -302,7 +334,7 @@ defmodule Vault.SignIns do
   both spend a refresh token a service gives once.
   """
   def renewed(call, db, item, had) do
-    client = Items.fields(Items.find!(call, db, item["oauth"]["client"]))
+    client = client_fields(call, db, item["oauth"]["client"])
 
     Store.transaction(call, db, fn _d ->
       latest = Store.record(db, item["id"]) || raise "There's no item named #{item["name"]} in the Vault."
