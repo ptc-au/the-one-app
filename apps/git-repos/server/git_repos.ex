@@ -1090,7 +1090,7 @@ defmodule GitRepos do
       lines = for line <- lines(Mirror.git!(folder, ["cat-file", "blob", sha])), line = String.trim(line), line != "", do: line
       prose = Enum.find(lines, &(not String.starts_with?(&1, ~w(# ![ [! < ``` --- | ===))))
       line = prose || List.first(lines)
-      line && line |> String.trim_leading("#") |> String.trim() |> String.slice(0, 160)
+      line && line |> String.replace(~r/<[^>]*>/, "") |> String.trim_leading("#") |> String.trim() |> String.slice(0, 160)
     else
       _ -> nil
     end
