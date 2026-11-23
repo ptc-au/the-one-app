@@ -41,10 +41,14 @@ defmodule GoogleDocs do
         name: "read",
         read_only: true,
         description:
-          "A document (Docs' documents.get): its title, address and body, as markdown (headings, lists, tables, bold, italic, links) or plain text.",
+          "A document (Docs' documents.get): its title, address and body, as markdown (headings, lists, tables, bold, italic, links) or plain text. A document with tabs gives every tab in order, each headed by its title (a nested tab's is its parents' too, as Parent / Child), or the one tab asked for.",
         inputs:
           with_account.(
-            %{documentId: document, format: %{type: "string", enum: ["markdown", "text"], description: "markdown, the default, or text"}},
+            %{
+              documentId: document,
+              format: %{type: "string", enum: ["markdown", "text"], description: "markdown, the default, or text"},
+              tab: string.("Read only this tab: its title (or Parent / Child) or its id, as a document's tabs list gives. Every tab if left out")
+            },
             ["documentId"]
           ),
         outputs: %{
@@ -53,7 +57,12 @@ defmodule GoogleDocs do
             id: string.("The document's id"),
             title: %{type: "string"},
             url: string.("Its address"),
-            text: string.("Its body, as markdown or plain text, as format asked")
+            text: string.("Its body, as markdown or plain text, as format asked"),
+            tabs: %{
+              type: "array",
+              description: "Its tabs, in order, when it has more than one: each tab's id and title (Parent / Child when nested)",
+              items: %{type: "object", properties: %{id: %{type: "string"}, title: %{type: "string"}}, required: ["id", "title"]}
+            }
           },
           required: ["id", "title", "url", "text"]
         }
@@ -112,13 +121,22 @@ defmodule GoogleDocs do
 
   defp run("read", %{"documentId" => given} = inputs, at) do
     id = id(given)
-    document = api(at, "GET", "documents/#{path(at, id)}", missing: no_document(id))
-    %{
-      id: document["documentId"],
-      title: document["title"],
-      url: url(document["documentId"]),
-      text: render(document, inputs["format"] != "text")
-    }
+    document =
+      api(at, "GET", "documents/#{path(at, id)}", query: %{includeTabsContent: "true"}, missing: no_document(id))
+
+    markdown = inputs["format"] != "text"
+    tabs = tabs(document["tabs"] || [], nil)
+    read = tabs |> Enum.filter(&tab?(&1, inputs["tab"]))
+    if read == [], do: raise("No tab #{inspect(inputs["tab"])} in #{id}. Its tabs: #{Enum.map_join(tabs, ", ", & &1.title)}.")
+
+    text =
+      case {tabs, read} do
+        {[_only], [only]} -> render(only.content, markdown)
+        _ -> Enum.map_join(read, "\n\n", &"#{if markdown, do: "# ", else: ""}#{&1.title}\n\n#{render(&1.content, markdown)}")
+      end
+
+    %{id: document["documentId"], title: document["title"], url: url(document["documentId"]), text: text}
+    |> then(&if(length(tabs) > 1, do: Map.put(&1, :tabs, Enum.map(tabs, fn tab -> %{id: tab.id, title: tab.title} end)), else: &1))
   end
 
   defp run("create", %{"title" => title} = inputs, at) do
@@ -148,7 +166,20 @@ defmodule GoogleDocs do
   defp batch(at, id, requests),
     do: api(at, "POST", "documents/#{path(at, id)}:batchUpdate", json: %{requests: requests}, missing: no_document(id))
 
-  # A document's body as markdown, or text: its paragraphs, lists and tables, in order.
+  # A document's tabs in order, each nested tab after its parent, with its title as its parents' too.
+  defp tabs(list, parent) do
+    Enum.flat_map(list, fn tab ->
+      properties = tab["tabProperties"] || %{}
+      title = Enum.join(Enum.reject([parent, properties["title"] || ""], &(&1 in [nil, ""])), " / ")
+      this = %{id: properties["tabId"], title: title, content: tab["documentTab"] || %{}}
+      [this | tabs(tab["childTabs"] || [], title)]
+    end)
+  end
+
+  defp tab?(_tab, nil), do: true
+  defp tab?(tab, given), do: given == tab.id or String.downcase(given) == String.downcase(tab.title)
+
+  # A tab's body as markdown, or text: its paragraphs, lists and tables, in order.
   defp render(document, markdown) do
     {lines, _counters} =
       Enum.reduce(blocks(get_in(document, ["body", "content"]) || [], true), {[], %{}}, fn block, {lines, counters} ->
