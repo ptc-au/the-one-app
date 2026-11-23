@@ -16,7 +16,7 @@ import { Field, Icon, Image, Input, render, SignIn, styles, Text, tokens, View }
 import { createAuthClient } from "better-auth/client"
 import { deviceAuthorizationClient } from "better-auth/client/plugins"
 import { passkeyClient } from "@better-auth/passkey/client"
-import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as openedKey, output, PRF, prfKey, unwrap } from "./passkey.ts"
+import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as openedKey, output, PRF, prfKey, unwrap, wrap } from "./passkey.ts"
 
 /// The network's mark: its own logo, or the One App's (`icon` in `../worker.ts`).
 const mark = "/Logo.png"
@@ -384,12 +384,17 @@ async function toDevice(key: Uint8Array<ArrayBuffer>, owner: string, device: str
 /**
  * Hands the keys of what's encrypted for `scope` to the servers that act for it and are waiting for them, and takes
  * them from any that hold them and no longer do: its person's own, or a group's or the network's they own, which is
- * sealed to their key. The names of the servers that were waiting.
+ * sealed to their key, and made here the first time. The names of the servers that were waiting.
  */
 async function toServers(key: Uint8Array<ArrayBuffer>, owner: string, scope: string) {
   const held = await tool<Held>("encryption_key", {}, scope)
   let opened = key
-  if (scope !== owner) {
+  if (scope !== owner && !held.check) {
+    // Nobody has made it yet: it's made here, sealed to its owner's own key, which opens it from then on, as theirs
+    // was first made sealed to their passkey.
+    opened = crypto.getRandomValues(new Uint8Array(32))
+    await tool("encryption_store", { check: await check(opened), wrapped: await wrap(opened, key, owner, scope) }, scope)
+  } else if (scope !== owner) {
     if (!held.wrapped) throw new Error(`Your key doesn't open ${whose(scope)} key yet.`)
     opened = await unwrap(key, owner, scope, held.wrapped)
     if ((await check(opened)) !== held.check) throw new Error(`What's kept as ${whose(scope)} key isn't it, so nothing was handed over.`)
