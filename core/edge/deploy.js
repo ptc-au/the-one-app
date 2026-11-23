@@ -1,5 +1,5 @@
 // Deploys a built edge (`bun edge.js build <folder>`, which copies this in beside it) to a network's address, checks
-// it answers as that build, and rolls each Worker back to the version it ran before if it doesn't:
+// Cloudflare says it's live as that build, and rolls each Worker back to the version it ran before if it doesn't:
 //
 //     bun install --frozen-lockfile && bun deploy.js https://<the network's address> [--allow-downgrade]
 //
@@ -65,13 +65,17 @@ if (elsewhere.length)
 const wrangler = (/** @type {string[]} */ ...args) => Bun.spawn(["bun", "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
 const config = (/** @type {string} */ name, file = "wrangler.jsonc") => `workers/${name}/${file}`;
 
-/** The version of `name` that's live, with the tag it was deployed with, or `null` where there's none. */
+/**
+ * What Cloudflare says is live of `name`, its active deployment's version (`percentage`, of the traffic it takes) with
+ * the tag and `VERSION` it was deployed with, or `null` where there's none.
+ */
 async function live(/** @type {string} */ name) {
   const status = await $`bun x wrangler deployments status --name ${name} --json`.cwd(here).quiet().nothrow();
-  const version = status.exitCode === 0 ? JSON.parse(status.text()).versions?.[0]?.version_id : null;
-  if (!version) return null;
-  const viewed = JSON.parse((await $`bun x wrangler versions view ${version} --name ${name} --json`.cwd(here).quiet()).text());
-  return { version, tag: viewed.annotations?.["workers/tag"] };
+  const active = status.exitCode === 0 ? JSON.parse(status.text()).versions?.[0] : null;
+  if (!active) return null;
+  const viewed = JSON.parse((await $`bun x wrangler versions view ${active.version_id} --name ${name} --json`.cwd(here).quiet()).text());
+  const bound = viewed.resources?.bindings?.find((/** @type {{name: string}} */ binding) => binding.name === "VERSION");
+  return { version: active.version_id, percentage: active.percentage, tag: viewed.annotations?.["workers/tag"], build: bound?.text };
 }
 
 // The edge answers at the network's address, which Cloudflare attaches to it, making its DNS record and certificate.
@@ -104,17 +108,25 @@ for (const { name, kind, tag, d1 } of built.workers) {
   for (const binding of d1) if (await wrangler("d1", "migrations", "apply", binding, "-c", config(name), "--remote")) await back(`${name}'s ${binding} didn't migrate`);
 }
 
-// It's checked as a person's app finds it: the window page's `update.json` says the build it was deployed from, and the
-// web client's page loads. Cloudflare takes a few seconds to answer with a new version everywhere, so it's asked again
-// for up to a minute.
+// It's checked by what Cloudflare says: a Worker's deployment is all at once, taking all the traffic as it's made, so a
+// deployment that's the version just deployed at 100% is live (its API states it, as `wrangler deployments status`
+// reads it), where the edge's own page can answer with the old build for a while after, in a location Cloudflare hasn't
+// reached or a CDN that hasn't the new page yet. The edge is of this build and answers at the network's address, which
+// Cloudflare says of its Custom Domains.
 let why = "";
-for (const until = Date.now() + 60_000; Date.now() < until; await Bun.sleep(5_000)) {
-  const telling = await said();
-  const page = await fetch(at, { redirect: "follow", cache: "no-store" }).then((answer) => answer.status, () => 0);
-  why = telling?.version !== built.version ? `it says it's ${telling?.version ?? "nothing"}, not ${built.version}` : page >= 400 || page === 0 ? `its page answered ${page}` : "";
-  if (!why) break;
+for (const { name, kind, tag } of built.workers) {
+  if (!deployed.includes(name)) continue;
+  const now = await live(name);
+  if (now?.version === before[name]?.version || now?.percentage !== 100 || (kind === "edge" ? now.build !== built.version : now.tag !== tag)) {
+    why = `Cloudflare says ${name} runs ${now ? `${now.version} at ${now.percentage}%` : "nothing"}, not the build deployed`;
+    break;
+  }
 }
-if (why) await back(`The edge at ${at.host} didn't answer as ${built.version}: ${why}`);
+if (!why) {
+  const attached = await fetch(`https://api.cloudflare.com/client/v4/accounts/${zone.account.id}/workers/domains?service=${edgeName}`, { headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } });
+  if (!attached.ok || !(await attached.json()).result.some((/** @type {{hostname: string}} */ domain) => domain.hostname === at.hostname)) why = `Cloudflare doesn't say the edge answers at ${at.hostname}`;
+}
+if (why) await back(`The edge at ${at.host} didn't deploy as ${built.version}: ${why}`);
 console.log(`The edge at ${at.host} is ${built.version}`);
 
 /** Rolls each Worker deployed here back to the version it ran before, and ends saying `failed`. */

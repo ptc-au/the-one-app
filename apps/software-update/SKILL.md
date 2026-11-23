@@ -12,7 +12,7 @@ The network's update takes its servers to each build. Once they're all up to dat
 that build's edge, the part of the network at its address (`core/edge/updater/updater.ts`): the edge's own update,
 `edge_update` in `one builds`, which never holds the servers'. This app is what deploys it there: with it installed for
 the network, a server says it deploys the edge (`deploys_edge`), and one ready server on the build is told to. The
-deploy checks the edge answers as that build and rolls every Worker back if not. It's tried once a build, and Update
+deploy checks Cloudflare says the edge is live as that build and rolls every Worker back if not. It's tried once a build, and Update
 Now tries again: `edge_update` says `needs_setup` where this app can't use the token, and `failed`, with why, where
 the deploy went back.
 

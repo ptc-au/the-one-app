@@ -2,7 +2,7 @@ defmodule SoftwareUpdate do
   @moduledoc """
   Software Update: deploys the network's edge once its servers are on a newer build (One Core's hook `edge`), as
   one server is told to by the network's update (`core/edge/updater/updater.ts`). It deploys that server's build of
-  the edge (`OneCore.Release.edge/0`) with `deploy.js` beside it, which checks the edge answers as that build and
+  the edge (`OneCore.Release.edge/0`) with `deploy.js` beside it, which checks Cloudflare says the edge is live as that build and
   rolls it back if not, and says how it went (`OneCore.Release.edge_deployed/2`).
 
   It deploys with the network's Cloudflare API token, `api_token` of the item `@item` in the network's Vault, switched
