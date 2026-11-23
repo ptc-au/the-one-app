@@ -6,6 +6,7 @@
 // built with has them, Emil Kowalski's, pstack's and our design rules. build/ is how an app is built and checked against it: app.js and lint-app.js, with what they need to run, which a server
 // installs and runs on an app's source.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { inputs } from "./inputs.js"
 import { fileURLToPath } from "node:url"
 import solid from "@solidjs/vite-plugin"
 import { build } from "vite"
@@ -20,15 +21,10 @@ const text = (path) => readFileSync(here(path), "utf8")
 const into = process.argv[2]
 const client = into ?? here("dist/client")
 
-// What it's built from is what git has in this folder, and DESIGN.md, so a build of those is as good as another: dist keeps
-// their hash (`.inputs`), and it's built again only where they changed, as `tooling/code_reloader.exs` has it. Vite
-// empties dist/client, so a build that stopped partway has no hash, and is built again.
-const inputs = new Bun.CryptoHasher("sha256")
-if (!into) {
-  const tracked = (await $`git ls-files -co --exclude-standard -z . ../../DESIGN.md`.cwd(here(".")).text()).split("\0").filter(Boolean).sort()
-  for (const file of tracked) inputs.update(file).update(readFileSync(here(file)))
-}
-const built = inputs.digest("hex")
+// What it's built from (`inputs`): dist keeps their hash (`.inputs`), and it's built again only where they changed, as
+// `tooling/code_reloader.exs` has it. Vite empties dist/client, so a build that stopped partway has no hash, and is built
+// again.
+const built = into ? "" : inputs()
 if (!into && existsSync(here("dist/.inputs")) && text("dist/.inputs") === built && existsSync(here("dist/client"))) process.exit()
 
 // Built afresh, but for dist/client itself, which Vite empties: a local network's edge serves it where it is, by a

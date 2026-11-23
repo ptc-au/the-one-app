@@ -1,15 +1,14 @@
 // Building a folder into what the headless renderer loads: the UI library, an app's client and its page.
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
+import { inputs } from "../../../../../core/ui/inputs.js"
 import { cachedBuild, digest } from "./cache.js"
 import { root, slot, ui } from "./options.js"
 
-/// When a file under `paths` last changed, the latest.
-const changed = (...paths) => Math.max(...paths.map((path) => (statSync(path).isDirectory() ? Math.max(0, ...readdirSync(path, { recursive: true }).map((file) => statSync(join(path, file)).mtimeMs)) : statSync(path).mtimeMs)))
-/// What's built that's older than what it's built from, as after a pull, so what a run draws and checks would be of the
-/// build, not the source: the UI library, or the headless renderer where it's built. → what to build again, if anything.
+/// What's built from other than what's there now, as after a pull, so what a run draws and checks would be of the
+/// build, not the source: the UI library, by the hash of what it's built from (`inputs`). → what to build again, if anything.
 export function stale() {
-  if (!existsSync(ui("dist/build/app.js")) || changed(ui("src"), ui("tables.ts"), ui("build.js")) > statSync(ui("dist/build/app.js")).mtimeMs) return "Build the UI library: `bun build.js` in core/ui"
+  if (!existsSync(ui("dist/.inputs")) || readFileSync(ui("dist/.inputs"), "utf8") !== inputs()) return "Build the UI library: `bun build.js` in core/ui"
 }
 
 /// The UI library's build a pass runs: its own, until the pass copies it (`copied`).
