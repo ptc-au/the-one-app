@@ -8,9 +8,10 @@
 #     tooling/release <name>...
 #
 # `server` is a server for every kind of machine one of the network's servers runs on, and `client` is `one` for
-# every kind of desktop machine among the network's devices; neither says both. A name is one build, as
-# `one builds` names them: `server/linux-x86_64`, `one/macos-aarch64`, `one-cli/linux-x86_64`. A phone's app is
-# built by the network's owner from its repo (`iphone` skill), not here. Windows' app, `one/windows-x86_64`, comes
+# every kind of desktop machine among the network's devices, and Android's app; neither says both. A name is one build,
+# as `one builds` names them: `server/linux-x86_64`, `one/macos-aarch64`, `one-cli/linux-x86_64`. An iPhone's app is
+# built from the network's repo (`iphone` skill). Android's, `one/android-aarch64`, is the plain APK each network's own
+# is made from (`tooling/installers`), which its phones update to by themselves. Windows' app, `one/windows-x86_64`, comes
 # with its installer, `one-setup/windows-x86_64`, which a person installs it with the first time (`clients/app/
 # installer.nsi`); from then on it updates itself, as on Linux and a Mac. --dry-run says what it would build, and
 # builds nothing.
@@ -117,7 +118,7 @@ publish() {
       return { path, what, kind, name, build: BUILD, inputs: await said(".inputs"), serves: await said(".serves"), sha256, signature, size: bytes.length };
     }));
     const at = `https://github.com/${REPO}/releases/download/${TAG}`;
-    const TARGETS = ["linux-x86_64", "linux-aarch64", "macos-aarch64", "windows-x86_64"];
+    const TARGETS = ["linux-x86_64", "linux-aarch64", "macos-aarch64", "windows-x86_64", "android-aarch64"];
     // Read by the GitHub API, as each list by its link (`${at}/<target>.json`) is a minute or more old.
     const assets = JSON.parse(gh("release", "view", TAG, "--json", "assets")).assets;
     const have = new Set(assets.map(({ name }) => name));
@@ -259,6 +260,7 @@ triple() {
     linux-aarch64) echo aarch64-unknown-linux-gnu ;;
     macos-aarch64) echo aarch64-apple-darwin ;;
     windows-x86_64) echo x86_64-pc-windows-msvc ;;
+    android-aarch64) echo aarch64-linux-android ;;
   esac
 }
 
@@ -301,15 +303,15 @@ survey() {
   builds=$(one builds)
   getting=$(getting_dev_builds)
   git fetch -q origin main
-  # What's asked for, by name. A desktop or the CLI is built for each kind of machine a device of the network's is,
-  # but a phone, whose app the network's owner builds.
+  # What's asked for, by name. A desktop or the CLI is built for each kind of machine a device of the network's is, and
+  # Android's app always, as each network's installer is made from it; an iPhone's is built from the network's repo.
   names=()
   for want in "${wanted[@]}"; do
     case $want in
       server) names+=($(jq -r '.servers[].target | "server/" + .' <<<"$builds")) ;;
       client) names+=($(jq -r '.devices[].target | select(startswith("linux-")) | "one/" + ., "one-cli/" + .' <<<"$getting")
         $(jq -r '.devices[].target | select(startswith("macos-")) | "one/" + .' <<<"$getting")
-        $(jq -r '.devices[].target | select(startswith("windows-")) | "one/" + ., "one-cli/" + .' <<<"$getting")) ;;
+        $(jq -r '.devices[].target | select(startswith("windows-")) | "one/" + ., "one-cli/" + .' <<<"$getting") one/android-aarch64) ;;
       *) names+=("$want") ;;
     esac
   done
@@ -347,7 +349,7 @@ survey() {
       if [[ $latest == "$build" ]]; then notes+=("$name  $build is published already"); else notes+=("$name  $latest is published, which has $build's changes"); fi
     elif [[ $name == server/* && $here != linux-* ]]; then
       echo "$name is built on Linux: build it there with tooling/release $name" >&2 && exit 1
-    elif [[ $name == server/* || $kind == "$here" || ($here == linux-* && ($kind == windows-* || $name == one/macos-*)) ]]; then
+    elif [[ $name == server/* || $kind == "$here" || ($here == linux-* && ($kind == windows-* || $kind == android-* || $name == one/macos-*)) ]]; then
       # A client's inputs name the Rust that builds it, which is this machine's, and GitHub's for a Mac's.
       if [[ $name != server/* ]] && was=$(unchanged "$name"); then
         notes+=("$name  built from the same as $was, which stays the latest")
@@ -472,6 +474,17 @@ client() {
     client_inputs "${name#*/}" >"$out/$file.inputs" &&
     serve_inputs "${name#*/}" >"$out/$file.serves"
 }
+# Android's app, an APK with no network in it, which each network's own is made from (`tooling/android-apk`), as Tauri
+# builds it, with Gradle (`clients/app/gen/android`), in this checkout's target folder.
+android() {
+  local file sdk
+  file=$(tr / - <<<"$1") sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+  echo "Building $1" &&
+    (cd clients/app && ANDROID_HOME=$sdk NDK_HOME=${NDK_HOME:-$(ls -d "$sdk"/ndk/* | sort -V | tail -1)} \
+      cargo tauri android build --apk --target aarch64 >/dev/null) &&
+    gzip -9 -c clients/app/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk >"$out/$file.gz" &&
+    client_inputs "${1#*/}" >"$out/$file.inputs"
+}
 clients=()
 for name in "${mine[@]}"; do
   file=$(tr / - <<<"$name")
@@ -482,6 +495,9 @@ for name in "${mine[@]}"; do
         -f rust="$(rustc -V | cut -d' ' -f2)" &&
       mac_bundle_signed "$out/$file.gz" && client_inputs "${name#*/}" >"$out/$file.inputs" && serve_inputs "${name#*/}" >"$out/$file.serves" ||
       { echo "$name wasn't built." >&2 && exit 1; }) &
+    clients+=($!)
+  elif [[ $name == one/android-* ]]; then
+    android "$name" &
     clients+=($!)
   elif [[ $name == one/* || $name == one-cli/* ]]; then
     client "$name" &
