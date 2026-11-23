@@ -82,6 +82,31 @@ for (const file of readdirSync(`${root}/clients/web`).filter((file) => !["dist",
 rmSync(`${web}/sw.js`, { force: true });
 rmSync(`${web}/host.js`, { force: true });
 await $`bun install --frozen-lockfile && bun build sw.js --format iife --minify --outfile ${web}/sw.js && bun build host.js --format esm --minify --outfile ${web}/host.js`.cwd(`${root}/clients/web`).quiet();
+// A deploy's page is bundled, as a web app's build bundles it: its scripts in one file and its styles in another, each
+// named by what's in it under `/assets/` (`_headers` keeps them for good), so a browser that opened it before asks for
+// none of them again, and one opening it for the first time waits for one of each, not each module as the one before
+// it imports it. A local network's is served as it is, so a change to it shows as the page is loaded again. The
+// network's logo stays at `/Logo.png`, which Sign-In answers with the network's own (`apps/sign-in/edge/worker.ts`),
+// and XState's UMD build sets its global as a classic script does, which the page's modules read (`XState`), rather
+// than being taken for a CommonJS module, which sets none.
+if (what !== "dev") {
+  const built = await Bun.build({
+    entrypoints: [`${web}/index.html`],
+    outdir: web,
+    minify: true,
+    sourcemap: "external",
+    publicPath: "/",
+    naming: { entry: "[name].[ext]", chunk: "assets/[name]-[hash].[ext]", asset: "assets/[name]-[hash].[ext]" },
+    plugins: [{
+      name: "page",
+      setup(build) {
+        build.onResolve({ filter: /(^|\/)Logo\.png$/ }, () => ({ path: "/Logo.png", external: true }));
+        build.onLoad({ filter: /xstate\.umd\.min\.js$/ }, async ({ path }) => ({ contents: `(function (exports, module, define) {${await Bun.file(path).text()}\n}).call(globalThis)`, loader: "js" }));
+      },
+    }],
+  });
+  if (!built.success) throw new AggregateError(built.logs, "The web client's page didn't build");
+}
 // Built here, so a deploy never ships whatever build of the UI library was left on disk.
 await $`bun install --frozen-lockfile && bun build.js`.cwd(`${root}/core/ui`).quiet();
 place(`${root}/core/ui/dist/client`, `${web}/ui/client`);
