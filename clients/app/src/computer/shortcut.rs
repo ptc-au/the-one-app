@@ -9,6 +9,19 @@
 //! showing every network's running as tabs over its search, by the logo each keeps beside where it listens
 //! (`apps/<identifier>.png`, its network's `/Logo.png`).
 //!
+//! Each network's launcher is hidden or shown, its Home Screen or a step of its onboarding (the page's own, kept by
+//! the steps' tips, so it comes back on the same step). A launcher goes as soon as anything else takes the keyboard,
+//! another network's launcher too, so at most one is shown, and every way one shows makes its network the one used
+//! last (`used`), onboarding too. So the shortcut puts away whichever launcher is shown, and shows the network used
+//! last where none is:
+//!
+//! | This network's launcher | What happens | Then | `last` |
+//! | --- | --- | --- | --- |
+//! | hidden | the shortcut, this network `last` | shown | this |
+//! | shown | the shortcut | hidden | this |
+//! | hidden | the app started as it's opened, its Dock or taskbar icon, a link, a switch to it (⌘1, ⌘2) | shown | this |
+//! | shown | another's launcher shown, Escape, an app opened, a click elsewhere | hidden | as it was |
+//!
 //! It's ⌥Space on a Mac, as Raycast suggests, which macOS leaves free (Spotlight is ⌘Space, the input source ⌃Space);
 //! on Windows and Linux Alt+Space is the window menu's, and Super+Space the input source's, so it's Super+Alt+Space
 //! there. Its person chooses another in Settings or onboarding (`change`), in global-hotkey's words (`alt+Space`), or
@@ -225,7 +238,8 @@ fn ask(address: &str, message: &Value) -> std::io::Result<Value> {
     serde_json::from_str(&line).map_err(std::io::Error::other)
 }
 
-/// This app's launcher was shown, so its network is the one used last, which the shortcut shows next.
+/// This app's launcher was shown, whichever way and whatever it shows (onboarding too), so its network is the one used
+/// last, which the shortcut puts away, or shows next.
 pub(super) fn used() {
     let _ = std::fs::write(shared().join("last"), ::client::identifier());
 }

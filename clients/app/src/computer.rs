@@ -592,6 +592,7 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 shows = showing;
                 if let Some(id) = native.filter(|_| std::mem::take(&mut wanted)) {
                     let asked = std::time::Instant::now();
+                    shortcut::used();
                     on_native(move |windows| windows.summon(id, asked, None));
                 }
             }
