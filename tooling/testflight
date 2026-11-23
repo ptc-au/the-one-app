@@ -13,8 +13,11 @@
 # each is signed with the team's Apple Distribution identity, its App Store profile and that profile's entitlements,
 # with the network's hosts as its associated domains (`webcredentials:` for its passkeys, `applinks:` for the links
 # that open in it), by rcodesign. It's uploaded with the App Store Connect API key (`buildUploads`), and this ends once
-# Apple has taken it: Apple processes it, and its testers' phones take it then, by themselves. An app's icon is the One
-# App's: App Store Connect takes only one in a compiled asset catalog (`Assets.car`), which only a Mac's `actool` makes.
+# Apple has taken it: Apple processes it, and its testers' phones take it then, by themselves. Its icon (`icons/icon.png`,
+# square, filling its square as its own background) and its logo on its launch screen (`icons/logo.png`, and
+# `logo-dark.png` for a dark one), where its repo has them, are put in the app's asset catalog in place of the One App's,
+# which App Store Connect takes only compiled (`Assets.car`), and only Xcode's `actool` compiles: on the Mac `ssh mac`
+# reaches, in a few seconds.
 #
 # It finishes only what a phone doesn't get otherwise: its page comes from the network's edge, and its apps from their
 # servers, so a build whose native code, what Rust builds for the phone (`tooling/input-hash`) and its Xcode project
@@ -109,6 +112,39 @@ done
 gh run download "$id" -n iphone -D "$work"
 (cd "$work" && unzip -q iphone.zip && rm iphone.zip)
 bundle=$(echo "$work"/Payload/*.app)
+
+# The network's icon and logo in the app's asset catalog, compiled on the Mac, over the One App's: its `Assets.car` and
+# the icons beside it.
+if [[ -f $work/app/icons/icon.png ]]; then
+  catalog=$work/catalog/Assets.xcassets
+  mkdir -p "$work/catalog" && cp -R clients/app/gen/apple/Assets.xcassets "$catalog"
+  python3 -I - "$catalog" "$work/app/icons" <<'PYTHON'
+import json, subprocess, sys
+from pathlib import Path
+
+catalog, icons = Path(sys.argv[1]), Path(sys.argv[2])
+appicon = catalog / "AppIcon.appiconset"
+for image in json.loads((appicon / "Contents.json").read_text())["images"]:
+    if "filename" in image:
+        side = round(float(image["size"].split("x")[0]) * int(image.get("scale", "1x").rstrip("x")))
+        # Opaque, as App Store Connect takes an icon.
+        subprocess.run(["convert", icons / "icon.png", "-resize", f"{side}x{side}!", "-background", "black", "-alpha", "remove", "-alpha", "off", appicon / image["filename"]], check=True)
+mark = catalog / "Mark.imageset"
+if (icons / "logo.png").exists():
+    images = [{"filename": "Mark.png", "idiom": "universal"}]
+    subprocess.run(["convert", icons / "logo.png", "-resize", "336x336", mark / "Mark.png"], check=True)
+    if (icons / "logo-dark.png").exists():
+        images.append({"filename": "Mark-dark.png", "idiom": "universal", "appearances": [{"appearance": "luminosity", "value": "dark"}]})
+        subprocess.run(["convert", icons / "logo-dark.png", "-resize", "336x336", mark / "Mark-dark.png"], check=True)
+    (mark / "Contents.json").write_text(json.dumps({"images": images, "info": {"author": "xcode", "version": 1}}, indent=2))
+PYTHON
+  minimum=$(python3 -I -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["MinimumOSVersion"])' "$bundle/Info.plist")
+  tar -C "$work/catalog" -cf - Assets.xcassets | ssh mac "set -e; at=\$(mktemp -d); trap 'rm -rf \$at' EXIT; cd \$at; tar -xf -; mkdir out;
+    lockf -k ~/scratch/agent-build.lock nice -n 19 xcrun actool Assets.xcassets --compile out --platform iphoneos \
+      --minimum-deployment-target $minimum --app-icon AppIcon --target-device iphone --target-device ipad \
+      --output-partial-info-plist partial.plist >actool.log || { cat actool.log >&2; exit 1; }; tar -C out -cf - ." | tar -x -C "$bundle"
+  echo "Its icon and logo are the network's"
+fi
 
 # Each target's App Store profile, the newest App Store Connect has for its bundle ID.
 profile() {
