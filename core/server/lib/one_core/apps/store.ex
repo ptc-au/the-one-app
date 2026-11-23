@@ -440,7 +440,9 @@ defmodule OneCore.Apps.Store do
           LoadedVersion.release([version])
           waits(artifact, code, why)
         else
-          describe(version)
+          # Said once it's loaded, not before: it's for the servers that don't load it, and takes the bucket a round trip or
+          # two for each app, which a server that's starting would wait for before it answered.
+          Task.Supervisor.start_child(OneCore.Asks, fn -> describe(version) end)
           {:ok, version}
         end
 
