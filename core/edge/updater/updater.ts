@@ -78,7 +78,7 @@ export interface Presence {
 
 /** What it's told. */
 export type Input =
-  | { published: string; latest: Record<string, string> }
+  | { published: string; latest: Record<string, string>; serving: Record<string, string> }
   | { now: true }
   | { reported: { key: string } & Reported }
   | { seen: string }
@@ -100,8 +100,10 @@ interface State {
   network_update_status: NetworkUpdateStatus;
   /** The build the network takes: the newest published, of a server or a `one` that runs one. */
   build?: string;
-  /** The latest build of each name a server takes, `server-code` and each `one`, as `OneCore.Builds` names them. */
+  /** The newest build of each name, `server-code` and each `one`, as `OneCore.Builds` names them. */
   latest?: Record<string, string>;
+  /** What a server takes of each: the server build, and of each `one` the build that first ran a server as it runs it. */
+  serving?: Record<string, string>;
   /** When it was published, in ms since 1970. */
   published?: number;
   servers: Taking[];
@@ -176,10 +178,14 @@ export class NetworkUpdater extends DurableObject<Env> {
     state.edge = this.env.VERSION || state.edge;
 
     if ("published" in input) {
-      // Only a newer build moves it: one published again, as a release run again publishes, changes nothing.
-      const moved = Object.entries(input.latest).filter(([name, build]) => !state.latest?.[name] || newer(build, state.latest[name]));
+      // Only a newer build moves it: one published again, as a release run again publishes, changes nothing. A newer
+      // `one` that changed nothing a server runs (`serving`) moves `latest` alone, which every client is told.
+      const newest = (kept: Record<string, string> | undefined, now: Record<string, string>) =>
+        Object.entries(now).filter(([name, build]) => !kept?.[name] || newer(build, kept[name]));
+      state.latest = { ...state.latest, ...Object.fromEntries(newest(state.latest, input.latest)) };
+      const moved = newest(state.serving, input.serving);
       if (moved.length || !state.build) {
-        state.latest = { ...state.latest, ...Object.fromEntries(moved) };
+        state.serving = { ...state.serving, ...Object.fromEntries(moved) };
         this.begin(state, state.build && !newer(input.published, state.build) ? state.build : input.published, presence, reported);
       }
     } else if ("now" in input) {
@@ -430,7 +436,9 @@ export class NetworkUpdater extends DurableObject<Env> {
     return {
       network_update_status: state.network_update_status,
       build: state.build ?? null,
-      latest: state.latest ?? null,
+      // Every server reads what it takes in `latest` for now, and clients the newest builds.
+      latest: state.serving ?? null,
+      serving: state.serving ?? null,
       done: state.servers.filter((server) => server.ready !== undefined).length,
       of: state.servers.length,
       waiting_for: state.waiting_for ?? null,
@@ -484,8 +492,8 @@ function said(state: State, status: ReturnType<NetworkUpdater["status"]>) {
  * changed only the app around `one serve run` restarts no server.
  */
 function on(state: State, said: Reported) {
-  const program = said.program_name ? state.latest?.[said.program_name] : undefined;
-  return said.version === (state.latest?.["server-code"] ?? state.build) && (!program || !said.program || !newer(program, said.program));
+  const program = said.program_name ? state.serving?.[said.program_name] : undefined;
+  return said.version === (state.serving?.["server-code"] ?? state.build) && (!program || !said.program || !newer(program, said.program));
 }
 
 /** Whether the build `a` is newer than `b`: `<version>+<count>.<commit>`, by its commit's count. */

@@ -19,8 +19,9 @@ interface Listed {
 const count = (build: string) => Number(build.split("+")[1]?.split(".")[0] ?? 0);
 
 /**
- * Tells the network's updater the latest builds a server takes, the server build and each `one` that runs one,
- * `{published: <the newest>, latest: {<name>: <build>}}`, as the core's release lists them.
+ * Tells the network's updater the newest build of each name, `latest`, and the pair a server takes, `serving`: the
+ * server build and each `one` that runs one, by the build that first ran a server as it runs it, so one that changed
+ * only the app around `one serve run` restarts no server (`OneCore.Builds`). `published` is the newest of those.
  */
 export async function followCore(env: Env) {
   const lists = await Promise.all(
@@ -30,12 +31,15 @@ export async function followCore(env: Env) {
     }),
   );
   const latest: Record<string, string> = {};
+  const serving: Record<string, string> = {};
   for (const [target, list] of lists) {
-    if (list["server-code"]) latest["server-code"] = list["server-code"].build;
-    // A `one` is told by the build that first ran a server as it runs it, so one that changed only the app around
-    // `one serve run` restarts no server (`OneCore.Builds`).
-    for (const what of ["one", "one-cli"]) if (list[what]) latest[`${what}/${target}`] = list[what].serving ?? list[what].build;
+    if (list["server-code"]) latest["server-code"] = serving["server-code"] = list["server-code"].build;
+    for (const what of ["one", "one-cli"]) {
+      if (!list[what]) continue;
+      latest[`${what}/${target}`] = list[what].build;
+      serving[`${what}/${target}`] = list[what].serving ?? list[what].build;
+    }
   }
-  const published = Object.values(latest).sort((a, b) => count(b) - count(a))[0];
-  if (published) await relay(env.RELAY, (relay) => relay.updated({ published, latest }));
+  const published = Object.values(serving).sort((a, b) => count(b) - count(a))[0];
+  if (published) await relay(env.RELAY, (relay) => relay.updated({ published, latest, serving }));
 }
