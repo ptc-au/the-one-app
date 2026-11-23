@@ -163,7 +163,7 @@ function server(built, target, used) {
   return {
     url: (key) => `http://localhost:${listener.port}/host.html?scene=${encodeURIComponent(key)}`,
     // The renderer's frame, drawing the page at its address here.
-    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}&paused${mutant ? `&mutant=${encodeURIComponent(mutant)}` : ""}#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
+    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}&paused#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
     stop: () => listener.stop(true),
   }
 }
@@ -881,11 +881,7 @@ const webDrawn = (serve, key, scene, folder) =>
   }))
 // The renderer's frame, built once for every scene drawn on the web (clients/web/renderer/build.js).
 const rendererFrame = join(out, "renderer")
-// The gate's own, which can put a bug back (`renderer::mutants`) when its address names one: `ONE_MUTANT`'s, from
-// clients/app/renderer/tests/mutants.js. Always that one, as the headless renderer always is, so a run with a mutant and one without build the
-// same and Cargo doesn't build it again for each (27 s).
-const mutant = process.env.ONE_MUTANT
-const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame, "--mutants"])
+const framed = onTheWeb && Bun.spawnSync(["bun", join(root, "clients/web/renderer/build.js"), rendererFrame])
 if (framed && framed.exitCode !== 0) throw new Error(`The renderer's frame didn't build: ${framed.stderr}`)
 const report = []
 // A token pair that can't be read is found where it's written, before any scene draws it.

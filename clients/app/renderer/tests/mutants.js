@@ -4,15 +4,15 @@
 //
 //     bun mutants.js [<mutant>…] [--light | --dark] [--out <dir>] [--jobs <n>] [--list]
 //
-// Each mutant is planted where its bug was (`renderer::mutants`, `ONE_MUTANT=<name>`, in the headless renderer's builds alone:
-// the headless renderer's and the web gate's frame) and plays only the scenes, motions and checks
+// Each mutant is planted where its bug was (`renderer::mutants`, `ONE_MUTANT=<name>`, in the headless renderer's builds alone)
+// and plays only the scenes, motions and checks
 // that could show it, light and dark (or the one asked), so a run is as short as it can be. First, as cargo-mutants
 // does, every play runs with no mutant (the baseline): one that fails then catches nothing, and is said. It exits 1
 // where a mutant was missed or the baseline failed. What each run said is kept in `--out` (`target/mutants` unless
 // said), `<mutant>/<light|dark>/<play>.log`.
 //
 // It builds what it plays first: core/ui (`bun build.js`), and the headless renderer, a release build, which plays them
-// several times faster than a debug build (animation.js's `built`); screenshot.js builds the web's frame.
+// several times faster than a debug build (animation.js's `built`).
 //
 // A mutant for a bug a device found and the headless renderer missed is added here with the check that now catches it: the check
 // is the fix's, the mutant shows it stays caught.
@@ -27,11 +27,10 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 const out = resolve(option("--out") ?? join(root, "target/mutants"))
 
 /// What plays a mutant: `animation` (animation.js's motions), `checks` (animation.js --checks: a scene's checks, its Tab walk and
-/// its being drawn the same however it came to be), `web` (screenshot.js --web: native and the web's frame), `screenshot`
-/// (screenshot.js natively), each of a folder's scenes whose names have `scene`'s words.
+/// its being drawn the same however it came to be), `screenshot`
+/// (screenshot.js), each of a folder's scenes whose names have `scene`'s words.
 const animation = (folder, scene) => ({ tool: "animation", folder, scene })
 const checks = (folder, scene) => ({ tool: "checks", folder, scene })
-const web = (folder, scene) => ({ tool: "web", folder, scene })
 const screenshot = (folder, scene) => ({ tool: "screenshot", folder, scene })
 
 /// Every mutant: the bug it puts back, what plays it, and the appearances it can show in (both unless said).
@@ -48,8 +47,6 @@ const MUTANTS = {
   "late-tap": { bug: "a tap delivered a frame late", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
   "stale-rect": { bug: "a stale inspector rect", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "wrong-node": { bug: "a selector matching the wrong node", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Alike")] },
-  "web-clock": { bug: "the web clock running during the gate", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
-  "web-blank": { bug: "a blank web canvas", plays: [web("clients/app/renderer/tests/gallery", "Text/Type styles")] },
   "spring-rest": { bug: "spring rest at 0.1 pt", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "safe-area": { bug: "safe area ignored in a frame", plays: [screenshot("apps/vault", "in its own frame")] },
   // From the reports and look-issues.
@@ -90,7 +87,7 @@ function command(play, dark, folder) {
   const theme = ["--release", ...(dark ? ["--dark"] : [])]
   if (play.tool === "animation") return { cwd: here, argv: ["bun", "animation.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
   if (play.tool === "checks") return { cwd: here, argv: ["bun", "animation.js", "--checks", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
-  return { cwd: here, argv: ["bun", "screenshot.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...(play.tool === "web" ? ["--web"] : []), ...theme] }
+  return { cwd: here, argv: ["bun", "screenshot.js", join(root, play.folder), "--scene", play.scene, "--out", folder, ...theme] }
 }
 
 /// The lines of what a play said that failed it: a motion's `FAILS` (under the motion it's of), a check's `✗` and

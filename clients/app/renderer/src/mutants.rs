@@ -1,9 +1,8 @@
 //! Bugs we've had, each put back on purpose when it's asked for, so `tests/mutants.js` can show the renderer's tests
 //! catch it: a mutant, as cargo-mutants and Stryker call one. Only the tests' builds have them: the headless renderer's
-//! and the app's with `fake`, and the web gate's frame (`mutants`, `bun clients/web/renderer/build.js
-//! <out> --mutants`). Every other build's `mutant` is `false`, a constant the compiler takes the bug out by.
+//! and the app's with `fake`. Every other build's `mutant` is `false`, a constant the compiler takes the bug out by.
 //!
-//! The one asked for is `ONE_MUTANT`'s name natively, and on the web the frame's `?mutant=` (`set`). Each is named
+//! The one asked for is `ONE_MUTANT`'s name. Each is named
 //! where it's planted, and listed with what plays it in `tests/mutants.js`.
 
 #[cfg(feature = "mutants")]
@@ -19,12 +18,6 @@ pub fn mutant(name: &str) -> bool {
 #[inline(always)]
 pub fn mutant(_: &str) -> bool {
     false
-}
-
-/// The mutant asked for where there's no environment (the web's frame, from its address), before anything asks.
-#[cfg(feature = "mutants")]
-pub fn set(name: &str) {
-    let _ = ASKED.set(name.to_owned());
 }
 
 /// Whether `context` is the one a mutant is planted on, by what it holds (`Context::hung`): the first it's asked of,
