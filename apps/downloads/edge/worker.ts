@@ -48,7 +48,7 @@ const DEVICES: Record<Device, { name: string; logo: string }> = {
 const FILES: Record<Device, [string, string][]> = {
   mac: [["mac", "Apple silicon"], ["mac-intel", "Intel"]],
   windows: [["windows", "Download"]],
-  linux: [["linux-appimage", "AppImage"], ["linux-deb", ".deb"]],
+  linux: [["linux", "x86-64"]],
   iphone: [["iphone", "TestFlight"]],
   android: [["android", "APK"]],
 };
@@ -190,8 +190,8 @@ function hero(device: Device | null, name: string, files: { link: string; label:
         <li><span class="number">3</span><span class="words">Tap <b>Install</b>.</span></li>
         <li><span class="number">4</span><span class="words">If Google Play Protect recommends a scan, tap <b>Scan app</b>. It sends the app's details to Google to check it.</span></li>
       </ol>${web}`;
-  const lede = { mac: `For Mac with ${main.label === "Intel" ? "Intel" : "Apple silicon"}.`, windows: "For Windows 10 and 11.", linux: `For Linux, as an ${main.label}.` }[device];
-  const then = { mac: `Open ${saved}, then drag ${name} to Applications.`, windows: `Open ${saved} to install it.`, linux: `Open ${saved} to start it.` }[device];
+  const lede = { mac: `For Mac with ${main.label === "Intel" ? "Intel" : "Apple silicon"}.`, windows: "For Windows 10 and 11.", linux: `For Linux on ${main.label}.` }[device];
+  const then = { mac: `Open ${saved}, then drag ${name} to Applications.`, windows: `Open ${saved} to install it.`, linux: `Then run <b>sh ${saved}</b> in a terminal to install it.` }[device];
   const instead = other && `<p class="note">${device === "mac" ? "Have an Intel Mac?" : "Prefer a package?"} <a href="${text(other.link)}">Download ${device === "mac" ? "for Intel" : other.label}</a></p>`;
   return `${icon}<h1>Download ${name}</h1><p class="lede">${lede}</p>${button}<p class="note">${then}</p>${instead ?? ""}${web}`;
 }

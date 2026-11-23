@@ -27,9 +27,9 @@ defmodule SoftwareUpdate do
 
   @item "Cloudflare edge deploy"
 
-  # The kinds of computer and phone an installer is for: a Mac with Apple silicon or Intel, Windows, Linux as an
-  # AppImage or a .deb, and Android; and Windows' program, which its app updates to.
-  @platforms ~w(mac mac-intel windows windows-program linux-appimage linux-deb android)
+  # The kinds of computer and phone an installer is for: a Mac with Apple silicon or Intel, Windows, Linux on x86-64,
+  # and Android; and Windows' program, which its app updates to.
+  @platforms ~w(mac mac-intel windows windows-program linux android)
 
   @impl true
   def icon, do: "icon.svg"
