@@ -2,6 +2,10 @@ import { Button, Empty, History, List, ListStyle, Menu, Row, type Scenes, Screen
 
 const look = styles({ window: { height: 720 }, narrow: { height: 475 }, phone: { height: 844 } })
 
+/// A network's logo, as its edge serves it: a picture of its own.
+const network = (letter: string, fill: string) =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><circle cx="48" cy="48" r="48" fill="${fill}"/><text x="48" y="48" dy="0.35em" text-anchor="middle" font-family="system-ui, sans-serif" font-size="48" font-weight="600" fill="#fff">${letter}</text></svg>`)}`
+
 const notes = Array.from({ length: 30 }, (_, at) => `Note ${at + 1}`)
 
 const More = () => (
@@ -143,9 +147,33 @@ export default {
     safeArea: [47, 0, 34, 0],
     render: () => (
       <View style={look.phone}>
-        <SignIn heading="Add a passkey" note="Your passkey is created. To let it unlock your key, open the One App on Andre's MacBook Air and tap Allow beside this code." code="63038 96957 95028 61504" />
+        <SignIn heading="Add a passkey" note="Your passkey is created. To let it unlock your key, open the One App on Andre's MacBook Air and tap Allow, but only if it shows this same code." code="63038 96957 95028 61504" />
       </View>
     ),
     checks: { "Copy copies it, and says so": [{ expect: { shown: { role: "button", name: "Copy" } } }, { press: { role: "button", name: "Copy" } }, { expect: { text: "Copied" } }] },
+  },
+  // No device holds the key, so there's no code to compare: none is shown.
+  "Screens/Sign-in, passkey created, nothing to compare": {
+    alone: true,
+    layout: "fullscreen",
+    touch: true,
+    safeArea: [47, 0, 34, 0],
+    render: () => (
+      <View style={look.phone}>
+        <SignIn heading="Add a passkey" done="Your passkey is created, and you can sign in with it. No device holds your key yet, so there's nothing to allow." />
+      </View>
+    ),
+  },
+  // The Vault's page while it adds an outside service's account: the network's logo, not the One App's.
+  "Screens/Sign-in, adding an account": {
+    alone: true,
+    layout: "fullscreen",
+    touch: true,
+    safeArea: [47, 0, 34, 0],
+    render: () => (
+      <View style={look.phone}>
+        <SignIn mark={network("P", "#1a6bd6")} markDark={network("P", "#6aa8ff")} heading="Adding your account" status="Adding your account…" />
+      </View>
+    ),
   },
 } satisfies Scenes

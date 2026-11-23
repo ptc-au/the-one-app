@@ -119,7 +119,7 @@ type Stage =
   | { stage: "denied"; name: string }
   | { stage: "ready"; app: App }
   | { stage: "confirm" }
-  | { stage: "created"; by?: string; on: string[] }
+  | { stage: "created"; by?: string; on?: string[] }
   | { stage: "unlocked"; name?: string; servers: string[]; whose: string }
   | { stage: "failed"; why: string; ended?: boolean }
 
@@ -305,8 +305,10 @@ async function made(result: Answered, again: boolean) {
 async function created() {
   type Mine = { devices: { id: string; name: string }[]; passkeys: { credential: string; from: string | null }[] }
   type Holders = { devices: { device: string; name: string }[] }
-  // Where it can't tell, it says to allow it on a device that holds the key, which is always so.
-  const [{ devices: mine, passkeys }, { devices }] = await Promise.all([tool<Mine>("sign-in_devices", {}), tool<Holders>("encryption_key", {})]).catch((): [Mine, Holders] => [{ devices: [], passkeys: [] }, { devices: [] }])
+  const found = await Promise.all([tool<Mine>("sign-in_devices", {}), tool<Holders>("encryption_key", {})]).catch(() => undefined)
+  // Where it can't tell which devices hold the key, it says to allow it on one that does, with the code.
+  if (!found) return setStage({ stage: "created" })
+  const [{ devices: mine, passkeys }, { devices }] = found
   // Each device by the name its person sees in Sign In & Security.
   const named = devices.map((holder) => ({ ...holder, name: mine.find((device) => device.id === holder.device)?.name ?? holder.name }))
   const from = passkeys.find((passkey) => passkey.credential === used?.credential)?.from
@@ -621,9 +623,11 @@ function shows(): Shows {
         case "created":
           if (!shownCode) return { heading, done: "Your passkey is created, and you can sign in with it, but it can't unlock your key on a new device. Passkeys saved in iCloud Keychain or Google Password Manager can." }
           if (now.by) return { heading, done: `Your passkey is created. Go back to the One App on ${now.by}: it lets your passkey unlock your key.` }
+          // The code is for comparing with the one a device that holds the key shows beside Allow: with no such device there's nothing to compare it with.
+          if (now.on && !now.on.length) return { heading, done: "Your passkey is created, and you can sign in with it. No device holds your key yet, so there's nothing to allow." }
           return {
             heading,
-            note: `Your passkey is created. To let it unlock your key, open the One App on ${now.on.length ? listed(now.on) : "a device that holds your key"} and tap Allow beside this code.${flow.replaces ? " Your old passkey is removed then." : ""}`,
+            note: `Your passkey is created. To let it unlock your key, open the One App on ${now.on ? listed(now.on) : "a device that holds your key"} and tap Allow, but only if it shows this same code.${flow.replaces ? " Your old passkey is removed then." : ""}`,
             code: shownCode,
           }
         default:

@@ -5,8 +5,11 @@
 // agent's site: the network doesn't know the conversation's address, and a page that sends people where it's told
 // to is an open redirect. Cancelled or failed, it says so, with Try Again.
 import { createSignal, For, Show } from "solid-js"
-import mark from "../../../../icons/Logo.png"
 import { Icon, render, SignIn, styles, Text, tokens, View } from "ui"
+
+/// The network's mark: its own logo, for a light page and a dark one, as the sign-in page draws it (`/Logo.png` in `apps/sign-in/edge/worker.ts`).
+const mark = "/Logo.png"
+const markDark = "/Logo-dark.png"
 
 const look = styles({
   /// What a sign-in is connected to, in a plain box, as the sign-in page's consent lists what an app can do.
@@ -71,8 +74,9 @@ render(() => {
   return (
     <SignIn
       mark={mark}
-      heading={!ended() ? "Signing in" : status() === "ok" ? "You're signed in" : status() === "cancelled" ? "Sign-in cancelled" : "Not signed in"}
-      status={ended() ? undefined : "Signing in…"}
+      markDark={markDark}
+      heading={!ended() ? "Adding your account" : status() === "ok" ? "You're signed in" : status() === "cancelled" ? "Sign-in cancelled" : "Not signed in"}
+      status={ended() ? undefined : "Adding your account…"}
       problem={status() !== "cancelled" ? ended()?.problem : undefined}
       button={status() === "ok" ? app() && `Open ${titled(app()!)}` : began() && "Try Again"}
       onSignIn={status() === "ok" && app() ? () => location.assign(`/?open=${encodeURIComponent(app()!)}`) : again}
