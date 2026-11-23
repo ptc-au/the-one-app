@@ -1,7 +1,7 @@
 // The bridge: the JSON-RPC a page and its client say to each other, through the host, and what the client says of
 // where the page is shown. The UI library's components import it as `#bridge`.
 import { configureClientErrors, createSignal } from "solid-js"
-import { event } from "./drawing-primitives/renderer.native.ts"
+import { event, modalOpen } from "./drawing-primitives/renderer.native.ts"
 import type { Host, Sandbox } from "./calls.ts"
 import type { Event, Events } from "./drawing-primitives/renderer.ts"
 import type * as Page from "./types/ui.d.ts"
@@ -20,13 +20,26 @@ const tell = () => {
 let requests = 0
 /** What listens for each key pressed (`keydown`). */
 const keys = new Set<(event: Page.Keyed) => void>()
+/** A key on its way through the page's nodes: which press it is (`Event.press`), and whether a node it's been told to
+ * used it, which stops it there and short of the page's own listeners, as the DOM's events stop at what used them. */
+let passing = { press: undefined as number | undefined, used: false }
 
 ;(globalThis as { ui?: Sandbox & Events }).ui = {
-  // A key pressed goes to what has the keyboard, and once to the page (the host tells it, as node 0), for what listens for
-  // every key (`keydown`), as the DOM's `document` does, whatever has the keyboard.
+  // A key goes to what has the keyboard and each node it's in that listens, the innermost first, until one uses it, then
+  // once to the page (the host tells it, as node 0), for what listens for every key (`keydown`), as the DOM's
+  // `document` does, whatever has the keyboard. No page listener hears one while a modal layer is open, which takes
+  // every key as the DOM's `<dialog>` does.
   event(told: Event) {
-    event(told)
-    if (told.name === "keydown" && told.id === 0) for (const listener of keys) listener({ key: told.key ?? "", code: told.code ?? "", shiftKey: !!told.shiftKey, altKey: !!told.altKey, ctrlKey: !!told.ctrlKey, metaKey: !!told.metaKey, preventDefault() {} })
+    if (told.name !== "keydown") return void event(told)
+    // One press's key is told to each node it goes to and then the page, all saying which press it is. A host of 6
+    // says none: then each is the page's, as it was.
+    if (told.press === undefined || told.press !== passing.press) passing = { press: told.press, used: false }
+    if (told.id === 0) {
+      if (!passing.used && !modalOpen()) for (const listener of keys) listener({ key: told.key ?? "", code: told.code ?? "", shiftKey: !!told.shiftKey, altKey: !!told.altKey, ctrlKey: !!told.ctrlKey, metaKey: !!told.metaKey, preventDefault() {} })
+      passing = { press: told.press, used: false }
+      return
+    }
+    if (!passing.used) passing.used = event(told)
   },
   message(message: { id?: number; method?: string; result?: unknown; error?: { message: string } }) {
     if (message.method === "notifications/one/changed") tell()
@@ -305,8 +318,9 @@ export const step = (close: () => void): (() => void) => covers(close, { layer: 
 /// no move is drawn between screens yet.
 export const go: typeof Page.go = (change) => change()
 
-/// `keydown((event) => event.key === "Escape" && close())`: each key pressed that isn't something's own, not in a
-/// field, a menu or a dialog, which take their keys themselves. → what stops it.
+/// `keydown((event) => event.key === "Escape" && close())`: each key pressed that isn't something's own: not one a field,
+/// a menu or a dialog used first, and none at all while a modal layer (a sheet, a dialog, an alert) is open, which
+/// takes every key. → what stops it.
 export const keydown: typeof Page.keydown = (listener) => {
   keys.add(listener)
   return () => void keys.delete(listener)

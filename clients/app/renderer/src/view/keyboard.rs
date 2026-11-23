@@ -74,10 +74,20 @@ impl Screen {
         }
     }
 
+    /// What a key press tells a page: the key, and which press of the keyboard it is, which is the same for each node
+    /// it's told to and then the page (`press`), so a page tells one press's events from the next, and a key a handler
+    /// used (`preventDefault`) stops there.
+    fn keyed(&self, key: &Key) -> Value {
+        let mut told = key.told();
+        told["press"] = json!(self.keystrokes);
+        told
+    }
+
     /// A key went down where the keyboard is, as the DOM's `KeyboardEvent` has it: Tab moves the keyboard, what
     /// listens for `keydown` hears it, Enter and Space press what has it, and an input takes what's typed. The page
     /// hears every key too, once, whatever has the keyboard, even nothing, as a browser's `document` does (`keydown()`:
-    /// Escape closing what's open, ⌘K). → what had the keyboard.
+    /// Escape closing what's open, ⌘K) — unless a modal layer is open, which the page keeps every key for itself. → what
+    /// had the keyboard.
     pub fn key(&mut self, key: &Key) -> Option<Id> {
         let focused = self.focus.focused;
         // The key of the shortcut that just summoned it, still held or pressed again at once, is the shortcut's, not
@@ -101,17 +111,19 @@ impl Screen {
         if !key.ctrl && !key.meta && !key.alt {
             self.states.focus_visible = true;
         }
+        self.keystrokes += 1;
+        let told = self.keyed(key);
         // Tab is told to what has the keyboard and what it's in, as any key is, then moves the keyboard, as a
         // browser's does unless the page stops it, which a native host can't hear in time.
         if key.key == "Tab" && !key.ctrl && !key.meta && !key.alt {
             if let Some(id) = focused {
                 for listener in self.chain_from(id) {
                     if self.tree.nodes.get(&listener).is_some_and(|node| node.listens("keydown")) {
-                        self.tell(listener, "keydown", key.told());
+                        self.tell(listener, "keydown", told.clone());
                     }
                 }
             }
-            self.tell(PAGE, "keydown", key.told());
+            self.tell(PAGE, "keydown", told.clone());
             // It goes round, but out of a frame's page at its ends, back to the page the frame's in; into a frame's
             // page, to its first stop or its last, and past a frame whose page has none.
             let order = self.focus.tab_order.clone();
@@ -153,7 +165,7 @@ impl Screen {
         if let Some(id) = focused {
             for listener in self.chain_from(id) {
                 if self.tree.nodes.get(&listener).is_some_and(|node| node.listens("keydown")) {
-                    self.tell(listener, "keydown", key.told());
+                    self.tell(listener, "keydown", told.clone());
                 }
             }
         }
@@ -163,7 +175,7 @@ impl Screen {
         let plain = !key.ctrl && !key.meta && !key.alt;
         let presses = plain && focused.is_some_and(|id| self.pressed_by(id, key) && (id == NOTICE_ACTION || (!self.editing.fields.contains_key(&id) && self.tree.nodes.get(&id).is_some_and(|node| node.listens("click")))));
         if !presses {
-            self.tell(PAGE, "keydown", key.told());
+            self.tell(PAGE, "keydown", told);
         }
         // What's selected of a text that isn't a field is copied, as a browser's is.
         if self.copy_selected(key) {

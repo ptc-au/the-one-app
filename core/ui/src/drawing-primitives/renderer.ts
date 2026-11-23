@@ -25,8 +25,9 @@
  * (`runtime_version`), and the tables say they need. 3 made each mutation and event a direct call, 4 added
  * `intersection`, 5 an app's own tokens (`Styles.tokens`) and the values of a dynamic style (`Dynamic`). A host of 6 draws CSS's own
  * values where a token isn't the point (`fontSize`, `boxShadow`'s text, `backgroundImage`) and keyframes that start
- * once drawn and end (`animationDelay` and the rest), which a host of 5 leaves out; the tables say 6 once every host
- * has it. */
+ * once drawn and end (`animationDelay` and the rest), which a host of 5 leaves out; a host of 7 says which press of
+ * the keyboard each `keydown` is (`Event.press`), which a host of 6 leaves out, so a page on one hears every key as
+ * it did; the tables say 6 once every host has it. */
 export const RUNTIME_VERSION = 5
 
 /** A node, as the host knows it. `0` is the root, which the host makes: an app's window, or its frame. */
@@ -116,7 +117,7 @@ export interface Event {
   editing?: Editing
   /** What an `input`'s action key did, with `action`. */
   action?: TextInputAction
-  /** The key, with `keydown`, as the DOM's `KeyboardEvent.key` names it (`Enter`, `Escape`, `ArrowDown`, `a`), where
+  /** What the key is, with `keydown`, as the DOM's `KeyboardEvent.key` names it (`Enter`, `Escape`, `ArrowDown`, `a`), where
    * it is as its `code` names it (`KeyA`, `Space`), and which modifiers were held. */
   key?: string
   code?: string
@@ -124,6 +125,10 @@ export interface Event {
   altKey?: boolean
   ctrlKey?: boolean
   metaKey?: boolean
+  /** With `keydown`, from a host of runtime version 7: which press of the keyboard it is, counted from the window's
+   * own, the same for each node it's told to and then the page (`keydown()`), so a page tells one press from the next,
+   * and a key a handler used (`preventDefault`) stops there. */
+  press?: number
   /** How far a `scroll` has scrolled, in CSS pixels, with `scroll`. */
   scrollTop?: number
   scrollLeft?: number

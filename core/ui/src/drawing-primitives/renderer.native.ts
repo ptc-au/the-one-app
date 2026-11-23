@@ -23,11 +23,30 @@ const mutations = (globalThis as unknown as { mutations: Mutations }).mutations
 let next = 1
 /** Every node JS still holds, by its id, for the events the host sends to it. */
 const nodes = new Map<number, WeakRef<Node>>()
+/** Each node that says `aria-modal` (`Modal`, and what a dialog puts in one), by its id: what a key isn't the page's
+ * own listeners' while it's shown (`modalOpen`). */
+const modals = new Set<number>()
 /** A node JS no longer holds is dropped by the host too. */
 const held = new FinalizationRegistry<number>((id) => {
   nodes.delete(id)
   mutations.drop(id)
 })
+
+/** Whether a modal layer covers the page (`aria-modal`, as `Modal` says), as the DOM's `<dialog>` does: the page's own
+ * listeners (`keydown()`) hear no key while it's up, as every key is its. What's no longer in the page isn't one. */
+export const modalOpen = () => {
+  for (const id of modals) {
+    const node = nodes.get(id)?.deref()
+    if (!node || !shown(node)) modals.delete(id)
+  }
+  return modals.size > 0
+}
+
+/** Whether `node` is in the page's tree, under its root (0). */
+function shown(node: Node): boolean {
+  for (let at: Node | undefined = node; at; at = at.parent) if (at.id === 0) return true
+  return false
+}
 
 /** The root the host gives: the app's window, or its frame. */
 export const root: Node = { id: 0, type: "box", children: [], handlers: {} }
@@ -64,7 +83,10 @@ export const { render: mount, effect, memo, createComponent, createElement, crea
       // Styles go by their ids, from the tables the host has (../renderer.ts's `Styles`), the last winning, each dynamic one's
       // values after it. A falsy one is none, as React Native's is, so a page's `cond && look.x` says nothing.
       mutations.set(node.id, "style", flat(value as Styles).flatMap((style) => (style.$dynamic ? [style.$id, style.$dynamic] : [style.$id])))
-    } else mutations.set(node.id, name as "role", (value ?? null) as never)
+    } else {
+      if (name === "aria-modal") (value === "true" || value === true ? modals.add(node.id) : modals.delete(node.id))
+      mutations.set(node.id, name as "role", (value ?? null) as never)
+    }
   },
   insertNode(parent, node, anchor) {
     if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1)
@@ -88,15 +110,19 @@ export const { render: mount, effect, memo, createComponent, createElement, crea
  * `currentTarget.value`; its action key's `action`; a key as `key` and `code` with its modifiers; how far a `scroll` has
  * scrolled as `currentTarget.scrollTop`; and a pointer where it is and where the node is drawn
  * (`currentTarget.getBoundingClientRect()`). What a host does with a key by itself isn't the page's, so
- * `preventDefault()` does nothing here. What a handler throws is reported (`reportError`), as a browser's listener's is. */
-export function event({ id, name, editing, action, key, code, shiftKey, altKey, ctrlKey, metaKey, scrollTop, scrollLeft, rect, ...told }: Event) {
+ * `preventDefault()` doesn't stop it: it says the handler used the key, which stops the key there, as the DOM's events
+ * stop at what used them (bridge.ts's `keydown()`). What a handler throws is reported (`reportError`), as a browser's
+ * listener's is. → whether the handler used it. */
+export function event({ id, name, editing, action, key, code, shiftKey, altKey, ctrlKey, metaKey, scrollTop, scrollLeft, rect, ...told }: Event): boolean {
   const handler = nodes.get(id)?.deref()?.handlers[name]
   const target = { value: editing?.text ?? "", scrollTop: scrollTop ?? 0, scrollLeft: scrollLeft ?? 0, getBoundingClientRect: () => rect ?? { x: 0, y: 0, width: 0, height: 0 } }
+  let used = false
   try {
-    handler?.({ ...told, currentTarget: target, target, editing, action, key: key ?? "", code: code ?? "", shiftKey: !!shiftKey, altKey: !!altKey, ctrlKey: !!ctrlKey, metaKey: !!metaKey, preventDefault() {} })
+    handler?.({ ...told, currentTarget: target, target, editing, action, key: key ?? "", code: code ?? "", shiftKey: !!shiftKey, altKey: !!altKey, ctrlKey: !!ctrlKey, metaKey: !!metaKey, preventDefault() { used = true } })
   } catch (error) {
     reportError(error)
   }
+  return used
 }
 
 /** Takes `node` out of what it's in, as Solid takes a node out. */

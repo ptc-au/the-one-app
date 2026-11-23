@@ -34,5 +34,5 @@ pub use view::{Appearance, Asked, Cursor, FONT, Late, MakeFrame, Notice, Panel, 
 
 /// This host's runtime version (`RUNTIME_VERSION` in core/ui/src/drawing-primitives/renderer.ts). An entrypoint that needs a
 /// later one isn't drawn: a computer's window says so, and a phone opens it in its page.
-pub const RUNTIME_VERSION: u32 = 6;
+pub const RUNTIME_VERSION: u32 = 7;
 

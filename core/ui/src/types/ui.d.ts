@@ -700,6 +700,7 @@ export declare function direction(): "ltr" | "rtl"
 export declare function safeArea(): { top: number; right: number; bottom: number; left: number }
 /** Whether whoever's looking asked for less motion, as it changes. */
 export declare function reducedMotion(): boolean
-/** Calls `listener` with each key pressed that isn't something's own: not in a field, a menu or a dialog, which take
- * their keys themselves. → what stops it. */
+/** Calls `listener` with each key pressed that isn't something's own: not one a field, a menu or a dialog used first
+ * (`preventDefault()`), and none at all while a modal layer (a `Modal`, which a `Sheet` and an `Alert` draw) is open,
+ * which takes every key as the DOM's `<dialog>` does. → what stops it. */
 export declare function keydown(listener: (event: Keyed) => void): () => void

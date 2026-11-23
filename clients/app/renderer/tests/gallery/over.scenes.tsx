@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { Alert, Button, Menu, Screen, Sheet, Spinner, Text, toast, View, type Scenes } from "ui"
+import { Alert, Button, keydown, Menu, ReorderList, Screen, Sheet, Spinner, Text, toast, View, type Scenes } from "ui"
 
 const OwnMenu = (props: { onSelect?: (value: string) => void; onOpenChange?: (open: boolean) => void }) => (
   <Menu.Root onSelect={props.onSelect} onOpenChange={props.onOpenChange}>
@@ -175,6 +175,36 @@ const Pushed = () => {
   )
 }
 
+/// A sheet with a list whose rows the keyboard moves, over a page that pages with the arrow keys as the Home Screen's
+/// does, and says how far it's paged, so a check can say. A key inside the sheet is the sheet's: the page under it
+/// doesn't page with it, and one Escape puts a picked-up row back without closing the sheet.
+const Ordering = () => {
+  const [open, setOpen] = createSignal(false)
+  const [paged, setPaged] = createSignal(0)
+  const [owners, setOwners] = createSignal(["You", "Family", "PTC Systems", "Book Club", "Everyone"])
+  onCleanup(
+    keydown((event) => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return
+      event.preventDefault()
+      setPaged((count) => count + 1)
+    }),
+  )
+  return (
+    <View>
+      <Button onPress={() => setOpen(true)}>Edit Order…</Button>
+      <Text>{`Paged: ${paged()}`}</Text>
+      <Sheet heading="Edit Order" open={open()} onClose={() => setOpen(false)}>
+        <ReorderList label="Home Screens" each={owners()} keyed={(owner) => owner} heading={(owner) => owner} fixed={(owner) => owner === "You" || owner === "Everyone"} onReorder={setOwners} />
+        <Text>{`Order: ${owners().join(", ")}`}</Text>
+      </Sheet>
+    </View>
+  )
+}
+const order = (...owners: string[]) => ({ expect: { text: `Order: ${owners.join(", ")}` } })
+const unpaged = { expect: { text: "Paged: 0" } }
+const editing = { role: "dialog", name: "Edit Order" }
+const reorderHandle = (owner: string) => ({ role: "button", name: `Reorder ${owner}` })
+
 export default {
   "Over the page/Sheet": {
     alone: true,
@@ -263,6 +293,41 @@ export default {
       "Back closes only the sheet": ["Add Item", { wait: 400 }, { back: true }, { expect: { gone: { role: "dialog" } } }, { expect: { shown: "Add Item" } }],
       "Escape closes only the sheet": ["Add Item", { wait: 400 }, { key: "Escape" }, { expect: { gone: { role: "dialog" } } }, { expect: { shown: "Add Item" } }],
       "Back then closes the screen": ["Add Item", { wait: 400 }, { back: true }, { expect: { gone: { role: "dialog" } } }, { back: true }, { expect: { gone: "Add Item" } }, { expect: { shown: { role: "button", name: "Vault" } } }],
+    },
+  },
+  // A sheet is a modal layer: every key is its own, so the page under it, which pages with the arrows, doesn't;
+  // and Escape is the innermost thing's that uses it, so a picked-up row is put back by one and only the next,
+  // which nothing inside uses, closes the sheet, as the web's event propagation has it.
+  "Over the page/A sheet's keys over a page's": {
+    render: () => <Ordering />,
+    // Opened, so the gallery shows the sheet over the page that pages.
+    taps: [{ role: "button", name: "Edit Order…" }],
+    checks: {
+      "Its rows move by the arrows, and the page under it doesn't": [
+        { key: "Tab" },
+        { key: "Tab" },
+        { expect: { focused: reorderHandle("Family") } },
+        { key: "ArrowRight" },
+        { key: "Escape" },
+        { expect: { gone: editing } },
+        // Nothing under it paged, though it holds the arrows itself: what it says is behind the sheet until it's gone.
+        { wait: 1000 },
+        unpaged,
+      ],
+      "One Escape puts a picked-up row back, and another closes the sheet": [
+        { key: "Tab" },
+        { key: "Tab" },
+        { expect: { focused: reorderHandle("Family") } },
+        { key: " " },
+        { key: "ArrowDown" },
+        { key: "Escape" },
+        order("You", "Family", "PTC Systems", "Book Club", "Everyone"),
+        { expect: { shown: editing } },
+        { key: "Escape" },
+        { expect: { gone: editing } },
+        { wait: 1000 },
+        unpaged,
+      ],
     },
   },
   // As iOS's row menu is an icon's size in a colour that shows, a 44 pt target round a speck is no way into what a row does.

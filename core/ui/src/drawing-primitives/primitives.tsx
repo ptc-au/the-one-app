@@ -303,8 +303,8 @@ export const VirtualizedList: typeof Page.VirtualizedList = (props) => {
 export const render: typeof Page.render = (code) => draw((() => (onSettled(() => void tellDrawn()), code())) as never)
 
 /** A box over the whole window, at the root, after the page, so it's drawn over it. A modal one says so
- * (`aria-modal`): the host holds the keyboard and the screen reader in it, and what's behind it is inert, as the DOM's
- * is. */
+ * (`aria-modal`): the host holds the keyboard and the screen reader in it, what's behind it is inert, as the DOM's is,
+ * and every key is its own, so the page's own listeners (`keydown()`) hear none while it's up. */
 function over(modal: boolean, content: () => Element) {
   const node = createElement("box")
   spread(node, { style: layer, "aria-modal": modal ? "true" : undefined })

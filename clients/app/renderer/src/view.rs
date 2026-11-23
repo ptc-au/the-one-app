@@ -201,6 +201,9 @@ pub struct Screen {
     asked: Option<Asked>,
     /// What has the keyboard (`Focus`), and each input's editing (`Editing`).
     focus: Focus,
+    /// How many keys have been pressed, which each key's events say as their `press`, so a page tells one press's
+    /// events from the next: each node it goes to, then the page.
+    keystrokes: u64,
     editing: Editing,
     /// Its window has the keyboard, so the caret shows.
     pub active: bool,
@@ -425,6 +428,7 @@ impl Screen {
             shortcut: None,
             laid_out: HashMap::new(),
             focus: Focus::default(),
+            keystrokes: 0,
             editing: Editing::default(),
             chrome: Chrome::default(),
             intersecting: HashMap::new(),
