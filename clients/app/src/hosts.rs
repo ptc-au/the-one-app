@@ -10,7 +10,8 @@
 //! Each line on the channel is a JSON message. An app's window says first which app it is (`hello`), then asks (`id`,
 //! `command`, `args`) and loads files (`id`, `file`); this side answers each (`id`, `result` or `error`), and tells it
 //! what's said (`event`, `payload`). One app has one window: a second start of it brings the first forward and ends.
-//! A second start of the app itself says only `again`, with the `one:` link it was started with, if any, and ends.
+//! A second start of the app itself says only `again`, with the `one:` link it was started with, if any, and ends;
+//! another network's app on the computer, which has the launcher's shortcut, says only `toggle` as it's pressed.
 //! Ending this program ends the channel, and every app's window with it.
 
 use std::collections::HashMap;
@@ -270,6 +271,13 @@ pub(crate) async fn talk(stream: impl AsyncRead + AsyncWrite + Send + 'static) {
             computer::again(again["link"].as_str().map(str::to_owned));
             return;
         }
+        // Another network's app on this computer has the launcher's shortcut, which was pressed with this one's
+        // network used last (`computer::shortcut`).
+        #[cfg(not(mobile))]
+        if let Some(toggle) = message.get("toggle") {
+            computer::toggle(toggle["key"].as_str().map(str::to_owned));
+            return;
+        }
         // A page in another's frame is no app's window: it's opened as its frame is, never by a link.
         if message["hello"]["frame"] == true {
             HOSTS.frames.lock().expect("no host panics").insert(label.clone(), to.clone());
@@ -389,10 +397,7 @@ async fn change(args: &Value) -> Result<Value, String> {
     }
     if let Some(paused) = args.get("shortcutPaused") {
         #[cfg(not(mobile))]
-        {
-            crate::computer::pause_shortcut(paused == true);
-            return Ok(json!({}));
-        }
+        return crate::computer::pause_shortcut(paused == true).await;
         #[cfg(mobile)]
         return Err(format!("This device has no shortcut ({paused})."));
     }

@@ -22,6 +22,9 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use crate::native::Instead;
 use crate::{hosts, notifications};
 
+mod shortcut;
+pub(crate) use shortcut::{change as change_shortcut, now as shortcut_now, pause as pause_shortcut};
+
 /// The launcher's width and tallest height, in points: Raycast's panel's width, its search bar, two of a phone's pages
 /// side by side with their six rows, near a phone's size (`measure` in the Home Screen's layout.ts), and the room its
 /// footer's pills float in. It's as tall as what it shows, which its page says (`resize`).
@@ -59,13 +62,13 @@ pub(crate) enum Told {
     Resize(Option<f64>, Option<f64>),
     /// Opens it again, as the device's session starts again, or its page was updated.
     Reload,
-    /// Takes the launcher's shortcut, as it starts, or as the program before it, which started it as it updated, has
-    /// ended (`handed`); with how many times it was asked before (`shortcut`).
+    /// Takes the launcher's shortcut, as this app comes to have it among the computer's (`shortcut`); with how many
+    /// times it was asked before.
     Shortcut(u32),
     /// The program it started as it updated is up: it lets go of the launcher's shortcut and ends (`restart`).
     Ending,
-    /// Makes the launcher's shortcut the one given, or with none its default, as its person chose it (`choose`), and
-    /// says what it is now, or why it couldn't be.
+    /// Makes the launcher's shortcut the one given, or with none its default, as its person chose it
+    /// (`shortcut::choose`), and says what it is now, or why it couldn't be.
     Choose(Option<String>, tokio::sync::oneshot::Sender<Result<Value, String>>),
     /// Lets go of the launcher's shortcut while its person records another, so pressing it records it rather than
     /// putting the launcher away, as Raycast's and KeyboardShortcuts' recorders do (`isPaused`), or takes it again.
@@ -194,6 +197,12 @@ async fn prepare() {
 /// The app was started again: its icon in the Dock or taskbar, which shows the launcher, or a `one:` link it opens.
 pub(crate) fn again(link: Option<String>) {
     tell(link.and_then(|link| crate::link(&link)).map_or(Told::Summon, Told::Open))
+}
+
+/// The computer's launcher shortcut was pressed, with the key it ends with, and this app's network was used last
+/// (`shortcut`): its launcher shows, or goes.
+pub(crate) fn toggle(key: Option<String>) {
+    tell(Told::Toggle(std::time::Instant::now(), key))
 }
 
 /// Runs `job` on the native windows' thread, where the native launcher is.
@@ -371,7 +380,7 @@ fn claim(home: &std::path::Path, link: Option<&str>) -> bool {
 /// `restart.lock` till then, so no other start takes the app's lock in between (`claim`), and waits for the app's
 /// lock, which the system lets go of as that program ends, and on Windows for that program itself, as the system may
 /// close its channel, a named pipe only one program may serve, after it lets go of its lock. It then serves the
-/// channel and takes the launcher's shortcut. It waited for its standard input to close, which on Windows came before
+/// channel, and takes the launcher's shortcut once that one lets go of it (`shortcut`). It waited for its standard input to close, which on Windows came before
 /// the channel of the one before had closed, and then had no channel for as long as it ran, so another start was a
 /// second app (20 Nov).
 fn handed(home: &std::path::Path) -> anyhow::Result<()> {
@@ -400,7 +409,6 @@ fn handed(home: &std::path::Path) -> anyhow::Result<()> {
         if let Err(error) = hosts::serve(&home) {
             eprintln!("its channel didn't start: {error:#}");
         }
-        tell(Told::Shortcut(0))
     });
     Ok(())
 }
@@ -484,7 +492,7 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
         event_loop.set_activation_policy(ActivationPolicy::Accessory);
     }
     let _ = PROXY.set(Mutex::new(event_loop.create_proxy()));
-    // Started by the program before it, it's the app, with the channel and the shortcut, once that one has ended,
+    // Started by the program before it, it's the app, with the channel, once that one has ended,
     // which is once this one's up (`opened`), so it's told then.
     if restarted {
         handed(&home)?;
@@ -529,7 +537,8 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
     if let Err(error) = toasts() {
         eprintln!("this device shows this app's notifications as another app's: {error:#}");
     }
-    let mut kept = if restarted { None } else { shortcut(&home, 0) };
+    shortcut::begin(&home);
+    let mut kept: Option<shortcut::Kept> = None;
     // Started again as it updated, the app windows that were open open again, once it's signed in: before, an app's
     // page can't be read. The launcher, open as the native one is, isn't an app's window.
     if let Some(reopen) = std::env::var("ONE_REOPEN").ok().and_then(|reopen| serde_json::from_str::<Vec<(String, Option<String>)>>(&reopen).ok()) {
@@ -584,10 +593,18 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
             }
             Event::UserEvent(Told::Toggle(asked, key)) if native.is_some() => {
                 let id = native.expect("it's open");
-                on_native(move |windows| if windows.showing(id) { windows.put_away(id, true) } else { windows.summon(id, asked, key.as_deref()) });
+                on_native(move |windows| {
+                    if windows.showing(id) {
+                        windows.put_away(id, true)
+                    } else {
+                        shortcut::used();
+                        windows.summon(id, asked, key.as_deref())
+                    }
+                });
             }
             Event::UserEvent(Told::Summon) if native.is_some() => {
                 let (id, asked) = (native.expect("it's open"), std::time::Instant::now());
+                shortcut::used();
                 on_native(move |windows| windows.summon(id, asked, None));
             }
             Event::UserEvent(Told::Toggle(..) | Told::Summon) if !decided => wanted = true,
@@ -642,18 +659,17 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
             // The shortcut is let go of before it ends, which the system has done once this returns, so the new
             // program, which takes it as this one ends, finds it free.
             Event::UserEvent(Told::Ending) => {
-                if let Some((keeper, key, lock)) = kept.take() {
+                if let Some((keeper, key)) = kept.take() {
                     let _ = keeper.unregister(key);
-                    drop(lock);
                 }
                 crate::exited::quit(&home);
                 closing(|| std::process::exit(0))
             }
-            Event::UserEvent(Told::Shortcut(asked)) => kept = shortcut(&home, asked),
-            Event::UserEvent(Told::Choose(keys, answer)) => _ = answer.send(choose(&home, &mut kept, keys)),
+            Event::UserEvent(Told::Shortcut(asked)) => kept = shortcut::take(asked),
+            Event::UserEvent(Told::Choose(keys, answer)) => _ = answer.send(shortcut::choose(&mut kept, keys)),
             // Taking it again after a pause, it's still this app's, so a failure is only said.
             Event::UserEvent(Told::Paused(paused)) => {
-                if let Some((keeper, key, _)) = &kept {
+                if let Some((keeper, key)) = &kept {
                     let done = if paused { keeper.unregister(*key) } else { keeper.register(*key) };
                     if let Err(error) = done {
                         eprintln!("the launcher's shortcut didn't {}: {error}", if paused { "pause" } else { "come back" });
@@ -677,247 +693,6 @@ fn alert(said: &str) {
         alert.set_title(::client::app_name());
         alert.run();
         alert.close();
-    }
-}
-
-/// The launcher's shortcut, which shows it from anywhere, or puts it away. It's ⌥Space on a Mac, as Raycast suggests,
-/// which macOS leaves free (Spotlight is ⌘Space, the input source ⌃Space); on Windows and Linux Alt+Space is the
-/// window menu's, and Super+Space the input source's, so it's Super+Alt+Space there. A file `shortcut` in the client's
-/// folder says another, as `alt+Space` (global-hotkey's words), or nothing for none; Linux's is X11's, and a Wayland
-/// session has none. One another program has is asked for again every tenth of a second, for up to 5 s
-/// (`Told::Shortcut`), as the system lets go of one a program had a moment after it ends: an X server once it gets to
-/// that program's closed connection, as global-hotkey sends its ungrab without flushing it (2 of 20 updates on Linux
-/// left the app with none, 20 Nov). Another app of the One App's kind on the device (a network's own, as the PTC App
-/// beside the One App) holds the one it has (`held`), which a Mac would give both, each summoned by turns: this one
-/// takes the next free with Control, then Shift, added, and says whose the one it wanted is. `asked` is how many times
-/// it was before. → what keeps it, for as long as the app runs.
-fn shortcut(home: &std::path::Path, asked: u32) -> Option<Kept> {
-    use global_hotkey::GlobalHotKeyManager;
-    use global_hotkey::hotkey::HotKey;
-    let wanted = std::fs::read_to_string(home.join("shortcut")).map(|chosen| chosen.trim().to_owned()).unwrap_or_else(|_| DEFAULT.to_owned());
-    if wanted.is_empty() {
-        return None;
-    }
-    let mut held_by = None;
-    let mut taken = None;
-    for chosen in [wanted.clone(), format!("ctrl+{wanted}"), format!("shift+{wanted}")] {
-        match held(&chosen) {
-            Ok(Ok(lock)) => {
-                taken = Some((chosen, lock));
-                break;
-            }
-            // This app's, as the program before it ends on an update: asked again, as the system's is.
-            Ok(Err(holder)) if holder.lines().next() == Some(::client::identifier()) => break,
-            Ok(Err(holder)) => _ = held_by.get_or_insert(holder),
-            Err(error) => {
-                eprintln!("the launcher's shortcut couldn't be told from other apps' ({chosen}): {error}");
-                return None;
-            }
-        }
-    }
-    let Some((chosen, lock)) = taken else {
-        if asked < 50 {
-            crate::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                tell(Told::Shortcut(asked + 1))
-            });
-        } else if let Some(holder) = held_by {
-            eprintln!("the launcher has no shortcut: {wanted} and the ones after it are other apps' ({holder})");
-        }
-        return None;
-    };
-    let key: HotKey = match chosen.parse() {
-        Ok(key) => key,
-        Err(error) => {
-            eprintln!("the launcher's shortcut isn't one ({chosen}): {error}");
-            return None;
-        }
-    };
-    let keeper = GlobalHotKeyManager::new().and_then(|keeper| keeper.register(key).map(|()| keeper));
-    let keeper = match keeper {
-        Ok(keeper) => keeper,
-        Err(global_hotkey::Error::AlreadyRegistered(_)) if asked < 50 => {
-            crate::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                tell(Told::Shortcut(asked + 1))
-            });
-            return None;
-        }
-        Err(error) => {
-            eprintln!("the launcher has no shortcut ({chosen}): {error}");
-            return None;
-        }
-    };
-    listen(key);
-    match held_by {
-        Some(holder) => eprintln!("the launcher's shortcut is {chosen}: {wanted} is another app's ({holder})"),
-        None => eprintln!("the launcher's shortcut is {chosen}"),
-    }
-    Some((keeper, key, lock))
-}
-
-/// The launcher's shortcut while the app has it: what keeps it, the key, and on a Mac the lock that says it's this
-/// app's (`held`).
-type Kept = (global_hotkey::GlobalHotKeyManager, global_hotkey::hotkey::HotKey, Option<std::fs::File>);
-
-/// The launcher's shortcut where its person hasn't chosen one, in global-hotkey's words (`shortcut`).
-const DEFAULT: &str = if cfg!(target_os = "macos") { "alt+Space" } else { "alt+super+Space" };
-
-/// What the launcher's shortcut is now, in global-hotkey's words (`shift+control+alt+super+KeyK`), while it has one.
-static NOW: Mutex<Option<String>> = Mutex::new(None);
-
-/// The launcher's shortcut, as `client()` says it: what it is now (`keys`), or null while it has none, and what it is
-/// where its person hasn't chosen one (`default`), each in global-hotkey's words.
-pub(crate) fn shortcut_now() -> Value {
-    let default: global_hotkey::hotkey::HotKey = DEFAULT.parse().expect("the default is a shortcut");
-    json!({"keys": *NOW.lock().expect("nothing panics holding it"), "default": default.into_string()})
-}
-
-/// Makes the launcher's shortcut `keys`, in global-hotkey's words, or with none its default, as its person chose it in
-/// Settings or onboarding, at once, with no restart. → what it is now (`shortcut_now`), or why it couldn't be: one
-/// the system keeps for itself, one another app of the One App's kind has, or what the system said as it refused it.
-pub(crate) async fn change_shortcut(keys: Option<String>) -> Result<Value, String> {
-    let (answer, answered) = tokio::sync::oneshot::channel();
-    tell(Told::Choose(keys, answer));
-    answered.await.map_err(|_| "The app is quitting.".to_owned())?
-}
-
-/// Lets go of the launcher's shortcut while its person records another, or takes it again (`Told::Paused`).
-pub(crate) fn pause_shortcut(paused: bool) {
-    tell(Told::Paused(paused))
-}
-
-/// The shortcut each system keeps for itself, which another app can't have, and what has it: macOS's own (Keyboard
-/// Shortcuts in System Settings), Windows' (Windows keyboard shortcuts) and a Linux desktop's window menu and input
-/// source, as each documents them.
-const RESERVED: &[(&str, &str)] = if cfg!(target_os = "macos") {
-    &[
-        ("super+Space", "Spotlight uses ⌘ Space."),
-        ("control+Space", "macOS uses ⌃ Space to switch input sources."),
-        ("control+super+Space", "macOS uses ⌃ ⌘ Space for emoji."),
-        ("alt+super+Space", "Finder uses ⌥ ⌘ Space to search."),
-        ("super+Tab", "macOS uses ⌘ Tab to switch apps."),
-        ("super+KeyQ", "⌘ Q quits the app in front."),
-        ("super+KeyW", "⌘ W closes the window in front."),
-    ]
-} else if cfg!(windows) {
-    &[
-        ("alt+Space", "Windows uses Alt Space for the window menu."),
-        ("super+Space", "Windows uses this to switch keyboard language."),
-        ("alt+Tab", "Windows uses Alt Tab to switch apps."),
-        ("alt+F4", "Alt F4 closes the window in front."),
-        ("super+KeyL", "Windows uses this to lock the PC."),
-        ("super+KeyD", "Windows uses this to show the desktop."),
-        ("super+KeyE", "Windows uses this to open File Explorer."),
-        ("super+KeyR", "Windows uses this to open Run."),
-        ("super+Tab", "Windows uses this for Task View."),
-    ]
-} else {
-    &[
-        ("alt+Space", "Your desktop uses Alt Space for the window menu."),
-        ("super+Space", "Your desktop uses this to switch input source."),
-        ("alt+Tab", "Your desktop uses Alt Tab to switch apps."),
-        ("alt+F4", "Alt F4 closes the window in front."),
-    ]
-};
-
-/// Makes the launcher's shortcut `keys`, or its default with none (`change_shortcut`), where `kept` is the one it has:
-/// a new one is taken before the one it had is let go of, so a refused one leaves it as it was.
-fn choose(home: &std::path::Path, kept: &mut Option<Kept>, keys: Option<String>) -> Result<Value, String> {
-    use global_hotkey::hotkey::HotKey;
-    let file = home.join("shortcut");
-    let Some(keys) = keys else {
-        if let Some((keeper, key, lock)) = kept.take() {
-            let _ = keeper.unregister(key);
-            drop(lock);
-        }
-        *NOW.lock().expect("nothing panics holding it") = None;
-        std::fs::remove_file(&file).or_else(|error| if error.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(error) }).map_err(|error| error.to_string())?;
-        *kept = shortcut(home, 0);
-        return Ok(shortcut_now());
-    };
-    let key: HotKey = keys.parse().map_err(|error| format!("That isn't a shortcut: {error}"))?;
-    let keys = key.into_string();
-    if let Some((_, why)) = RESERVED.iter().find(|(reserved, _)| reserved.parse::<HotKey>().is_ok_and(|reserved| reserved.id() == key.id())) {
-        return Err(format!("{why} Try another."));
-    }
-    if kept.as_ref().is_none_or(|(_, now, _)| now.id() != key.id()) {
-        let lock = match held(&keys) {
-            Ok(Ok(lock)) => lock,
-            Ok(Err(holder)) => return Err(format!("{} uses it. Try another.", holder.lines().nth(1).unwrap_or(&holder))),
-            Err(error) => return Err(error.to_string()),
-        };
-        let keeper = match kept.take() {
-            Some((keeper, before, _)) => {
-                let _ = keeper.unregister(before);
-                keeper
-            }
-            None => global_hotkey::GlobalHotKeyManager::new().map_err(|error| error.to_string())?,
-        };
-        if let Err(error) = keeper.register(key) {
-            // The one it had comes back, as it was.
-            *kept = shortcut(home, 0);
-            return Err(match error {
-                global_hotkey::Error::AlreadyRegistered(_) => "Another app uses it. Try another.".to_owned(),
-                error => format!("The system won't let the app have it: {error}"),
-            });
-        }
-        listen(key);
-        *kept = Some((keeper, key, lock));
-        *NOW.lock().expect("nothing panics holding it") = Some(keys.clone());
-        eprintln!("the launcher's shortcut is {keys}, as its person chose");
-    }
-    std::fs::write(&file, &keys).map_err(|error| error.to_string())?;
-    Ok(shortcut_now())
-}
-
-/// Shows the launcher, or puts it away, as `key` is pressed, with the key it ends with, as the DOM names it, which a
-/// page it summons doesn't take as its own.
-fn listen(key: global_hotkey::hotkey::HotKey) {
-    use global_hotkey::{GlobalHotKeyEvent, HotKeyState};
-    let code = format!("{:?}", key.key);
-    let last = match code.as_str() {
-        "Space" => " ".to_owned(),
-        letter if letter.starts_with("Key") => letter[3..].to_lowercase(),
-        digit if digit.starts_with("Digit") => digit[5..].to_owned(),
-        other => other.to_owned(),
-    };
-    GlobalHotKeyEvent::set_event_handler(Some(move |pressed: GlobalHotKeyEvent| {
-        if pressed.id == key.id() && pressed.state == HotKeyState::Pressed {
-            tell(Told::Toggle(std::time::Instant::now(), Some(last.clone())));
-        }
-    }));
-}
-
-/// Takes the lock every app of the One App's kind for this person takes on shortcut `chosen` while it has it, in their
-/// temporary folder, and writes this app's identifier and its name in it. A Mac gives two apps the same shortcut, each summoned by
-/// turns (`RegisterEventHotKey`), where Windows and X11 refuse the second (`AlreadyRegistered`), so it's a Mac's alone.
-/// → the file holding it, or the identifier and name of the app that does, a line each.
-fn held(chosen: &str) -> std::io::Result<Result<Option<std::fs::File>, String>> {
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = chosen;
-        Ok(Ok(None))
-    }
-    #[cfg(target_os = "macos")]
-    {
-        use std::io::{Read, Seek, Write};
-        let name: String = chosen.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect();
-        let mut file = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(std::env::temp_dir().join(format!("one-shortcut-{name}.lock")))?;
-        match file.try_lock() {
-            Ok(()) => {
-                file.set_len(0)?;
-                file.write_all(format!("{}\n{}", ::client::identifier(), ::client::app_name()).as_bytes())?;
-                Ok(Ok(Some(file)))
-            }
-            Err(std::fs::TryLockError::WouldBlock) => {
-                let mut holder = String::new();
-                file.rewind()?;
-                file.read_to_string(&mut holder)?;
-                Ok(Err(holder))
-            }
-            Err(std::fs::TryLockError::Error(error)) => Err(error),
-        }
     }
 }
 
