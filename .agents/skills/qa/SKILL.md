@@ -56,26 +56,27 @@ is needed to see either. A change that makes a screen, or a state of one, adds i
 expectations of its own: the renderer's tests run over every one. Every change to how something looks runs, in
 `clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
 
-    bun screenshot.js --release --out <scratch>/after [<folder>…]                    # on your branch: says its folders
-    bun screenshot.js --release --out <scratch>/before <its folders>                 # on main, the same folders
-    bun screenshot.js --release --out <scratch>/after --against <scratch>/before [<folder>…]
+    bun screenshot.js --release --out <scratch>/before <its folders>                 # on main
+    bun screenshot.js --release --out <scratch>/after --against <scratch>/before     # on your branch
 
 Without folders named, a pass (here and in animation.js) draws only the folders what changed since your branch left
 main can draw differently (`git diff` from their merge base, uncommitted too, `animation/changed.js`): every one for a
 change to the renderer, its tests or the UI library, else the gallery's or an app's
-client's own; it says which on stderr, and `--all` draws every one. Main's pictures are kept for the machine, so a
-pass of main another agent made costs little.
+client's own; it says which on stderr as it starts, and `--all` draws every one. Main's pictures are kept for the
+machine, so a pass of main another agent made costs little.
 
 It draws every scene and preview, or those of the folders named, on a native host by the headless renderer, which it
 builds, or takes the one any worktree on the machine built from the same (`tooling/cached-build`; `--release` for a
 release build: a debug build draws several times slower), on the machine's
-GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none), every one in about a minute. Like animation.js, it
+GPU (the Linux machine's RTX 5070 Ti; lavapipe where there's none): every one of 300 in about a minute and 4 CPU-minutes,
+each drawn twice, and in 2 seconds where each was drawn before (23 Nov). Like animation.js, it
 runs headless renderers side by side, at most half the machine's pool (8 on the Linux machine), and says
 what it found in the same order whatever finished first; `--jobs <n>` sets how many. The pool is the machine's, shared by
 every pass any agent runs, as make's jobserver is (`animation/machine.js`: a core each, 16 there), so three agents' passes
 take turns rather than load it to 50. A screenshot drawn from the same headless renderer, page, UI library, answers and
 requests as one any worktree drew before is taken from `~/.cache/the-one-app/screenshots` (`animation/cache.js`, 2 GB, the least
-recently used going), so main's "before" is drawn once for every agent, and a pass after a change draws only what it changed. Each is a persistent worker
+recently used going), so main's "before" is drawn once for every agent, and a pass after a change draws only what it changed;
+what the rules said of each is kept beside it (`judged`), so what was drawn before isn't judged again. Each is a persistent worker
 (`--persistent_worker`, Bazel's protocol) that keeps its GPU and draws one run after another, every run else its own;
 together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
