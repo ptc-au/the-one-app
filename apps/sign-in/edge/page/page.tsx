@@ -126,7 +126,8 @@ type Stage =
   | { stage: "ready"; app: App }
   | { stage: "confirm" }
   | { stage: "created"; by?: string; on?: string[] }
-  | { stage: "unlocked"; name?: string; servers: string[]; whose: string }
+  | { stage: "unlocking"; doing: string }
+  | { stage: "unlocked"; handed: [whose: string, names: string[]][] }
   | { stage: "failed"; why: string; ended?: boolean }
 
 const [stage, setStage] = createSignal<Stage>({ stage: "checking" })
@@ -381,71 +382,79 @@ async function ownKey(): Promise<{ owner: string; key: Uint8Array<ArrayBuffer>; 
   return { owner, key: made, made: true }
 }
 
-/// Lets the device a link to Unlock with Passkey names hold its person's key: it's one of theirs that's asking for
-/// it, as the Vault asks before it opens the link. What it's called.
-async function toDevice(key: Uint8Array<ArrayBuffer>, owner: string, device: string) {
-  const name = (await tool<Held>("encryption_key", {})).asking.find((asked) => asked.device === device)?.name
-  if (!name) throw new Error("That device isn't asking for your key. Choose Unlock with Passkey on it again.")
-  await tool("encryption_store", { device: { key: device, name, ...(await forDevice(key, owner, device)) } }, owner)
-  return name
+/// What the encryption app says of whose each scope's key is, for the scopes the person's own key opens: theirs, and
+/// the network's and the groups' they own that are sealed to theirs, all asked at once. One they can't read, or whose
+/// key isn't sealed to theirs, isn't.
+async function sealedTo(owner: string): Promise<[string, Held][]> {
+  const { groups } = await tool<{ groups: { group: string; owners: string[] }[] }>("permissions_groups", {})
+  const scopes = ["network", ...groups.filter((group) => group.owners.includes(owner)).map((group) => group.group)]
+  const held = await Promise.all(scopes.map((scope) => tool<Held>("encryption_key", {}, scope).catch(() => null)))
+  return scopes.flatMap((scope, at) => (held[at]?.wrapped ? [[scope, held[at]!] as [string, Held]] : []))
 }
 
+/// The machines a scope's keys go to: the device the link names, where it's asking for its person's own key, and the
+/// servers that should hold the keys of what's encrypted for the scope and don't. By what each is called.
+const going = (held: Held, device?: string) => [
+  ...(device ? held.asking.filter((asked) => asked.device === device).map((asked) => asked.name) : []),
+  ...held.access.flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))),
+]
+
 /**
- * Hands the keys of what's encrypted for `scope` to the servers that act for it and are waiting for them, and takes
- * them from any that hold them and no longer do: its person's own, or a group's or the network's they own, which is
- * sealed to their key, and made here the first time. The names of the servers that were waiting.
+ * Hands a scope's keys over in one `encryption_store`: to the device the link names, if it's one of its person's
+ * asking for their own key, as the Vault asks before it opens the link; and to the servers that act for the scope and
+ * are waiting for them, taking them from any that hold them and no longer act for it. A group's or the network's key
+ * is sealed to its owner's own, and made here the first time. The machines it went to.
  */
-async function toServers(key: Uint8Array<ArrayBuffer>, owner: string, scope: string) {
-  const held = await tool<Held>("encryption_key", {}, scope)
+async function handOver(key: Uint8Array<ArrayBuffer>, owner: string, scope: string, held: Held, device?: string) {
+  const store: { check?: string; wrapped?: string; device?: object; artifacts?: object[] } = {}
   let opened = key
   if (scope !== owner && !held.check) {
     // Nobody has made it yet: it's made here, sealed to its owner's own key, which opens it from then on, as theirs
     // was first made sealed to their passkey.
     opened = crypto.getRandomValues(new Uint8Array(32))
-    await tool("encryption_store", { check: await check(opened), wrapped: await wrap(opened, key, owner, scope) }, scope)
+    Object.assign(store, { check: await check(opened), wrapped: await wrap(opened, key, owner, scope) })
   } else if (scope !== owner) {
     if (!held.wrapped) throw new Error(`Your key doesn't open ${whose(scope)} key yet.`)
     opened = await unwrap(key, owner, scope, held.wrapped)
     if ((await check(opened)) !== held.check) throw new Error(`What's kept as ${whose(scope)} key isn't it, so nothing was handed over.`)
   }
   try {
-    const waiting = held.access.filter((artifact) => artifact.missing.length || artifact.extra.length)
-    const artifacts = []
-    for (const { artifact, epoch, servers, missing, extra } of waiting) {
-      const should = [...servers, ...missing].map((server) => server.key).filter((server) => !extra.some((other) => other.key === server))
-      artifacts.push(await forServers(opened, artifact, epoch, should))
+    if (device) {
+      const name = held.asking.find((asked) => asked.device === device)?.name
+      if (!name) throw new Error("That device isn't asking for your key. Choose Unlock with Passkey on it again.")
+      store.device = { key: device, name, ...(await forDevice(key, owner, device)) }
     }
-    if (artifacts.length) await tool("encryption_store", { artifacts }, scope)
-    return [...new Set(waiting.flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))]
+    const waiting = held.access.filter((artifact) => artifact.missing.length || artifact.extra.length)
+    store.artifacts = await Promise.all(
+      waiting.map(({ artifact, epoch, servers, missing, extra }) => {
+        const should = [...servers, ...missing].map((server) => server.key).filter((server) => !extra.some((other) => other.key === server))
+        return forServers(opened, artifact, epoch, should)
+      }),
+    )
+    if (store.check || store.device || store.artifacts.length) await tool("encryption_store", store, scope)
+    return going(held, device)
   } finally {
     if (opened !== key) opened.fill(0)
   }
 }
 
-/// The scopes whose keys the person's own opens, besides theirs: the network's and the groups' they own, each sealed to
-/// theirs. One they can't read, or whose key isn't sealed to theirs, isn't.
-async function sealedTo(owner: string) {
-  const { groups } = await tool<{ groups: { group: string; owners: string[] }[] }>("permissions_groups", {})
-  const scopes = ["network", ...groups.filter((group) => group.owners.includes(owner)).map((group) => group.group)]
-  const held = await Promise.all(scopes.map((scope) => tool<Held>("encryption_key", {}, scope).catch(() => null)))
-  return scopes.filter((_, at) => held[at]?.wrapped)
-}
-
 /**
  * Unlock with Passkey: the passkey just answered opens its person's key, or makes it, and hands it to the device the
  * link names, if it does, and to the servers waiting for the keys it opens: the person's own, and the network's and
- * their groups' sealed to it, all at once, or only the group's or network's the link names (`scope`), as older apps
- * link it.
+ * their groups' sealed to it, or only the group's or network's the link names (`scope`), as older apps link it. Each
+ * scope's is asked for and handed over at once, and a server that's asleep takes its keys once it's back.
  */
 async function unlock(device: string | undefined, scope: string | undefined) {
+  setStage({ stage: "unlocking", doing: "Unlocking your key…" })
   const { owner, key, made } = await ownKey()
   try {
-    const name = device && (await toDevice(key, owner, device))
-    const scopes = scope ? [scope] : [owner, ...(made ? [] : await sealedTo(owner))]
-    const servers = []
-    for (const each of scopes) servers.push(...(await toServers(key, owner, each)))
-    const keys = scopes.map((each) => (each === owner ? "your" : whose(each)))
-    setStage({ stage: "unlocked", name: name || undefined, servers: [...new Set(servers)], whose: keys.length === 1 ? `${keys[0]} key` : `${keys.slice(0, -1).join(", ")} and ${keys.at(-1)} keys` })
+    const own = device || !scope || scope === owner ? tool<Held>("encryption_key", {}, owner).then((held) => [[owner, held] as [string, Held]]) : []
+    const others = scope && scope !== owner ? tool<Held>("encryption_key", {}, scope).then((held) => [[scope, held] as [string, Held]]) : scope || made ? [] : sealedTo(owner)
+    const scopes = (await Promise.all([own, others])).flat()
+    const names = [...new Set(scopes.flatMap(([each, held]) => going(held, each === owner ? device : undefined)))]
+    if (names.length) setStage({ stage: "unlocking", doing: `Handing your key to ${listed(names)}…` })
+    const handed = await Promise.all(scopes.map(([each, held]) => handOver(key, owner, each, held, each === owner ? device : undefined)))
+    setStage({ stage: "unlocked", handed: scopes.map(([each], at) => [each === owner ? "your" : whose(each), [...new Set(handed[at])]] as [string, string[]]).filter(([, names]) => names.length) })
   } finally {
     key.fill(0)
   }
@@ -608,9 +617,12 @@ function shows(): Shows {
       }
     case "unlock":
       switch (now.stage) {
+        // Each machine named once, a device that's also its person's server being one machine, with what it opens.
+        case "unlocking":
+          return { heading: "Unlock with Passkey", status: now.doing }
         case "unlocked": {
-          const held = [now.name, ...now.servers].filter((name): name is string => !!name)
-          return { heading: "Unlock with Passkey", done: held.length ? `${held.join(", ")} ${held.length === 1 ? "holds" : "hold"} ${now.whose} now. You can close this page.` : `Nothing is waiting for ${now.whose}. You can close this page.` }
+          const said = now.handed.map(([whose, names]) => `${listed(names)} can open ${whose} Vault now.`)
+          return { heading: "Unlock with Passkey", done: `${said.length ? said.join(" ") : "Nothing was waiting for your key."} You can close this page.` }
         }
         case "failed":
           return failed === NO_PRF
