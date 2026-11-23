@@ -1069,8 +1069,8 @@ defmodule GitRepos do
       if Map.has_key?(state["refs"], "refs/heads/" <> head) do
         files =
           for entry <- String.split(Mirror.git!(folder, ["ls-tree", "-r", "-z", "-l", "refs/heads/" <> head]), "\0", trim: true),
-              [about, path] = String.split(entry, "\t", parts: 2),
-              [_mode, "blob", sha, size] = String.split(about, ~r/ +/),
+              [about, path] <- [String.split(entry, "\t", parts: 2)],
+              [_mode, "blob", sha, size] <- [String.split(about, ~r/ +/)],
               do: {path, sha, String.to_integer(size)}
 
         %{"description" => description(folder, files), "language" => language(files)}
