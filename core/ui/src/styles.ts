@@ -11,8 +11,8 @@ type Of<Kind extends string> = Token<Kind>
 type Pull = { token: Token<"length">; negative: true }
 /** A colour as data has it: a hex string (`#ff8800`, `#f80`, `#ff880080`). */
 type Hex = `#${string}`
-/** A length: a token, or a number of pixels, which in a static style is a warning ("make it a token") and in a
- * dynamic one is the point. */
+/** A length: a token, or a number of pixels, which a static style can't have (name a role) and a dynamic one is
+ * given. */
 type Length = Of<"length"> | number
 type Size = Length | `${number}%` | "auto"
 type Colour = Of<"colour"> | Hex
@@ -169,8 +169,8 @@ type Sheet = Record<string, Style | ((...values: never[]) => Style)>
 /// `const look = styles({ row: { flexDirection: "row", gap: tokens.space.md, backgroundColor: { default:
 /// tokens.colour.card, hover: tokens.colour.muted } }, bar: (height: number, colour: `#${string}`) => ({ height,
 /// backgroundColor: colour }) })`, then `<View style={[look.row, open() && look.open, look.bar(share() * 80,
-/// item.colour)]} />`: styles, beside what they style, whose values are tokens, never raw colours, sizes or fonts (a raw
-/// one is a warning, "make it a token"). A function is a dynamic style, as StyleX's are: a style of its values, which
+/// item.colour)]} />`: styles, beside what they style, whose values are roles, never raw colours, sizes, shadows or fonts,
+/// which fail the check (name a role; if none fits, add one in tokens.ts). A function is a dynamic style, as StyleX's are: a style of its values, which
 /// are what it's called with as it's called (a height as a number moves, a colour from data), and nothing else about it
 /// changes. Each value in what it returns is a parameter as it is, or a token or a literal; a value worked out of one
 /// is worked out where it's called. The build makes them ahead of time, so its argument is written out: an object of

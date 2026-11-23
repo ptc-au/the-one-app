@@ -112,8 +112,8 @@ defmodule OneCore.Entrypoint do
   @doc """
   Type checks an app's page against the UI library alone where one of the `version`'s entrypoints or tools' pages says its `runtime_version`, since a native
   host draws it itself and an element of the DOM's or a Web API would break it only there (`core/ui/lint-app.js`,
-  which the UI library's build holds). `{:ok, warnings}`, its warnings a line each (a raw colour or length in a style,
-  which should be a token), or `{:error, why}` with the checker's own errors, a line each: file, line, column and
+  which the UI library's build holds). `{:ok, warnings}`, its warnings a line each (a `For` beside a list's own rows), or
+  `{:error, why}` with the checker's own errors and the raw values where a role goes (a colour, length, shadow or font), a line each: file, line, column and
   message, as a compiler's. It runs on the files as they were deployed, as `build/2` does, and in the sandbox where the
   app isn't `trusted`.
   """

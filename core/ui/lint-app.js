@@ -5,13 +5,13 @@
 // which has no card (the `List` it's in draws it), and a `Button` of `variant="destructive"`, which only an alert draws. A server runs it
 // too, as the UI library it serves holds it (build.js), on the app it deploys, where an entrypoint says its `runtime_version`
 // (`OneCore.Entrypoint.lint/3`). Its errors are TypeScript's, a line each: file, line, column and message, as the folder names it.
-// A raw colour or length in a static style is a warning, not an error: "make it a token" (a line each, as an error's, but
-// `warning:`), which a deploy gives with its own.
+// A raw colour, length, shadow or font in a static style fails it, and a colour written out anywhere in its code, but in
+// an `illustration(…)`, a picture's own: a page names a role (tokens.ts).
 import { readdirSync, readFileSync } from "node:fs"
 import { extname, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { parseAst } from "vite"
-import { newMade, styled } from "./tables.ts"
+import { literals, newMade, styled } from "./tables.ts"
 
 const folder = process.argv[2]
 if (!folder) throw new Error("Which app's page? bun run lint:app apps/<app>/client")
@@ -129,19 +129,21 @@ for (const line of refusedDom) console.error(line)
 const tsc = Bun.spawnSync([process.execPath, fileURLToPath(new URL("node_modules/typescript/bin/tsc", import.meta.url)), "-p", ".", "--pretty", "false"], { cwd: folder, stdout: "inherit", stderr: "inherit" })
 
 // What its styles and tokens (`styles()`, `defineVars()`, `createTheme()`) can't be made of, as the build would refuse it,
-// and what they warn of.
+// and the raw values in them and in its code.
 const root = resolve(folder)
 const made = newMade()
 let refused = false
 for (const path of readdirSync(root, { recursive: true })) {
   if (!/\.[jt]sx?$/.test(path) || path.split(sep).includes("node_modules")) continue
   try {
-    styled(readFileSync(join(root, path), "utf8"), join(root, path), made)
+    const code = readFileSync(join(root, path), "utf8")
+    literals(code, join(root, path), made)
+    styled(code, join(root, path), made)
   } catch (error) {
     console.error(error.message.replaceAll(`${root}${sep}`, ""))
     refused = true
   }
 }
-for (const warning of made.warnings) console.log(warning.replaceAll(`${root}${sep}`, ""))
+for (const error of made.errors) console.error(error.replaceAll(`${root}${sep}`, ""))
 for (const warning of noted) console.log(warning)
-process.exit(tsc.exitCode || refused || refusedDom.length ? 1 : 0)
+process.exit(tsc.exitCode || refused || refusedDom.length || made.errors.size ? 1 : 0)

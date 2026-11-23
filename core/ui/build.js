@@ -82,6 +82,10 @@ for (const file of readdirSync(client).filter((file) => /^(ui|web)(\.js|-.*\.js)
 if (!existsSync(here("src/tokens.css")) || text("src/tokens.css") !== tokensCss()) writeFileSync(here("src/tokens.css"), tokensCss())
 writeFileSync(`${client}/tokens.json`, JSON.stringify(tokensTable()))
 writeFileSync(`${client}/styles.json`, JSON.stringify(stylesTable(made)))
+// A raw value in its styles or its code, where a role goes (tables.ts's `refuse` and `literals`), fails it, as an app's
+// fails lint-app.js.
+for (const error of made.errors) console.error(error.replace(here("."), ""))
+if (made.errors.size) process.exit(1)
 // The licence of the UI SDK code it holds.
 cpSync(here("src/UI-SDK-LICENSE.txt"), `${client}/UI-SDK-LICENSE.txt`)
 if (into) process.exit()

@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { converter, parse } from "culori"
 import { parseAst, type Plugin } from "vite"
 import { conditions, RUNTIME_VERSION, type Condition, type Rgba, type State, type Style as Entry2, type Styles as Table, type Token as Entry, type Tokens } from "./src/drawing-primitives/renderer.ts"
@@ -254,14 +255,14 @@ function declarations(property: string, value: any): string {
 const keyframesName = (frames: Record<string, Record<string, unknown>>) => `k${hash(JSON.stringify(frames))}`
 
 /** What a module's styles and tokens made: each style's entry, the app's own tokens and the ones it names new values
- * for (`defineVars`, `createTheme`) by id, and what it warns of. */
+ * for (`defineVars`, `createTheme`) by id, and the raw values it's refused for (`refuse`, `literals`), a line each. */
 export interface Made {
   table: Table["styles"]
   tokens: Map<string, Token>
-  warnings: Set<string>
+  errors: Set<string>
 }
 
-export const newMade = (): Made => ({ table: {}, tokens: new Map(), warnings: new Set() })
+export const newMade = (): Made => ({ table: {}, tokens: new Map(), errors: new Set() })
 
 /** An app's tokens as a native host's table has them, with the UI library's that are a part of one it names a new
  * value for (a label at 60%) as they are now. */
@@ -463,7 +464,7 @@ export function styled(code: string, file: string, made: Made): string | undefin
             for (const one of longhands[property] ?? [property]) dynamic[one] = value.name
           } else statics[property] = value
         }
-        warn(statics, body, code, file, made)
+        refuse(statics, body, code, file, made)
         const classes = compile(statics, made, dynamic)
         const pairs = Object.entries(dynamic).map(([property, param]) => `${JSON.stringify(property)}:${param}`)
         compiled.push(`${JSON.stringify(key)}:(${params.join(",")})=>(${JSON.stringify(classes).slice(0, -1)},"$dynamic":{${pairs.join(",")}}})`)
@@ -474,7 +475,7 @@ export function styled(code: string, file: string, made: Made): string | undefin
         } catch (error) {
           throw new Error(`${where}: styles() takes what's written out, literals, tokens.…, negative(…), an app's own tokens and functions of values, and ${key} isn't: ${(error as Error).message}`)
         }
-        warn(style, value, code, file, made)
+        if (!drawn(value)) refuse(style, value, code, file, made)
         compiled.push(`${JSON.stringify(key)}:${JSON.stringify(compile(style, made))}`)
       }
     }
@@ -485,17 +486,55 @@ export function styled(code: string, file: string, made: Made): string | undefin
   return out
 }
 
-/** What a static style says as a raw literal, which is a warning: a token is what a style names, and what's data goes in a dynamic one. */
-function warn(style: Record<string, any>, node: any, code: string, file: string, made: Made) {
-  for (const [property, value] of Object.entries(style)) {
-    for (const one of byState(value) ? Object.values(byState(value)!) : [value]) {
-      const length = typeof one === "number" && one !== 0 && !numbers.includes(property) && property !== "rotate"
-      const colour = typeof one === "string" && one.startsWith("#")
-      if (!length && !colour) continue
-      const at = node.properties?.find((one: any) => keyOf(one) === property)?.start ?? node.start
-      made.warnings.add(`${file}(${place(code, at).replace(":", ",")}): warning: ${property}: ${JSON.stringify(one)} is a raw ${colour ? "colour" : "length"}; make it a token (defineVars for an app's own), or a dynamic style's value if it's data`)
+/** A call of `illustration(why, values)`, whose raw values are a picture's, as it says. */
+const drawn = (node: any): boolean => node?.type === "CallExpression" && node.callee?.type === "Identifier" && node.callee.name === "illustration"
+
+/** What a colour written out looks like: hex, or a CSS colour function, alone or in a gradient or a shadow. */
+const colourWritten = /(?:^|[\s(,:="'`])#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})(?![\w-])|\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch|color)\(/i
+
+/** What a raw value in a static style is, if it's one: a colour, a length, a shadow or a font written out, where a style
+ * names a role (tokens.ts). A state's value (`{ default, hover }`) and a keyframe's are the style's too. */
+function raw(property: string, value: unknown): string | undefined {
+  if (property === "animationName" && value && typeof value === "object") {
+    for (const frame of Object.values(value)) for (const [inner, one] of Object.entries(frame as object)) {
+      const found = raw(inner, one)
+      if (found) return found
     }
+    return
   }
+  const by = byState(value)
+  if (by) return Object.values(by).map((one) => raw(property, one)).find(Boolean)
+  if (typeof value === "number") return value !== 0 && !numbers.includes(property) && property !== "rotate" ? `${property}: ${value} is a raw length` : undefined
+  if (typeof value !== "string" || value === "none") return
+  if (colourWritten.test(value)) return `${property}: ${JSON.stringify(value)} is a raw colour`
+  if (/^(?:box|text)Shadow$/.test(property)) return `${property}: ${JSON.stringify(value)} is a raw shadow`
+  if (property === "fontFamily") return `${property}: ${JSON.stringify(value)} is a raw font`
+  if (/\d(?:px|rem|em|pt)\b/.test(value)) return `${property}: ${JSON.stringify(value)} is a raw length`
+}
+
+/** A static style's raw values, each refused: a style names a role (`tokens.colour.secondaryLabel`), what's data goes in
+ * a dynamic style, and a picture's own are an `illustration`'s, which says why. */
+function refuse(style: Record<string, any>, node: any, code: string, file: string, made: Made) {
+  for (const [property, value] of Object.entries(style)) {
+    const written = node.properties?.find((one: any) => keyOf(one) === property)
+    if (drawn(unwrapped(written?.value))) continue
+    const found = raw(property, value)
+    if (found) made.errors.add(`${file}(${place(code, written?.start ?? node.start).replace(":", ",")}): error: ${found}; name a role (tokens.ts), adding one there where none fits${property === "animationName" ? "" : ", or a dynamic style's value where it's data"}, or an illustration("why", …)'s where it's a picture of what isn't ours`)
+  }
+}
+
+/** Each colour written out in a module's code, anywhere but an `illustration(…)`, refused as a static style's raw values
+ * are: in a dynamic style's argument, an app's own tokens (`defineVars`) or a picture's parts, it's still a value where a
+ * role goes. tokens.ts's palette is the one place they're written. */
+export function literals(code: string, file: string, made: Made) {
+  if (!colourWritten.test(code)) return
+  const visit = (node: any) => {
+    if (!node || typeof node !== "object" || drawn(node)) return
+    const text = node.type === "Literal" && typeof node.value === "string" ? node.value : node.type === "TemplateElement" ? node.value?.cooked : undefined
+    if (text !== undefined && colourWritten.test(text)) made.errors.add(`${file}(${place(code, node.start).replace(":", ",")}): error: ${JSON.stringify(text)} is a raw colour; name a role (tokens.ts), adding one there where none fits, or an illustration("why", …)'s where it's a picture of what isn't ours`)
+    for (const value of Object.values(node)) if (value && typeof value === "object") Array.isArray(value) ? value.forEach(visit) : visit(value)
+  }
+  visit(parseAst(code, { lang: lang(file) }))
 }
 
 /** Vite's plugin: each module's styles worked out as it's built, into `made`. */
@@ -504,6 +543,8 @@ export const stylesPlugin = (made: Made): Plugin => ({
   enforce: "pre",
   transform(code, id) {
     if (!/\.[jt]sx?$/.test(id) || id.includes("node_modules")) return
+    // The palette, the one place raw colours are written.
+    if (id !== fileURLToPath(new URL("src/tokens.ts", import.meta.url))) literals(code, id, made)
     const out = styled(code, id, made)
     return out === undefined ? undefined : { code: out, map: null }
   },
