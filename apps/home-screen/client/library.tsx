@@ -5,7 +5,7 @@ import { ScrollView, Empty, Icon, Image, type Located, Pressable, type Rect, red
 import { BAR, corner, TOP_ROW } from "./layout.ts"
 import { type Category, type Listed, src } from "./types.ts"
 import { looks } from "./looks.ts"
-import { home, state, launcher, room, tapping, libraryScroll } from "./store.ts"
+import { along, home, state, launcher, room, tapping, libraryScroll } from "./store.ts"
 import { type Owner, badgeOf, findIn, type From, launch, opens, press } from "./owners.ts"
 import { Count } from "./tiles.tsx"
 import { holds } from "./holds.ts"
@@ -67,8 +67,9 @@ export const flyingHome = (key: string, got: "landed" | "rested") => {
 }
 
 /// Where each category's place was drawn as it was opened, which it grows out of and shrinks back into, and each of its
-/// apps' icons in it (`apps`), which that app grows out of.
-export const places: Record<string, Rect & { apps: Rect[] }> = {}
+/// apps' icons in it (`apps`), which that app grows out of, and how far along the pages were then (`along`), which
+/// the place moves with as they're swiped.
+export const places: Record<string, Rect & { apps: Rect[]; along: number }> = {}
 
 /// The category made ahead: the one a finger or the pointer last went down on, or last opened, its contents made and
 /// kept, open or not, so opening it and closing it change how it's drawn, not what's made, and the frame a press lifts
@@ -141,7 +142,7 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
   const ahead = (key: () => string, count: () => number) => (event: Located) => {
     if (!state().matches("nothing")) return
     const square = event.currentTarget.getBoundingClientRect()
-    places[key()] = { ...square, apps: icons(laid(), square, count()) }
+    places[key()] = { ...square, apps: icons(laid(), square, count()), along: along() }
     setMade(key())
   }
   const found = (background: boolean) => findIn(props.owner.library, query(), background)

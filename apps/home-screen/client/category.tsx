@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For } from "solid-js"
 import { covers, keydown, Pressable, reducedMotion, type Rect, ScrollView, Text, View, viewport } from "ui"
 import { type Entrypoint } from "./types.ts"
 import { looks } from "./looks.ts"
-import { home, room, tapping, windowWidth } from "./store.ts"
+import { along, home, room, tapping, windowWidth } from "./store.ts"
 import { type Owner, badgeOf, opens, press } from "./owners.ts"
 import { holds } from "./holds.ts"
 import { Count, Tile } from "./tiles.tsx"
@@ -56,12 +56,15 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
   })
   // Each app is drawn on its icon in its square, as it was drawn when it was pressed, while it's closed, as large as
   // that is. A scale is around its middle, and its icon is at its top, in the middle across.
-  const square = () => places[props.made] ?? { apps: [] }
+  const square = () => places[props.made] ?? { apps: [], along: 0 }
+  // The pages it's on can be swiped while its apps fly home, as the screen is a screen again the moment it closes, and
+  // its square goes with them: they fly to where it is, not where it was.
+  const carried = () => (!props.open && flyingHome(props.made, "rested") ? (square().along - along()) * room().width : 0)
   // With less motion they stay where they are and fade, as an iPhone's folder's do, not jump onto it as they go.
   const leg = (index: number) => {
     const at = measured()?.[index]
     const icon = square().apps[index]
-    return reducedMotion() || !at || !icon ? undefined : { at, icon, scale: Math.max(icon.width / ICON, 0.01) }
+    return reducedMotion() || !at || !icon ? undefined : { at, icon: { ...icon, x: icon.x + carried() }, scale: Math.max(icon.width / ICON, 0.01) }
   }
   const flight = (index: number) => (props.open ? undefined : leg(index))
   // Each app that flies tells as it all but lands, out or home, and its names, and its square's, come in once the last

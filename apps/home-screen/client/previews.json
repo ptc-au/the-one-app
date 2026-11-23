@@ -2819,6 +2819,36 @@
       ]
     }
   },
+  "App Library, a category open, by a finger": {
+    "like": "App Library, by a finger",
+    "taps": [
+      {
+        "role": "group",
+        "name": "Utilities"
+      }
+    ],
+    "motions": {
+      "Pages held swiped as its apps fly home": {
+        "from": {
+          "x": 300,
+          "y": 700
+        },
+        "gesture": {
+          "trace": "traces/finger-tap-then-hold-swiped.json"
+        },
+        "apart": {
+          "role": "button",
+          "name": "Weather",
+          "within": {
+            "role": "dialog",
+            "name": "Utilities"
+          }
+        },
+        "seamless": true
+      }
+    },
+    "checks": {}
+  },
   "Launcher, a background app with a section": {
     "like": "Launcher on a computer",
     "answers": {
