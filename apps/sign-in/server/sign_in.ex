@@ -577,8 +577,10 @@ defmodule SignIn do
           do: Call.tool(call, "notifications", "send", %{"title" => title, "text" => "Open Sign In & Security and use your passkey.", "to" => owner, "section" => "passkeys"})
     end
 
-    Artifact.remove(call.own, "told/network")
-    :ok = Artifact.write(call.own, "told/network", JSON.encode!(Enum.map(waiting, & &1["key"])))
+    # Its record is kept as it changes, in one step: a check that removed it to write it again met another's write as
+    # :exists and failed (23 Nov: "no match of right hand side value: :exists", two checks at once, which every server
+    # of a network makes at the same 10 minutes).
+    Artifact.update(call.own, "told/network", fn _was -> JSON.encode!(Enum.map(waiting, & &1["key"])) end)
     %{waiting: named.(waiting), told: named.(new)}
   end
 
