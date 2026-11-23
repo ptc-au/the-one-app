@@ -22,7 +22,8 @@
 // web draw with the same renderer), with `--ssh` on a device's GPU too, by its own build of the headless renderer (a Windows
 // one's Direct3D 12, as animation.js plays there: where each node is laid out there and here, and how much of the
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
-// semantic tree as text (src/drawing-primitives/outline.ts) too. It says, scene by scene, how much of the pictures
+// semantic tree as text (src/drawing-primitives/outline.ts) too. On the web every frame from opening the app's frame until its
+// first draw must be the window's background (`opening`), light and dark. It says, scene by scene, how much of the pictures
 // differs (a web picture more than 1% from its native one fails, `WEB_DIFFERS_MOST`, as does one drawn on what its frame kept
 // that differs from the same drawn whole, `web-whole.png`, by more than a level, or drawn moved by whole device pixels, `web-moved-<dx>,<dy>.png`, by more than rounding, as animation.js's checks have it natively) and whether the text in sight is the same (any
 // difference fails, however small the pictures'), and keeps them all in `--out` to look at. A native host that can't draw a page yet (an older runtime
@@ -108,10 +109,16 @@ async function scenesOf(target, built) {
   })
 }
 
-/// A stand-in client for a page in a frame: it answers what the page asks from `answers`, as a client would. The frame
-/// is the page's own, or `src`, the renderer's frame that draws it (`web`).
-const host = (page, link, answers, [width, height], touch, safeArea, src = `/${page}${link ? `#${encodeURIComponent(link)}` : ""}`) => `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:transparent}iframe{border:0;width:${width}px;height:${height}px;display:block}</style>
-<iframe id="page" src="${src}"></iframe>
+/// The background the real window's pages have, which its frames are painted with where they have none of their own
+/// (clients/app/page/client.css's `body` and `iframe`).
+const BACKGROUND = readFileSync(join(root, "core/ui/src/tokens.css"), "utf8").match(/^\s*--background:\s*(.+);/m)[1]
+
+/// A stand-in client for a page in a frame, as the real window is (`color-scheme: light dark`, its background from the
+/// theme's tokens on its page and its frames): it answers what the page asks from `answers`, as a client would. The
+/// frame is the page's own, or `src`, the renderer's frame that draws it (`web`), which the test starts (`openApp`) once
+/// the window alone has been seen, as an app is opened from a window that shows its background.
+const host = (page, link, answers, [width, height], touch, safeArea, src = `/${page}${link ? `#${encodeURIComponent(link)}` : ""}`) => `<!doctype html><meta charset="utf-8"><style>:root{color-scheme:light dark;--background:${BACKGROUND}}html,body{margin:0;background:var(--background)}iframe{border:0;width:${width}px;height:${height}px;display:block;background:var(--background)}</style>
+<script>window.openApp = () => document.body.append(Object.assign(document.createElement("iframe"), { id: "page", src: ${JSON.stringify(src)} }))</script>
 <script>
 const answers = ${JSON.stringify(answers)}
 window.pending = 0
@@ -234,6 +241,21 @@ const HANGS_AFTER_MS = 120000
 /// A scene's whole web half (its taps, each pictured, its text) that takes longer than this hung.
 const WEB_HANGS_AFTER_MS = 10 * 60000
 
+/// What shows from the moment an app is opened until it has drawn is the window's own background, `[r, g, b]`, in light and
+/// dark, so opening an app never flashes (a frame whose document is light in a dark window is painted white by the browser
+/// until its own styles are there). `frames` is each frame the browser showed from the opening until the app's first draw.
+/// → what the first frame that isn't the window's shows, or nothing.
+function opening([r, g, b], frames) {
+  for (const [at, frame] of frames.entries()) {
+    for (let pixel = 0; pixel < frame.width * frame.height; pixel++) {
+      const [pr, pg, pb] = frame.data.subarray(pixel * 4, pixel * 4 + 3)
+      if (Math.max(Math.abs(pr - r), Math.abs(pg - g), Math.abs(pb - b)) > 2) {
+        return `frame ${at + 1} of the app opening shows rgb(${pr}, ${pg}, ${pb}) at ${pixel % frame.width},${Math.floor(pixel / frame.width)}, where the window's own background, rgb(${r}, ${g}, ${b}), is all there is to show until its first draw`
+      }
+    }
+  }
+}
+
 /// A scene drawn by our renderer on the web, in headless Chromium's WebGPU, as `web.png`, once its first frame is drawn
 /// and what moves as it opens has settled, on the headless renderer's clock, language and time zone, each tap pressed
 /// through its ARIA tree.
@@ -259,10 +281,42 @@ async function web(browser, serve, key, scene, folder) {
     failed.set(url, (failed.get(url) ?? 0) + 1)
     return failed.get(url) === 1 ? route.abort("connectionreset") : route.continue()
   })
+  // Every frame the browser shows from the window alone until the app's first draw, as a person sees them open it: the
+  // frame's own page says it has drawn (`data-drawn`, renderer.js), and the frames shown before it say what's on screen
+  // meanwhile.
+  const seen = []
+  let before
+  await page.exposeFunction("firstDrawn", () => (before ??= seen.length))
+  await page.addInitScript(() => {
+    new MutationObserver(() => {
+      if ("drawn" in document.documentElement.dataset) /** @type {any} */ (globalThis).firstDrawn()
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-drawn"] })
+  })
   serve.hostWeb(`${key} (web)`, scene)
   await page.goto(serve.url(`${key} (web)`))
+  const screen = await page.context().newCDPSession(page)
+  screen.on("Page.screencastFrame", ({ data, sessionId }) => {
+    seen.push(PNG.sync.read(Buffer.from(data, "base64")))
+    screen.send("Page.screencastFrameAck", { sessionId }).catch(() => {})
+  })
+  await screen.send("Page.startScreencast", { format: "png", maxWidth: scene.size[0], maxHeight: scene.size[1] })
+  // What the window shows alone, its background as a canvas reads the colour its page's styles give it, and the frames
+  // from the moment the app is opened.
+  const [r, g, b] = await page.evaluate(() => {
+    const canvas = new OffscreenCanvas(1, 1).getContext("2d", { willReadFrequently: true })
+    canvas.fillStyle = getComputedStyle(document.body).backgroundColor
+    canvas.fillRect(0, 0, 1, 1)
+    return canvas.getImageData(0, 0, 1, 1).data
+  })
+  while (!seen.length) await page.waitForTimeout(20)
+  const opened = seen.length
+  await page.evaluate(() => /** @type {any} */ (globalThis).openApp())
   const frame = await (await page.waitForSelector("#page")).contentFrame()
   const drawn = await frame.waitForFunction(() => "drawn" in document.documentElement.dataset, null, { timeout: HANGS_AFTER_MS }).then(() => true, () => false)
+  await screen.send("Page.stopScreencast")
+  const flash = drawn && opening([r, g, b], seen.slice(opened, before))
+  if (flash) seen.slice(opened, before).forEach((f, i) => writeFileSync(join(folder, `opening-${i}.png`), PNG.sync.write(f)))
+  if (flash) problems.push(failing(flash))
   // Each picture is taken once the renderer says nothing is pending, as the headless renderer's `settle`, and the frame
   // it drew last is on the screen.
   const settled = async () => {

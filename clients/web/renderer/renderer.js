@@ -577,7 +577,7 @@ async function made() {
   document.head.append(
     Object.assign(document.createElement("style"), {
       textContent: `
-        html, body { margin: 0; height: 100%; overflow: hidden; background: Canvas; color-scheme: light dark; }
+        html, body { margin: 0; height: 100%; overflow: hidden; color-scheme: light dark; }
         canvas { display: block; width: 100%; height: 100%; touch-action: none; outline: none; }
         /* See-through to the pointer. */
         #semantics { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: transparent; }

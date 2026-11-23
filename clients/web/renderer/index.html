@@ -3,6 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Light and dark from the first paint, as the window that frames it is (its `color-scheme`): a frame whose document
+       is light in a dark window is painted white by the browser until its own styles are there, and the Colour Mode
+       chosen on the device (`?theme=` on the page's address, as the UI library's `colour-mode.js` reads it) is the
+       window's whatever the device is. It has no background of its own, so the window's shows until the page has drawn. -->
+  <meta name="color-scheme" content="light dark">
+  <script>
+    const theme = new URL(location.hash.slice(1), location.href).searchParams.get("theme")
+    if (theme === "light" || theme === "dark") document.documentElement.style.colorScheme = theme
+  </script>
   <!-- What an app's page may load and reach, as its own page's (`core/edge/mcp/mcp.ts`): what's at this address, and
        nothing it can send anywhere else; the renderer is WebAssembly, the import map the page's modules are
        resolved by is written here, and a frame's page runs in a frame of its own from here (renderer.js). -->
