@@ -247,21 +247,30 @@ defmodule Vault.SignIns do
     {network, db, Items.find(network, db, name) || raise("There's no item named #{name} in your Vault or the network's.")}
   end
 
-  # The network's Vault, opened on this server, which opens its person's too. Where it can't, a server that opens both
-  # runs the whole call, never one that opens only the network's, which would run it as the network's.
+  # The network's Vault, opened on this server, which opens its person's too. Where it can't, as it isn't one of the
+  # network's servers or doesn't hold its key, one that opens both runs the whole call, never one that opens only the
+  # network's, which would run it as the network's.
   defp network_vault(call, network, name) do
-    Store.own(network)
+    case opened(network, name) do
+      {:ok, db} ->
+        db
+
+      :elsewhere ->
+        both = Enum.filter(Store.encryption(call).should(vault(network)), &(&1 in OneCore.Apps.covering(call.subject))) -- [call.server]
+        if both != [], do: :no_response = Call.forward(call, both)
+        raise "There's no item named #{name} in your Vault, and no server that opens both it and the network's answered."
+    end
+  end
+
+  defp opened(network, name) do
+    if network.server in Store.encryption(network).should(vault(network)), do: {:ok, Store.own(network)}, else: :elsewhere
   rescue
     error in RuntimeError -> reraise "There's no item named #{name} in your Vault, and the network's can't be opened: #{error.message}", __STACKTRACE__
   catch
-    :throw, {Call, :forwarding_loop} ->
-      encryption = Store.encryption(call)
-      vault = Artifact.name(Store.items_artifact(network))
-      held = encryption.servers(%Artifact{prefix: vault <> "/"})
-      both = Enum.filter(held, &(&1 in encryption.should(vault) and &1 in OneCore.Apps.covering(call.subject))) -- [call.server]
-      if both != [], do: :no_response = Call.forward(call, both)
-      raise "There's no item named #{name} in your Vault, and no server that opens both it and the network's answered."
+    :throw, {Call, :forwarding_loop} -> :elsewhere
   end
+
+  defp vault(network), do: Artifact.name(Store.items_artifact(network))
 
   defp client_fields(call, db, name), do: Items.fields(elem(client(call, db, name), 2))
 
