@@ -670,9 +670,9 @@ defmodule GitRepos do
 
           case validated(call, name, by, updates, %{"pack" => file && Base.encode64(File.read!(file))}) do
             :ok -> {if(changed != state, do: changed), [], results}
-            # What git is told is a line for each ref.
+            # What git is told is a line of text for each ref, which a NUL would end.
             {:refuse, why} ->
-              why = String.replace(why, ~r/\s*\n\s*/, " ")
+              why = String.replace(why, ~r/\s*[[:cntrl:]]+\s*/, " ")
               {nil, [], for({ref, result} <- results, do: {ref, if(result == :ok, do: {:no, why}, else: result)})}
           end
         end)

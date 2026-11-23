@@ -157,7 +157,8 @@ defmodule GitHubSync.GitHub do
         # What it says comes in bands: 1 its report, 2 what its hooks said (GitHub's words), 3 why it failed.
         bands = Enum.group_by(pkt_lines(answer), &binary_part(&1, 0, 1), &binary_part(&1, 1, byte_size(&1) - 1))
         report = bands |> Map.get(<<1>>, []) |> Enum.join() |> pkt_lines() |> Enum.map(&String.trim_trailing(&1, "\n"))
-        said = Enum.join(Map.get(bands, <<2>>, []) ++ Map.get(bands, <<3>>, [])) |> String.split(~r/[\r\n]+/, trim: true)
+        # GitHub starts its band 2 with a NUL, which git would read a refusal as ending at.
+        said = Enum.join(Map.get(bands, <<2>>, []) ++ Map.get(bands, <<3>>, [])) |> String.split(~r/[\x00\r\n]+/, trim: true)
         refused = for "ng " <> refused <- report, do: refused
 
         if "unpack ok" in report and refused == [] and not Map.has_key?(bands, <<3>>),
