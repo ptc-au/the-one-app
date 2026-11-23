@@ -40,7 +40,8 @@ async fn unpacked(one: &Value, program: &Path) -> Result<PathBuf> {
 
 /// Whether `program` is a network's own app's, which takes its network's own build of itself (`networks_build`),
 /// with its name and icon: on a Mac, a bundle that's another app's than the One App's (`bundle_of`), and on Windows, one
-/// its network's installer put in place, with its `network` beside it (`tooling/installers`).
+/// its network's installer put in place, with its `network` beside it (`tooling/installers`). On Linux a network's own
+/// program is the platform's, as nothing of its network is in it, and its `network` stays beside it as it's replaced.
 pub(super) fn networks_own(program: &Path) -> bool {
     #[cfg(target_os = "macos")]
     return bundle_of(program).is_some_and(|(_, another)| another);

@@ -72,6 +72,28 @@ else
   echo "windows: published $name Setup.exe and $(basename "$program"), $build"
 fi
 
+# Linux on x86-64: the platform's program as it is, as nothing of a network is in it, named the network's command,
+# with its `network` beside it, as Windows' (`tauri.linux.conf.json` over Tauri's config), packed by makeself
+# (`apt install makeself`) with `clients/app/install.sh`, which puts it in place for whoever runs it. Its updates are
+# the platform's program, as its `network` stays where it is.
+linux=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.linux.conf.json ]] && echo "$work/app/tauri.linux.conf.json"))
+command=$(jq -r '.mainBinaryName // "one"' <<<"$linux")
+one=$(latest linux-x86_64 one) build=$(jq -r .build <<<"$one") file=$command-linux.run
+if has linux "$build"; then
+  echo "linux: $file is $build already"
+else
+  mkdir "$work/linux"
+  fetched "$one" "$work/$command" && mv "$work/$command" "$work/linux/$command"
+  jq -c --arg address "$address" \
+    '{address: $address, name: .productName, identifier, command: .mainBinaryName} | with_entries(select(.value != null))' \
+    <<<"$linux" >"$work/linux/network"
+  cp "$root/clients/app/install.sh" "$work/linux/install"
+  makeself --quiet --nox11 --noprogress "$work/linux" "$work/$file" "$name" ./install "$command" \
+    "$(jq -r --arg one "$(jq -r .identifier "$root/clients/app/tauri.conf.json")" '.identifier // $one' <<<"$linux")"
+  one software-update publish_installer --platform linux --name "$file" --build "$build" --file-from "$work/$file" >/dev/null
+  echo "linux: published $file, $build"
+fi
+
 # A Mac with Apple silicon: the app in a disk image, notarised (`tooling/mac-dmg`).
 build=$(latest macos-aarch64 one | jq -r .build)
 if has mac "$build"; then
