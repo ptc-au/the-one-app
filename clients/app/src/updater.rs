@@ -10,9 +10,11 @@
 //! A computer's app takes a newer build of itself (on a device that's also a server, beside its server, which runs it
 //! from its next start, or by its server as it restarts on one that changed what it runs, `cli::serving`), or keeps a
 //! newer page, and starts again on it (`computer::restart`), its app windows
-//! opening again where they were. A phone's app reloads a newer page once it's off screen; its own builds come from
-//! its store (TestFlight). Either waits while a window on screen holds something its person typed and hasn't sent: in
-//! a web view a field typed in that still holds text, which its page says (`editing`),
+//! opening again where they were. A phone's app reloads a newer page once it's off screen. An iPhone's own builds come
+//! from its store (TestFlight), and an Android phone's from its network, whose own APK Software Update publishes
+//! (`tooling/installers`): downloaded, and installed in place once the app's off screen (`apk`). Either waits while a
+//! window on screen holds something its person typed and hasn't sent: in a web view a field typed in that still holds
+//! text, which its page says (`editing`),
 //! and in a native window an input with typing to undo (`renderer::typed`), until that window is put away or closed, or
 //! what's typed is sent.
 
@@ -38,12 +40,20 @@ static TAKING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
 /// Whether what it waits for has been reported, once for each time something's due.
 static WAITING: AtomicBool = AtomicBool::new(false);
+/// The network's newer APK of the app, downloaded, to install once nothing's in the way (`apk`).
+#[cfg(target_os = "android")]
+static APK: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
 
 /// Starts keeping the app on what's latest, as it opens: a computer's hears its own program replaced, and it asks the
 /// network what it has.
 pub fn start() {
     #[cfg(not(mobile))]
     replaced();
+    // An Android APK it downloaded is gone once it's installed, or is downloaded again.
+    #[cfg(target_os = "android")]
+    if let Ok(home) = crate::app().shell.home() {
+        let _ = std::fs::remove_file(home.join("update.apk"));
+    }
     looked();
 }
 
@@ -96,6 +106,8 @@ pub async fn heard(update: Value) {
     // latest build, so the network is asked for that.
     #[cfg(not(mobile))]
     caught_up().await;
+    #[cfg(target_os = "android")]
+    apk().await;
     #[cfg(mobile)]
     if let Some(edge) = update["edge"].as_str() {
         let before = EDGE.lock().expect("nothing panics holding it").replace(edge.to_owned());
@@ -115,8 +127,88 @@ pub async fn caught_up() {
             Err(error) => eprintln!("couldn't ask the network for its latest build: {error:#}"),
         }
     }
+    #[cfg(target_os = "android")]
+    apk().await;
     #[cfg(mobile)]
     page().await
+}
+
+/// Downloads the network's APK of the app into its home, if it's a newer build than this one, which is then due. It's
+/// the network's own (its name, icon and address), signed with the platform's Android release key, which Android
+/// checks against the app it replaces, so nobody else's APK takes its place. A developer's build is what they're
+/// trying, which the network's never takes the place of.
+#[cfg(target_os = "android")]
+async fn apk() {
+    static ASKING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _one = ASKING.lock().await;
+    if cfg!(debug_assertions) || APK.lock().expect("nothing panics holding it").is_some() {
+        return;
+    }
+    match downloaded().await {
+        Ok(Some((build, file))) => {
+            report("one.client.update.due", json!({"one.build.next": build}));
+            *APK.lock().expect("nothing panics holding it") = Some(file);
+            due().await
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("couldn't ask the network for its Android app: {error:#}"),
+    }
+}
+
+/// The network's Android installer (Software Update's), downloaded into the app's home where it's a newer build, with
+/// its build.
+#[cfg(target_os = "android")]
+async fn downloaded() -> anyhow::Result<Option<(String, std::path::PathBuf)>> {
+    let views = crate::views().map_err(anyhow::Error::msg)?;
+    let call = async |name: &str, arguments: Value| -> anyhow::Result<Value> {
+        let mut result = views.client.request("tools/call", json!({"name": name, "arguments": arguments})).await?;
+        if result["isError"] == true {
+            anyhow::bail!("{name}: {}", result["content"][0]["text"].as_str().unwrap_or("it failed"));
+        }
+        Ok(result["structuredContent"].take())
+    };
+    let listed = call("software-update_installers", json!({})).await?;
+    let Some(installer) = listed["installers"].as_array().into_iter().flatten().find(|installer| installer["platform"] == "android") else {
+        return Ok(None);
+    };
+    let build = installer["build"].as_str().unwrap_or_default().to_owned();
+    if cli::serving::count(&build) <= cli::serving::count(::client::BUILD) {
+        return Ok(None);
+    }
+    let link = call("software-update_installer", json!({"name": installer["name"]})).await?;
+    let file = crate::app().shell.home()?.join("update.apk");
+    let bytes = ::client::web()?.get(link["link"].as_str().unwrap_or_default()).send().await?.error_for_status()?.bytes().await?;
+    if Some(bytes.len() as u64) != installer["size"].as_u64() {
+        anyhow::bail!("the APK of {build} didn't download whole");
+    }
+    std::fs::write(&file, &bytes)?;
+    Ok(Some((build, file)))
+}
+
+/// Installs `apk` in place of this app with Android's PackageInstaller (`Updates.kt`), which ends this process.
+#[cfg(target_os = "android")]
+fn install(apk: &std::path::Path) -> jni::errors::Result<()> {
+    use jni::objects::{JClass, JObject};
+    let (vm, context) = ::client::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(vm.cast()) }?;
+    let mut env = vm.attach_current_thread()?;
+    let context = unsafe { JObject::from_raw(context.cast()) };
+    let mut installed = || -> jni::errors::Result<()> {
+        // The app's own class, by its class loader: this thread's is the system's, which doesn't have it.
+        let loader = env.call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?.l()?;
+        let name = env.new_string("app.theone.client.Updates")?;
+        let class = env.call_method(&loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[(&name).into()])?.l()?;
+        let path = env.new_string(apk.to_string_lossy())?;
+        let signature = "(Landroid/content/Context;Ljava/lang/String;)V";
+        env.call_static_method(JClass::from(class), "install", signature, &[(&context).into(), (&path).into()])?;
+        Ok(())
+    };
+    let done = installed();
+    if done.is_err() {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+    done
 }
 
 /// Takes `latest`, if it's newer than this build: downloaded here, and on a device that's also a server put in place
@@ -227,6 +319,14 @@ pub async fn ready() {
         // What it reports is kept, and told from the next start where it isn't before.
         report("one.client.update.restart", json!({}));
         crate::app().shell.restart()
+    }
+    #[cfg(target_os = "android")]
+    if let Some(apk) = APK.lock().expect("nothing panics holding it").take() {
+        report("one.client.update.install", json!({}));
+        if let Err(error) = install(&apk) {
+            report("one.client.update.failed", json!({"error": format!("Android didn't install it: {error}")}));
+        }
+        return;
     }
     #[cfg(mobile)]
     {

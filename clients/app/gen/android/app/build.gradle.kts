@@ -34,16 +34,11 @@ android {
                 jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
             }
         }
+        // A release build's code and resources are left as they're written, unshrunk: each network's APK is made from it
+        // with apktool (`tooling/android-apk`), which can't build again resources R8 shrank (attributes it took out
+        // that styles still name), and its Rust finds its Kotlin classes by their names through JNI.
         getByName("release") {
-            optimization {
-               enable = true
-            }
-            proguardFiles(
-                *fileTree(".") {
-                  include("**/*.pro")
-                  exclude("build/**")
-                }.files.toTypedArray()
-            )
+            isMinifyEnabled = false
         }
     }
     compileOptions {
