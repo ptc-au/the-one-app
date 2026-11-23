@@ -466,5 +466,22 @@
       900,
       780
     ]
+  },
+  "Passkeys, none": {
+    "like": "Passkeys",
+    "answers": {
+      "sign-in_devices": {
+        "devices": [
+          {
+            "id": "dev1",
+            "name": "Alex's Laptop",
+            "kind": "app",
+            "added": "2025-11-01T10:00:00Z",
+            "connected": true
+          }
+        ],
+        "passkeys": []
+      }
+    }
   }
 }

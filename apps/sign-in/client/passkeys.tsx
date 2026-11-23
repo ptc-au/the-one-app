@@ -6,7 +6,7 @@
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
 import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, client, confirm, date, Empty, List, open, Problem, Row, Screen, Section, Skeleton, toast, visible } from "ui"
+import { Button, call, changed, client, confirm, date, List, open, Problem, Row, Screen, Section, Skeleton, toast, visible } from "ui"
 import { Remove } from "./mine.tsx"
 
 /** A passkey, as `sign-in_devices` answers it. */
@@ -154,9 +154,16 @@ export default function SignInAndSecurity() {
     <Loading fallback={<Screen heading="Sign In & Security" back action={opening()}><Skeleton rows={2} /></Screen>}>
       <Show when={mine()}>
         {(all) => (
-          <Screen heading="Sign In & Security" back action={opening()}>
+          <Screen heading="Sign In & Security" back action={all().passkeys.length ? opening() : undefined}>
             <Waiting />
-            <Show when={all().passkeys.length} fallback={<Empty>No passkeys yet.</Empty>}>
+            <Show
+              when={all().passkeys.length}
+              fallback={
+                <List>
+                  <Row heading="No passkey" text="Add one to sign in on a new device, and to unlock your key there." action={<Button variant="secondary" onPress={opens("sign-in_add_passkey")}>Add Passkey</Button>} />
+                </List>
+              }
+            >
             <List each={all().passkeys} keyed={(passkey) => passkey.id}>
           {(passkey) => {
             const only = () => all().passkeys.length === 1
