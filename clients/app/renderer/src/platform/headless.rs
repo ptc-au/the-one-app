@@ -63,15 +63,19 @@ impl Windows {
     }
 
     /// Each window's page has run all it's been sent, and what it posted is applied, as `posted` applies it once its
-    /// JS wakes the loop. → whether anything came.
+    /// JS wakes the loop. → whether anything came, or a page caught up with what the person did that waits for it
+    /// (`waits`), which `posted` acts on as the page's thread wakes the loop after every turn it runs, whether it
+    /// posted or not: a press that waited behind a busy page went to it only at the loop's next wake for something
+    /// else (an App Library's icon held 800 ms reached its page 517 ms late, and opened no menu).
     pub fn wait(&mut self) -> bool {
         let mut came = false;
         for window in self.windows.values_mut() {
-            if let Ok(screen) = &mut window.screen
-                && screen.idle()
-            {
-                window.dirty = true;
-                came = true;
+            if let Ok(screen) = &mut window.screen {
+                if screen.idle() {
+                    window.dirty = true;
+                    came = true;
+                }
+                came |= !window.waiting.is_empty() && screen.caught_up();
             }
         }
         came
