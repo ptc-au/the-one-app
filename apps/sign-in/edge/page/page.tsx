@@ -18,7 +18,7 @@ import { deviceAuthorizationClient } from "better-auth/client/plugins"
 import { passkeyClient } from "@better-auth/passkey/client"
 import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as openedKey, output, PRF, prfKey, unwrap } from "./passkey.ts"
 
-/// The network's mark: its own icon, or the One App's (`icon` in `../worker.ts`).
+/// The network's mark: its own logo, or the One App's (`icon` in `../worker.ts`).
 const mark = "/Logo.png"
 // The tab is named as the network is, which a password manager may name what it saves here by.
 fetch("/manifest.webmanifest")

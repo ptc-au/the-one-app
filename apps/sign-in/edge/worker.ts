@@ -47,23 +47,24 @@ const ASSOCIATIONS: Record<string, () => unknown> = {
 
 /**
  * The network's icon, as a browser asks for it by name, its tab's and a Home Screen's (`/favicon.ico`,
- * `/apple-touch-icon.png`), and as the network's pages draw it (`/Logo.png`): its own (`network` in `auth.ts`), or the
- * One App's, which this part's build puts beside its pages (`package.json`).
+ * `/apple-touch-icon.png`), and its logo as the network's pages draw it (`/Logo.png`), its icon where it has none: its
+ * own (`network` in `auth.ts`), or the One App's, which this part's build puts beside its pages (`package.json`).
  */
 const ICONS = ["/Logo.png", "/favicon.ico", "/apple-touch-icon.png"];
 /** How long a browser keeps the network's icon and manifest before it asks again, in seconds. */
 const NAMED = 300;
 async function icon(url: URL) {
-  const { icon } = await network();
-  if (!icon) return env.ASSETS.fetch(new Request(url));
-  const png = Uint8Array.from(atob(icon.png), (char) => char.charCodeAt(0));
+  const { icon, logo } = await network();
+  const picture = url.pathname === "/Logo.png" ? (logo ?? icon) : icon;
+  if (!picture) return env.ASSETS.fetch(new Request(url));
+  const png = Uint8Array.from(atob(picture.png), (char) => char.charCodeAt(0));
   return new Response(png, { headers: { "content-type": "image/png", "cache-control": `public, max-age=${NAMED}` } });
 }
 
-/** The web app's manifest, by which a browser installs it, named and drawn as the network is. */
+/** The web app's manifest, by which a browser installs it, named and drawn as the network is: its icon, on its tile. */
 async function manifest() {
   const { name, icon } = await network();
-  const icons = [{ src: "/Logo.png", sizes: `${icon?.size ?? 336}x${icon?.size ?? 336}`, type: "image/png" }];
+  const icons = [{ src: "/apple-touch-icon.png", sizes: `${icon?.size ?? 180}x${icon?.size ?? 180}`, type: "image/png" }];
   return Response.json({ name: name ?? ONE_APP, start_url: "/", display: "standalone", icons }, { headers: { "content-type": "application/manifest+json", "cache-control": `public, max-age=${NAMED}` } });
 }
 

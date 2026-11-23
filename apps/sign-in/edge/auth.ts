@@ -762,14 +762,19 @@ async function domains(): Promise<string[]> {
 }
 
 /**
- * The network's name and icon, as its owner said (`network`): what its sign-in page and web app show, and its own apps
- * are finished with. Its icon is a square PNG, as base64, with its size. Each is the One App's where there's none.
+ * The network's name, icon and logo, as its owner said (`network`): what its sign-in page and web app show, and its
+ * own apps are finished with. Its icon is on a tile of its own, as a Home Screen and a tab show it, and its logo is
+ * its mark alone, with no tile, as its pages draw it, as the One App's are `apple-touch-icon.png` and `Logo.png`. Each
+ * is a square PNG, as base64, with its size, and is the One App's where there's none.
  */
-export async function network(): Promise<{ name: string | null; icon: { png: string; size: number } | null }> {
-  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon')").all<{ name: string; value: string }>();
+export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: Picture | null }> {
+  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo')").all<{ name: string; value: string }>();
   const kept = Object.fromEntries(results.map(({ name, value }) => [name, JSON.parse(value)]));
-  return { name: kept.name ?? null, icon: kept.icon ?? null };
+  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null };
 }
+
+/** A square PNG, as base64, with its size. */
+type Picture = { png: string; size: number };
 
 /** A network's name where it has none of its own. */
 export const ONE_APP = "The One App";
@@ -852,6 +857,8 @@ export interface Ask {
   name?: unknown;
   /** With `network`: the network's icon, a square PNG as base64, or null for the One App's. */
   icon?: unknown;
+  /** With `network`: the network's logo, its mark with no tile, a square PNG as base64, or null for the One App's. */
+  logo?: unknown;
 }
 
 export async function asked(auth: Auth, origin: string, { ask, who: name, building, ...about }: Ask) {
@@ -876,7 +883,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     }
     return { domains: await domains() };
   }
-  // The network's name and icon, as its owner says: given either, it's that from then on, and null is the One App's.
+  // The network's name, icon and logo, as its owner says: given any, it's that from then on, and null is the One App's.
   if (ask === "network") {
     const set = (name: string, value: unknown) =>
       value === null
@@ -888,13 +895,15 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       // Better Auth is made with it (`at`), here again at once; another copy of this Worker, as it's next loaded.
       auths.clear();
     }
-    if (about.icon !== undefined) {
-      const size = about.icon === null ? 0 : square(String(about.icon));
+    for (const picture of ["icon", "logo"] as const) {
+      const given = about[picture];
+      if (given === undefined) continue;
+      const size = given === null ? 0 : square(String(given));
       if (typeof size === "string") return { error: size };
-      await set("icon", about.icon === null ? null : { png: about.icon, size });
+      await set(picture, given === null ? null : { png: given, size });
     }
-    const { name, icon } = await network();
-    return { name, icon: icon && `${origin}/Logo.png` };
+    const { name, icon, logo } = await network();
+    return { name, icon: icon && `${origin}/apple-touch-icon.png`, logo: logo && `${origin}/Logo.png` };
   }
   // Everyone who has joined, and everyone invited who hasn't yet, with the name each goes by.
   if (ask === "everyone") {
