@@ -5,7 +5,7 @@ import { call, changed, List, Problem, Row, since, Skeleton } from "ui"
 /** What `github-sync_repos` answers. */
 interface Synced {
   app: string | null
-  team: string | null
+  org: string | null
   repos: { github: string; repo: string; synced: number | null; error: string | null }[]
 }
 
@@ -19,7 +19,7 @@ export default function Repos() {
       <Loading fallback={<Skeleton rows={2} />}>
         <List>
           <Show when={synced().app} fallback={<Row heading="Not connected to GitHub" text="The network's owner connects its GitHub App." />}>
-            <Row heading="GitHub team" text={`${synced().team}: every repo it may push to syncs.`} />
+            <Row heading="GitHub" text={`Every repo it's installed on in ${synced().org} syncs.`} />
             <For each={synced().repos}>{(repo) => <Row heading={repo.github} text={text(repo)} />}</For>
           </Show>
         </List>

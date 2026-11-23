@@ -40,11 +40,19 @@ defmodule GitHubSync.GitHub do
     signed <> "." <> Base.url_encode64(:public_key.sign(signed, :sha256, :public_key.pem_entry_decode(entry)), padding: false)
   end
 
-  @doc "The repos the team `team` of `org` may push to, by their full names: owner/name."
-  def team_repos(call, token, org, team, page \\ 1) do
-    repos = request(call, "GET", "/orgs/#{org}/teams/#{team}/repos?per_page=100&page=#{page}", nil, {:token, token})
-    pushes = for %{"full_name" => full, "permissions" => %{"push" => true}} <- repos, do: full
-    if length(repos) == 100, do: pushes ++ team_repos(call, token, org, team, page + 1), else: pushes
+  @doc "The repos the app's installation reaches, by their full names: owner/name."
+  def repos(call, token, page \\ 1) do
+    %{"repositories" => repos} = request(call, "GET", "/installation/repositories?per_page=100&page=#{page}", nil, {:token, token})
+    fulls = for %{"full_name" => full} <- repos, do: full
+    if length(repos) == 100, do: fulls ++ repos(call, token, page + 1), else: fulls
+  end
+
+  @doc """
+  Makes the repo `name` on `org` as the app, which its installation then reaches whichever repos it was given
+  (GitHub's "Create an organization repository", with Administration: write). Gives its full name.
+  """
+  def create(call, token, org, name, private) do
+    request(call, "POST", "/orgs/#{org}/repos", %{name: name, private: private}, {:token, token})["full_name"]
   end
 
   @doc "The pull request from `branch` that's open on `full`, or one opened from it, with `title` and `body`."

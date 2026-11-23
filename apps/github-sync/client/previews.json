@@ -4,7 +4,7 @@
     "answers": {
       "github-sync_repos": {
         "app": "the-ptc-app-github-sync",
-        "team": "ptc-au/ptc-app",
+        "org": "ptc-au",
         "repos": [
           {
             "github": "ptc-au/the-one-app",
@@ -32,7 +32,7 @@
     "answers": {
       "github-sync_repos": {
         "app": null,
-        "team": null,
+        "org": null,
         "repos": []
       }
     },

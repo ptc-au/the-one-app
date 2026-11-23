@@ -1,12 +1,13 @@
 defmodule GitHubSync do
   @moduledoc """
-  GitHub Sync: every repo a GitHub team may push to, kept in the network's Git Repos and in step with GitHub, which
-  stays the one source of truth. It reaches GitHub as a GitHub App, made with GitHub's manifest flow (`connect`),
-  whose private key the network's Vault keeps.
+  GitHub Sync: every repo its GitHub App's installation reaches, kept in the network's Git Repos and in step with
+  GitHub, which stays the one source of truth. It reaches GitHub as a GitHub App, made with GitHub's manifest flow
+  (`connect`), whose private key the network's Vault keeps, and installed on an organisation for the repos chosen
+  there. A repo made with `create` is made on GitHub by the app, so its installation reaches it at once.
 
-  - GitHub to the network: each minute (`sync`), each of the team's repos is fetched and its branches and tags
-    pushed into the network's repo of the same name, made the first time, through Git Repos' own `git` tool, as any
-    push is. A repo the team no longer pushes to stops syncing, and its repo in the network stays as it was.
+  - GitHub to the network: each minute (`sync`), each repo is fetched and its branches and tags pushed into the
+    network's repo of the same name, made the first time, through Git Repos' own `git` tool, as any push is. A repo
+    the installation no longer reaches stops syncing, and its repo in the network stays as it was.
   - The network to GitHub: Git Repos asks this app before it keeps any change to a synced repo's refs
     (`git-repos.push`), which goes to GitHub first and is kept only if GitHub took it, so its branch rules hold and
     what it refuses is refused in its words. A pull request (`refs/pull/<name>`) is the branch `pull/<name>` on GitHub
@@ -63,20 +64,17 @@ defmodule GitHubSync do
       %{
         name: "connect",
         description:
-          "Makes this network's GitHub App from the code GitHub's manifest flow sends back, keeps its key in the network's Vault, and has every repo the GitHub team `team` pushes to sync. Only the network's owners connect it",
+          "Makes this network's GitHub App from the code GitHub's manifest flow sends back and keeps its key in the network's Vault. Every repo it's installed on then syncs. Only the network's owners connect it",
         inputs: %{
           type: "object",
-          properties: %{
-            code: %{type: "string", description: "The code GitHub sent back once the app was made"},
-            team: %{type: "string", description: "The team whose repos sync, by its slug, like ptc-app"}
-          },
-          required: ["code", "team"]
+          properties: %{code: %{type: "string", description: "The code GitHub sent back once the app was made"}},
+          required: ["code"]
         },
         outputs: %{
           type: "object",
           properties: %{
             app: %{type: "string", description: "The GitHub App's slug"},
-            install: %{type: "string", description: "Where it's installed on the team's organisation"}
+            install: %{type: "string", description: "Where it's installed on its organisation, choosing the repos that sync"}
           },
           required: ["app", "install"]
         }
@@ -90,11 +88,25 @@ defmodule GitHubSync do
           type: "object",
           properties: %{
             app: %{type: ["string", "null"], description: "The GitHub App's slug, or null before it's connected"},
-            team: %{type: ["string", "null"], description: "The team whose repos sync: org/slug"},
+            org: %{type: ["string", "null"], description: "The GitHub organisation it's installed on"},
             repos: %{type: "array", items: synced}
           },
-          required: ["app", "team", "repos"]
+          required: ["app", "org", "repos"]
         }
+      },
+      %{
+        name: "create",
+        description:
+          "Makes a repo on GitHub, in the organisation the app is installed on, and syncs it: it's in the network's Git Repos at once, to push to. Only the network's owners make one",
+        inputs: %{
+          type: "object",
+          properties: %{
+            name: %{type: "string", description: "Lowercase letters, digits, - and _, like notes"},
+            private: %{type: "boolean", description: "Whether only those it's shared with on GitHub see it. True unless said"}
+          },
+          required: ["name"]
+        },
+        outputs: synced
       },
       %{
         name: "sync",
@@ -117,7 +129,7 @@ defmodule GitHubSync do
   end
 
   @impl true
-  def call("connect", %{"code" => code, "team" => team}, call) do
+  def call("connect", %{"code" => code}, call) do
     if not Call.owns?(%{call | subject: "network"}),
       do: raise(OneCore.Call.Refused, "Only the network's owners connect it to GitHub.")
 
@@ -125,14 +137,27 @@ defmodule GitHubSync do
     vault = Call.app(call, "vault")
     vault.keep(call, @item, %{"private_key" => made["pem"]}, ["api.github.com"])
 
-    app = %{"id" => made["id"], "slug" => made["slug"], "org" => made["owner"]["login"], "team" => team}
+    app = %{"id" => made["id"], "slug" => made["slug"], "org" => made["owner"]["login"]}
     Artifact.update(call.own, "app.json", fn _ -> JSON.encode!(app) end)
     %{app: app["slug"], install: "https://github.com/apps/#{app["slug"]}/installations/new"}
   end
 
   def call("repos", _inputs, call) do
     app = connected(call)
-    %{app: app && app["slug"], team: app && "#{app["org"]}/#{app["team"]}", repos: records(call)}
+    %{app: app && app["slug"], org: app && app["org"], repos: records(call)}
+  end
+
+  def call("create", %{"name" => name} = inputs, call) do
+    if not Call.owns?(%{call | subject: "network"}),
+      do: raise(OneCore.Call.Refused, "Only the network's owners make a repo on GitHub.")
+
+    if not (name =~ ~r/^[a-z0-9][a-z0-9_-]{0,63}$/),
+      do: raise(OneCore.Call.Refused, "A repo's name is lowercase letters, digits, - and _, starting with a letter or digit.")
+
+    app = connected(call) || raise(OneCore.Call.Refused, "GitHub Sync isn't connected to GitHub yet.")
+    token = token(call, app)
+    full = GitHub.create(call, token, app["org"], name, Map.get(inputs, "private", true))
+    synced(call, token, full)
   end
 
   def call("sync", _inputs, call) do
@@ -142,33 +167,38 @@ defmodule GitHubSync do
 
       app ->
         token = token(call, app)
-        fulls = GitHub.team_repos(call, token, app["org"], app["team"])
-        names = Map.new(fulls, &{"network/made/git-repos/" <> name(&1), &1})
+        fulls = GitHub.repos(call, token)
+        repos = MapSet.new(fulls, &repo/1)
 
-        # A repo the team no longer pushes to stops syncing.
-        for %{"repo" => repo} <- records(call), not Map.has_key?(names, repo), do: Artifact.remove(call.own, "repos/" <> repo)
+        # A repo the installation no longer reaches stops syncing.
+        for %{"repo" => repo} <- records(call), repo not in repos, do: Artifact.remove(call.own, "repos/" <> repo)
 
-        there = MapSet.new(Call.tool(call, "git-repos", "list", %{})["repos"], & &1["repo"])
-
-        for {repo, full} <- names do
-          error =
-            try do
-              if repo not in there, do: Call.tool(call, "git-repos", "create", %{"name" => name(full)})
-              pull(call, token, full, repo)
-              nil
-            rescue
-              error ->
-                Logger.warning("github-sync: #{full} didn't sync: #{Exception.message(error)}")
-                Exception.message(error)
-            end
-
-          record = %{"github" => full, "repo" => repo, "synced" => if(error, do: record(call, repo)["synced"], else: now()), "error" => error}
-          Artifact.update(call.own, "repos/" <> repo, fn _ -> JSON.encode!(record) end)
-        end
-
+        for full <- fulls, do: synced(call, token, full)
         Call.changed(call)
         %{repos: records(call)}
     end
+  end
+
+  # Syncs one repo, making it in the network the first time, and keeps how that went. Gives its record.
+  defp synced(call, token, full) do
+    repo = repo(full)
+
+    error =
+      try do
+        if record(call, repo) == nil and not Enum.any?(Call.tool(call, "git-repos", "list", %{})["repos"], &(&1["repo"] == repo)),
+          do: Call.tool(call, "git-repos", "create", %{"name" => name(full)})
+
+        pull(call, token, full, repo)
+        nil
+      rescue
+        error ->
+          Logger.warning("github-sync: #{full} didn't sync: #{Exception.message(error)}")
+          Exception.message(error)
+      end
+
+    record = %{"github" => full, "repo" => repo, "synced" => if(error, do: record(call, repo)["synced"], else: now()), "error" => error}
+    Artifact.update(call.own, "repos/" <> repo, fn _ -> JSON.encode!(record) end)
+    record
   end
 
   # GitHub's branches and tags, pushed into the network's repo where they differ, through Git Repos' `git` tool as
@@ -280,6 +310,8 @@ defmodule GitHubSync do
     keys = Artifact.list(call.own, "repos/")
     for {:ok, data, _tag} <- Artifact.read_all(call.own, keys), do: JSON.decode!(data)
   end
+
+  defp repo(full), do: "network/made/git-repos/" <> name(full)
 
   # A GitHub repo's name in the network: as Git Repos names repos, lowercase letters, digits, - and _.
   defp name(full),
