@@ -33,24 +33,17 @@ fetched() {
 }
 has() { jq -e --arg platform "$1" --arg build "$2" 'any(.installers[]; .platform == $platform and .build == $build)' <<<"$published" >/dev/null; }
 
-# A Mac with Apple silicon: the app in a disk image, notarised (`tooling/mac-dmg`).
-build=$(latest macos-aarch64 one | jq -r .build)
-if has mac "$build"; then
-  echo "mac: $name.dmg is $build already"
-else
-  build=$("$root/tooling/mac-dmg" "$network" "$work/$name.dmg" | tail -1)
-  one software-update publish_installer --platform mac --name "$name.dmg" --build "$build" --file-from "$work/$name.dmg" >/dev/null
-  echo "mac: published $name.dmg, $build"
-fi
-
 # Windows: the One App's installer (`clients/app/installer.nsi`), the network's own app, as Tauri's config says it, with
 # `tauri.windows.conf.json` over it where there is one, as Tauri merges a platform's: its address, and its name,
 # identifier and command (`productName`, `identifier`, `mainBinaryName`) where it names them, in the `network` beside
 # the program, which the app is named by as it runs (`bundle` in core/client), and its icon (`icons/icon.png`) as the
 # installer's, the program's and, beside it as `icon.ico`, its windows', which an update, replacing the program alone,
 # leaves. The program, named so, is signed again, and the installer with its uninstaller (`tooling/windows-sign`).
+# The program is published beside it too, with its SHA-256 (`windows-program`), as the app's updates take it
+# (`fetched_program` in clients/cli), so an update keeps its name and icon. It's first, as a Mac's takes minutes to
+# notarise, and Windows' app waits for it once it's heard of a build.
 one=$(latest windows-x86_64 one) build=$(jq -r .build <<<"$one")
-if has windows "$build"; then
+if has windows "$build" && has windows-program "$build"; then
   echo "windows: $name Setup.exe is $build already"
 else
   windows=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.windows.conf.json ]] && echo "$work/app/tauri.windows.conf.json"))
@@ -73,8 +66,20 @@ else
   "$root/tooling/windows-sign" "$program"
   makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$program" "${named[@]}" -DOUTFILE="$work/$name Setup.exe" -DSIGN="$root/tooling/windows-sign" \
     -DCOPYRIGHT="$(grep -m1 '^Copyright' "$root/LICENSE")" "$root/clients/app/installer.nsi"
+  one software-update publish_installer --platform windows-program --name "$(basename "$program")" --build "$build" --file-from "$program" \
+    --sha256 "$(sha256sum "$program" | cut -d' ' -f1)" >/dev/null
   one software-update publish_installer --platform windows --name "$name Setup.exe" --build "$build" --file-from "$work/$name Setup.exe" >/dev/null
-  echo "windows: published $name Setup.exe, $build"
+  echo "windows: published $name Setup.exe and $(basename "$program"), $build"
+fi
+
+# A Mac with Apple silicon: the app in a disk image, notarised (`tooling/mac-dmg`).
+build=$(latest macos-aarch64 one | jq -r .build)
+if has mac "$build"; then
+  echo "mac: $name.dmg is $build already"
+else
+  build=$("$root/tooling/mac-dmg" "$network" "$work/$name.dmg" | tail -1)
+  one software-update publish_installer --platform mac --name "$name.dmg" --build "$build" --file-from "$work/$name.dmg" >/dev/null
+  echo "mac: published $name.dmg, $build"
 fi
 
 # Android: the network's own APK (`tooling/android-apk`), signed with the platform's Android release key. The app takes
