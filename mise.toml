@@ -15,6 +15,8 @@ zig = "0.15.2"
 "github:indygreg/apple-platform-rs" = "0.29.0"
 # And what signs a Windows program and installer, as Power to Change (`tooling/windows-sign`), here: jsign, on Java.
 "github:ebourg/jsign" = { version = "7.6", asset_pattern = "jsign-7.6.jar", bin = "jsign.jar" }
+# What gives a network's Android app its name and icon, in the plain APK's resources (`tooling/android-apk`): apktool, on Java.
+"github:iBotPeaches/Apktool" = { version = "2.12.1", asset_pattern = "apktool_2.12.1.jar", bin = "apktool.jar" }
 # What builds the web client's renderer (`clients/web/renderer`, `core/edge/edge.js`): wasm-bindgen, at the version
 # its crate pins, and binaryen's wasm-opt.
 "github:wasm-bindgen/wasm-bindgen" = "0.2.130"

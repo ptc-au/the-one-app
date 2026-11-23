@@ -1,27 +1,78 @@
 #!/usr/bin/env bash
-# Finishes a plain build of the One App for Android, an APK `cargo tauri android build --apk` made with no network in
-# it, for a network, as `tooling/testflight` does an iPhone's: its address, from the network's repo's `app/address` as
-# its main has it on the remote, goes in as the APK's `assets/network`, read as the app starts (`bundled` in
-# core/client), and it's aligned and signed again, with the keystore its network's edge names in its assetlinks
-# (`ANDROID_APPS` in apps/sign-in/edge/wrangler.jsonc), the Android SDK's debug keystore where none is given, whose
-# password is ANDROID_KEYSTORE_PASSWORD:
+# Finishes the plain build of the One App for Android for a network, as `tooling/mac-app` does a Mac's: the APK the core's
+# release has as `one/android-aarch64` (`tooling/release`), given here, made the network's own. Its `app/`, as the
+# network's repo's main has it on the remote, says its name (`tauri.conf.json`'s `productName`, with
+# `tauri.android.conf.json` over it where there is one, as Tauri merges a platform's config), which takes the One App's
+# place in its strings, and its icon (`icons/icon.png`, square, filling its square as its own background), which
+# `cargo tauri icon` makes Android's launcher icons of, on its own colour; both go in with apktool, and a network that
+# names neither keeps the One App's. Its address (`address`) goes in as its `assets/network`, read as the app starts
+# (`bundled` in core/client). It's aligned and signed with the platform's Android release key, which signs every
+# network's APK and each update after, as Android takes an update only signed as the app it replaces ("The One App
+# Android release keystore" in 1Password's `ptc-nosudo`, its password beside it; `ANDROID_APPS` in
+# apps/sign-in/edge/wrangler.jsonc names it, so the app's web view uses the network's passkeys), or with the keystore
+# given, whose password is ANDROID_KEYSTORE_PASSWORD (the Android SDK's debug keystore's is `android`):
 #
 #     tooling/android-apk <the network's repo> <the plain APK> <the network's APK> [<keystore>]
 #
-# Its name, identifier and link hosts stay the One App's: Gradle and Tauri's deep-link plugin build them into its
-# manifest and its Rust.
+# Its package stays the One App's, `app.theone.client`, which its push notifications (Firebase) and its Rust know it by,
+# so a phone has one network's app at a time.
 set -euo pipefail
 (($# == 3 || $# == 4)) || { echo "tooling/android-apk <the network's repo> <the plain APK> <the network's APK> [<keystore>]" >&2 && exit 1; }
-network=$1 plain=$2 out=$3 keystore=${4:-$HOME/.android/debug.keystore}
-[[ -n ${4:-} ]] || export ANDROID_KEYSTORE_PASSWORD=android
+network=$1 plain=$2 out=$3
+root=$(cd "$(dirname "$0")/.." && pwd)
 tools=$(ls -d "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/* | sort -V | tail -1)
 work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
 
+if [[ -n ${4:-} ]]; then
+  keystore=$4
+else
+  keystore=$work/release.p12
+  op document get "The One App Android release keystore" --vault ptc-nosudo --out-file "$keystore" >/dev/null
+  ANDROID_KEYSTORE_PASSWORD=$(op read -n "op://ptc-nosudo/The One App Android release keystore password/password")
+fi
+export ANDROID_KEYSTORE_PASSWORD
+
 git -C "$network" fetch -q origin main
-jq -nc --arg address "$(git -C "$network" show origin/main:app/address)" '{address: $address}' >"$work/network"
-cp "$plain" "$work/plain.apk"
+git -C "$network" archive origin/main app | tar -x -C "$work"
+config=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.android.conf.json ]] && echo "$work/app/tauri.android.conf.json"))
+name=$(jq -r '.productName // empty' <<<"$config")
+icon=$work/app/icons/icon.png
+cp "$plain" "$work/app.apk"
+
+if [[ -n $name || -f $icon ]]; then
+  apktool=(java -jar "$(mise -C "$root" which apktool.jar)")
+  # Its resources decoded, its code left as it is.
+  "${apktool[@]}" d -q -f -s -o "$work/decoded" "$plain"
+  if [[ -n $name ]]; then
+    python3 -I - "$work/decoded/res/values/strings.xml" "$name" <<'EOF'
+import sys
+from xml.sax.saxutils import escape
+path, name = sys.argv[1:]
+with open(path) as file:
+    strings = file.read()
+with open(path, "w") as file:
+    file.write(strings.replace("the One App", escape(name).replace("'", "\\'")))
+EOF
+  fi
+  if [[ -f $icon ]]; then
+    (cd "$root/clients/app" && cargo tauri icon "$icon" -o "$work/icons" >/dev/null)
+    # apktool names a density's folder as Android first had it (`mipmap-hdpi-v4`).
+    for file in "$work"/decoded/res/mipmap-*/ic_launcher*.png; do
+      folder=$(basename "$(dirname "$file")")
+      cp "$work/icons/android/${folder%-v4}/$(basename "$file")" "$file"
+    done
+    # The adaptive icon's background is the icon's own colour, at its corner, so its edge doesn't show.
+    colour=$(convert "$icon" -format '%[hex:p{0,0}]' info: | cut -c1-6)
+    sed -i "s|<color name=\"ic_launcher_background\">#[0-9a-fA-F]*</color>|<color name=\"ic_launcher_background\">#$colour</color>|" \
+      "$work/decoded/res/values/colors.xml"
+  fi
+  "${apktool[@]}" b -q -o "$work/app.apk" "$work/decoded"
+fi
+
+jq -nc --arg address "$(cat "$work/app/address")" '{address: $address}' >"$work/network"
 python3 -I -c $'import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], "a") as apk: apk.write(sys.argv[2], "assets/network")' \
-  "$work/plain.apk" "$work/network"
-"$tools/zipalign" -p -f 4 "$work/plain.apk" "$work/aligned.apk"
+  "$work/app.apk" "$work/network"
+# Its native libraries stay uncompressed, aligned to 16 KB pages, as Android 15 and on take them.
+"$tools/zipalign" -P 16 -f 4 "$work/app.apk" "$work/aligned.apk"
 "$tools/apksigner" sign --ks "$keystore" --ks-pass env:ANDROID_KEYSTORE_PASSWORD --out "$out" "$work/aligned.apk"
 "$tools/apksigner" verify "$out"

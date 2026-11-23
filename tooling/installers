@@ -72,3 +72,15 @@ else
   one software-update publish_installer --platform windows --name "$name Setup.exe" --build "$build" --file-from "$work/$name Setup.exe" >/dev/null
   echo "windows: published $name Setup.exe, $build"
 fi
+
+# Android: the network's own APK (`tooling/android-apk`), signed with the platform's Android release key. The app takes
+# each one published after it by itself (`apk` in clients/app/src/updater.rs).
+one=$(latest android-aarch64 one) build=$(jq -r .build <<<"$one")
+if has android "$build"; then
+  echo "android: $name.apk is $build already"
+else
+  fetched "$one" "$work/plain.apk"
+  "$root/tooling/android-apk" "$network" "$work/plain.apk" "$work/$name.apk" >/dev/null
+  one software-update publish_installer --platform android --name "$name.apk" --build "$build" --file-from "$work/$name.apk" >/dev/null
+  echo "android: published $name.apk, $build"
+fi

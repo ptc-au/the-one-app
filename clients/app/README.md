@@ -6,8 +6,9 @@ its links and its address are written in, and it's signed for it. The network's 
 a Tauri config (`tauri.conf.json`: `productName`, `identifier`, `plugins.deep-link.mobile`) and its address
 (`address`), and never in this repo or its GitHub runs, whose logs anyone can read. An iPhone's is finished and sent to
 TestFlight by `tooling/testflight <the network's repo>`, a Mac's made by `tooling/mac-app`, and an Android APK
-finished by `tooling/android-apk`, which puts in only its address: its name, identifier and link hosts are built into
-its manifest and Rust. Its link hosts are where its web view uses the network's
+finished by `tooling/android-apk`, which puts in its name, icon and address and signs it with the platform's Android
+release key: its identifier and link hosts stay the One App's, built into its manifest and Rust. `tooling/installers`
+publishes each of these for the network's download page. Its link hosts are where its web view uses the network's
 passkeys (`webcredentials:`) and which of its links open in it (`applinks:`), as the network's edge says it may
 (`apps/sign-in/edge/wrangler.jsonc`). `tooling/network` starts a network on this machine and opens an app built from
 here on it.
