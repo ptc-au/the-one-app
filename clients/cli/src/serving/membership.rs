@@ -65,7 +65,7 @@ pub(super) async fn join(client: &Client, here: &Here, key: &str, who: &str) -> 
     listed(client, here, "add_server", key).await?;
     here.change(joining(ServerMembershipStage::Downloading))?;
     if record.current.is_none() {
-        let builds = download(client).await?;
+        let builds = download(client, &program()?).await?;
         let build = here.take(&builds, &record.told(ServerDaemonStatus::Starting), None).await?;
         here.change(|record| record.current = Some(Pair { build, program: BUILD.to_owned() }))?;
     }

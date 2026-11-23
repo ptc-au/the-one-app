@@ -41,7 +41,7 @@ has() { jq -e --arg platform "$1" --arg build "$2" 'any(.installers[]; .platform
 # leaves. The program, named so, is signed again, and the installer with its uninstaller (`tooling/windows-sign`).
 # The program is published beside it too, with its SHA-256 (`windows-program`), as the app's updates take it
 # (`fetched_program` in clients/cli), so an update keeps its name and icon. It's first, as a Mac's takes minutes to
-# notarise, and Windows' app waits for it once it's heard of a build.
+# notarise.
 one=$(latest windows-x86_64 one) build=$(jq -r .build <<<"$one")
 if has windows "$build" && has windows-program "$build"; then
   echo "windows: $name Setup.exe is $build already"

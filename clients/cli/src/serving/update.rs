@@ -14,13 +14,13 @@ pub async fn update(client: &Client) -> Result<String> {
             None => said,
         });
     }
-    let builds = download(client).await?;
+    let program = program()?;
+    let builds = download(client, &program).await?;
     let one =
         builds.get(PROGRAM).with_context(|| format!("The network has no build of {PROGRAM} for {} yet.", target()))?;
     if one["build"] == BUILD {
         return Ok(format!("This device is on the latest build already: {BUILD}"));
     }
-    let program = program()?;
     put(&fetched_program(client, one, &program).await?, &program)?;
     Ok(format!("This device is on the build {} now.", one["build"].as_str().unwrap_or_default()))
 }
@@ -33,13 +33,13 @@ pub async fn update(client: &Client) -> Result<String> {
 pub async fn take_program(client: &Client) -> Result<Option<String>> {
     let here = Here::of(&client::home()?);
     let Some(current) = here.read()?.current else { return Ok(None) };
-    let builds = download(client).await?;
+    let program = program()?;
+    let builds = download(client, &program).await?;
     let Some(one) = builds.get(PROGRAM) else { return Ok(None) };
     let (Some(latest), Some(serving)) = (one["build"].as_str(), one["serving"].as_str()) else { return Ok(None) };
     if count(latest) <= count(&current.program).max(count(BUILD)) || count(serving) > count(&current.program) {
         return Ok(None);
     }
-    let program = program()?;
     let new = fetched_program(client, one, &program).await?;
     fs::create_dir_all(here.folder.join("programs").join(PROGRAM))?;
     copied(&new, &here.program(latest))?;
@@ -78,7 +78,8 @@ pub fn name() -> String {
 
 /// The network's latest build of this program, if it has one.
 pub async fn latest_program(client: &Client) -> Result<Option<String>> {
-    Ok(download(client).await?.get(PROGRAM).and_then(|one| one["build"].as_str()).map(str::to_owned))
+    let builds = download(client, &program()?).await?;
+    Ok(builds.get(PROGRAM).and_then(|one| one["build"].as_str()).map(str::to_owned))
 }
 
 /// Whether this program's file is another build than the one running: an update of this device's server takes the

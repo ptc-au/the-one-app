@@ -105,31 +105,41 @@ async fn checked(new: &Path, program: &Path) -> Result<Option<String>> {
     };
 }
 
-/// How long a network's own build is waited for in its Software Update to be the build being taken
-/// (`networks_build`).
-#[cfg(any(target_os = "macos", windows))]
-const PUBLISHED: Duration = Duration::from_secs(8 * 60);
+/// The kind of computer a network's own app is published for, as its Software Update names it: a Mac's `mac`, and
+/// Windows' `windows-program`, which its app updates to where the installer itself would close it (`tooling/installers`).
+#[cfg(target_os = "macos")]
+const PLATFORM: &str = "mac";
+#[cfg(windows)]
+const PLATFORM: &str = "windows-program";
 
-/// The network's own build for this kind of computer in its Software Update, `platform` (`mac`, `windows-program`),
-/// once it's the build `build`, as `download_to` downloads it: the core's release publishes a network's installers
-/// minutes after the builds they're made from (`tooling/release`), so it's asked again until it's this build, for
-/// less than the network's update gives a server to prepare (`PREPARING`, `core/edge/updater/updater.ts`).
+/// The network's own build of its app for this kind of computer, as its Software Update publishes it
+/// (`tooling/installers`): its build, name, size and SHA-256, with a link that downloads it (`download_to`). `None`
+/// where the network publishes none for this kind of computer.
 #[cfg(any(target_os = "macos", windows))]
-async fn published(client: &Client, platform: &str, build: &str) -> Result<Value> {
-    let waiting = Instant::now();
-    let found = loop {
-        let listed: Value = serde_json::from_str(&tool(client, "software-update_installers", json!({})).await?)?;
-        let found = listed["installers"].as_array().into_iter().flatten().find(|installer| installer["platform"] == platform).cloned();
-        let found = found.with_context(|| format!("The network's Software Update has no {platform} for this app to take its build from."))?;
-        let has = found["build"].as_str().unwrap_or_default();
-        if count(has) >= count(build) || waiting.elapsed() > PUBLISHED {
-            ensure!(has == build, "The network's {platform} is the build {has}, not {build}: this app takes the build its network's is.");
-            break found;
-        }
-        tokio::time::sleep(Duration::from_secs(30)).await;
+async fn networks_published(client: &Client) -> Result<Option<Value>> {
+    let listed: Value = serde_json::from_str(&tool(client, "software-update_installers", json!({})).await?)?;
+    let Some(found) = listed["installers"].as_array().into_iter().flatten().find(|installer| installer["platform"] == PLATFORM).cloned() else {
+        return Ok(None);
     };
     let installer: Value = serde_json::from_str(&tool(client, "software-update_installer", json!({"name": found["name"]})).await?)?;
-    Ok(json!({"build": build, "name": found["name"], "size": found["size"], "sha256": found["sha256"], "link": {"url": installer["link"]}}))
+    Ok(Some(json!({"build": found["build"], "name": found["name"], "size": found["size"], "sha256": found["sha256"], "link": {"url": installer["link"]}})))
+}
+
+/// The network's own build `build` of its app for this kind of computer, `networks_published`'s: a network's own
+/// app's latest is its network's installer's build (`download`), so it's there.
+#[cfg(any(target_os = "macos", windows))]
+async fn networks_published_build(client: &Client, build: &str) -> Result<Value> {
+    let published = networks_published(client).await?;
+    let published = published.with_context(|| format!("The network's Software Update has no {PLATFORM} for this app to take its build from."))?;
+    let has = published["build"].as_str().unwrap_or_default();
+    ensure!(has == build, "The network's {PLATFORM} is the build {has}, not {build}: this app takes the build its network's is.");
+    Ok(published)
+}
+
+/// Never a network's own app, which a Mac's bundle and Windows' `network` say (`networks_own`).
+#[cfg(not(any(target_os = "macos", windows)))]
+async fn networks_published(_: &Client) -> Result<Option<Value>> {
+    Ok(None)
 }
 
 /// The build `build` of a network's own app on Windows: its program, named, iconed and signed as the network's
@@ -138,7 +148,7 @@ async fn published(client: &Client, platform: &str, build: &str) -> Result<Value
 /// The installer itself isn't the update: it closes the app and its server, the updater among them.
 #[cfg(windows)]
 async fn networks_build(client: &Client, build: &str, program: &Path) -> Result<PathBuf> {
-    let published = published(client, "windows-program", build).await?;
+    let published = networks_published_build(client, build).await?;
     ensure!(published["sha256"].is_string(), "The network's program for Windows says no SHA-256 to check it by.");
     let new = beside(program)?;
     download_to(&published, &new).await?;
@@ -209,14 +219,14 @@ pub(super) fn bundle_of(program: &Path) -> Option<(PathBuf, bool)> {
 }
 
 /// The build `build` of a network's own app for a Mac: the whole app, from the network's installer for a Mac, its
-/// disk image, signed and notarised, which the core's release publishes in its Software Update after each build
-/// (`tooling/installers`), as Sparkle and Tauri's updater take a whole app. So a network that changed its app's name or
+/// disk image, signed and notarised, which `tooling/installers` publishes in its Software Update (`networks_published`),
+/// as Sparkle and Tauri's updater take a whole app. So a network that changed its app's name or
 /// icon has it changed by the update: a program alone is signed with its bundle's Info.plist and icon, and is killed in
 /// another bundle ("Code Signature Invalid", on Andre's Mac on 23 Nov 2026). It's put beside the app it replaces
 /// (`beside`), on the same volume, to be swapped with it in one step (`put`).
 #[cfg(target_os = "macos")]
 async fn networks_build(client: &Client, build: &str, program: &Path) -> Result<PathBuf> {
-    let published = published(client, "mac", build).await?;
+    let published = networks_published_build(client, build).await?;
     let name = published["name"].as_str().context("an installer has a name")?.to_owned();
     let image = env::temp_dir().join(format!("one.{}.dmg", std::process::id()));
     let volume = env::temp_dir().join(format!("one.{}.volume", std::process::id()));
@@ -426,13 +436,25 @@ pub(super) async fn ran(command: std::process::Command, within: Duration) -> Res
     timeout(within, run).await.with_context(|| format!("{program} didn't end within {} s", within.as_secs()))?
 }
 
-/// The latest builds for this kind of machine, by what they are (`server`, `one`), each with a link to it.
-pub(super) async fn download(client: &Client) -> Result<Map<String, Value>> {
+/// The latest builds for this kind of machine, by what they are (`server-code`, `one`), each with a link to it, as this
+/// program takes them: a network's own app's `one` is its network's own build of itself (`networks_published`), which
+/// its Software Update has once `tooling/installers` has made it from the platform's build, minutes after the platform
+/// publishes that (`tooling/release`). So a network's own app is never told of a build its network has no app of, nor
+/// waits for one to be published: a build of the platform is the platform's own app's, and every other's.
+pub(super) async fn download(client: &Client, program: &Path) -> Result<Map<String, Value>> {
     let response = tool(client, "download", json!({"target": target()})).await?;
-    match serde_json::from_str(&response)? {
-        Value::Object(builds) => Ok(builds),
-        _ => bail!("the network didn't list its builds"),
+    let Value::Object(mut builds) = serde_json::from_str(&response)? else { bail!("the network didn't list its builds") };
+    if networks_own(program) {
+        // What a server takes of it is the platform's (`serving`), which a device that's also one pairs with.
+        let serving = builds.get(PROGRAM).and_then(|one| one.get("serving")).cloned();
+        if let Some(mut own) = networks_published(client).await? {
+            if let Some(serving) = serving {
+                own["serving"] = serving;
+            }
+            builds.insert(PROGRAM.to_owned(), own);
+        }
     }
+    Ok(builds)
 }
 
 /// Downloads the build of `name` the network gives, `build`, by its link into `file`, once it's checked it's the
