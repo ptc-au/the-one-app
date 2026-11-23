@@ -234,12 +234,17 @@ impl Pictures {
         self.broken.contains(&hash(src))
     }
 
-    /// Waits for what's decoding: for a test, which draws what a step left once it's done.
+    /// Waits for what's decoding: for a test, which draws what a step left once it's done. Not on the web, whose
+    /// decodes finish on the browser's own loop, this thread's: there a step of a test's clock with one running
+    /// panicked ("condvar wait not supported") and the page hung, and what's running is pending (`decoding`) instead.
     pub(super) fn wait(&self) {
-        let (decoding, done) = &*self.decoding;
-        let mut decoding = decoding.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        while decoding.running > 0 {
-            decoding = done.wait(decoding).unwrap_or_else(std::sync::PoisonError::into_inner);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (decoding, done) = &*self.decoding;
+            let mut decoding = decoding.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            while decoding.running > 0 {
+                decoding = done.wait(decoding).unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
         }
     }
 
