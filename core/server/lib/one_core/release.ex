@@ -279,12 +279,13 @@ defmodule OneCore.Release do
   @doc """
   The pair the network's update, `update`, takes a server to, as the server says what it is (`status/0`, which says
   the `program_name` of the `one` running it): `{build, program}`, the latest server build and the latest of that
-  `one`, as the updater says the latest of each name (`latest`), and `program` `nil`, any `one`, where it doesn't
-  say, as one deployed before it did.
+  `one`, as the updater says what servers take of each name (`serving`, not `latest`, the newest build, which a `one`
+  that changed nothing a server runs moves alone), and `program` `nil`, any `one`, where it doesn't say, as one
+  deployed before it did.
   """
   def target(update, server) do
-    latest = update["latest"] || %{}
-    {latest["server-code"] || update["build"], latest[server["program_name"]]}
+    serving = update["serving"] || %{}
+    {serving["server-code"] || update["build"], serving[server["program_name"]]}
   end
 
   # Whether the pair `next` a server checked is older than `target` in its build or its `one`.
