@@ -13,8 +13,8 @@
   "version_metadata": { "binding": "VERSION" },
   // The apps that use this network's passkeys, and open the links of its listed in APP_LINKS, which iOS and Android
   // check against the files this serves (`/.well-known/apple-app-site-association`, `/.well-known/assetlinks.json`).
-  // They're the One App's own build: on iPhone, its team and bundle ID; on Android, its package, beside the network's
-  // own Android app (`android_package` in `network`), and the SHA-256 of the certificates they're signed with: the
+  // They're the One App's own build: on iPhone, its team and bundle ID, beside the network's own iPhone app (`apple_app`
+  // in `network`); on Android, its package, beside the network's own Android app (`android_package` in `network`), and the SHA-256 of the certificates they're signed with: the
   // platform's Android release key, which signs every network's APK (`tooling/android-apk`), and the Android SDK's
   // debug keystore on the Linux machine that builds a developer's.
   "vars": {

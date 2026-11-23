@@ -800,10 +800,10 @@ async function domains(): Promise<string[]> {
  * for a light page and one for a dark, either of which shows on both where it's alone. Each picture is a square PNG,
  * as base64, with its size, and is the One App's where there's none.
  */
-export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: { light?: Picture; dark?: Picture } | null; android_package: string | null }> {
-  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo', 'android_package')").all<{ name: string; value: string }>();
+export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: { light?: Picture; dark?: Picture } | null; android_package: string | null; apple_app: string | null }> {
+  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo', 'android_package', 'apple_app')").all<{ name: string; value: string }>();
   const kept = Object.fromEntries(results.map(({ name, value }) => [name, JSON.parse(value)]));
-  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null, android_package: kept.android_package ?? null };
+  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null, android_package: kept.android_package ?? null, apple_app: kept.apple_app ?? null };
 }
 
 /** A square PNG, as base64, with its size. */
@@ -895,6 +895,8 @@ export interface Ask {
   logo?: unknown;
   /** With `network`: its own Android app's package name (`tooling/android-apk`), or null where it has none. */
   android_package?: unknown;
+  /** With `network`: its own iPhone app's app ID, its team and bundle identifier (`tooling/testflight`), or null where it has none. */
+  apple_app?: unknown;
 }
 
 export async function asked(auth: Auth, origin: string, { ask, who: name, building, ...about }: Ask) {
@@ -953,7 +955,13 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       if (named !== null && !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(named)) return { error: "An Android package is named like app.ptc.android." };
       await set("android_package", named);
     }
-    const { name, icon, logo, android_package } = await network();
+    if (about.apple_app !== undefined) {
+      const named = about.apple_app === null ? null : String(about.apple_app);
+      // Apple's rule for an app ID: its ten-character team, then its bundle identifier, whose parts are letters, digits and hyphens.
+      if (named !== null && !/^[A-Z0-9]{10}\.[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$/.test(named)) return { error: "An iPhone app's ID is its team and bundle identifier, like X96JC3HCV7.app.theone.client." };
+      await set("apple_app", named);
+    }
+    const { name, icon, logo, android_package, apple_app } = await network();
     // Its mark as data too, for a page drawn where only its app's own files load, as a native window's is.
     const data = (picture?: Picture) => picture && `data:image/png;base64,${picture.png}`;
     return {
@@ -962,6 +970,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       logo: logo && { light: `${origin}/Logo.png`, dark: `${origin}/Logo-dark.png` },
       mark: logo && { light: data(logo.light ?? logo.dark), dark: data(logo.dark ?? logo.light) },
       android_package,
+      apple_app,
     };
   }
   // Everyone who has joined, and everyone invited who hasn't yet, with the name each goes by.

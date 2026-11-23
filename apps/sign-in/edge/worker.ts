@@ -27,15 +27,19 @@ export default {
 } satisfies ExportedHandler;
 
 /**
- * What tells iOS and Android which apps are this network's (`APPLE_APPS`, `ANDROID_APPS` and the network's own Android
- * app, `android_package` in `network`), so that their web views offer its passkeys and its links (`APP_LINKS`) open in
+ * What tells iOS and Android which apps are this network's (`APPLE_APPS`, `ANDROID_APPS` and the network's own apps,
+ * `apple_app` and `android_package` in `network`), so that their web views offer its passkeys and its links (`APP_LINKS`) open in
  * them: Apple's app site association and Google's Digital Asset Links.
  */
 const ASSOCIATIONS: Record<string, () => unknown> = {
-  "/.well-known/apple-app-site-association": () => ({
-    webcredentials: { apps: env.APPLE_APPS },
-    applinks: { details: [{ appIDs: env.APPLE_APPS, components: env.APP_LINKS.map((path) => ({ "/": path })) }] },
-  }),
+  "/.well-known/apple-app-site-association": async () => {
+    const { apple_app } = await network();
+    const apps = [...new Set([...env.APPLE_APPS, ...(apple_app ? [apple_app] : [])])];
+    return {
+      webcredentials: { apps },
+      applinks: { details: [{ appIDs: apps, components: env.APP_LINKS.map((path) => ({ "/": path })) }] },
+    };
+  },
   "/.well-known/assetlinks.json": async () => {
     const { android_package } = await network();
     return [...new Set([...env.ANDROID_APPS, ...(android_package ? [android_package] : [])])].map((package_name) => ({

@@ -82,6 +82,12 @@ else
   echo "mac: published $name.dmg, $build"
 fi
 
+# iPhone: its app is made and uploaded by `tooling/testflight`, not published here, but its network's edge is told which
+# it is, its team's and its bundle identifier as Tauri's config says it, which trusts it with the network's passkeys and
+# links (`/.well-known/apple-app-site-association`).
+identifier=$(jq -r '.identifier // empty' <<<"$config")
+one sign-in network --apple_app "X96JC3HCV7.${identifier:-$(jq -r .identifier "$root/clients/app/tauri.conf.json")}" >/dev/null
+
 # Android: the network's own APK (`tooling/android-apk`), signed with the platform's Android release key. The app takes
 # each one published after it by itself (`apk` in clients/app/src/updater.rs). Its application ID is named to the
 # network, whose assetlinks trust it with the network's passkeys and links.

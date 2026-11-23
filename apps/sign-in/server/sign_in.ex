@@ -108,8 +108,8 @@ defmodule SignIn do
         name: "network",
         description: """
         Says the network's name, icon and logo, as its sign-in page and its web app show them and as its own apps are
-        finished with, and its own Android app's package name, which its passkeys and links are trusted to, or, given
-        `name`, `icon`, `logo` or `android_package`, makes them those. Its icon is on a tile of its own, as a Home
+        finished with, and its own iPhone app's ID and Android app's package name, which its passkeys and links are
+        trusted to, or, given `name`, `icon`, `logo`, `apple_app` or `android_package`, makes them those. Its icon is on a tile of its own, as a Home
         Screen, a tab and its apps show it; its logo is its mark alone, as its sign-in page draws it, one for a light
         page and one for a dark (either alone shows on both). Without them, it's the One App's
         """,
@@ -129,6 +129,11 @@ defmodule SignIn do
             android_package: %{
               type: ["string", "null"],
               description: "Its own Android app's package name, like app.ptc.android (`tooling/android-apk`): null for none"
+            },
+            apple_app: %{
+              type: ["string", "null"],
+              description:
+                "Its own iPhone app's ID, its team and bundle identifier, like X96JC3HCV7.au.org.powertochange.ptc.pilot (`tooling/testflight`): null for none"
             }
           }
         },
@@ -147,7 +152,8 @@ defmodule SignIn do
               description: "Its logo as a page draws it where only an app's own files load, as `data:` addresses",
               properties: %{light: %{type: "string"}, dark: %{type: "string"}}
             },
-            android_package: %{type: ["string", "null"]}
+            android_package: %{type: ["string", "null"]},
+            apple_app: %{type: ["string", "null"]}
           },
           required: ["name", "icon"]
         }
@@ -526,7 +532,7 @@ defmodule SignIn do
 
   # Whoever invites names the network, and any member sees what it's called.
   def call("network", inputs, call) do
-    given = Map.take(inputs, ["name", "icon", "logo", "android_package"])
+    given = Map.take(inputs, ["name", "icon", "logo", "android_package", "apple_app"])
 
     if given == %{} do
       if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
@@ -534,7 +540,7 @@ defmodule SignIn do
       Call.reach(call, Artifact.name(call.own), "editor")
     end
 
-    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo", "mark", "android_package"])
+    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo", "mark", "android_package", "apple_app"])
   end
 
   # Whoever invites takes out, and nobody takes themselves out. Only an owner takes out an owner, as only a super
