@@ -424,11 +424,16 @@ function AppPage(props: { app: App }) {
   )
 }
 
-/// What a link names, as Settings opens it: a section, Updates or an app's page as they are; an app by its name alone
+/// What a link names, as Settings opens it: a section, Updates or an app's page as they are, or where a place in one
+/// follows (`vault/accounts/cloudflare-turn`, as a browser's address has it), that one; an app by its name alone
 /// (`#sign-in`, as the client opens an app with no page of its own, or a page it no longer has), its first section
 /// after the person's row, or else its page.
-function resolved(id: string) {
-  if (id === "updates" || id.startsWith("app:") || added().some((one) => one.id === id && one.in === "settings")) return id
+function resolved(place: string) {
+  const parts = place.split("/")
+  const known = (id: string) => id === "updates" || id.startsWith("app:") || added().some((one) => one.id === id && one.in === "settings")
+  const within = parts.map((_, at) => parts.slice(0, parts.length - at).join("/")).find(known)
+  if (within) return within
+  const id = parts[0]!
   const theirs = sidebar(added()).filter((one) => one.app === id)
   const section = theirs.find((one) => one.group !== "you") ?? theirs[0]
   if (section) return section.id
@@ -461,6 +466,7 @@ function Settings() {
     <Split
       open={!!open()}
       onClose={() => setOpen()}
+      place={shown()}
       pick="Choose a section."
       detail={
         <ListStyle value="insetGrouped">

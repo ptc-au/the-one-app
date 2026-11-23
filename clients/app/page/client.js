@@ -179,10 +179,11 @@ export let front
 
 /// The way back through this window: for each of its history entries from the launcher's, the key of the app it
 /// shows (`null` for the launcher's), where it is in the browser's whole history, which counts the entries an app's
-/// own screens add too, and the icon it was opened from, which it goes back into. An entry says how deep it is
-/// (`history.state`), so going back or forward knows which way it goes, and a link to the launcher goes all the way
-/// back to it.
-/** @type {{ key: string | null, at: number, from?: Rect }[]} */
+/// own screens add too, the icon it was opened from, which it goes back into, and where in itself the app is, as its
+/// page says it (`reached`): each place is an entry of its own where the window's address says it (`addressed`). An
+/// entry says how deep it is (`history.state`), so going back or forward knows which way it goes, and a link to the
+/// launcher goes all the way back to it.
+/** @type {{ key: string | null, at: number, from?: Rect, place?: string }[]} */
 export let stack = [{ key: null, at: history.length - 1 }]
 /// How deep the entry the window is on is: 0 at the launcher's.
 export let depth = 0
@@ -196,6 +197,25 @@ export function backHome() {
   const first = globalThis.navigation && entries?.[(navigation.currentEntry?.index ?? 0) - depth]
   if (first) navigation.traverseTo(first.key)
   else history.go(Math.min(-depth, stack[0].at - stack[depth].at))
+}
+/// How many of the steps back the window's history takes next are an app's own, its page there already (`reached`).
+let quiet = 0
+/// An app's page says where in itself it is (`notifications/one/place`, as the UI library's splits have it), which the
+/// window's history and address follow where it says one (`addressed`): somewhere new is an entry of its own
+/// (`/settings/vault`), so Back goes back to where it was, and back where the entry before it was, as its own Back
+/// goes, the window goes back to that entry too.
+/** @param {View} view @param {string} place */
+export function reached(view, place) {
+  const now = stack[depth]
+  if (!addressed || now?.key !== view.key || (now.place ?? "") === place) return
+  const before = stack[depth - 1]
+  if (before?.key === view.key && (before.place ?? "") === place) {
+    quiet += 1
+    return history.back()
+  }
+  depth += 1
+  history.pushState(depth, "", pathOf(`${view.entrypoint}#${place}`))
+  stack.splice(depth, Infinity, { key: view.key, at: history.length - 1, from: now.from, place })
 }
 /// The entry the window is on becomes the launcher's, as the app it showed is gone, or as the page loaded again on
 /// an app's entry.
@@ -350,14 +370,22 @@ export function go(link, subject, behind, from) {
     return true
   }
   // The way back out of an app is an entry in this window's history, made as it's opened, so the device's back
-  // leads out of the app however soon it's pressed.
+  // leads out of the app however soon it's pressed. Opened at a place in it where the window's address says where it
+  // is (`addressed`), as an address loaded again or a notification opens it, its first screen is the entry under that
+  // place's, as a browser's Back goes to an app's start before it leaves it.
   if (here() !== next.key) {
-    depth += 1
-    history.pushState(depth, "", addressed ? pathOf(link) : undefined)
-    // It goes back into the icon it came out of, or slides out if it came from none.
-    stack.splice(depth, Infinity, { key: next.key, at: history.length - 1, from })
+    const place = fragment?.split("&")[0]
+    for (const [at, path] of addressed && place ? [["", pathOf(page)], [place, pathOf(link)]] : [[place, addressed ? pathOf(link) : undefined]]) {
+      depth += 1
+      history.pushState(depth, "", path)
+      // It goes back into the icon it came out of, or slides out if it came from none.
+      stack.splice(depth, Infinity, { key: next.key, at: history.length - 1, from, place: at })
+    }
     rail()
-  } else if (addressed && fragment) history.replaceState(depth, "", pathOf(link))
+  } else if (addressed && fragment) {
+    history.replaceState(depth, "", pathOf(link))
+    stack[depth].place = fragment.split("&")[0]
+  }
   on({ type: "show", to: next, back: false, icon: from, tapped })
   return true
 }
@@ -389,6 +417,13 @@ listen("changed", ({ payload: view }) => {
 addEventListener("popstate", (event) => {
   const tapped = performance.now()
   const to = typeof event.state === "number" ? event.state : 0
+  // An app's own Back went back there (`reached`): its page is there already.
+  if (quiet) {
+    quiet -= 1
+    depth = to
+    return
+  }
+  const was = stack[depth]
   const back = to < depth
   // Going back, the app that was showing goes back into the icon it came out of, if it came out of one; forward, it
   // comes out of it again.
@@ -398,6 +433,10 @@ addEventListener("popstate", (event) => {
   const view = /** @type {View} */ (showing(here()))
   // The device has drawn the move itself (an iPhone's swipe in from the edge): it isn't drawn a second time.
   on(event.hasUAVisualTransition ? { type: "popped", to: view, tapped } : { type: "show", to: view, back, icon, tapped })
+  // Within one app, its page is taken to the entry's place, as a link to it: what's open past it closes (the UI
+  // library's `Split`), and an app that follows its links opens it.
+  const now = stack[to]
+  if (was && now && was !== now && was.key === now.key) post(view, { method: "ui/notifications/host-context-changed", params: { link: now.place ?? "" } })
 })
 
 // Back online, or back in front, its network is tried again now if it didn't answer.

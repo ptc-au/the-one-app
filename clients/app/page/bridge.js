@@ -2,7 +2,7 @@
 import { haptic, invoke, openLink, sandbox } from "./host.js"
 import { behind, list, listed, names, trusted } from "./apps.js"
 import { chosen, dress, insets, theme, titleBar, titleRow } from "./chrome.js"
-import { bar, baseKey, depth, go, host, key, located, nested, on, open, opened, own, page, panel, phone, shown, within } from "./client.js"
+import { bar, baseKey, depth, go, host, key, located, nested, on, open, opened, own, page, panel, phone, reached, shown, within } from "./client.js"
 import { gestures } from "./gestures.js"
 import { shortcut } from "./shortcuts.js"
 import { byId, exception } from "./util.js"
@@ -245,6 +245,8 @@ addEventListener("message", async ({ source, data }) => {
       page(view, { type: "drawn" })
       if (!view.frame.inert) opened(view)
     }
+    // Where its page is in itself (the UI library's `place`), which the window's history and address follow.
+    if (method === "notifications/one/place" && typeof params.place === "string") reached(view, params.place)
     // Something is open over its page, or nothing is any more, and whether it's on its first screen.
     if (method === "notifications/one/over") {
       view.over = params.over === true

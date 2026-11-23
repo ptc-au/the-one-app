@@ -155,9 +155,10 @@ class PressureObserving {
 // Under a finger from the start where the device is, as its host says before it's greeted, so what's drawn before then
 // (a screen in its loading fallback) is drawn for a finger too.
 const [fingered, setFingered] = createSignal(navigator.maxTouchPoints > 0)
-const [opened, setOpened] = createSignal<string>()
+// Told again, the same link is news too: Back to where the page was opened is a link to it again (`place`).
+const [opened, setOpened] = createSignal<string | undefined>(undefined, { equals: false })
 function dress(context?: Context) {
-  if (context?.link) setOpened(context.link)
+  if (context && typeof context.link === "string") setOpened(context.link)
   if (context?.deviceCapabilities && "touch" in context.deviceCapabilities) setFingered(context.deviceCapabilities.touch === true)
   if (context && "titled" in context) setTitled(context.titled === true)
   if (context?.connection) setConnected(context.connection)
@@ -287,6 +288,16 @@ export const covers: typeof Page.covers = (shut, { layer = true } = {}) => {
 /// changes: `"online"`, `"connecting"` as it opens, `"offline"`, or `"reconnecting"` once it has lost it. For what can't be done without it: what was answered stays
 /// shown either way, and the client says it's offline itself. A client that doesn't say is `"online"`.
 export const connection: typeof Page.connection = () => connected()
+/** Where the page is in itself as its host was last told it (`place`). */
+let placed: string | undefined
+/** `place("vault/accounts")`: says where the page is in itself, as its splits have it, which its host hears of as it
+ * changes (`notifications/one/place`): a browser's address and history follow it, and its host's link takes it back
+ * there (`link`). */
+export const place = (at: string) => {
+  if (at === placed) return
+  placed = at
+  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at } }))
+}
 /** Opening something is a step back closes, as the device's back closes what covers the page: a screen pushed over the
  * last, which isn't drawn over the page as a sheet or a menu is (a layer), as the DOM's history step isn't one. */
 export const step = (close: () => void): (() => void) => covers(close, { layer: false })
