@@ -8,6 +8,8 @@ defmodule GoogleDocs do
   @api "https://docs.googleapis.com/v1/"
   @ordered ~r/DECIMAL|ALPHA|ROMAN|ZERO/
 
+  @markdown "Its text as markdown: headings (#), paragraphs, bold, italic, strikethrough, `code`, links, bulleted and numbered lists with nesting, quotes, code blocks, horizontal rules, and tables as lines of cells apart by |"
+
   # It has no app, so it draws itself, in the App Store.
   @impl true
   def icon, do: "icon.png"
@@ -69,16 +71,40 @@ defmodule GoogleDocs do
       },
       %{
         name: "create",
-        description: "Makes a document in the person's Drive (in My Drive, Docs' documents.create), with text if given. Gives {id, title, url}.",
+        description:
+          "Makes a document in the person's Drive (in My Drive, Docs' documents.create), with its first text if given, as markdown formatted as Docs does (see write) or plain text. Gives {id, title, url}.",
         inputs:
           with_account.(
-            %{title: string.("Its title, like Meeting notes 2026-11-03"), text: string.("Its first text, as plain text: markdown stays as typed")},
+            %{
+              title: string.("Its title, like Meeting notes 2026-11-03"),
+              markdown: string.(@markdown),
+              text: string.("Or its first text, as plain text: markdown stays as typed")
+            },
             ["title"]
           ),
         outputs: %{
           type: "object",
           properties: %{id: string.("The document's id"), title: %{type: "string"}, url: string.("Its address")},
           required: ["id", "title", "url"]
+        }
+      },
+      %{
+        name: "write",
+        description:
+          "Replaces a document's whole body, or one tab's, with markdown formatted as Docs does (Docs' batchUpdate): the document keeps its id and link. This deletes what the document had, which only google-docs_read has kept: do it only when the person asked.",
+        inputs:
+          with_account.(
+            %{
+              documentId: document,
+              markdown: string.(@markdown),
+              tab: string.("The tab to write: its title (or Parent / Child) or its id, as google-docs_read gives its tabs. Needed where the document has several")
+            },
+            ["documentId", "markdown"]
+          ),
+        outputs: %{
+          type: "object",
+          properties: %{id: string.("The document's id"), url: string.("Its address"), tab: string.("The id of the tab written")},
+          required: ["id", "url", "tab"]
         }
       },
       %{
@@ -142,10 +168,37 @@ defmodule GoogleDocs do
   defp run("create", %{"title" => title} = inputs, at) do
     document = api(at, "POST", "documents", json: %{title: title})
 
-    if text = inputs["text"],
-      do: batch(at, document["documentId"], [%{insertText: %{text: text, location: %{index: 1}}}])
+    cond do
+      markdown = inputs["markdown"] -> batch(at, document["documentId"], GoogleDocs.Markdown.requests(markdown, nil))
+      text = inputs["text"] -> batch(at, document["documentId"], [%{insertText: %{text: text, location: %{index: 1}}}])
+      true -> :ok
+    end
 
     %{id: document["documentId"], title: document["title"], url: url(document["documentId"])}
+  end
+
+  # The body of a tab goes and the markdown takes its place, in one batchUpdate, so a write that fails leaves the tab as it was.
+  defp run("write", %{"documentId" => given, "markdown" => markdown} = inputs, at) do
+    id = id(given)
+    document = api(at, "GET", "documents/#{path(at, id)}", query: %{includeTabsContent: "true"}, missing: no_document(id))
+    tabs = tabs(document["tabs"] || [], nil)
+    given = inputs["tab"]
+    written = Enum.filter(tabs, &tab?(&1, given))
+    listing = Enum.map_join(tabs, ", ", &"#{&1.title} (#{&1.id})")
+
+    tab =
+      case written do
+        [] -> raise("No tab #{inspect(given)} in #{id}. Its tabs: #{listing}.")
+        [one] -> one
+        _ -> raise("#{id} has several tabs: give tab, one of #{listing}.")
+      end
+
+    # The body ends with a newline that stays: the markdown goes in front of it.
+    last = tab.content |> get_in(["body", "content"]) |> List.last() |> Map.fetch!("endIndex")
+    clear = if last > 2, do: [%{deleteContentRange: %{range: %{startIndex: 1, endIndex: last - 1, tabId: tab.id}}}], else: []
+
+    batch(at, id, clear ++ GoogleDocs.Markdown.requests(markdown, tab.id))
+    %{id: id, url: url(id), tab: tab.id}
   end
 
   defp run("append", %{"documentId" => given, "text" => text}, at) do

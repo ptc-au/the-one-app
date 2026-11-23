@@ -10,6 +10,7 @@ defmodule OneCore.MixProject do
       deps: [
         {:castore, "~> 1.0"},
         {:credo, "~> 1.7", only: :dev, runtime: false},
+        {:earmark_parser, "~> 1.4"},
         {:ex_json_schema, "~> 0.11"},
         {:fuse, "~> 2.5"},
         {:mime, "~> 2.0"},
