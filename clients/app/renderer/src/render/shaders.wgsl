@@ -179,6 +179,17 @@ fn to_device_position_transformed(unit_vertex: vec2<f32>, bounds: Bounds, transf
     return to_device_position_impl(transformed);
 }
 
+// `bounds` and a device pixel round it, in its own space before `transform`: where a quad's antialiased edge is drawn
+// (`fs_quad`), up to half a pixel outside it. Drawn only within its bounds, a pixel whose middle was a float's rounding
+// outside an edge that isn't on whole pixels (a turned card's) wasn't drawn at all, and one a rounding inside it was
+// drawn half, so its edges stepped and a scene moved by whole pixels wasn't drawn the same, 45 to 94 levels apart
+// (generated seeds 2, 16 and 25).
+fn outset(bounds: Bounds, transform: TransformationMatrix) -> Bounds {
+    let scale = max(min(length(transform.rotation_scale[0]), length(transform.rotation_scale[1])), 1e-6);
+    let pixel = vec2<f32>(1.0 / scale);
+    return Bounds(bounds.origin - pixel, bounds.size + 2.0 * pixel);
+}
+
 fn to_tile_position(unit_vertex: vec2<f32>, tile: AtlasTile) -> vec2<f32> {
   let atlas_size = vec2<f32>(textureDimensions(t_sprite, 0));
   return (vec2<f32>(tile.bounds.origin) + unit_vertex * vec2<f32>(tile.bounds.size)) / atlas_size;
@@ -626,8 +637,9 @@ fn vs_quad(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) insta
     let quad = b_quads[instance_id];
 
     var out = QuadVarying();
-    out.position = to_device_position_transformed(unit_vertex, quad.bounds, quad.transformation);
-    out.local = unit_vertex * vec2<f32>(quad.bounds.size) + quad.bounds.origin;
+    let drawn = outset(quad.bounds, quad.transformation);
+    out.position = to_device_position_transformed(unit_vertex, drawn, quad.transformation);
+    out.local = unit_vertex * vec2<f32>(drawn.size) + drawn.origin;
 
     let gradient = prepare_gradient_color(
         quad.background.tag,
@@ -640,7 +652,7 @@ fn vs_quad(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) insta
     out.background_color1 = gradient.color1;
     out.border_color = hsla_to_rgba(quad.border_color);
     out.quad_id = instance_id;
-    out.clip_distances = distance_from_clip_rect_transformed(unit_vertex, quad.bounds, quad.content_mask.bounds, quad.transformation);
+    out.clip_distances = distance_from_clip_rect_transformed(unit_vertex, drawn, quad.content_mask.bounds, quad.transformation);
     out.mask_radii = mask_radii(quad.content_mask);
     return out;
 }
@@ -666,13 +678,15 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
         quad.corner_radii.top_right == 0.0 &&
         quad.corner_radii.bottom_right == 0.0;
 
-    // Fast path when the quad is not rounded and doesn't have any border
+    // Fast path when the quad is not rounded and doesn't have any border: as much as is inside its edges, all of a
+    // pixel whose middle is half a pixel in, none of one half a pixel out (`outset`).
     if (quad.border_widths.top == 0.0 &&
             quad.border_widths.left == 0.0 &&
             quad.border_widths.right == 0.0 &&
             quad.border_widths.bottom == 0.0 &&
             unrounded) {
-        return masked(blend_color(background_color, 1.0), mask);
+        let outside = abs(input.local - quad.bounds.origin - quad.bounds.size / 2.0) - quad.bounds.size / 2.0;
+        return masked(blend_color(background_color, saturate(0.5 - max(outside.x, outside.y))), mask);
     }
 
     let size = quad.bounds.size;
@@ -714,12 +728,16 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
         straight_border_inner_corner_to_point.x < -antialias_threshold &&
         straight_border_inner_corner_to_point.y < -antialias_threshold;
 
-    // Fast path for points that must be part of the background: inside the border, and not where the nearest corner
-    // bends (its reach), which is most of a card's, a sheet's or a pane's pixels. It's taken before the corner's
-    // exponent (two logs and an inverse square root), which only a pixel near a corner needs.
+    // Fast path for points that must be part of the background: inside the border, half a pixel in from the edge (as
+    // its antialiasing reaches), and not where the nearest corner bends (its reach), which is most of a card's, a
+    // sheet's or a pane's pixels. It's taken before the corner's exponent (two logs and an inverse square root), which
+    // only a pixel near a corner needs. Taken for any pixel inside a box with no border, one whose middle was a float's
+    // rounding inside its edge was drawn whole and one a rounding outside it half, so a turned box's edge through
+    // pixels' middles was drawn half here and whole there, as far as 104 levels apart moved by whole pixels
+    // (generated seeds 16 and 25).
     let radius = pick_corner_radius(center_to_point, quad.corner_radii);
     let reach = corner_reach(radius, half_size);
-    if (is_within_inner_straight_border && (corner_to_point.x + reach < 0.0 || corner_to_point.y + reach < 0.0)) {
+    if (is_within_inner_straight_border && all(corner_to_point < vec2<f32>(-antialias_threshold)) && (corner_to_point.x + reach < 0.0 || corner_to_point.y + reach < 0.0)) {
         return masked(blend_color(background_color, 1.0), mask);
     }
 
