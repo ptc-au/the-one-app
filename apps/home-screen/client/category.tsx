@@ -66,11 +66,14 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
   const flight = (index: number) => (props.open ? undefined : leg(index))
   // Each app that flies tells as it all but lands, out or home, and its names, and its square's, come in once the last
   // has; and again at rest, where its square's icons are handed back once the last is. A host that doesn't say which
-  // (`rest`) tells once, as it all but lands.
+  // (`rest`) tells once, as it all but lands. Only opening or closing sets them flying: Solid runs this again whenever
+  // what `open` reads changes, as an app's menu opening elsewhere in the App Library changes the state, and closed
+  // again, nothing flies, so nothing would ever land and its names and its square's icons waited for them for good.
   let [landed, rested] = [new Set<number>(), new Set<number>()]
   createEffect(
     () => props.open,
-    (open) => {
+    (open, was) => {
+      if (open === was) return
       ;[landed, rested] = [new Set(), new Set()]
       setLanding({ key: props.made, open, landed: 0, rested: 0, travels: (category()?.entrypoints ?? []).filter((_, index) => leg(index)).length })
     },
