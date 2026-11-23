@@ -144,19 +144,26 @@ export function Tips(props: { tips: Tip[]; action?: Action }) {
   const layer = createDismissable({ open: () => open() && !touch(), onDismiss: close })
   return (
     <>
-      <Button
-        variant="ghost"
-        size="icon"
-        shape="capsule"
-        aria-label={messages.tips}
-        aria-haspopup="dialog"
-        aria-expanded={open() ? "true" : "false"}
-        autoFocus={layer.returning()}
-        onLayout={(event) => setAnchor(rectOf(event))}
-        onPress={(event) => (setAnchor(rectOf(event)), setOpen(!open()))}
-      >
-        <Icon name="question" large />
-      </Button>
+      {/* A node is told where it is as its size changes, as a ResizeObserver tells it, not as it moves: drawn again for
+          each size of the window, which moves the ? with it (a window's end, the launcher's card in its middle), it's
+          told where it is now, so Help's key opens its popover under it. */}
+      <Show when={`${viewport().width}x${viewport().height}`} keyed>
+        {(_size) => (
+          <Button
+            variant="ghost"
+            size="icon"
+            shape="capsule"
+            aria-label={messages.tips}
+            aria-haspopup="dialog"
+            aria-expanded={open() ? "true" : "false"}
+            autoFocus={layer.returning()}
+            onLayout={(event) => setAnchor(rectOf(event))}
+            onPress={(event) => (setAnchor(rectOf(event)), setOpen(!open()))}
+          >
+            <Icon name="question" large />
+          </Button>
+        )}
+      </Show>
       <Show
         when={touch()}
         fallback={

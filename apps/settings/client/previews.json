@@ -2914,6 +2914,16 @@
       {
         "key": "F1"
       }
-    ]
+    ],
+    "checks": {
+      "F1 opens its tips under the ?, after the window's grown and the ? moved with its end, the same size": [
+        { "key": "Escape" },
+        { "resize": [1300, 720] },
+        { "wait": 600 },
+        { "key": "F1" },
+        { "wait": 600 },
+        { "expect": { "at": { "of": { "role": "dialog", "name": "Tips" }, "x": 1012, "y": 48 } } }
+      ]
+    }
   }
 }
