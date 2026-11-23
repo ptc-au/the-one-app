@@ -507,8 +507,13 @@ impl Windows {
             }
             let painted = web_time::Instant::now();
             let glass = window.screen.as_ref().map(|screen| screen.glass().to_vec()).unwrap_or_default();
-            // Placed for the room it's drawn in before that frame shows, so it shows where it stays.
-            if window.drawn && std::mem::take(&mut window.placing) {
+            // Placed for the room it's drawn in before that frame shows, so it shows where it stays; and summoned before
+            // it had drawn, put on the screen as its first frame is drawn, never before (empty) nor after: a Mac gives
+            // no image to draw on to a window it isn't showing (wgpu asks macOS's `occlusionState`), so one waiting to
+            // be drawn first was never drawn, nor shown (The PTC App's launcher, opened again on its app's new version
+            // while it was summoned, 23 Nov).
+            // Mutant: one summoned before it had drawn waits for its first frame to be put on the screen, as before.
+            if (window.drawn || !crate::mutants::mutant("summon-after-draw")) && std::mem::take(&mut window.placing) {
                 self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room);
                 window.came_on_screen();
             }
@@ -561,13 +566,6 @@ impl Windows {
             }
             if let Some(frames) = frames {
                 (window.on_event)(Event::Frames(frames));
-            }
-            // Summoned before it had drawn, it's on the screen now it has, arranged again so its parts show with it, and
-            // drawn again there, as what it presented before it was there may not show.
-            if std::mem::take(&mut window.placing) {
-                self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room);
-                window.came_on_screen();
-                window.arrange(&self.display, &self.context, &glass);
             }
             if !window.drawn {
                 window.drawn = true;

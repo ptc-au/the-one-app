@@ -27,8 +27,8 @@ impl Windows {
             screen.summoned(key);
         }
         let queued = asked.elapsed();
-        // On the screen with what it last drew, where it has; else once its page has drawn its first frame (`turn`), so
-        // a launcher summoned as the app starts never shows empty.
+        // On the screen with what it last drew, where it has; else as its page draws its first frame (`turn`), so a
+        // launcher summoned as the app starts, or opened again in its place, never shows empty.
         match window.drawn {
             true => self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room),
             false => window.placing = true,

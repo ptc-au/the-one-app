@@ -370,6 +370,12 @@ impl Display {
         }
     }
 
+    /// Whether `window` has an image to draw on: only while it's on the screen, as a Mac gives a window none while
+    /// macOS doesn't say it's visible (wgpu asks its `occlusionState`), which one it's never shown isn't.
+    pub(crate) fn drawable(&self, window: &NativeWindow) -> bool {
+        window.shown.get()
+    }
+
     /// Whether `window` has shown a frame since it came on the screen (`presented`).
     pub(crate) fn seen(&self, window: &NativeWindow) -> bool {
         window.seen.get()

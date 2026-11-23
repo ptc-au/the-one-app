@@ -26,7 +26,8 @@
 //! page crashed fails, saying why, as does one whose window was still blank 5 s after it opened (`Event::Blank`), and so does one whose process grows past `HEADLESS_MEMORY`, at once, wherever it is. `--touch` draws it for a finger, as a phone's window is (`pointer: coarse`),
 //! and presses are a finger's, as the display's touches, which its window takes as every phone's host does
 //! (`view::touch`): its slop, pans, a sheet taking the finger, and the swipe back from the left edge.
-//! `--panel` opens it as a computer's panel is (a Mac's launcher, its corners `<corner>` round), summoned: what its page
+//! `--panel` opens it as a computer's panel is (a Mac's launcher, its corners `<corner>` round), summoned as its window
+//! opens, before its page is given it, as a launcher opened again on its app's new version is: what its page
 //! puts on the system's glass is a window of its own, each drawn by a renderer of its own where the panel arranges it,
 //! over the system's glass, a flat grey here, and its picture is theirs put together.
 //! `--seed` makes it adversarial, the same way each time for the same seed, as GPUI's randomized executor is: one
@@ -325,14 +326,21 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
     // Why its window was blank a while after it opened, if it was (`Event::Blank`), which fails it too.
     let blank = std::rc::Rc::new(std::cell::RefCell::new(None));
     let blanking = blank.clone();
-    let id = windows.open(options, Ok(screen), move |event| match event {
+    let on_event = move |event| match event {
         // A window would open it in a web view instead.
         Event::Mismatched(why) => saying.borrow_mut().push(format!("it opens in a web view: {why}")),
         Event::Failed(why) => saying.borrow_mut().push(format!("its page didn't start: {why}")),
         Event::Crashed(why) => *crashing.borrow_mut() = Some(why),
         Event::Blank(why) => *blanking.borrow_mut() = Some(why),
         _ => {}
-    })?;
+    };
+    // A panel opens as the app opens a launcher: its window first, summoned as it opens, as one summoned as the app
+    // starts, or opened again in its place on its app's new version, is (The PTC App's on a Mac, 23 Nov), and its
+    // page given it a refresh later, once started (`Windows::opening`).
+    let (id, screen) = match panel {
+        Some(_) => (windows.opening(options, on_event)?, Some(screen)),
+        None => (windows.open(options, Ok(screen), on_event)?, None),
+    };
     // Each answer on its way (`--latency`) comes at its own time as the clock moves, however it's moved, as a server's
     // does, what it sets off going out then; one still on its way is a request `settle` waits for.
     windows.answering(id, coming.clone());
@@ -349,10 +357,11 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
             }
         })));
     }
-    // Its JS runs on a thread of its own, as in a window: each step is drawn once what it set off has run. A panel is
-    // summoned as it opens, its page still starting, as a launcher's first summon can come as the app starts.
-    if panel.is_some() {
+    // Its JS runs on a thread of its own, as in a window: each step is drawn once what it set off has run.
+    if let Some(screen) = screen {
         windows.summon(id, std::time::Instant::now(), None);
+        windows.run(1000.0 / 60.0);
+        windows.attach(id, screen);
     }
     windows.wait();
     // The app `--open` names, opened over the Home Screen as its page asks, from its icon, as a phone's app opens an

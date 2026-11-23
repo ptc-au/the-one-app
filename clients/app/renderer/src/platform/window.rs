@@ -111,6 +111,10 @@ impl Window {
             _ => vec![(whole, if self.panel { corner } else { 0.0 })],
         };
         let Some(renderer) = self.renderer.as_mut() else { return Draw::Missed };
+        #[cfg(feature = "fake")]
+        if !display.drawable(&self.parts[0].native) {
+            return Draw::Missed;
+        }
         while self.panel && self.parts.len() < boxes.len() {
             let made = display.open_part(&self.parts[0].native, self.parts.len()).and_then(|native| {
                 also_on(renderer, context, &native)?;

@@ -60,6 +60,7 @@ const MUTANTS = {
   // saying why, never freezes, and the headless renderer fails.
   "gpu-hang": { bug: "a fence that never signals: the GPU hung on a frame, which the system never says", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
   "present-hang": { bug: "a present that never returns: the GPU's driver hung", plays: [checks("apps/settings", "Recently Deleted, an app and its older copy")] },
+  "summon-after-draw": { bug: "a panel summoned before it had drawn put on the screen only once it had, which a Mac never lets it (The PTC App's launcher opened again on its app's new version, blank, 23 Nov)", plays: [checks("apps/home-screen", "Launcher on a computer")] },
   "picture-retry": { bug: "a picture that failed to decode left blank, never tried again (f0db8c31f)", plays: [checks("clients/app/renderer/tests/gallery", "Images/SVG tiles")] },
 }
 
