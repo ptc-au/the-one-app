@@ -15,7 +15,10 @@ defmodule Chrome do
   next time it's opened: `packing` (its Chrome started and quit, its user data dir packed in its container),
   `moving` (a new container made, and the user data dir copied into it), `starting` (Chrome started in the new one,
   and the old one removed), then `running`. The old container is removed only once the new one has the user data
-  dir, so nothing that fails loses it.
+  dir, so nothing that fails loses it. A container with no browser in it to carry on, one Podman left wedged or dead
+  while it says `running`, or one made and never started, is removed and the browser starts again in a new one, as
+  `open` does with none. A browser that couldn't start leaves no container or record, so `open` with its session starts
+  again.
 
   A browser's profile is its user data dir, `/root/.chromium` in its container. As one is created it offers
   `chrome.starting`, for an app to hand it a user data dir to start from: a blob in the bucket, by a link and the key
@@ -493,9 +496,9 @@ defmodule Chrome do
         carry(call, inputs, record)
 
       {_, %{"state" => "running"}} ->
-        if inputs["url"],
-          do: Map.put(mcp(call, session, "browser_navigate", %{"url" => inputs["url"]}), :session, session),
-          else: %{session: session}
+        if alive?(call, name),
+          do: if(inputs["url"], do: Map.put(mcp(call, session, "browser_navigate", %{"url" => inputs["url"]}), :session, session), else: %{session: session}),
+          else: replace(call, inputs, name)
 
       # A browser that was stopped carries on in a new container, so on the image as it is now: with the user data
       # dir it stopped with, and a new MCP server, which knows none of the sessions kept from before.
@@ -616,6 +619,13 @@ defmodule Chrome do
     end
 
     launch(call, session, inputs["url"])
+  rescue
+    # A browser that couldn't start has nothing in it to carry on, so no container or record of it is left, and `open`
+    # with the same session starts again.
+    e ->
+      remove(call, session)
+      Artifact.remove(call.own, key(call, session))
+      reraise e, __STACKTRACE__
   end
 
   # The container the record names, made: the image `desktop`, with its display and no Chrome yet.
@@ -641,12 +651,13 @@ defmodule Chrome do
     record(call, session, fn _ -> record end)
     Call.stage(call, "Packing what it kept")
 
-    if not match?(%{"state" => "running"}, Enum.find(containers(call), &(&1["name"] == from))),
-      do: on(call, "start", from)
-
-    packed = on(call, "exec", from, %{"command" => @pack, "timeout" => 120})
-    if packed["exit"] != 0, do: raise("Couldn't pack #{session}'s user data dir: #{String.trim(packed["stderr"])}")
-    carry(call, inputs, %{record | "state" => "moving"})
+    if usable?(call, from) do
+      packed = on(call, "exec", from, %{"command" => @pack, "timeout" => 120})
+      if packed["exit"] != 0, do: raise("Couldn't pack #{session}'s user data dir: #{why(call, from, packed)}")
+      carry(call, inputs, %{record | "state" => "moving"})
+    else
+      replace(call, inputs, from)
+    end
   end
 
   defp carry(call, %{"session" => session} = inputs, %{"state" => "moving", "from" => from, "container" => to} = record) do
@@ -676,6 +687,35 @@ defmodule Chrome do
     launched
   end
 
+  # Whether a browser is in the container: a command runs in it, started first where it's stopped, and it has a user
+  # data dir, which Chrome made as it started. Podman leaves one it can't start again (wedged `stopping`, which `start`
+  # and `exec` refuse as "container state improper") or that's dead while it still says `running` (its conmon
+  # killed), and neither is told from a good one but by running something in it; one made but never started has no
+  # Chrome in it to carry on.
+  defp usable?(call, name) do
+    if not match?(%{"state" => "running"}, Enum.find(containers(call), &(&1["name"] == name))) do
+      try do
+        on(call, "start", name)
+      rescue
+        _ -> :wedged
+      end
+    end
+
+    alive?(call, name)
+  end
+
+  defp alive?(call, name), do: match?(%{"exit" => 0}, on(call, "exec", name, %{"command" => "test -d #{@user_data}"}))
+
+  # A browser whose container has none in it (`usable?`) has nothing left to carry on: the container is removed, and
+  # the browser starts again in a new one, with what its app hands it as it starts, where a user data dir it kept is
+  # lost with it.
+  defp replace(call, %{"session" => session} = inputs, name) do
+    Call.stage(call, "Its container can't run, so starting a new one")
+    on(call, "remove", name)
+    record(call, session, fn _ -> %{"container" => name, "state" => "running"} end)
+    create(call, inputs)
+  end
+
   # Opens the user data dir handed over as `tarball` in the session's container.
   defp unpack!(call, session, tarball) do
     unpack = "mkdir -p #{@user_data} && tar -xzf #{shell(tarball)} -C #{@user_data} && rm #{shell(tarball)}"
@@ -687,7 +727,9 @@ defmodule Chrome do
 
   defp launch(call, session, url) do
     Call.stage(call, "Starting Chrome")
-    containers(call, "exec", session, %{"command" => "sh -c #{shell(@launch)} sh #{if url, do: shell(url)}"})
+    name = container(record(call, session), session)
+    launched = on(call, "exec", name, %{"command" => "sh -c #{shell(@launch)} sh #{if url, do: shell(url)}"})
+    if launched["exit"] != 0, do: raise("Couldn't start Chrome in #{session}: #{why(call, name, launched)}")
     %{session: session}
   end
 
@@ -810,8 +852,23 @@ defmodule Chrome do
       case browser(call, session) do
         nil -> raise "You have no browser called #{session}"
         %{"state" => "running"} -> reraise e, __STACKTRACE__
-        %{} -> raise "The browser was stopped after going unused.\n\n`open` starts #{session} again, afresh."
+        %{"name" => name} -> raise "The browser isn't running: #{why(call, name, %{})}.\n\n`open` starts #{session} again."
       end
+  end
+
+  # Why a command in a container failed: where the container isn't running, what happened to it (Podman's state, its
+  # exit code and what it last said), which is what's behind Podman's "container state improper"; else what the
+  # command said.
+  defp why(call, name, ran) do
+    case Enum.find(containers(call), &(&1["name"] == name)) do
+      %{"state" => state} = c when state != "running" ->
+        logged = on(call, "logs", name, %{"tail" => 3})
+        said = (logged["stdout"] <> logged["stderr"]) |> String.trim() |> String.replace("\n", " / ")
+        "its container is #{state}#{if c["exit_code"], do: " (exit code #{c["exit_code"]})"}#{if said != "", do: ", saying: " <> said}"
+
+      _ ->
+        String.trim(ran["stderr"] || "")
+    end
   end
 
   # The session's container, as Containers lists it: the one its record names, else any of its two.

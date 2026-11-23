@@ -291,7 +291,15 @@ defmodule Containers.Podman do
         [spec["image"] | spec["command"] || []]
 
     podman!(service, args)
-    start(service, spec["id"])
+
+    # A container that couldn't start is left to nobody: it's removed, as `create` made none.
+    try do
+      start(service, spec["id"])
+    rescue
+      e ->
+        remove(service, spec["id"])
+        reraise e, __STACKTRACE__
+    end
   end
 
   # Started in a systemd scope of its own where this server is a systemd service (it has systemd's INVOCATION_ID),
@@ -301,9 +309,19 @@ defmodule Containers.Podman do
   def start(service, id) do
     scope = if System.get_env("INVOCATION_ID"), do: ~w(systemd-run --user --scope --collect --quiet), else: []
 
-    case OneCore.Command.run(scope ++ ["podman", "start", id], 60) do
-      %{exit: 0} -> :ok
-      %{stderr: stderr} -> raise why(stderr)
+    # Podman starts only a container that's created or stopped (`exited`): a paused one is let carry on instead.
+    case String.trim(podman!(service, ["inspect", "--format", "{{.State.Status}}", id])) do
+      "paused" ->
+        podman!(service, ["unpause", id])
+
+      "running" ->
+        :ok
+
+      _ ->
+        case OneCore.Command.run(scope ++ ["podman", "start", id], 60) do
+          %{exit: 0} -> :ok
+          %{stderr: stderr} -> raise why(stderr)
+        end
     end
 
     OneCore.Service.touch(service, id)

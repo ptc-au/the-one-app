@@ -39,7 +39,7 @@ defmodule Containers do
       name: %{type: "string"},
       description: %{type: ["string", "null"], description: "What it's for"},
       image: %{type: "string"},
-      state: %{type: "string", description: "Podman's: created, running, exited, removing, or unknown while its machine is off"},
+      state: %{type: "string", description: "Podman's: created, running, paused, exited, removing, or unknown while its machine is off"},
       exit_code: %{type: "integer", description: "An exited one's, as its command ended"},
       finished: %{type: "integer", description: "When an exited one did, in milliseconds since 1970"},
       machine: %{type: ["string", "null"]},
@@ -105,7 +105,7 @@ defmodule Containers do
         name: "list",
         read_only: true,
         description:
-          "The containers you can use, on every machine: each one's name, image, state as Podman says it (created, running, exited, with its exit code and when, or removing), machine, size, restart policy, what it's for, who created it, when it was created and last used (ms since 1970), and its ports, each published on the machine's own loopback. One on a machine that's off is unknown, with when its machine was last on. A machine that didn't answer is in `failed`, with why.",
+          "The containers you can use, on every machine: each one's name, image, state as Podman says it (created, running, paused, exited, with its exit code and when, or removing), machine, size, restart policy, what it's for, who created it, when it was created and last used (ms since 1970), and its ports, each published on the machine's own loopback. One on a machine that's off is unknown, with when its machine was last on. A machine that didn't answer is in `failed`, with why.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object", properties: %{containers: %{type: "array", items: @listed}, failed: @failed}, required: ["containers", "failed"]}
       },
@@ -227,7 +227,7 @@ defmodule Containers do
       },
       %{
         name: "start",
-        description: "Start a stopped container.",
+        description: "Start a stopped container, or let a paused one carry on.",
         inputs: one(),
         outputs: @named
       },
