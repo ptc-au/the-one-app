@@ -1,6 +1,7 @@
 // The design tokens: every colour, length, radius, shadow, material, font, weight, type style and pace the UI library
 // and every app draw with, as typed values, each the same everywhere or varying by condition (dark, touch, phone,
-// reduced motion: drawing-primitives/renderer.ts's `Condition`). This is their one source. `tokens` are by role, as Raycast's
+// reduced motion: drawing-primitives/renderer.ts's `Condition`). This is their one source, in two layers: a palette of
+// raw values with no meaning (`zinc[977]`), private to this file, and the roles that point at it. `tokens` are by role, as Raycast's
 // model has them (text at 100, 60 (70 in light), 40, 20 and 10%, a background, a selection, a loader, seven accents each with a
 // tint, a 4px grid, three radii, a window's shadow and edge, three sizes of text and a large title), and a page's code
 // names only those, so their values change here alone. `legacy` are what the UI library's components drawn with CSS
@@ -63,38 +64,52 @@ const motion = (duration: Varies<number>, easing: Varies<[number, number, number
  * motion, for whom it is a 200 ms ease out and no spring: what moves is faded instead. */
 const spring = (duration: number, bounce: number): Token<"motion"> => ({ kind: "motion", id: "", value: { duration: { default: duration, reducedMotion: 200 }, bounce, easing: [0.22, 1, 0.36, 1] } })
 
-// Raycast's values as round two measured them beside it (raycast-mockups-v2): a near-white window, one text colour,
-// and Apple's accents but red, orange and blue, which are the mockup's. Dark is true black, an OLED's (20 Nov), with
-// what's raised off it neutral greys, no tint. Colours CSS names are written in OKLCH. Red, orange, blue and green
-// in light are a little deeper than Apple's, and red in dark a little lighter, so words in them stand off every surface
-// a page draws on by WCAG AA's 4.5:1, and white words on them too (lint-tokens.js).
-const ink = ["oklch(0.224 0.008 285.76)", "oklch(1 0 0)"] as const
-const red = ["oklch(0.525 0.204 25.56)", "oklch(0.745 0.191 23.4)"] as const
-const orange = ["oklch(0.60 0.164 57.12)", "oklch(0.782 0.171 67.22)"] as const
-const blue = ["oklch(0.51 0.199 261.84)", "oklch(0.714 0.139 249.06)"] as const
+// The palette: raw colours with no meaning, each hue a scale whose steps are their OKLCH lightness in thousandths, as
+// Tailwind's and Radix Colors' scales name theirs (`zinc[977]`), and `opacity`, one at a part of its opacity, as
+// Tailwind's `black/30`. Only the roles below name them, and nothing outside this file sees them: a page names a role,
+// and a theme changes the palette behind the roles. Values are Raycast's as round two measured them beside it
+// (raycast-mockups-v2): a near-white window, one text colour, and Apple's accents but red, orange and blue, which are
+// the mockup's. Dark is true black, an OLED's (20 Nov), with what's raised off it neutral greys, no tint. Colours CSS
+// names are written in OKLCH. Red, orange, blue and green in light are a little deeper than Apple's, and red in dark a
+// little lighter, so words in them stand off every surface a page draws on by WCAG AA's 4.5:1, and white words on them
+// too (lint-tokens.js).
+const black = "oklch(0 0 0)"
+const white = "oklch(1 0 0)"
+const neutral = { 185: "oklch(0.185 0 0)", 225: "oklch(0.225 0 0)", 260: "oklch(0.26 0 0)", 269: "oklch(0.269 0 0)" } as const
+const zinc = { 224: "oklch(0.224 0.008 285.76)", 919: "oklch(0.919 0.003 286.35)", 962: "oklch(0.962 0.004 286.32)", 977: "oklch(0.977 0.003 286.35)", 991: "oklch(0.991 0.001 286.38)" } as const
+const red = { 525: "oklch(0.525 0.204 25.56)", 745: "oklch(0.745 0.191 23.4)" } as const
+const orange = { 600: "oklch(0.60 0.164 57.12)", 782: "oklch(0.782 0.171 67.22)" } as const
+const yellow = { 865: "#ffcc00", 885: "#ffd60a" } as const
+const green = { 600: "oklch(0.6 0.17 149)", 756: "#30d158" } as const
+const blue = { 510: "oklch(0.51 0.199 261.84)", 714: "oklch(0.714 0.139 249.06)" } as const
+const purple = { 615: "#af52de", 656: "#bf5af2" } as const
+const pink = { 650: "#ff2d55", 658: "#ff375f" } as const
+/** One of the palette's OKLCH colours at a part of its opacity. */
+const opacity = (colour: `oklch(${string})`, percent: number) => colour.replace(/\)$/, ` / ${percent}%)`)
+
 const colours = {
-  background: colour("oklch(0.977 0.003 286.35)", "oklch(0 0 0)"),
-  foreground: colour(...ink),
+  background: colour(zinc[977], black),
+  foreground: colour(zinc[224], white),
   /** What's raised off what it's on: a group of rows, a problem. In dark it's white at 11%, so each level up is
    * lighter, as iOS's dark grouped lists are: `#1C1C1E` on the black page (secondarySystemGroupedBackground), and
    * about `#2C2C2E` on a sheet or an alert (its elevated twin), as the widgets' tiles are. */
-  card: colour("oklch(1 0 0)", "oklch(1 0 0 / 11%)"),
+  card: colour(white, opacity(white, 11)),
   /** What's over the page and holds cards of its own, under a finger: a sheet, an alert. The page's colour in light,
    * and in dark iOS's elevated background (`#1C1C1E`), off the black page. */
-  elevated: colour("oklch(0.977 0.003 286.35)", "oklch(0.225 0 0)"),
-  primary: colour(...ink),
-  primaryForeground: colour("oklch(1 0 0)", "oklch(0 0 0)"),
+  elevated: colour(zinc[977], neutral[225]),
+  primary: colour(zinc[224], white),
+  primaryForeground: colour(white, black),
   /** A quiet fill: a secondary button, what's hovered, a skeleton: the text at 10% over the page. */
-  muted: colour("oklch(0.919 0.003 286.35)", "oklch(0.269 0 0)"),
+  muted: colour(zinc[919], neutral[269]),
   /** Grey words, and where the keyboard is: the text at 60%, 70% in light (`secondaryLabel`). */
-  mutedForeground: colour("oklch(0.224 0.008 285.76 / 70%)", "oklch(1 0 0 / 60%)"),
-  destructive: colour(...red),
+  mutedForeground: colour(opacity(zinc[224], 70), opacity(white, 60)),
+  destructive: colour(red[525], red[745]),
   /** Warn: "this needs you", but it can wait. */
-  warning: colour(...orange),
+  warning: colour(orange[600], orange[782]),
   /** A hairline, a field's edge, and what a pressed row fills with: the text at 10%. */
-  border: colour("oklch(0.224 0.008 285.76 / 10%)", "oklch(1 0 0 / 10%)"),
+  border: colour(opacity(zinc[224], 10), opacity(white, 10)),
   /** What dims the page under a sheet or an alert, as iOS's and macOS's do: black over a light page as over a dark one. */
-  overlay: colour("oklch(0 0 0 / 30%)", "oklch(0 0 0 / 40%)"),
+  overlay: colour(opacity(black, 30), opacity(black, 40)),
 }
 
 /** Lengths. A computer's are rems of 16px; under a finger what's pressed is a 44px target and text a step larger, which
@@ -133,8 +148,8 @@ const radii = {
 }
 
 const shadows = {
-  xs: shadow({ x: 0, y: 1, blur: 2, spread: 0, colour: "oklch(0 0 0 / 5%)" }),
-  lg: shadow({ x: 0, y: 10, blur: 15, spread: -3, colour: "oklch(0 0 0 / 10%)" }, { x: 0, y: 4, blur: 6, spread: -4, colour: "oklch(0 0 0 / 10%)" }),
+  xs: shadow({ x: 0, y: 1, blur: 2, spread: 0, colour: opacity(black, 5) }),
+  lg: shadow({ x: 0, y: 10, blur: 15, spread: -3, colour: opacity(black, 10) }, { x: 0, y: 4, blur: 6, spread: -4, colour: opacity(black, 10) }),
 }
 
 const fonts = {
@@ -188,23 +203,23 @@ const motions = {
 
 /** Raycast's window shadow, light and dark, and its edge inside, as round two measured them. */
 const windowShadow: Record<"light" | "dark", Shadow[]> = {
-  light: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(0 0 0 / 16%)" }, { x: 0, y: 4, blur: 8, spread: 0, colour: "oklch(0 0 0 / 6%)" }, { x: 0, y: 12, blur: 32, spread: 0, colour: "oklch(0 0 0 / 14%)" }, { x: 0, y: 16, blur: 48, spread: 8, colour: "oklch(0 0 0 / 6%)" }],
-  dark: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(0 0 0 / 75%)" }, { x: 0, y: 4, blur: 8, spread: 0, colour: "oklch(0 0 0 / 40%)" }, { x: 0, y: 12, blur: 32, spread: 0, colour: "oklch(0 0 0 / 60%)" }, { x: 0, y: 16, blur: 48, spread: 8, colour: "oklch(0 0 0 / 20%)" }],
+  light: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 16) }, { x: 0, y: 4, blur: 8, spread: 0, colour: opacity(black, 6) }, { x: 0, y: 12, blur: 32, spread: 0, colour: opacity(black, 14) }, { x: 0, y: 16, blur: 48, spread: 8, colour: opacity(black, 6) }],
+  dark: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 75) }, { x: 0, y: 4, blur: 8, spread: 0, colour: opacity(black, 40) }, { x: 0, y: 12, blur: 32, spread: 0, colour: opacity(black, 60) }, { x: 0, y: 16, blur: 48, spread: 8, colour: opacity(black, 20) }],
 }
 const edge: Record<"light" | "dark", Shadow[]> = {
-  light: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(0 0 0 / 10%)", inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: "oklch(1 0 0 / 90%)", inset: true }],
-  dark: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(1 0 0 / 14%)", inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: "oklch(1 0 0 / 12%)", inset: true }],
+  light: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 10), inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 90), inset: true }],
+  dark: [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(white, 14), inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 12), inset: true }],
 }
 
-const label = colour(...ink)
+const label = colour(zinc[224], white)
 const accents = {
-  red: colour(...red),
-  orange: colour(...orange),
-  yellow: colour("#ffcc00", "#ffd60a"),
-  green: colour("oklch(0.6 0.17 149)", "#30d158"),
-  blue: colour(...blue),
-  purple: colour("#af52de", "#bf5af2"),
-  magenta: colour("#ff2d55", "#ff375f"),
+  red: colour(red[525], red[745]),
+  orange: colour(orange[600], orange[782]),
+  yellow: colour(yellow[865], yellow[885]),
+  green: colour(green[600], green[756]),
+  blue: colour(blue[510], blue[714]),
+  purple: colour(purple[615], purple[656]),
+  magenta: colour(pink[650], pink[658]),
 }
 /** Colours: one text colour at five strengths, a background and the second of its gradient, what's selected, what's
  * loading, and the accents, each with its tint. */
@@ -212,7 +227,7 @@ const roles = {
   label,
   /** The text at 60%, and at 70% in light, where 60% on a widget's tile over a dark window behind the launcher fell
    * short of WCAG AA's 4.5:1 (3.9:1; 4.6:1 at 66%), and 66% on a widget's tile in the launcher's light card (4.4:1). */
-  secondaryLabel: colour("oklch(0.224 0.008 285.76 / 70%)", "oklch(1 0 0 / 60%)"),
+  secondaryLabel: colour(opacity(zinc[224], 70), opacity(white, 60)),
   tertiaryLabel: alpha(label, 40),
   quaternaryLabel: alpha(label, 20),
   quinaryLabel: alpha(label, 10),
@@ -221,7 +236,7 @@ const roles = {
   card: colours.card,
   /** What's over the page under a finger: a sheet, an alert. */
   elevated: colours.elevated,
-  backgroundGradient: colour("oklch(0.962 0.004 286.32)", "oklch(0 0 0)"),
+  backgroundGradient: colour(zinc[962], black),
   selection: alpha(label, 10),
   /** Every other row of metadata: the text at 2.5%. */
   stripe: alpha(label, 2.5),
@@ -230,25 +245,25 @@ const roles = {
   /** A panel of glass, over the window or the desktop: the action panel, an alert, the launcher. Tinted as macOS's
    * widgets and Control Center are, so text stays readable over any window behind it: secondary text holds WCAG AA's
    * 4.5:1 over a white one in dark. */
-  panel: colour("oklch(0.991 0.001 286.38 / 92%)", "oklch(0.185 0 0 / 92%)", ["oklch(0.991 0.001 286.38)", "oklch(0.185 0 0)"]),
+  panel: colour(opacity(zinc[991], 92), opacity(neutral[185], 92), [zinc[991], neutral[185]]),
   /** Liquid Glass's fill, over what's blurred behind it: mostly white in light, a grey a little lighter than black in
    * dark, a fifth see-through, so it reads over anything. */
-  glass: colour("oklch(1 0 0 / 80%)", "oklch(0.26 0 0 / 80%)", ["oklch(1 0 0)", "oklch(0.26 0 0)"]),
+  glass: colour(opacity(white, 80), opacity(neutral[260], 80), [white, neutral[260]]),
   /** What veils a page behind something opened over it, over what's blurred; where glass is a plain tint, opaque: what's
    * behind, unblurred, would show its words through the words over it. */
-  veil: colour("oklch(0.977 0.003 286.35 / 55%)", "oklch(0 0 0 / 55%)", ["oklch(0.977 0.003 286.35)", "oklch(0 0 0)"]),
+  veil: colour(opacity(zinc[977], 55), opacity(black, 55), [zinc[977], black]),
   /** A tile's tint, as an App Library category's square is. */
   tile: alpha(label, 14),
   /** What's typed in, and an outline button: a field's fill, a little lighter than what it's on, as iOS's
    * tertiarySystemFill is in dark. */
-  field: colour("oklch(1 0 0 / 70%)", "oklch(1 0 0 / 10%)"),
+  field: colour(opacity(white, 70), opacity(white, 10)),
   /** Nothing: what has no fill of its own where something else has one. */
-  transparent: colour("oklch(0 0 0 / 0%)"),
+  transparent: colour(opacity(black, 0)),
   /** Words and icons on an accent: white in light, black in dark, where the accents are light enough to read on
    * black, and white on them falls short of 4.5:1 (red's 2.8:1). */
-  onAccent: colour("oklch(1 0 0)", "oklch(0 0 0)"),
+  onAccent: colour(white, black),
   /** A switch's thumb: white in light and dark, as iOS's and macOS's are, off its track by its edge's shadow. */
-  thumb: colour("oklch(1 0 0)"),
+  thumb: colour(white),
   loader: alpha(label, 40),
   ...accents,
   redTint: alpha(accents.red, 12),
@@ -362,35 +377,35 @@ export const tokens = {
   shadow: named({
     /** Liquid Glass's: a hairline rim, a line of light along its top, and a soft shadow under it. */
     glass: lightDark(
-      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(0 0 0 / 12%)" }, { x: 0, y: 1, blur: 3, spread: 0, colour: "oklch(0 0 0 / 6%)" }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: "oklch(1 0 0 / 90%)", inset: true }, { x: 0, y: 8, blur: 24, spread: 0, colour: "oklch(0 0 0 / 18%)" }],
-      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(1 0 0 / 14%)", inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: "oklch(1 0 0 / 18%)", inset: true }, { x: 0, y: 8, blur: 24, spread: 0, colour: "oklch(0 0 0 / 25%)" }],
+      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 12) }, { x: 0, y: 1, blur: 3, spread: 0, colour: opacity(black, 6) }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 90), inset: true }, { x: 0, y: 8, blur: 24, spread: 0, colour: opacity(black, 18) }],
+      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(white, 14), inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 18), inset: true }, { x: 0, y: 8, blur: 24, spread: 0, colour: opacity(black, 25) }],
     ),
     /** What's carried by a finger: a soft drop shadow. */
-    lifted: shadow({ x: 0, y: 12, blur: 28, spread: -6, colour: "oklch(0 0 0 / 30%)" }),
+    lifted: shadow({ x: 0, y: 12, blur: 28, spread: -6, colour: opacity(black, 30) }),
     /** Where the keyboard is: a blue edge and a ring of its tint. */
     focus: lightDark(
-      [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0.51 0.199 261.84)", inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.51 0.199 261.84 / 30%)" }],
-      [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0.714 0.139 249.06)", inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.714 0.139 249.06 / 30%)" }],
+      [{ x: 0, y: 0, blur: 0, spread: 1, colour: blue[510], inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: opacity(blue[510], 30) }],
+      [{ x: 0, y: 0, blur: 0, spread: 1, colour: blue[714], inset: true }, { x: 0, y: 0, blur: 0, spread: 3, colour: opacity(blue[714], 30) }],
     ),
     /** A window's, a sheet's or a menu's, as Raycast's: a hairline outside, three soft shadows under it, and its edge. */
     window: lightDark([...windowShadow.light, ...edge.light], [...windowShadow.dark, ...edge.dark]),
     /** A floating pill's, as Raycast's footer has them: a hairline round it and a line of light along its top. */
     pill: lightDark(
-      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(0 0 0 / 12%)" }, { x: 0, y: 1, blur: 3, spread: 0, colour: "oklch(0 0 0 / 6%)" }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: "oklch(1 0 0 / 90%)", inset: true }],
-      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(1 0 0 / 12%)", inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: "oklch(1 0 0 / 18%)", inset: true }],
+      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 12) }, { x: 0, y: 1, blur: 3, spread: 0, colour: opacity(black, 6) }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 90), inset: true }],
+      [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(white, 12), inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 18), inset: true }],
     ),
     /** A field's edge: a half-pixel line inside. */
-    field: lightDark([{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(0 0 0 / 14%)", inset: true }], [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: "oklch(1 0 0 / 12%)", inset: true }]),
+    field: lightDark([{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 14), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(white, 12), inset: true }]),
     /** A checkbox's and a radio's ring, off: a whole point, at 3:1 or more against what it's on (WCAG's non-text
      * contrast), as iOS's and macOS's are drawn. */
-    tick: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0 0 0 / 45%)", inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(1 0 0 / 40%)", inset: true }]),
+    tick: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(black, 45), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(white, 40), inset: true }]),
     /** A key's chip: an outline, as Raycast draws ⌘ and K. */
-    key: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(0 0 0 / 16%)", inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: "oklch(1 0 0 / 20%)", inset: true }]),
+    key: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(black, 16), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(white, 20), inset: true }]),
     /** A raised thing's edge inside: a half-pixel line, lit along the top. */
     edge: lightDark(edge.light, edge.dark),
     /** A field's edge, and where the keyboard is in it, where what's in it is wrong. */
-    wrongEdge: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: red[0], inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: red[1], inset: true }]),
-    wrongFocus: lightDark([{ x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.525 0.204 25.56 / 30%)" }], [{ x: 0, y: 0, blur: 0, spread: 3, colour: "oklch(0.745 0.191 23.4 / 30%)" }]),
+    wrongEdge: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: red[525], inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: red[745], inset: true }]),
+    wrongFocus: lightDark([{ x: 0, y: 0, blur: 0, spread: 3, colour: opacity(red[525], 30) }], [{ x: 0, y: 0, blur: 0, spread: 3, colour: opacity(red[745], 30) }]),
   }, (key) => `shadow-${key}`),
   material: named({ glass: material(20, 1.6), thin: material(18, 1.2), window: material(30, 1.8, true) }, (key) => `material-${key}`),
   font: named(fonts, (key) => `font-${key}`),
