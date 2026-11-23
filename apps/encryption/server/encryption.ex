@@ -116,20 +116,28 @@ defmodule Encryption do
   those as a person reads it (`problems`). An artifact is known once a server that should hold its keys ran a call of it (`Encryption.Keys`).
   """
   def access(owner) do
-    for name <- Artifact.list(index(owner)) do
-      held = servers(%Artifact{prefix: name <> "/"})
-      should = should(name)
-      {missing, extra} = {should -- held, held -- should}
+    # Each artifact's blobs are read at once, and every artifact at once: a bucket that's far away, as R2 is from a
+    # server in Australia, takes a round trip for each (2 s for one artifact, read one by one, on 23 Nov).
+    Artifact.list(index(owner))
+    |> Task.async_stream(&standing(owner, &1), max_concurrency: 16, timeout: :infinity)
+    |> Enum.map(fn {:ok, standing} -> standing end)
+  end
 
-      %{
-        artifact: name,
-        epoch: epoch(%Artifact{prefix: name <> "/"}),
-        servers: names(held),
-        missing: names(missing),
-        extra: names(extra),
-        problems: gaps(owner, missing, extra)
-      }
-    end
+  defp standing(owner, name) do
+    artifact = %Artifact{prefix: name <> "/"}
+    epoch = Task.async(fn -> epoch(artifact) end)
+    held = servers(artifact)
+    should = should(name)
+    {missing, extra} = {should -- held, held -- should}
+
+    %{
+      artifact: name,
+      epoch: Task.await(epoch, :infinity),
+      servers: names(held),
+      missing: names(missing),
+      extra: names(extra),
+      problems: gaps(owner, missing, extra)
+    }
   end
 
   defp names(servers), do: for(server <- servers, do: %{key: server, name: Servers.name(server)})
@@ -169,18 +177,14 @@ defmodule Encryption do
   each with what its machine is called.
   """
   def unlocked_on(%Call{} = call, %Artifact{} = artifact) do
-    # Known from the first look, so the passkey that first makes its owner's key hands its keys too, before any call of it.
-    known(Artifact.name(artifact), call.server)
+    # Known from the first look, so the passkey that first makes its owner's key hands its keys too, before any call of
+    # it. Its blobs are read at once, as `access/1`'s are.
+    [_known, epoch, servers, signed] =
+      [fn -> known(Artifact.name(artifact), call.server) end, fn -> epoch(artifact) end, fn -> servers(artifact) end, fn -> signed(artifact) end]
+      |> Enum.map(&Task.async/1)
+      |> Task.await_many(:infinity)
 
-    Map.merge(
-      %{
-        artifact: Artifact.name(artifact),
-        epoch: epoch(artifact),
-        servers: servers(artifact),
-        may: names(should(Artifact.name(artifact)))
-      },
-      signed(artifact)
-    )
+    Map.merge(%{artifact: Artifact.name(artifact), epoch: epoch, servers: servers, may: names(should(Artifact.name(artifact)))}, signed)
   end
 
   # Its owner's signature of which servers open it at its epoch, and the public key that signed it, as the device that
@@ -216,9 +220,12 @@ defmodule Encryption do
       had = servers(artifact)
 
       for server <- Map.keys(slots) -- had, do: share(call, "share", name, server)
-      for {server, slot} <- slots, do: put(artifact, "keys/" <> server, Base.decode64!(slot))
-      put(artifact, "keys/epoch", Integer.to_string(epoch))
-      put(artifact, "keys/signed", JSON.encode!(%{signature: signature, signer: signer}))
+      # Written at once, as `access/1` reads them.
+      puts = for({server, slot} <- slots, do: {"keys/" <> server, Base.decode64!(slot)}) ++ [{"keys/epoch", Integer.to_string(epoch)}, {"keys/signed", JSON.encode!(%{signature: signature, signer: signer})}]
+      wrote = Task.async_stream(puts, fn {blob, data} -> put(artifact, blob, data) end, max_concurrency: 16, timeout: :infinity)
+
+      if Enum.any?(wrote, &(&1 != {:ok, :ok})),
+        do: raise("#{name}'s keys were changed from another device just now. Look, and do this again.")
 
       for server <- had -- Map.keys(slots) do
         Artifact.remove(artifact, "keys/" <> server)
@@ -234,13 +241,20 @@ defmodule Encryption do
   end
 
   # Has each of `servers` look at what it's handed of an artifact now, so one that was taken off lets go of its
-  # keys at once, and one that was handed a new epoch's writes with them, all asked at once (`OneCore.Asks.each/3`).
-  # One that isn't up, or doesn't answer in time, looks when it starts or once it gets to it.
+  # keys at once, and one that was handed a new epoch's writes with them, all asked at once (`OneCore.Asks.each/3`),
+  # and not waited for: the keys are kept already, and one that isn't up, as a laptop asleep, or doesn't answer in
+  # time looks when it starts or once it gets to it (`Encryption.Keys`), so the sign-in page says they're handed over
+  # without waiting up to 8 s for it.
   defp look(%Call{} = call, name, servers) do
     {at, app} = OneCore.Apps.installed(call.subject, call.app_artifact)
     meta = %{actor: nil, subject: User.owner(name), forwarded: true}
     ask = %{installed: at, app: app, function: "looked", arguments: [name], _meta: meta}
-    OneCore.Asks.each(servers -- [call.server], &Server.request(&1, "apps/call", ask))
+    trace = OpenTelemetry.Ctx.get_current()
+
+    Task.Supervisor.start_child(OneCore.Asks, fn ->
+      OpenTelemetry.Ctx.attach(trace)
+      OneCore.Asks.each(servers -- [call.server], &Server.request(&1, "apps/call", ask))
+    end)
   end
 
   @doc false
@@ -261,15 +275,12 @@ defmodule Encryption do
     end
   end
 
+  # A blob of an artifact's keys, written whether or not there's one: `:ok`, or not where another device wrote it meanwhile.
   defp put(artifact, name, data) do
-    wrote =
-      case Artifact.read(artifact, name) do
-        {:ok, _was, tag} -> Artifact.replace(artifact, name, data, tag)
-        :absent -> Artifact.write(artifact, name, data)
-      end
-
-    if wrote != :ok,
-      do: raise("#{Artifact.name(artifact)}'s keys were changed from another device just now. Look, and do this again.")
+    case Artifact.read(artifact, name) do
+      {:ok, _was, tag} -> Artifact.replace(artifact, name, data, tag)
+      :absent -> Artifact.write(artifact, name, data)
+    end
   end
 
   @doc """
@@ -451,32 +462,34 @@ defmodule Encryption do
   def call("key", inputs, call) do
     key = key(call)
     inputs = Map.update(inputs, "device", nil, &holder(call, &1))
-    held = for {device, %{"name" => name}} <- devices(key, "devices/"), do: %{device: device, name: name}
-    asking = for {device, %{"name" => name}} <- devices(key, "asking/"), do: %{device: device, name: name}
+    access = Task.async(fn -> access(call.subject) end)
+    # A scheduled call is nobody's, so no key is encrypted to its owner's.
+    wrapped = if is_binary(call.actor), do: "owners/" <> call.actor
+    # Every blob this says is read at once, as `access/1`'s are.
+    names =
+      for name <- Artifact.list(key),
+          name in ["check", wrapped] or String.starts_with?(name, ["devices/", "asking/"]),
+          do: name
+
+    read = for {name, {:ok, data, _tag}} <- Enum.zip(names, Artifact.read_all(key, names)), into: %{}, do: {name, data}
+    held = for {"devices/" <> device, data} <- read, do: %{device: device, name: JSON.decode!(data)["name"]}
+    asking = for {"asking/" <> device, data} <- read, do: %{device: device, name: JSON.decode!(data)["name"]}
 
     slot =
       with device when is_binary(device) <- inputs["device"],
-           {:ok, held, _tag} <- Artifact.read(key, "devices/" <> device),
-           do: JSON.decode!(held)["slot"],
-           else: (_ -> nil)
-
-    check = with {:ok, check, _tag} <- Artifact.read(key, "check"), do: check, else: (:absent -> nil)
-    # A scheduled call is nobody's, so no key is encrypted to its owner's.
-    wrapped =
-      with actor when is_binary(actor) <- call.actor,
-           {:ok, wrapped, _tag} <- Artifact.read(key, "owners/" <> actor),
-           do: wrapped,
+           data when is_binary(data) <- read["devices/" <> device],
+           do: JSON.decode!(data)["slot"],
            else: (_ -> nil)
 
     %{
       owner: call.subject,
       device: inputs["device"],
-      check: check,
+      check: read["check"],
       slot: slot,
       devices: held,
       asking: asking,
-      wrapped: wrapped,
-      access: access(call.subject)
+      wrapped: wrapped && read[wrapped],
+      access: Task.await(access, :infinity)
     }
   end
 
@@ -568,11 +581,5 @@ defmodule Encryption do
 
     if Artifact.read(key, "check") |> elem(1) != check,
       do: raise("That isn't your key: another was made before it. Use your passkey that unlocks it, or your recovery key.")
-  end
-
-  defp devices(key, prefix) do
-    for name <- Artifact.list(key, prefix), {:ok, device, _tag} <- [Artifact.read(key, name)] do
-      {String.replace_prefix(name, prefix, ""), JSON.decode!(device)}
-    end
   end
 end
