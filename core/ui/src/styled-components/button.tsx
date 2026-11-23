@@ -34,6 +34,7 @@ import devices from "@phosphor-icons/core/assets/regular/devices.svg?raw"
 import globe from "@phosphor-icons/core/assets/regular/globe.svg?raw"
 import hardDrives from "@phosphor-icons/core/assets/regular/hard-drives.svg?raw"
 import robot from "@phosphor-icons/core/assets/regular/robot.svg?raw"
+import terminalWindow from "@phosphor-icons/core/assets/regular/terminal-window.svg?raw"
 import minus from "@phosphor-icons/core/assets/regular/minus.svg?raw"
 import minusCircle from "@phosphor-icons/core/assets/regular/minus-circle.svg?raw"
 import plusCircle from "@phosphor-icons/core/assets/regular/plus-circle.svg?raw"
@@ -57,6 +58,7 @@ const svgs = {
   globe,
   "hard-drives": hardDrives,
   robot,
+  "terminal-window": terminalWindow,
   "dots-three": dotsThree,
   "dots-three-circle": dotsThreeCircle,
   file,

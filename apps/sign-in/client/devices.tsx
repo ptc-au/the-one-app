@@ -7,7 +7,7 @@
 // update it's taking as it moves on (`OneCore.Release`). This device becoming a server, or stopping being one, says
 // each stage.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Badge, Button, call, changed, client, confirm, date, type Element, Empty, Icon, List, Problem, Row, Screen, Section, seen, Skeleton, Spinner, Split, Steps, styles, Switch, Text, toast, tokens, View } from "ui"
+import { Badge, Button, call, changed, client, confirm, date, type Element, Empty, Icon, List, open as visit, Problem, Row, Screen, Section, seen, Skeleton, since, Spinner, Split, Steps, styles, Switch, Text, toast, tokens, View } from "ui"
 
 /** A build a machine is on, as `builds` answers it. */
 interface Built {
@@ -66,6 +66,8 @@ interface Thing extends ServerStatus {
   id: string
   name?: string
   kind?: "app" | "assistant" | "browser"
+  /** The command a person types to run the program that was let in, if it's run from a terminal: `ptc`. */
+  command?: string | null
   here: boolean
   added?: string
   connected?: boolean
@@ -168,7 +170,7 @@ function about(thing: Thing) {
   const what = {
     app: () => presence(thing) ?? `Approved ${date(thing.added!)}`,
     assistant: () => `An assistant, approved ${date(thing.added!)}`,
-    browser: () => (thing.here ? "This device" : `A browser, signed in ${date(thing.added!)}`),
+    browser: () => (thing.here ? "This device" : `Last used ${since(thing.last_seen ?? thing.added!)}`),
     server: () => presence(thing),
   }[thing.kind ?? "server"]()
   const checked = thing.server_update_status === "checked" && updates.checked.row
@@ -200,7 +202,7 @@ const updateNow = (who?: string) => call("update", {}, { subject: who })
 async function remove(device: Thing) {
   const question = device.here
     ? { heading: "Sign out of this device?", text: "It stops acting as you, and has to be approved again.", action: "Sign Out" }
-    : { heading: `Remove ${device.name}?`, text: "It stops acting as you at once. What it kept of yours is erased if someone else signs in on it.", action: "Remove" }
+    : { heading: `Remove ${called(device)}?`, text: "It stops acting as you at once. What it kept of yours is erased if someone else signs in on it.", action: "Remove" }
   if (!(await confirm({ ...question, destructive: true }))) return
   if (await doing(() => call("sign-in_remove_device", { device: device.id })) && device.here) client({ leave: true })
 }
@@ -265,7 +267,7 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
   const membership = () => (thing().here && thing().kind === "app" ? props.all.here.server : undefined)
   const steps = () => (membership()?.server_membership === "joining" ? joining : membership()?.server_membership === "leaving" ? leaving : undefined)
   return (
-    <Screen heading={thing().name ?? "Server"} back>
+    <Screen heading={called(thing())} back>
       <Show when={stage()}>
         <Section heading="Updating">
           <View style={look.updating}>
@@ -343,7 +345,7 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
       </Show>
       <Section heading="About">
         <List>
-          <Row heading="Kind" end={<Text style={look.muted}>{kinds[thing().kind ?? "server"]}</Text>} />
+          <Row heading="Kind" end={<Text style={look.muted}>{thing().command ? "CLI" : kinds[thing().kind ?? "server"]}</Text>} />
           <Show when={presence(thing())}>{(seen) => <Row heading="Status" end={<Text style={look.muted}>{seen()}</Text>} />}</Show>
           <Show when={thing().build}>{(build) => <Row heading="Build" end={<Text style={look.muted}>{build().split("+")[0]}</Text>} />}</Show>
         </List>
@@ -362,6 +364,9 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
   )
 }
 
+/// What a device or a server is called: a program a terminal ran is "ptc CLI on workspace", by the command that ran it.
+const called = (thing: Thing) => (thing.command ? `${thing.command} CLI on ${thing.name}` : (thing.name ?? "Server"))
+
 /// What kind of thing a device is, as About says it.
 const kinds = { app: "the One App", assistant: "Assistant", browser: "Browser", server: "Server" }
 
@@ -369,11 +374,11 @@ const kinds = { app: "the One App", assistant: "Assistant", browser: "Browser", 
 const system = (target?: string) => ({ linux: "linux", macos: "darwin", windows: "win32" })[target?.split("-")[0] as "linux"]
 
 /// What kind of thing a device is, by its glyph in a well, as Raycast's Settings draws one: an app on a device, a
-/// browser, an assistant or a server.
+/// browser, an assistant, a server or a CLI.
 const glyphs = { app: "devices", browser: "globe", assistant: "robot", server: "hard-drives" } as const
 const Glyph = (props: { thing: Thing }) => (
   <View style={look.glyph}>
-    <Icon name={glyphs[props.thing.kind ?? "server"]} />
+    <Icon name={props.thing.command ? "terminal-window" : glyphs[props.thing.kind ?? "server"]} />
   </View>
 )
 
@@ -382,7 +387,7 @@ function Things(props: { all: All; groups?: Groups }) {
   const row = (thing: () => Thing) => (
     <Row
       start={<Glyph thing={thing()} />}
-      heading={thing().name ?? "Server"}
+      heading={called(thing())}
       text={about(thing())}
       end={<Show when={thing().behind && !underway(thing())}><Badge variant="secondary">Update</Badge></Show>}
       current={open() === thing().id}
@@ -396,6 +401,13 @@ function Things(props: { all: All; groups?: Groups }) {
         <Section heading="Your Devices">
           <Show when={props.all.devices.length} fallback={<Empty>No devices yet.</Empty>}>
             <List each={props.all.devices} keyed={(device) => device.id}>{row}</List>
+          </Show>
+          <Show when={props.all.here.network}>
+            {(network) => (
+              <List>
+                <Row start={<Icon name="plus" />} heading="Get the app on another device" onPress={() => visit(new URL("/download", network()).href)} />
+              </List>
+            )}
           </Show>
         </Section>
         <Show when={props.all.servers.length}>

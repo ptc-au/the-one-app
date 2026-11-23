@@ -18,7 +18,7 @@ import { passkey } from "@better-auth/passkey";
 import { bytesToHex, randomBytes } from "@noble/hashes/utils.js";
 import Bowser from "bowser";
 import * as z from "zod";
-import type { BetterAuthOptions, BetterAuthPlugin, DBAdapter, User as AuthUser } from "better-auth";
+import type { BetterAuthOptions, BetterAuthPlugin, DBAdapter, GenericEndpointContext, User as AuthUser } from "better-auth";
 
 declare global {
   namespace Cloudflare {
@@ -74,6 +74,8 @@ interface Device {
   userId: string;
   kind: "app" | "assistant";
   name: string;
+  /** The command a person types to run the program that was let in, if it's one run from a terminal: `ptc`. */
+  command?: string | null;
   createdAt: Date;
 }
 
@@ -87,6 +89,8 @@ interface DeviceCode {
   status: "pending" | "approved" | "denied";
   expiresAt: Date;
   name: string;
+  /** What `Device` says of the command. */
+  command?: string | null;
 }
 
 /**
@@ -117,6 +121,11 @@ const FRESH = 5 * 60;
  * (`gone`), so all it still reaches is `/apps`, and app files' code.
  */
 export const BELIEVED = 60;
+/**
+ * How long a browser's session lasts without being used, in seconds, as Google's and GitHub's do: Better Auth moves
+ * its end on each day it's used, and one not used for this long ends and leaves the list of devices.
+ */
+const UNUSED = 30 * 24 * 60 * 60;
 /** How long an invitation lasts, in milliseconds. */
 const INVITED_FOR = 7 * 24 * 60 * 60 * 1000;
 /**
@@ -210,6 +219,16 @@ async function changed() {
 }
 
 /**
+ * A browser that signs in again, as it does for an approval that needs a new sign-in, replaces the session it had: the
+ * one its request carries is deleted, as the cookie for it is replaced.
+ */
+async function replaced(session: { token: string }, ctx: GenericEndpointContext | null) {
+  await changed();
+  const old = ctx && (await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret));
+  if (old && old !== session.token) await ctx.context.internalAdapter.deleteSession(old);
+}
+
+/**
  * Has one of the network's servers copy whose each device is (`whose`), for every server: the server's `copy`, which
  * only reads what's here, so whoever asks for it is nobody, as a sharing link's holder is to a server. One that finds
  * the copy as new as what's here writes nothing.
@@ -232,6 +251,11 @@ async function gone() {
   await env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } }));
 }
 
+/** Deletes the sessions that ended (`UNUSED`), which Better Auth otherwise deletes only as one is used again. The edge calls this every ten minutes. */
+export async function expire() {
+  await env.DB.prepare('delete from session where "expiresAt" <= ?').bind(new Date().toISOString()).run();
+}
+
 /**
  * Whose each device is, as a server keeps a copy of it (`SignIn`): each device and assistant, and each browser that's
  * signed in, by its key, with the version of that (`changed`), all as one read.
@@ -240,7 +264,7 @@ async function whose() {
   const [version, devices, sessions] = await env.DB.batch<{ value?: string; id?: string; name: string }>([
     env.DB.prepare("select value from setting where name = 'devices'"),
     env.DB.prepare('select device.id, user.name from device join user on user.id = device."userId"'),
-    env.DB.prepare('select session.id, user.name from session join user on user.id = session."userId"'),
+    env.DB.prepare('select session.id, user.name from session join user on user.id = session."userId" where session."expiresAt" > ?').bind(new Date().toISOString()),
   ]);
   const browsers = await Promise.all(sessions.results.map(async ({ id, name }) => [await browserDevice(id!), who({ name })]));
   return {
@@ -249,11 +273,11 @@ async function whose() {
   };
 }
 
-/** Makes `device` the user's, under `name`, from now on. */
-async function place(adapter: Adapter, device: string, kind: Device["kind"], name: string, user: { id: string; name: string }) {
+/** Makes `device` the user's, under `name`, from now on, and says which command ran it if it was run from a terminal. */
+async function place(adapter: Adapter, device: string, kind: Device["kind"], name: string, user: { id: string; name: string }, command?: string | null) {
   const [was] = await adapter.findMany<Device>({ model: "device", where: [{ field: "id", value: device }] });
   if (was) await remove(adapter, was);
-  await adapter.create({ model: "device", data: { id: device, userId: user.id, kind, name, createdAt: new Date() }, forceAllowId: true });
+  await adapter.create({ model: "device", data: { id: device, userId: user.id, kind, name, command: command ?? null, createdAt: new Date() }, forceAllowId: true });
   await changed();
 }
 
@@ -348,12 +372,15 @@ const devices = () => ({
         // `app` connects by its key, and `assistant` comes in over the web with a token.
         kind: { type: "string" },
         name: { type: "string" },
+        // `ptc` for the program a terminal ran, which signed it in (`ptc CLI on workspace`); nothing for an app.
+        command: { type: "string", required: false },
         createdAt: { type: "date" },
       },
     },
     invite: { fields: { userId: { type: "string", references: { model: "user", field: "id" } }, expiresAt: { type: "date" }, device: { type: "string", required: false }, credential: { type: "string", required: false } } },
-    // What a device that asked to be let in calls itself, which its person is shown with its code.
-    deviceCode: { fields: { name: { type: "string", required: false } } },
+    // What a device that asked to be let in calls itself, which its person is shown with its code, and the command that
+    // ran it if a terminal did.
+    deviceCode: { fields: { name: { type: "string", required: false }, command: { type: "string", required: false } } },
     // What lets a passkey unlock its person's key on a new device (`page/passkey.ts`): the public key its PRF output
     // derives, empty for a passkey that said it has none, and their key, encrypted to it by a device that holds it.
     // A passkey made to replace one that can't unlock (`replaces`) takes its place once it unlocks the key.
@@ -474,11 +501,12 @@ const devices = () => ({
         }),
       },
       {
-        // A device's code keeps what the device calls itself.
+        // A device's code keeps what the device calls itself, and the command that ran it, if a terminal did.
         matcher: (ctx) => ctx.path === "/device/code" && !(ctx.context.returned instanceof Error),
         handler: createAuthMiddleware(async (ctx) => {
           const name = String(ctx.body.name ?? "").trim().slice(0, 100) || "A device";
-          await ctx.context.adapter.update({ model: "deviceCode", where: [{ field: "deviceCode", value: (ctx.context.returned as { device_code: string }).device_code }], update: { name } });
+          const command = String(ctx.body.command ?? "").trim().slice(0, 100) || null;
+          await ctx.context.adapter.update({ model: "deviceCode", where: [{ field: "deviceCode", value: (ctx.context.returned as { device_code: string }).device_code }], update: { name, command } });
         }),
       },
       {
@@ -504,7 +532,7 @@ const devices = () => ({
           const { adapter } = ctx.context;
           const code = await adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.body.userCode) }] });
           const { user } = (await getSessionFromCtx(ctx))!;
-          await place(adapter, code!.clientId, "app", code!.name, user);
+          await place(adapter, code!.clientId, "app", code!.name, user, code!.command);
         }),
       },
       {
@@ -555,7 +583,7 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
     // The JWT plugin signs the tokens an assistant is given, and hands out none of its own. A device asks for its
     // answer at the token endpoint, which passes it on to `/device/token` once it's checked its signature.
     disabledPaths: ["/token", "/device/token"],
-    session: { freshAge: FRESH, cookieCache: { enabled: true, maxAge: BELIEVED } },
+    session: { expiresIn: UNUSED, freshAge: FRESH, cookieCache: { enabled: true, maxAge: BELIEVED } },
     // The name a person chose as they joined, which they can change: the one they're `users/<name>` by is chosen
     // for them, as they're invited, and never changes.
     user: {
@@ -595,7 +623,7 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
       // A browser that's signed in is one of its person's devices for as long as it is: the web client asks as its
       // session (`worker.ts`).
       session: {
-        create: { after: changed },
+        create: { after: replaced },
         // After, as a device is removed (`remove`): what servers copy is what's here.
         delete: { after: gone },
       },
@@ -715,7 +743,7 @@ async function answer(adapter: Adapter, code: DeviceCode, user: { id: string; na
     { field: "userId", operator: "eq" as const, value: code.userId ?? null },
   ];
   if (!(await adapter.incrementOne({ model: "deviceCode", where, increment: {}, set: { status: to, userId: user.id } }))) return false;
-  if (to === "approved") await place(adapter, code.clientId, "app", code.name, user);
+  if (to === "approved") await place(adapter, code.clientId, "app", code.name, user, code.command);
   return true;
 }
 
@@ -941,7 +969,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   if (ask === "devices") {
     const [devices, browsers, passkeys] = await Promise.all([
       adapter.findMany<Device>({ model: "device", where: mine }),
-      internalAdapter.listSessions(user.id),
+      internalAdapter.listSessions(user.id, { onlyActiveSessions: true }),
       adapter.findMany<Passkey>({ model: "passkey", where: mine }),
     ]);
     // Whether an app is connected to the relay, which says when it was last seen otherwise.
@@ -952,9 +980,10 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     };
     return {
       devices: [
-        ...devices.map(({ id, kind, name, createdAt }) => ({ id, kind, name, added: createdAt, ...when(id) })),
-        // A browser that's signed in is a device too, named by what it says it is.
-        ...browsers.map(({ id, userAgent, createdAt }) => ({ id, kind: "browser", name: browser(userAgent), added: createdAt })),
+        ...devices.map(({ id, kind, name, command, createdAt }) => ({ id, kind, name, command, added: createdAt, ...when(id) })),
+        // A browser that's signed in is a device too, named by what it says it is, and last used when Better Auth last
+        // moved the end of its session.
+        ...browsers.map(({ id, userAgent, createdAt, updatedAt }) => ({ id, kind: "browser", name: browser(userAgent), added: createdAt, last_seen: updatedAt })),
       ],
       // Whether each unlocks its person's key on a new device, and what a device that holds the key encrypts it to.
       passkeys: passkeys.map(({ id, name, createdAt, credentialID, prfKey, encryptedKey, device }) => ({
@@ -984,7 +1013,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       }
       return { removed: device.name, device: device.id };
     }
-    const signed_in = (await internalAdapter.listSessions(user.id)).find(({ id }) => id === about.device);
+    const signed_in = (await internalAdapter.listSessions(user.id, { onlyActiveSessions: true })).find(({ id }) => id === about.device);
     if (!signed_in) return { error: "That isn't one of your devices." };
     await internalAdapter.deleteSession(signed_in.token);
     return { removed: browser(signed_in.userAgent), device: await browserDevice(signed_in.id) };

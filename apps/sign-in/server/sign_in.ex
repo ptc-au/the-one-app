@@ -257,9 +257,10 @@ defmodule SignIn do
                   id: %{type: "string", description: "What remove_device takes"},
                   kind: %{type: "string", description: "app, assistant or browser"},
                   name: %{type: "string"},
+                  command: %{type: ["string", "null"], description: "The command a person types to run the program that was let in, if it's run from a terminal (`ptc`): a CLI, not the app"},
                   added: %{type: "string", description: "When, ISO 8601"},
                   connected: %{type: "boolean", description: "Whether an app is connected now"},
-                  last_seen: %{type: "string", description: "When an app that isn't connected was last, ISO 8601"}
+                  last_seen: %{type: "string", description: "When an app that isn't connected was last, or a browser was last used, ISO 8601"}
                 },
                 required: ["id", "kind", "name", "added"]
               }

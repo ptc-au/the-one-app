@@ -26,7 +26,7 @@ that one question for it, and a new device when they also say the code it shows 
   "The PTC App" --icon-from icon.b64 --logo-from logo/`, square PNGs as base64, `logo/` holding `light` and `dark`). A
   network's own app is finished with the same.
 - `devices` lists your devices, the assistants you let in and the browsers you're signed in on, and your
-  passkeys. An app says whether it's `connected`, and if not when it was `last_seen`. `remove_device` takes one out: it's nobody's from the next thing it asks. `remove_passkey` removes a
+  passkeys. An app says whether it's `connected`, and if not when it was `last_seen`, as a browser does when it was last used: one not used for 30 days is signed out, and one that signs in again replaces its old session. An app run from a terminal says its `command` (`ptc`: the CLI). `remove_device` takes one out: it's nobody's from the next thing it asks. `remove_passkey` removes a
   passkey, but never your last. `add_passkey` lets your person make another passkey: whoever opens its link makes
   one of theirs, so the link goes only to their own screen, and you're given none. They're notified, and Sign-In &
   Security makes it there.
