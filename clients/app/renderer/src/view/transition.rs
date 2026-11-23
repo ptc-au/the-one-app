@@ -322,7 +322,7 @@ impl Moving {
 
 /// A cubic Bézier easing's progress at `x`, its time: the curve's `y` where its `x` is, found by halving, as its `x`
 /// only grows.
-fn ease([x1, y1, x2, y2]: [f32; 4], x: f32) -> f32 {
+pub(crate) fn ease([x1, y1, x2, y2]: [f32; 4], x: f32) -> f32 {
     let bezier = |t: f32, a: f32, b: f32| 3.0 * (1.0 - t) * (1.0 - t) * t * a + 3.0 * (1.0 - t) * t * t * b + t * t * t;
     let (mut low, mut high) = (0.0, 1.0);
     for _ in 0..24 {

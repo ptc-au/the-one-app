@@ -133,6 +133,9 @@ pub enum Event {
     Mismatched(String),
     /// Its page's module didn't run, so it says only that its app didn't open: why.
     Failed(String),
+    /// Its person pulled it home past the rail's tip, or tapped the tip's Got it, so it shows on no window from now on
+    /// (`Windows::set_tip`).
+    Tipped,
     /// Its page crashed after it started (`Screen::crashed`), so it shows nothing of it: why.
     Crashed(String),
     /// It's shown nothing of its page `BLANK` after it opened, its page loaded again, or a panel put away was summoned:
@@ -384,6 +387,9 @@ struct Window {
     #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
     icon: Option<crate::geometry::Bounds<f32>>,
     pull: Option<rail::Pull>,
+    /// The rail's tip's hint on it, while it shows how (`Windows::tip`).
+    #[cfg_attr(not(any(target_os = "android", target_os = "ios", feature = "fake")), allow(dead_code))]
+    hint: Option<rail::Hint>,
     /// Its spring from a swipe back from the left edge let go (`view::touch`), where the host leaves that to its app.
     #[cfg_attr(not(any(target_os = "ios", feature = "fake")), allow(dead_code))]
     slide: Option<Slide>,
@@ -461,6 +467,9 @@ pub struct Windows {
     unseen: web_time::Instant,
     unseen_told: bool,
     on_blank: Option<Box<dyn FnMut(String)>>,
+    /// Whether the rail's tip shows over a phone's app windows (`set_tip`), until its person pulls one home or taps Got
+    /// it, which the window tells (`Event::Tipped`).
+    tip: bool,
 }
 
 /// A 60 Hz display's refresh, where a system has no display to ask (a Mac's with none attached, a browser before it's

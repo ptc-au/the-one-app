@@ -210,6 +210,14 @@ impl Screen {
             self.chrome.pressing_action = button == 0;
             return;
         }
+        // So is the rail's tip, its Got it pressed.
+        if let Some((callout, done)) = self.chrome.tip
+            && callout.contains(&at)
+        {
+            self.chrome.pressing_tip = button == 0 && done.contains(&at);
+            self.changed();
+            return;
+        }
         if self.frame_down(at, button, shift) {
             return;
         }
@@ -287,6 +295,11 @@ impl Screen {
             if self.chrome.buttons.iter().any(|(was, bounds)| *was == kind && bounds.contains(&at)) {
                 self.window_button = Some(kind);
             }
+            self.changed();
+            return;
+        }
+        if std::mem::take(&mut self.chrome.pressing_tip) {
+            self.tipped |= self.chrome.tip.is_some_and(|(_, done)| done.contains(&at));
             self.changed();
             return;
         }

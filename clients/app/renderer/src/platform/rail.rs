@@ -93,6 +93,12 @@ impl Pull {
         Pull { finger: NO_FINGER, start: point(0.0, 0.0), pulling: true, velocity_in: Velocity::default(), p: 1.0, target: Some(0.0), velocity: 0.0, stepped: super::now(), straight: true, from: 1.0 }
     }
 
+    /// A window let go `p` of its way home with no finger on it, springing back to the app, as the tip's hint lets
+    /// its window go (`Hint`): a finger on the line takes it from there, as it takes an opening.
+    pub fn settling(p: f32) -> Pull {
+        Pull { finger: NO_FINGER, start: point(0.0, 0.0), pulling: true, velocity_in: Velocity::default(), p, target: Some(0.0), velocity: 0.0, stepped: super::now(), straight: false, from: p }
+    }
+
     /// Whether it's an opening no finger has taken yet.
     pub fn opens(&self) -> bool {
         self.finger == NO_FINGER
@@ -216,4 +222,65 @@ fn moved(p: f32, size: Size<f32>, icon: Option<Bounds<f32>>, reduced: bool, stra
     let opacity = if p <= fades { 1.0 } else { 1.0 - (p - fades) / (1.0 - fades) };
     let corner = if straight { CORNER / CARD * (p / HELD).min(1.0) } else { CORNER / CARD };
     Moved { scale, x, y, opacity, corner, dim: 0.3 * (1.0 - p) }
+}
+
+/// The window at `p` of its way home, as a pull draws it (`moved`).
+pub fn at(p: f32, size: Size<f32>, icon: Option<Bounds<f32>>, reduced: bool) -> Moved {
+    moved(p, size, icon, reduced, false)
+}
+
+/// The tip's hint, as the window page's (rail.js's `hint`, whose times these are, in seconds): every `CYCLE`, a
+/// see-through finger comes down on the line, `APPEARS` in, takes it, `TAKES` in, and pulls the window in to `HINTED`
+/// of its width, as a pull home has it, `PULLING` long, holds it, and lets it go, `LETS_GO` in, fading as the window
+/// springs back (`Pull::settling`). A ring pulses on the line all the while, every `RING`.
+pub struct Hint {
+    since: Instant,
+    /// How far the window it pulls is pulled now, until it's let go.
+    pub held: Option<f32>,
+}
+
+/// Where a hint is: how far its window is pulled, while it's held; its finger, as opaque and as large as it is, while
+/// it shows; and how far through its pulse the line's ring is, 0 to 1.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Hinted {
+    pub p: Option<f32>,
+    pub finger: Option<(f32, f32)>,
+    pub ring: f32,
+}
+
+pub const HINTED: f32 = 0.3;
+const CYCLE: f32 = 3.6;
+const APPEARS: f32 = 0.6;
+const APPEARING: f32 = 0.24;
+const TAKES: f32 = 0.98;
+const PULLING: f32 = 0.82;
+const LETS_GO: f32 = 2.02;
+const FADING: f32 = 0.22;
+const RING: f32 = 1.8;
+
+impl Hint {
+    pub fn new(at: Instant) -> Hint {
+        Hint { since: at, held: None }
+    }
+
+    /// Where it is at `at`, the time of the frame it's shown in.
+    pub fn at(&self, at: Instant) -> Hinted {
+        let elapsed = at.saturating_duration_since(self.since).as_secs_f32();
+        let t = elapsed % CYCLE;
+        let ease = crate::view::transition::ease;
+        let out = |x: f32| ease([0.0, 0.0, 0.58, 1.0], x.clamp(0.0, 1.0));
+        let p = (TAKES..LETS_GO).contains(&t).then(|| HINTED * ease([0.45, 0.0, 0.25, 1.0], ((t - TAKES) / PULLING).min(1.0)));
+        let finger = if (APPEARS..APPEARS + APPEARING).contains(&t) {
+            let shown = out((t - APPEARS) / APPEARING);
+            Some((shown, 1.35 - 0.35 * shown))
+        } else if (APPEARS + APPEARING..LETS_GO).contains(&t) {
+            Some((1.0, 1.0))
+        } else if (LETS_GO..LETS_GO + FADING).contains(&t) {
+            let gone = (t - LETS_GO) / FADING;
+            Some((1.0 - gone, 1.0 + 0.25 * gone))
+        } else {
+            None
+        };
+        Hinted { p, finger, ring: (elapsed % RING) / RING }
+    }
 }

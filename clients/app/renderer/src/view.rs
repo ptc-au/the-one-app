@@ -46,7 +46,7 @@ pub use text_selection::Magnifier;
 pub mod touch;
 pub use frames::Make as MakeFrame;
 pub(crate) mod inspected;
-mod transition;
+pub(crate) mod transition;
 mod draw;
 mod input;
 mod keyboard;
@@ -173,6 +173,9 @@ pub struct Screen {
     pub panel: Option<Panel>,
     /// What the window says over its page.
     pub notice: Option<Notice>,
+    /// The rail's tip over its page, while it shows, and whether its Got it was tapped, which its window takes.
+    pub tip: Option<Tip>,
+    pub tipped: bool,
     /// What the window draws of its own over its page, as it was last drawn (`Chrome`).
     chrome: Chrome,
     /// Whether its window is on screen, as its page is told (its host context's `visible`): a panel put away isn't.
@@ -377,6 +380,8 @@ impl Screen {
             window_button: None,
             panel: None,
             notice: None,
+            tip: None,
+            tipped: false,
             visible: true,
             insets: Edges::default(),
             title_bar: [0; 2],
@@ -651,4 +656,7 @@ struct Chrome {
     kept_regions: Vec<Bounds<f32>>,
     action: Option<Bounds<f32>>,
     pressing_action: bool,
+    /// Where the rail's tip's callout and its Got it are, while it shows, and whether Got it is pressed.
+    tip: Option<(Bounds<f32>, Bounds<f32>)>,
+    pressing_tip: bool,
 }

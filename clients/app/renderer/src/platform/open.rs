@@ -27,7 +27,7 @@ impl Windows {
             let mut text = TextSystem::new(crate::FONT, fonts, !cfg!(feature = "fake") || cfg!(target_vendor = "apple"));
             #[cfg(any(feature = "fake", target_arch = "wasm32"))]
             text.monospace(crate::view::MONOSPACE.0);
-            Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, clock: Default::default(), check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false, expecting: false, unseen: now(), unseen_told: false, on_blank: None })
+            Ok(Windows { display, context, atlas, text, windows: HashMap::new(), next: 1, clock: Default::default(), check: None, record: Default::default(), recording: None, deadlines: Default::default(), pressure: Pressure::Nominal, system: (now(), Pressure::Nominal), background: false, expecting: false, unseen: now(), unseen_told: false, on_blank: None, tip: false })
         })();
         if let Err(error) = &made {
             *UNSTARTED.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(format!("{error:#}"));
@@ -140,6 +140,7 @@ impl Windows {
                 root: options.root,
                 icon: options.icon,
                 pull: None,
+                hint: None,
                 slide: None,
                 snapshot: options.snapshot,
                 picture,

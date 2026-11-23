@@ -61,7 +61,7 @@ impl Windows {
     /// own clock its next for the refresh after: a frame held, at 120 Hz.
     pub(super) fn framing(&self) -> bool {
         self.check.as_ref().is_some_and(conformance::Check::moving)
-            || self.windows.values().any(|window| window.on_screen() && (window.moving || (window.dirty && window.working()) || window.slide.is_some() || window.pull.as_ref().is_some_and(|pull| pull.pulling() || pull.springing()) || matches!(window.cover, Cover::Fading(..)) || window.screen.as_ref().is_ok_and(Screen::framing)))
+            || self.windows.values().any(|window| window.on_screen() && (window.moving || (window.dirty && window.working()) || window.slide.is_some() || window.hint.is_some() || window.pull.as_ref().is_some_and(|pull| pull.pulling() || pull.springing()) || matches!(window.cover, Cover::Fading(..)) || window.screen.as_ref().is_ok_and(Screen::framing)))
     }
 
     /// Whether a frame is wanted: the loop asked for the display's next as it last turned, something moves, or a window
@@ -205,6 +205,7 @@ impl Windows {
             #[cfg(any(target_os = "android", target_os = "ios", feature = "fake"))]
             {
                 self.spring(time);
+                self.tip(time);
                 #[cfg(any(target_os = "ios", feature = "fake"))]
                 self.slide(time);
             }

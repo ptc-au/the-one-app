@@ -73,6 +73,15 @@ pub(crate) async fn open(entrypoint: &str, subject: Option<&str>, link: &str, ic
     })
 }
 
+/// Shows the rail's tip over a phone's app windows from now on, or not (`Windows::set_tip`), as the page says as it
+/// opens one.
+#[cfg(mobile)]
+pub(crate) fn tip(shown: bool) {
+    if let Ok(native) = Native::get() {
+        native.run(move |windows| windows.set_tip(shown));
+    }
+}
+
 /// Closes the window `shown`, once it's open: on the windows' thread, after the job that opens it.
 fn close(shown: &Arc<OnceLock<WindowId>>) {
     let shown = shown.clone();
@@ -441,6 +450,8 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 }
             }
             Event::Frames(frames) => frames_reported(&app, &frames),
+            // Its person knows how to go home now: the page says so to Home Screen, for every device.
+            Event::Tipped => crate::app().shell.emit("tipped", json!(null)),
             Event::PutAway => {
                 let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": false}}));
                 crate::memory::changed();

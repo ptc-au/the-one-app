@@ -311,10 +311,14 @@ pub(crate) fn tapped(tapped: Value) {
 /// Opens an app's window natively over the page, where its page is of a version this program speaks
 /// (`hosts::open_window`), from its icon at `icon` (x, y, width and height, in points), where it was opened from one.
 /// → whether it did; if not, the page opens it in a frame, as it needs a newer host. One that should have and didn't
-/// is an error, which the page shows as its problem.
+/// is an error, which the page shows as its problem. Whether the rail's tip shows over it, and every app's window
+/// after, is `tip`, where the page says.
 #[cfg(mobile)]
 #[tauri::command]
-pub(crate) async fn open_window(entrypoint: String, subject: Option<String>, link: String, icon: Option<[f32; 4]>) -> Result<bool, String> {
+pub(crate) async fn open_window(entrypoint: String, subject: Option<String>, link: String, icon: Option<[f32; 4]>, tip: Option<bool>) -> Result<bool, String> {
+    if let Some(shown) = tip {
+        crate::native::tip(shown);
+    }
     let icon = icon.map(|[x, y, width, height]| renderer::geometry::Bounds { origin: renderer::geometry::point(x, y), size: renderer::geometry::Size { width, height } });
     hosts::open_window(entrypoint, subject, link, icon).await
 }

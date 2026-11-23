@@ -194,6 +194,7 @@ impl Screen {
             title: self.title.as_ref().map(|title| (title.name.clone(), title.start)),
             panel: self.panel.map(|panel| (panel.corner, panel.fill)),
             line: self.line(),
+            tip: self.tip,
             fetched: self.fetched.len(),
             decoded: self.pictures.decoded,
             frames: self.frames.iter().map(|(id, child)| (*id, child.screen.frame)).collect(),
@@ -449,6 +450,8 @@ impl Screen {
         if let Some(line) = line {
             painter.quad(line, ContentMask::from(window), colour_token("label", conditions), Edges::default(), Hsla::default(), Corners::all(line.size.width / 2.0), false, 1.0);
         }
+        // Its tip, over that, wherever the rail is on the window, even as the window moves.
+        self.chrome.tip = self.tip.filter(|_| self.rail && !self.layer).map(|tip| painter.tip(tip, self.insets.right, line, self.chrome.pressing_tip));
         let Placing { placed, rects, tab_order, intersections, drag_regions, kept_regions, glass, modal, framed } = placing;
         (self.chrome.glass, self.chrome.drag_regions, self.chrome.kept_regions) = (glass, drag_regions, kept_regions);
         Drawing { placed, tab_order, rects, animating: painter.animating, modal, wanted: painter.wanted, intersections, framed }
@@ -743,6 +746,7 @@ pub(super) struct Seen {
     panel: Option<(f32, bool)>,
     /// Where the rail's line shows, if it does.
     line: Option<Bounds<f32>>,
+    tip: Option<Tip>,
     fetched: usize,
     decoded: u64,
     /// Each frame's page's frame, as it was drawn.

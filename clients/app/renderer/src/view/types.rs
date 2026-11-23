@@ -122,6 +122,16 @@ pub struct Notice {
     pub action: Option<(String, Box<dyn FnMut()>)>,
 }
 
+/// The rail's tip over an app's page (DESIGN.md, The rail): a callout pointing at its line, "Pull to go home", with
+/// Got it, until its person pulls the line home or taps Got it (`Screen::tipped`), and, where it shows how, its hint's
+/// finger, as opaque and as large as it is, and how far through its pulse the line's ring is, 0 to 1
+/// (`platform::rail::Hinted`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Tip {
+    pub finger: Option<(f32, f32)>,
+    pub ring: Option<f32>,
+}
+
 /// The pointer's shape over what's under it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum Cursor {
