@@ -115,6 +115,10 @@ export function createReorder(options: { order: () => readonly string[]; fixed?:
       if (now?.key === key && !now.landing) return held() - top(laid(), key)
       return top(draft()?.order ?? options.order(), key) - top(laid(), key)
     },
+    /** How far down an item is drawn from where it's laid out, as a share of its own height, which is what a style
+     * moves it by: where it is is told in the window's pixels, which an ancestor grown or shrunk (a launcher's card
+     * settling in) makes more or fewer than the item's own, but not as a share. */
+    share: (key: string, by: number): `${number}%` => (heights.get(key) ? `${(100 * by) / heights.get(key)!}%` : "0%"),
     /** How fast what lands sets off, of its way a second. */
     velocity: () => carried()?.velocity ?? 0,
     /** Whether items are drawn where they are without moving there: as the list's order changes, and what's held. */
@@ -124,8 +128,8 @@ export function createReorder(options: { order: () => readonly string[]; fixed?:
     /** Whether a pointer has the item, held under it or landing in its place. */
     carried: (key: string) => carried()?.key === key,
     landing: (key: string) => carried()?.key === key && carried()!.landing,
-    /** How tall an item is laid out, which where each is follows from. */
-    measured: (key: string, height: number) => void heights.set(key, height),
+    /** How tall an item is laid out, which where each is follows from: not while it's up, grown as it's lifted. */
+    measured: (key: string, height: number) => void (draft()?.key !== key && carried()?.key !== key && heights.set(key, height)),
     /** It has come to rest in its place: what landed is laid out where it is, with nothing moving. */
     landed(key: string) {
       if (carried()?.key !== key || !carried()!.landing) return

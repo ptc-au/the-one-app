@@ -479,7 +479,7 @@ impl Transitions {
         let dragged = self.drag(id, computed, now, size, reduced);
         let Some(transition) = computed.transition.clone() else {
             for (property, _) in PROPERTIES {
-                self.jumped(id, property, computed);
+                self.kept(id, property, computed);
             }
             return;
         };
@@ -492,7 +492,8 @@ impl Transitions {
             }
             let to = get(computed, property).filter(|_| transition.properties.iter().any(|named| named == property));
             let Some(to) = to else {
-                self.jumped(id, property, computed);
+                self.values.remove(&key);
+                self.moving.remove(&key);
                 continue;
             };
             let was = self.values.insert(key, to.clone());
@@ -545,20 +546,22 @@ impl Transitions {
         }
     }
 
-    /// Node `id`'s `property`, changed with no transition to move it: it's where it's set at once, and that's where a
-    /// transition named later moves it on from, as CSS's before-change style is, so a row held under a finger, then let
-    /// go to move into its place, moves from where it was held, not from where it was before it was picked up.
-    fn jumped(&mut self, id: Id, property: &'static str, computed: &Computed) {
+    /// Node `id`'s `property`, changed while its style names no transition: it's where it's set at once, and that's where
+    /// a transition named later moves it on from, as CSS's before-change style is, so a row held under a finger, then
+    /// let go to move into its place, moves from where it was held, not from where it was before it was picked up.
+    /// A move on its way somewhere else ends there, as it does in CSS; one whose style says nothing new goes on.
+    fn kept(&mut self, id: Id, property: &'static str, computed: &Computed) {
         let key = (id, property);
-        self.moving.remove(&key);
-        match get(computed, property) {
-            // (Mutant: it isn't kept, so a transition named later moves from where it was before, as before this.)
-            Some(now) if self.values.contains_key(&key) => {
-                if !crate::mutants::mutant("jumped-forgotten") {
-                    self.values.insert(key, now);
-                }
-            }
-            _ => drop(self.values.remove(&key)),
+        let Some(now) = get(computed, property) else { return };
+        // (Mutant: it isn't kept, so a transition named later moves from where it was before, as before this.)
+        if crate::mutants::mutant("jumped-forgotten") {
+            return;
+        }
+        if self.moving.get(&key).is_some_and(|moving| moving.to != now) {
+            self.moving.remove(&key);
+        }
+        if let Some(was) = self.values.get_mut(&key) {
+            *was = now;
         }
     }
 

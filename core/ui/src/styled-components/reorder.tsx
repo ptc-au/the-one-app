@@ -31,7 +31,7 @@ const look = styles({
   // Picked up: a card of its own over the rest, opaque as a card in the dark isn't, a little larger, its shadow under
   // it, as a phone lifts what a finger carries.
   lifted: { zIndex: 1, scale: 1.02, backgroundColor: tokens.colour.elevated, borderRadius: tokens.radius.large, boxShadow: tokens.shadow.lifted },
-  offset: (translateY: number) => ({ translateY }),
+  offset: (translateY: `${number}%`) => ({ translateY }),
   rule: { position: "absolute", top: 0, start: tokens.grid[3], end: 0, height: tokens.length.hairline, backgroundColor: tokens.colour.quinaryLabel },
   hidden: { opacity: 0 },
   heading: { flexGrow: 1, flexShrink: 1, minWidth: 0, paddingBlock: tokens.grid[2], font: tokens.type.groupedRow, lineClamp: 2 },
@@ -85,7 +85,7 @@ export function ReorderList<T>(props: { label: string; each: readonly T[]; keyed
               onLayout={(event) => reorder.measured(key, event.currentTarget.getBoundingClientRect().height)}
               onTransitionEnd={(event) => event.rest !== false && reorder.landed(key)}
               {...(fixed(key) ? {} : drag)}
-              style={[look.row, !touch() && !fixed(key) && look.grabbed, !reorder.still(key) && look.moving, reorder.landing(key) && look.flung(reorder.velocity()), (reorder.up(key) || (carried() && !reorder.landing(key))) && look.lifted, look.offset(reorder.place(key))]}
+              style={[look.row, !touch() && !fixed(key) && look.grabbed, !reorder.still(key) && look.moving, reorder.landing(key) && look.flung(reorder.velocity()), (reorder.up(key) || (carried() && !reorder.landing(key))) && look.lifted, look.offset(reorder.share(key, reorder.place(key)))]}
             >
               <Show when={index() > 0}>
                 <View style={[look.rule, reorder.up(key) && look.hidden]} />
