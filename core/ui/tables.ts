@@ -6,7 +6,7 @@ import { dirname, join } from "node:path"
 import { converter, parse } from "culori"
 import { parseAst, type Plugin } from "vite"
 import { conditions, RUNTIME_VERSION, type Condition, type Rgba, type State, type Style as Entry2, type Styles as Table, type Token as Entry, type Tokens } from "./src/drawing-primitives/renderer.ts"
-import { negative, sprung } from "./src/styles.ts"
+import { illustration, negative, sprung } from "./src/styles.ts"
 import { legacy, tokens, type Token } from "./src/tokens.ts"
 
 type Varying = Record<"default" | Condition, unknown>
@@ -366,7 +366,7 @@ function scopeOf(ast: any, code: string, file: string, made: Made, seen = new Se
   seen.add(file)
   const scope: Record<string, Record<string, Token>> = {}
   const edits: [number, number, string][] = []
-  const evaluate = (text: string) => new Function("tokens", "negative", ...Object.keys(scope), `"use strict"; return (${text})`)(tokens, negative, ...Object.values(scope))
+  const evaluate = (text: string) => new Function("tokens", "negative", "illustration", ...Object.keys(scope), `"use strict"; return (${text})`)(tokens, negative, illustration, ...Object.values(scope))
   for (const statement of ast.body) {
     if (statement.type === "ImportDeclaration" && /^\.\.?\//.test(statement.source.value)) {
       const base = join(dirname(file), statement.source.value)
@@ -431,7 +431,7 @@ export function styled(code: string, file: string, made: Made): string | undefin
   }
   visit(ast)
   const evaluate = (text: string, values: Record<string, unknown> = {}) =>
-    new Function("tokens", "negative", ...Object.keys(scope), ...Object.keys(values), `"use strict"; return (${text})`)(tokens, negative, ...Object.values(scope), ...Object.values(values))
+    new Function("tokens", "negative", "illustration", ...Object.keys(scope), ...Object.keys(values), `"use strict"; return (${text})`)(tokens, negative, illustration, ...Object.values(scope), ...Object.values(values))
   for (const call of calls) {
     const sheet = unwrapped(call.arguments[0])
     if (sheet?.type !== "ObjectExpression") throw new Error(`${file}:${place(code, call.start)}: styles() takes an object written out`)

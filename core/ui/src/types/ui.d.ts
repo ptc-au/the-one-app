@@ -10,7 +10,7 @@ import type { tokens as Tokens } from "../tokens.ts"
 export type { Element, Ice, Look, Rect, Styled, Styles }
 
 // Styles and tokens (../../styles.ts, ../../tokens.ts).
-export { createTheme, defineVars, styles, negative } from "../styles.ts"
+export { createTheme, defineVars, illustration, styles, negative } from "../styles.ts"
 export declare const tokens: typeof Tokens
 
 /** What a node says it is, and its states, as ARIA has them. */

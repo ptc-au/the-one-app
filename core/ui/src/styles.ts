@@ -203,6 +203,16 @@ export function createTheme<T extends Record<string, Token<"colour"> | Token<"le
   throw new Error("createTheme() is made by the build (core/ui/tables.ts), as a page is built: it doesn't run")
 }
 
+/// `const drawn = illustration("Chrome's own form, as Google draws it, in the picture of an agent filling it", { field:
+/// "#e8f0fe", edge: "#c4c7c5" })`, then `<Box fill={drawn.field} />`: the raw values a picture draws with, where it's a
+/// picture of what isn't ours (another product's screen, a device, a brand's mark, a person), which keeps its own look
+/// in light and dark, and why. It's the one place outside tokens.ts a raw colour, length, shadow or font is written:
+/// anywhere else the build refuses one, as a page names a role (`tokens.colour.secondaryLabel`), and a role that's
+/// missing is added there. A static style of a picture is one too (`fly: illustration("…", { animationName: … })`, or
+/// one value, `boxShadow: illustration("…", "0 4px 14px #0000002e")`), and so are an app's own tokens for one
+/// (`defineVars(illustration("…", { … }))`). It gives back what it's given.
+export const illustration = <const T>(_why: string, values: T): T => values
+
 /** A length's negative: a margin, an inset or a move pulling the other way. */
 export const negative = (token: Token<"length">): Pull => ({ token, negative: true })
 
