@@ -5,7 +5,7 @@ import { event } from "./drawing-primitives/renderer.native.ts"
 import type { Host, Sandbox } from "./calls.ts"
 import type { Event, Events } from "./drawing-primitives/renderer.ts"
 import type * as Page from "./types/ui.d.ts"
-import { readable } from "./words.ts"
+import { readable, whole } from "./words.ts"
 
 const host = (globalThis as { host?: Host }).host
 const waiting = new Map<number, (response: { result?: unknown; error?: { message: string } }) => void>()
@@ -49,7 +49,7 @@ addEventListener("unhandledrejection", ({ reason }) => logged(reason?.message ??
 configureClientErrors({
   onError(error) {
     const [, file, line] = /([a-z]+:\/\/[^\s()]+?):(\d+):\d+/.exec((error as Error)?.stack ?? "") ?? []
-    logged((error as Error)?.message ?? error, file, line ? Number(line) : undefined, (error as Error)?.stack)
+    logged(whole(error), file, line ? Number(line) : undefined, (error as Error)?.stack)
   },
 })
 

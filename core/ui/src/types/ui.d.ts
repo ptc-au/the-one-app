@@ -610,6 +610,8 @@ export declare function go(change: () => void, options?: { back?: boolean }): vo
 export declare function share(text: string): Promise<"shared" | "copied" | undefined>
 /** Puts `text` on the device's clipboard, as a Copy button does, which its client does: a page has none of its own. */
 export declare function copy(text: string): Promise<void>
+/** All of what was thrown, as a problem's Show Details has it: a tool's whole error, a message, or what was thrown and where from where it says nothing. */
+export declare function whole(error: unknown): string
 export declare function date(at: string | number | Date): string
 export declare function plural(count: number, one: string, other?: string): string
 export declare function seen(at: string | number | Date): string

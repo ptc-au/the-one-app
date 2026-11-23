@@ -13,7 +13,7 @@
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, call, client, connection, covers, type Element, haptic, keydown, PresentationContext, Problem, render, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
+import { Button, call, client, connection, covers, type Element, haptic, keydown, PresentationContext, Problem, render, whole, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
 import { json, type Owner, owners } from "./owners.ts"
@@ -208,12 +208,12 @@ function HomeScreenShown(props: { owners: Owner[]; layout: ReturnType<typeof cre
 /// The Home Screen didn't draw: what DESIGN.md says of a launcher that doesn't, with Try Again, which asks for it
 /// again, and what went wrong under it. Its client loads it again by itself once a newer version is out, as the older
 /// one meeting what's new is the likeliest cause.
-function Broken(props: { error: Error }) {
+function Broken(props: { error: unknown }) {
   return (
     <Screen heading="Home Screen">
       <Problem
         heading="Home Screen didn't open."
-        text={new Error(`Try again in a moment.\n\n${typeof props.error?.cause === "string" ? props.error.cause : (props.error?.message ?? props.error)}`)}
+        text={new Error(`Try again in a moment.\n\n${whole(props.error)}`)}
         action={<Button onPress={() => refresh(owners)}>Try Again</Button>}
       />
     </Screen>
@@ -247,7 +247,7 @@ function Waiting() {
 }
 
 render(() => (
-  <Errored fallback={(error) => <Broken error={error() as Error} />}>
+  <Errored fallback={(error) => <Broken error={error()} />}>
     <Loading fallback={<Waiting />}>
       <HomeScreen owners={owners()} />
     </Loading>

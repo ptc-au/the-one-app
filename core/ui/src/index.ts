@@ -43,6 +43,7 @@
 /// whether the UI library's components take it.
 export { call, changed, client, copy, memoryWarning, component, connection, covers, direction, go, haptic, keydown, leave, link, open, pickFiles, pinShortcut, reducedMotion, safeArea, share, showRecoveryKey, sizeChanged, upload, useRecoveryKey, viewport, visible } from "./bridge.ts"
 export { date, plural, seen, since, size } from "./format.ts"
+export { whole } from "./words.ts"
 export { Badge, Button, Icon, Spinner } from "./styled-components/button.tsx"
 export { Checkbox, Field, Input, RadioGroup, Search, Switch, Textarea } from "./styled-components/field.tsx"
 export { createVelocityTracker, projected } from "./behavior-primitives/velocity.ts"

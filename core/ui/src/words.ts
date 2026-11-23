@@ -43,8 +43,15 @@ export const [messages, setMessages] = createStore({
 export const readable = (error: string): string => error.split(/\n\s*\n/, 1)[0]
 
 /// All of an error a screen shows: what a tool said, whole, where it's an `Error` `call` threw (its `cause`), or
-/// the text itself.
-export const whole = (error: string | Error): string => (error instanceof Error ? (typeof error.cause === "string" ? error.cause : error.message) : error)
+/// the text itself. What was thrown that says nothing is named, with where it was thrown from, so Show Details always
+/// says something to copy for an agent or for support.
+export const whole = (error: unknown): string => {
+  const said = error instanceof Error ? (typeof error.cause === "string" && error.cause) || error.message : typeof error === "string" ? error : undefined
+  if (said) return said
+  const what = error instanceof Error ? `${error.name} with no message` : `${JSON.stringify(error) ?? String(error)}`
+  const stack = error instanceof Error && error.stack
+  return `It threw ${what}${stack ? `, from:\n${stack}` : ""}`
+}
 
 /// `words({ back: "Zurück", cancel: "Abbrechen", close: "Schließen" })`: says the UI library's own words in the user's
 /// language, once, for every component on the page. A word the UI library doesn't say throws the words it does.
