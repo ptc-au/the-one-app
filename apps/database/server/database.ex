@@ -154,9 +154,18 @@ defmodule Database do
         # to it for: the call goes to one of the servers that are, which takes it.
         :not_up ->
           Call.forward(call, OneCore.Apps.servers(whose))
-          held = if server, do: "#{holder} holds it and didn't answer", else: "nobody holds it"
-          Logger.warning("#{app}'s database: this server is starting or stopping, so it doesn't take its lease over, #{held}, and no other server took it")
-          unreachable(call)
+
+          # A server that's stopping answers what it took already (`OneCore.Application.prep_stop/1`), and it handed its
+          # lease on as it began, for the servers that run what comes next. This call is one it took, and none of them
+          # ran it, as when only this server holds a Vault's keys: it takes the lease back, for the call to run, and
+          # hands it on again as it stops (`Database.Lease.terminate/3`).
+          if OneCore.Release.status()["server_daemon_status"] == "stopping" do
+            ask(lease, {:take_over, server, :stopping}, :ok)
+          else
+            held = if server, do: "#{holder} holds it and didn't answer", else: "nobody holds it"
+            Logger.warning("#{app}'s database: this server is starting, so it doesn't take its lease over, #{held}, and no other server took it")
+            unreachable(call)
+          end
 
         # This server's own copy failed just now, and it handed the lease on: a call asked here is passed to another of
         # the servers acting for whoever the database is, which takes the lease and runs it, and one passed on here is
