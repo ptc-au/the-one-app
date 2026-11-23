@@ -438,29 +438,44 @@ defmodule OneCore.Apps.Deploy do
   def rebuild do
     code = Entrypoint.library().code
 
+    # Each app's latest version is read from the bucket, which a round trip takes, so they're read at once.
     stale =
-      for %{app: artifact} <- if(newest?(), do: deployed(), else: []),
-          whose = Store.whose(artifact),
-          Apps.runs?(whose, Store.trusted?(artifact)),
-          built_with(artifact) not in [nil, code],
-          do: {whose, artifact}
+      for {:ok, {_whose, _artifact} = stale} <-
+            Task.async_stream(if(newest?(), do: deployed(), else: []), &stale(&1.app, code), max_concurrency: 16, timeout: :infinity),
+          do: stale
 
     # One server builds each one's apps again: four building the same apps at once wrote the same blobs at once,
     # which R2 refuses ("Reduce your concurrent request rate for the same object"), and lost to each other.
     # Claimed for this build, as the network's core apps are taken to it under the same claim, just before.
     ours = for whose <- Enum.uniq(for {whose, _} <- stale, do: whose), Servers.claims?("#{whose}/rebuild", Builds.build()), do: whose
 
-    for {whose, artifact} <- stale,
-        whose in ours,
-        name = Path.basename(artifact),
-        {_number, hash, _tag} <- [Store.latest(artifact)],
-        # It stays as installed, or not, as it was.
-        install? = fn _version -> Apps.app(whose, name) == artifact end,
-        newest?(),
-        {:error, why} <- [rebuilt(whose, name, Store.source(artifact, hash), install?)],
-        built_with(artifact) != code,
-        do: Logger.error("#{artifact}'s app wasn't built again against this server's UI library: #{why}")
+    at_once(Enum.filter(stale, fn {whose, _artifact} -> whose in ours end), fn {whose, artifact} ->
+      name = Path.basename(artifact)
+
+      with {_number, hash, _tag} <- Store.latest(artifact),
+           # It stays as installed, or not, as it was.
+           install? = fn _version -> Apps.app(whose, name) == artifact end,
+           true <- newest?(),
+           {:error, why} <- rebuilt(whose, name, Store.source(artifact, hash), install?),
+           true <- built_with(artifact) != code,
+           do: Logger.error("#{artifact}'s app wasn't built again against this server's UI library: #{why}")
+    end)
   end
+
+  # `{whose, artifact}` if the app `artifact` is one this server builds again: it runs here, and was built against another UI
+  # library than `code`.
+  defp stale(artifact, code) do
+    whose = Store.whose(artifact)
+    if Apps.runs?(whose, Store.trusted?(artifact)) and built_with(artifact) not in [nil, code], do: {whose, artifact}
+  end
+
+  # How many apps are deployed at once when a server takes its apps to its build: each one's build and compile use a
+  # core of this machine, and what it writes goes to the bucket, a round trip at a time. One after another, they were
+  # two minutes of a restart on PTC's network server (23 Nov), with its 16 cores idle.
+  @at_once 4
+
+  @doc "Runs `fun` for each of `items`, a few at once (`@at_once`), and returns once all have."
+  def at_once(items, fun), do: items |> Task.async_stream(fun, max_concurrency: @at_once, ordered: false, timeout: :infinity) |> Stream.run()
 
   # One app that couldn't be built again is said, and the rest are still built.
   defp rebuilt(whose, name, files, install?) do

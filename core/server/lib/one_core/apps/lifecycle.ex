@@ -130,14 +130,16 @@ defmodule OneCore.Apps.Lifecycle do
       from = %{"source" => @core, "ref" => nil, "commit" => commit}
       folders = Enum.group_by(files, &hd(Path.split(elem(&1, 0))), fn {path, data} -> {Path.relative_to(path, hd(Path.split(path))), data} end)
 
-      for {name, files} <- folders, behind?(copy, name, commit) do
+      Deploy.at_once(folders, fn {name, files} ->
         installed? = fn _version -> Apps.app("network", name) == "network/apps/#{name}" end
 
-        case Deploy.deploy("network", name, Map.new(files), from, true, installed?) do
-          {:ok, number, _warnings} -> Logger.info("#{name} is deployed for the network at the core's #{short}, as version #{number}")
-          failed -> Logger.error("#{name} wasn't deployed for the network at the core's #{short}: #{inspect(failed)}")
+        if behind?(copy, name, commit) do
+          case Deploy.deploy("network", name, Map.new(files), from, true, installed?) do
+            {:ok, number, _warnings} -> Logger.info("#{name} is deployed for the network at the core's #{short}, as version #{number}")
+            failed -> Logger.error("#{name} wasn't deployed for the network at the core's #{short}: #{inspect(failed)}")
+          end
         end
-      end
+      end)
 
       # What the new versions require that isn't there is installed, as for an update.
       with {:error, why} <- required("network"), do: Logger.warning("The core's apps at #{short}: #{why}")
