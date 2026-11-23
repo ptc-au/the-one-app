@@ -49,6 +49,10 @@ interface App {
 /// What an update says to a person. Why one failed is for Telemetry and the agents (`apps`), never a person's screen.
 const updateText = (update: Update) => (update.state === "failed" ? "This update can't be installed yet" : "Update ready")
 
+/// Whether an app has an update to take: not one whose updates can't be checked (`unchecked`), as a private repo's
+/// can't from servers that can't sign in there, which its page says instead.
+const updating = (app: App) => !!app.update && app.update.state !== "unchecked"
+
 /** What `services` answers that an app's page shows: where its services run, and what the machines that can't lack. */
 interface Serving {
   names: Record<string, string | null>
@@ -191,7 +195,7 @@ function Sidebar(props: { shown?: string }) {
                 start={<Tile icon={app().icon} />}
                 heading={app().title}
                 text={words() ? "App" : undefined}
-                end={<Show when={app().update}><Badge variant="secondary">Update</Badge></Show>}
+                end={<Show when={updating(app())}><Badge variant="secondary">Update</Badge></Show>}
                 current={props.shown === `app:${app().for}:${app().name}`}
                 onPress={() => choose(`app:${app().for}:${app().name}`)}
               />
@@ -309,7 +313,7 @@ function Updates() {
     refresh(updates)
     setWorking()
   }
-  const ready = () => apps().filter((app) => app.update)
+  const ready = () => apps().filter(updating)
   return (
     <Screen heading="Updates" back>
       <Errored fallback={(error) => <Problem heading="Can't show what's waiting to update" text={error() as Error} />}>
@@ -398,7 +402,10 @@ function AppPage(props: { app: App }) {
         <Show when={allowed()}>
           {(allowed) => <Row heading="Notifications" end={<Switch aria-label="Notifications" value={allowed().allowed} onValueChange={allow} />} />}
         </Show>
-        <Show when={app().update}>
+        <Show when={app().update?.state === "unchecked"}>
+          <Row heading="Updates aren't checked" text="Your network's servers can't read where it's from." />
+        </Show>
+        <Show when={updating(app())}>
           <Row heading="Update ready" text={app().update!.state === "failed" ? updateText(app().update!) : undefined} action={<Button variant="outline" loading={working() === "update"} onPress={update}>Update</Button>} />
         </Show>
       </List>

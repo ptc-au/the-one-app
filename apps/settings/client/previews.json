@@ -824,6 +824,12 @@
     "like": "Settings",
     "page": "client/index.html#app:network:containers"
   },
+  "An app whose updates can't be checked": {
+    "like": "An app",
+    "answers": {
+      "apps": {"for": "users/sam", "apps": [{"name": "android-emulator", "for": "network", "app": "network/apps/android-emulator", "state": "installed", "trusted": true, "requires": {}, "required_by": [], "update": null}, {"name": "app-store", "for": "network", "app": "network/apps/app-store", "state": "installed", "trusted": true, "requires": {}, "required_by": [], "update": null}, {"name": "chrome", "for": "network", "app": "network/apps/chrome", "state": "installed", "trusted": true, "requires": {}, "required_by": [], "update": null}, {"name": "containers", "for": "network", "app": "network/apps/containers", "state": "installed", "trusted": false, "requires": {}, "required_by": [], "update": {"state": "unchecked", "why": "git clone said: fatal: could not read Username for 'https://github.com': terminal prompts disabled"}}, {"name": "git-repos", "for": "network", "app": "network/apps/git-repos", "state": "installed", "trusted": true, "requires": {}, "required_by": [], "update": null}, {"name": "gmail", "for": "network", "app": "network/apps/gmail", "state": "installed", "trusted": true, "requires": {}, "required_by": [], "update": null}]}
+    }
+  },
   "An app you can't remove": {
     "like": "Settings",
     "page": "client/index.html#app:network:gmail",
