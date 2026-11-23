@@ -9,7 +9,7 @@ Its header says what each flag does. It builds what isn't built (the UI library,
 starts, which builds the Rust workspace's debug build with `cargo build`), starts the server, and prints how to use it once it's
 running. A worktree's first build starts from a copy of the build of a worktree beside it (`tooling/copy-build`, which
 `tooling/network` and `mix compile` run; run it yourself before a first `cargo`), so its first network builds only what
-differs, and starts in about 20 s; after that, in about 10 s.
+differs, and starts in about a minute on the shared Linux machine (23 Nov), its own crates rebuilt.
 Run it in the background and let your harness tell you when it ends; put the folder in your scratch folder.
 
 ## The fastest loop
@@ -42,7 +42,25 @@ believes; `ONE_SUBJECT=groups/<name>` or `ONE_SUBJECT=network` runs a call for a
 Vault opens at once in `one` and in the app run with that home. Anyone else is set up as a passkey would, from that
 device: `ONE_AS=<name> bun tooling/keys.ts make`, then `ONE_AS=<name> one vault list` (which lists their Vault for
 its servers) and `ONE_AS=<name> bun tooling/keys.ts servers`. To try the passkey itself, a headless Chromium with
-a CDP virtual authenticator that has PRF joins by `one sign-in invite`'s link and opens `unlock_with_passkey`'s.
+a CDP virtual authenticator that has PRF joins by `one sign-in invite`'s link (type a name in its field first, which
+is drawn: click it, then type) and opens `unlock_with_passkey`'s.
+
+## A browser signed in
+
+`<folder>/browser.json` is Playwright's storage state for a browser signed in as `owner`, made as the network starts,
+with no passkey (`one sign-in browser`, which only a network being built answers). Load it and open the address:
+
+    const context = await browser.newContext({ storageState: "<folder>/browser.json" })
+
+`ONE_AS=alice one sign-in browser > alice.json` signs one in as anyone else. A new person sees Welcome first;
+`one home-screen tip --name welcome --seen true` skips it. Chromium draws the page with WebGPU, so launch it with
+`--enable-unsafe-webgpu --enable-gpu --use-angle=vulkan --ignore-gpu-blocklist`.
+
+## Only the edge
+
+A change to an edge page that asks no server (the sign-in page, the web client's files, an app's `edge/`) needs no
+network: `cd core/edge && bun install --frozen-lockfile && bun edge.js dev --live --port <port> --persist-to <folder>`
+runs the edge alone, in about 10 s. Stop it by its process group (`kill -- -<pgid>`): Wrangler's `workerd` outlives `bun`.
 
 ## Signing a device in
 
@@ -115,7 +133,9 @@ so a server installed with `one serve on` there reconnects by itself.
 
 ## Mistakes already made
 
-- Starting a network with `--owner` and joining it with a virtual passkey just to approve a phone.
+- Starting a network with `--owner` and joining it with a virtual passkey just to approve a phone, or to see a page
+  signed in: `browser.json` is signed in.
+- Starting a whole network to work on an edge page that asks no server.
 - Running `iex -S mix` in a fresh worktree, which has no deps: `mix deps.get` in `core/server/` first
   (`tooling/network` does it itself).
 - Restarting the network to try a change to an app, rather than deploying it into the running one.

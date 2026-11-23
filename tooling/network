@@ -218,6 +218,9 @@ if [[ -z $owner ]]; then
   users=(owner alice bob)
   for user in "${users[@]}"; do ready "$user" & readying+=($!); done
   for job in "${readying[@]}"; do wait "$job"; done
+  # A browser signed in as its first owner, with no passkey (`one sign-in browser`): Playwright's storage state, which a
+  # test browser loads to open the network's address signed in.
+  [[ -s $folder/browser.json ]] || ONE_AS=owner ONE_HOME=$folder/client "$one" sign-in browser >"$folder/browser.json"
 fi
 
 # The program as whoever started this would type it.
@@ -247,6 +250,7 @@ A network is running in $folder. Its client's home is $folder/client:
     $one mcp                                         is the same tools as MCP over stdio
 
 ${users[*]} have their encryption set up, with their keys on this client's device.
+$folder/browser.json signs a browser in as owner at ${at_address[1]} (Playwright's storageState).
 
     iex --sname dbg-\$\$ --cookie \$(cat $folder/cookie) --remsh $(node_name server)
                                                      attaches to the server, with :recon and :observer_cli
