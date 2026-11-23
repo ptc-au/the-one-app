@@ -737,12 +737,26 @@ const timings = ({ first_frame_ms, first_content_ms, worst_paint_ms, idle_ms, ty
 /// what's in it (a button in a computer's window).
 function inked(file) {
   const { data } = decoded(file)
+  // Counted a run of one colour at a time, as most of a picture is runs of its background: each colour in the order
+  // it's first found, so of two as common, the first. (Plain variables: destructured, Bun's JSC ran this four times as slow.)
   const counts = new Map()
-  for (let at = 0; at < data.length; at += 4) counts.set(data.readUInt32BE(at), (counts.get(data.readUInt32BE(at)) ?? 0) + 1)
+  let colour = data.readUInt32BE(0)
+  let run = 0
+  for (let at = 0; at < data.length; at += 4) {
+    const here = data.readUInt32BE(at)
+    if (here === colour) {
+      run++
+      continue
+    }
+    counts.set(colour, (counts.get(colour) ?? 0) + run)
+    colour = here
+    run = 1
+  }
+  counts.set(colour, (counts.get(colour) ?? 0) + run)
   const [background] = [...counts].reduce((most, one) => (one[1] > most[1] ? one : most))
   const [r, g, b, a] = [background >>> 24, (background >>> 16) & 255, (background >>> 8) & 255, background & 255]
   let ink = 0
-  for (let at = 0; at < data.length; at += 4) if (Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b), Math.abs(data[at + 3] - a)) > 2) ink++
+  for (let at = 0; at < data.length; at += 4) if (data.readUInt32BE(at) !== background && Math.max(Math.abs(data[at] - r), Math.abs(data[at + 1] - g), Math.abs(data[at + 2] - b), Math.abs(data[at + 3] - a)) > 2) ink++
   return ink
 }
 

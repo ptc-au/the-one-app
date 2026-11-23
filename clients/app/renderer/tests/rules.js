@@ -8,7 +8,9 @@ import { decoded } from "./animation/output.js"
 
 /// WCAG's relative luminance of an sRGB colour, and its contrast ratio of two.
 const linear = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-const luminance = ([r, g, b]) => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+/// `linear` of each channel's 256 levels, worked out once: a picture's every pixel is read by it.
+const LINEAR = Float64Array.from({ length: 256 }, (_, c) => linear(c))
+const luminance = ([r, g, b]) => 0.2126 * LINEAR[r] + 0.7152 * LINEAR[g] + 0.0722 * LINEAR[b]
 const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 
 /// WCAG AA: text 4.5:1, large text (24 px, or 18.66 px bold) 3:1, and a control's mark (an icon, a ring) 3:1.
@@ -26,37 +28,48 @@ const length = (value) => (typeof value === "number" ? value : typeof value === 
 function picture(file, points) {
   const { data, width, height } = decoded(file)
   const scale = width / points
+  // Where in `data` a device pixel's colour starts, the nearest in the picture to one outside it.
+  const index = (x, y) => (Math.min(height - 1, Math.max(0, Math.round(y))) * width + Math.min(width - 1, Math.max(0, Math.round(x)))) * 4
   const at = (x, y) => {
-    const [column, row] = [Math.min(width - 1, Math.max(0, Math.round(x))), Math.min(height - 1, Math.max(0, Math.round(y)))]
-    const i = (row * width + column) * 4
+    const i = index(x, y)
     return [data[i], data[i + 1], data[i + 2]]
   }
   // The colour most of a box is (in points), to within 8 levels a channel, as the ground a text or a mark is drawn on.
+  // Each bin is its colour's levels, 8 to a step, 5 bits a channel; of two as full, the one found first.
   const ground = ({ x, y, width: w, height: h }) => {
     const bins = new Map()
     for (let row = Math.ceil(y * scale); row < Math.floor((y + h) * scale); row++)
       for (let column = Math.ceil(x * scale); column < Math.floor((x + w) * scale); column++) {
-        const colour = at(column, row)
-        const key = colour.map((c) => c >> 3).join()
-        const bin = bins.get(key) ?? { n: 0, sum: [0, 0, 0] }
+        const i = index(column, row)
+        const r = data[i]
+        const g = data[i + 1]
+        const b = data[i + 2]
+        const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)
+        const bin = bins.get(key)
+        if (!bin) {
+          bins.set(key, { n: 1, r, g, b })
+          continue
+        }
         bin.n++
-        colour.forEach((c, i) => (bin.sum[i] += c))
-        bins.set(key, bin)
+        bin.r += r
+        bin.g += g
+        bin.b += b
       }
     const most = [...bins.values()].reduce((best, bin) => (!best || bin.n > best.n ? bin : best), undefined)
-    return most && most.sum.map((c) => Math.round(c / most.n))
+    return most && [most.r, most.g, most.b].map((c) => Math.round(c / most.n))
   }
   // The most any pixel of a box stands off a colour, as WCAG's ratio, and the pixel's colour.
   const furthest = ({ x, y, width: w, height: h }, from) => {
     const against = luminance(from)
-    let [most, colour] = [1, from]
+    let most = 1
+    let at = -1
     for (let row = Math.ceil(y * scale); row < Math.floor((y + h) * scale); row++)
       for (let column = Math.ceil(x * scale); column < Math.floor((x + w) * scale); column++) {
-        const here = at(column, row)
-        const by = ratio(luminance(here), against)
-        if (by > most) [most, colour] = [by, here]
+        const i = index(column, row)
+        const by = ratio(0.2126 * LINEAR[data[i]] + 0.7152 * LINEAR[data[i + 1]] + 0.0722 * LINEAR[data[i + 2]], against)
+        if (by > most) [most, at] = [by, i]
       }
-    return { most, colour }
+    return { most, colour: at < 0 ? from : [data[at], data[at + 1], data[at + 2]] }
   }
   return { scale, width, height, at, ground, furthest }
 }
