@@ -132,7 +132,7 @@ defmodule GoogleDrive do
           with_account.(
             %{
               metadata: metadata.(~s|The new file's metadata, like {"name": "receipt.pdf", "parents": ["FOLDER_ID"]}|),
-              upload: %{type: "string", format: "upload", description: "The file to upload"},
+              upload: %{type: "string", format: "upload", description: "The file to upload: its name, as the upload tool answers once the file is sent (the command's --upload-from does both)"},
               data: %{type: "string", contentEncoding: "base64", description: "Or its bytes, in base64, for a small one"},
               type: string.("Its MIME type, like application/pdf. metadata's mimeType if left out"),
               fields: fields.(@file_fields)
@@ -210,7 +210,7 @@ defmodule GoogleDrive do
         upload = inputs["upload"] ->
           case OneCore.Artifact.read(at.call.own, upload) do
             {:ok, bytes, _tag} -> bytes
-            :absent -> raise "The file wasn't uploaded."
+            :absent -> raise "Nothing was uploaded as #{upload}: send the file to the link the upload tool gives (the command's --upload-from does it) and give the name it answers, or give data in base64."
           end
 
         data = inputs["data"] ->
@@ -238,7 +238,7 @@ defmodule GoogleDrive do
 
     case OneCore.Call.fetch(at.call, %{url: session, method: "PUT", body: bytes, headers: %{"content-type" => type}}) do
       %{status: status, body: body} when status in [200, 201] -> JSON.decode!(body)
-      %{status: status} -> raise "Google Drive didn't take the file (#{status})."
+      %{status: status, body: body} -> raise "Google Drive didn't take the file (#{status}): #{reason(body)}"
     end
   end
 
@@ -269,6 +269,14 @@ defmodule GoogleDrive do
   # body, or raises with what went wrong.
   defp request(at, method, url, options),
     do: OneCore.Call.tool(at.call, "google-account", "request", JSON.decode!(JSON.encode!(Map.new([account: at.account, method: method, url: url] ++ options))))
+
+  # Google's own words for what went wrong, as its error body gives them.
+  defp reason(body) do
+    case JSON.decode(body || "") do
+      {:ok, %{"error" => %{"message" => message}}} -> message
+      _ -> body
+    end
+  end
 
   defp no_file(id),
     do: "No file #{id}, or not one this account can see: file ids come from google-drive_files_list (root is My Drive)."
