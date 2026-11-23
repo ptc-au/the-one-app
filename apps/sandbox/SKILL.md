@@ -12,3 +12,6 @@ An untrusted app runs behind this machine's own sandbox (bubblewrap on Linux, Se
 on Windows): it reaches only what One Core hands it, and the tools and hosts its `permissions/0` names. When one
 can't reach something, it's that its permissions don't name it; deploying it trusted (`--trusted`), which only someone
 who may install for whoever it's for may do, runs it with its server's full access instead.
+
+A server whose machine can't make that sandbox (no bubblewrap or prlimit on Linux, or one that doesn't allow it)
+says what it lacks, in `services` and in Device Activity, and runs untrusted apps once it has it.
