@@ -129,7 +129,7 @@ defmodule SoftwareUpdate do
           type: "object",
           properties: %{
             platform: %{type: "string", enum: @platforms},
-            name: %{type: "string", description: "Its file's name, as it's downloaded: The PTC App.dmg"},
+            name: %{type: "string", description: "Its file's name, as it's downloaded: the PTC App.dmg"},
             build: %{type: "string", description: "The build of the network's app it installs, as `one builds` names it"},
             file: %{type: "string", format: "upload", description: "The installer"},
             sha256: %{type: "string", description: "Its SHA-256, in hex, which whatever downloads it checks"}
@@ -172,7 +172,7 @@ defmodule SoftwareUpdate do
   end
 
   def call("publish_installer", %{"platform" => platform, "name" => name, "build" => build, "file" => file} = inputs, call) do
-    if String.contains?(name, ["/", "\\"]) or String.trim(name) != name or name == "", do: raise("An installer's name is a file's name, with no folder: The PTC App.dmg")
+    if String.contains?(name, ["/", "\\"]) or String.trim(name) != name or name == "", do: raise("An installer's name is a file's name, with no folder: the PTC App.dmg")
 
     size =
       case Artifact.size(call.own, file) do

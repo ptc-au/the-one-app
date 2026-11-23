@@ -342,7 +342,7 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
         _ => {}
     };
     // A panel opens as the app opens a launcher: its window first, summoned as it opens, as one summoned as the app
-    // starts, or opened again in its place on its app's new version, is (The PTC App's on a Mac, 23 Nov), and its
+    // starts, or opened again in its place on its app's new version, is (the PTC App's on a Mac, 23 Nov), and its
     // page given it a refresh later, once started (`Windows::opening`).
     let (id, screen) = match panel {
         Some(_) => (windows.opening(options, on_event)?, Some(screen)),

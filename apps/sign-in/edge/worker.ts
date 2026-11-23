@@ -49,7 +49,7 @@ const ASSOCIATIONS: Record<string, () => unknown> = {
  * The network's icon, as a browser asks for it by name, its tab's and a Home Screen's (`/favicon.ico`,
  * `/apple-touch-icon.png`), and its logo as the network's pages draw it on a light page and a dark one (`/Logo.png`,
  * `/Logo-dark.png`), its icon where it has none: its own (`network` in `auth.ts`), or the One App's, which this part's
- * build puts beside its pages (`package.json`), whose logo is the same on both. The One App's says
+ * build puts beside its pages (`package.json`), whose logo is the same on both. the One App's says
  * `x-network-logo: none`, which a client that keeps the network's logo goes by (`clients/app/src/logo.rs`).
  */
 const ICONS = ["/Logo.png", "/Logo-dark.png", "/favicon.ico", "/apple-touch-icon.png"];

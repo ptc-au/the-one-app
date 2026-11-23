@@ -386,7 +386,7 @@ impl Display {
         });
     }
 
-    /// Puts a panel away, its parts with it, which are its children again as it shows (`arrange`). The One App never
+    /// Puts a panel away, its parts with it, which are its children again as it shows (`arrange`). the One App never
     /// came in front for it, so the app that had the keyboard has it again.
     pub fn put_away(&self, window: &NativeWindow, _give_back: bool) {
         window.shared.shown.store(false, std::sync::atomic::Ordering::Relaxed);

@@ -598,7 +598,7 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
             }
             // There's no launcher, nor any window: the system's alert says why, and the app ends.
             Event::UserEvent(Told::Unnative(why)) => {
-                alert(&format!("The One App can't open its windows on this device: {why}"));
+                alert(&format!("{} can't open its windows on this device: {why}", ::client::app_name()));
                 *flow = ControlFlow::Exit;
             }
             Event::UserEvent(Told::Toggle(asked, key)) if native.is_some() => {

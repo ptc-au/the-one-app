@@ -87,15 +87,15 @@ const look = styles({
   go: { alignSelf: "stretch" },
 })
 
-/// The network as Welcome shows it: its name ("The PTC App") and its logo, light and dark, as data where it has one
+/// The network as Welcome shows it: its name ("the PTC App") and its logo, light and dark, as data where it has one
 /// of its own, which a native window draws (only an app's own files load there), or else the One App's.
 export const network = createMemo(() =>
   call("sign-in_network").then(
     (answer) => {
       const { name, mark } = JSON.parse(answer) as { name?: string | null; mark?: { light?: string; dark?: string } | null }
-      return { name: name ?? "The One App", light: mark?.light ?? "one-app.png", dark: mark?.dark ?? "one-app.png" }
+      return { name: name ?? "the One App", light: mark?.light ?? "one-app.png", dark: mark?.dark ?? "one-app.png" }
     },
-    () => ({ name: "The One App", light: "one-app.png", dark: "one-app.png" }),
+    () => ({ name: "the One App", light: "one-app.png", dark: "one-app.png" }),
   ),
 )
 

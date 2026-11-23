@@ -1,4 +1,4 @@
-; The One App's Windows installer, built with NSIS (`makensis`) by `tooling/release` for `one/windows-x86_64`: a
+; the One App's Windows installer, built with NSIS (`makensis`) by `tooling/release` for `one/windows-x86_64`: a
 ; per-user install, as an app that updates itself is, so it needs no administrator. It puts `one.exe` in
 ; %LOCALAPPDATA%\Programs, adds that folder to the user's PATH, for `one` in a terminal, puts the app in the Start menu
 ; and in Settings > Apps, and opens it. From then on the app updates itself, by `one update`, as it does on Linux

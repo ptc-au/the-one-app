@@ -23,7 +23,7 @@ that one question for it, and a new device when they also say the code it shows 
 - `network` says the network's name, icon and logo, and sets them for whoever invites: null is the One App's. Its icon,
   on a tile of its own, is its web app's tab, Home Screen icon and manifest, and its own apps' icon; its logo, its mark
   alone, is what its sign-in page draws, one for a light page and one for a dark, either alone shown on both (`--name
-  "The PTC App" --icon-from icon.b64 --logo-from logo/`, square PNGs as base64, `logo/` holding `light` and `dark`). A
+  "the PTC App" --icon-from icon.b64 --logo-from logo/`, square PNGs as base64, `logo/` holding `light` and `dark`). A
   network's own app is finished with the same. Its `android_package`, which `tooling/installers` sets as it publishes
   the network's Android app, is trusted with its passkeys and links (`/.well-known/assetlinks.json`).
 - `devices` lists your devices, the assistants you let in and the browsers you're signed in on, and your

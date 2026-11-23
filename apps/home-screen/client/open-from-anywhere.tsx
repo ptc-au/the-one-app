@@ -291,7 +291,7 @@ export function OpenFromAnywhere(props: { width: number; height: number; onConti
           Open from anywhere
         </Text>
       </View>
-      <Text style={[look.subtitle, heading.narrow && look.centred]}>Press your shortcut in any app to bring up {network()?.name ?? "The One App"}.</Text>
+      <Text style={[look.subtitle, heading.narrow && look.centred]}>Press your shortcut in any app to bring up {network()?.name ?? "the One App"}.</Text>
     </View>
   )
   // The desktop, played again as the shortcut changes.

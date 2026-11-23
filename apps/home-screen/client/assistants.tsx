@@ -10,7 +10,7 @@ import { Box, circle, type Part, Picture, Pointer, rect, Run, Shape, Words } fro
 /// What a picture says it's showing: the step's number (or done) and what it is.
 export type Caption = { step: string; text: string }
 
-/// What every picture is told: the network's name ("The PTC App"), its logo, its host and its MCP address, and where
+/// What every picture is told: the network's name ("the PTC App"), its logo, its host and its MCP address, and where
 /// to say each step.
 export type Told = { name: string; logo: string; host: string; mcp: string; caption: (caption: Caption) => void }
 

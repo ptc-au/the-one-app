@@ -512,7 +512,7 @@ impl Windows {
             // Placed for the room it's drawn in before that frame shows, so it shows where it stays; and summoned before
             // it had drawn, put on the screen as its first frame is drawn, never before (empty) nor after: a Mac gives
             // no image to draw on to a window it isn't showing (wgpu asks macOS's `occlusionState`), so one waiting to
-            // be drawn first was never drawn, nor shown (The PTC App's launcher, opened again on its app's new version
+            // be drawn first was never drawn, nor shown (the PTC App's launcher, opened again on its app's new version
             // while it was summoned, 23 Nov).
             // Mutant: one summoned before it had drawn waits for its first frame to be put on the screen, as before.
             if (window.drawn || !crate::mutants::mutant("summon-after-draw")) && std::mem::take(&mut window.placing) {

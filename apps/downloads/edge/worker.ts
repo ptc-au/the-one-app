@@ -26,8 +26,8 @@ type Signed = { device: string; who: string; cookies?: string[] };
 /** What the page offers, as the app's `list` says it (`server/downloads.ex`). */
 type Listed = { name: string | null; installers: { platform: string; name: string }[]; testflight: string | null };
 
-/** The One App's name, where the network has none of its own. */
-const ONE_APP = "The One App";
+/** the One App's name, where the network has none of its own. */
+const ONE_APP = "the One App";
 
 /** A kind of device the page knows, which `?for=` names to show it first. */
 type Device = "mac" | "windows" | "linux" | "iphone" | "android";
@@ -69,7 +69,7 @@ function device(request: Request, url: URL): Device | null {
 /** Text as HTML says it. */
 const text = (words: string) => words.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 const logo = (device: Device) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DEVICES[device].logo}"/></svg>`;
-/** The file a link downloads, by the last part of its path: `The PTC App.dmg`. */
+/** The file a link downloads, by the last part of its path: `the PTC App.dmg`. */
 const file = (link: string) => decodeURIComponent(new URL(link).pathname.split("/").pop() || "") || link;
 
 /** What each kind of installer is, by its file's ending, as a browser is told. */

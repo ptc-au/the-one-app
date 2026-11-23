@@ -125,9 +125,9 @@ const marching = [moves.dash0, moves.dash1, moves.dash2, moves.dash3, moves.dash
 /// What this computer is called, by its build's target (`macos-aarch64`), or nothing for a phone or a browser.
 export const computer = (target?: string) => ({ macos: "this Mac", windows: "this PC", linux: "this computer" } as Record<string, string>)[target?.split("-")[0] ?? ""]
 
-/// The network's name, short, as the step says it ("Keeps costs down for PTC"): its own without "The" and "App", or
+/// The network's name, short, as the step says it ("Keeps costs down for PTC"): its own without "the" and "App", or
 /// the One App's, said "the One App".
-const short = (name: string) => (name === "The One App" ? "the One App" : name.replace(/^The (.+) App$/, "$1"))
+const short = (name: string) => (name === "the One App" ? name : name.replace(/^the (.+) App$/, "$1"))
 
 // The wires, from the phone to this computer and to the cloud, as cubic Béziers, and each drawn as dashes 3 long
 // every 10, at each of the five offsets they march through.

@@ -1,4 +1,4 @@
-# The One App
+# the One App
 
 This folder builds the One App, plain: with its own name and identifier and no network in it. A network's own app is
 this build, finished for it afterwards, as white-label apps are made: its name, identifier, the schemes and hosts of

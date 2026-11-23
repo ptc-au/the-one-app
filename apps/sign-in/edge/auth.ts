@@ -810,7 +810,7 @@ export async function network(): Promise<{ name: string | null; icon: Picture | 
 type Picture = { png: string; size: number };
 
 /** A network's name where it has none of its own. */
-export const ONE_APP = "The One App";
+export const ONE_APP = "the One App";
 
 /** The most an icon may be, as PNG's bytes. */
 const ICON_BYTES = 1024 * 1024;

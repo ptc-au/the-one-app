@@ -1,6 +1,6 @@
 # Contributing
 
-The One App is Power to Change Australia's, built in the open under the MIT License. By contributing, you agree
+the One App is Power to Change Australia's, built in the open under the MIT License. By contributing, you agree
 your work is under that license.
 
 Most of the code is written by AI agents, so it's built for them: point yours at this repo and it reads

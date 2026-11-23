@@ -36,7 +36,7 @@ server needs it, and it's no row to switch.
 
 The network's own installers, its app as a person installs it the first time on a Mac, Windows, Linux or Android, are
 kept here: `installers` lists them, and `tooling/release client` publishes each (`publish_installer`, the file sent as
-an upload: `one software-update publish_installer --platform mac --name "The PTC App.dmg" --build <build> --file-from
+an upload: `one software-update publish_installer --platform mac --name "the PTC App.dmg" --build <build> --file-from
 <path>`), in place of the one before. The Downloads app offers them on the network's download page, <address>/download,
 and `installer` gives one with a link that downloads it. From then on the app updates itself: a Mac's from its disk
 image, and Windows' from its program, `windows-program`, published beside its installer with its SHA-256, which the

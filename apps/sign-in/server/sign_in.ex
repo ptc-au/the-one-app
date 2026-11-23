@@ -115,7 +115,7 @@ defmodule SignIn do
         inputs: %{
           type: "object",
           properties: %{
-            name: %{type: ["string", "null"], description: "Its name, like The PTC App: null for the One App's"},
+            name: %{type: ["string", "null"], description: "Its name, like the PTC App: null for the One App's"},
             icon: %{type: ["string", "null"], description: "Its icon, a square PNG up to 1 MB, as base64: null for the One App's"},
             logo: %{
               type: ["object", "null"],
