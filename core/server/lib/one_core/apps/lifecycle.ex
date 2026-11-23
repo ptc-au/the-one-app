@@ -155,7 +155,7 @@ defmodule OneCore.Apps.Lifecycle do
     case Store.about("network/apps/#{name}") do
       about when about == %{} -> true
       %{"from" => %{"commit" => was}} when is_binary(was) ->
-        was != commit and Git.ancestor?(copy, was, commit) and Git.tree(copy, was, "apps/#{name}") != Git.tree(copy, commit, "apps/#{name}")
+        was != commit and not Git.ancestor?(copy, commit, was) and Git.tree(copy, was, "apps/#{name}") != Git.tree(copy, commit, "apps/#{name}")
       _deployed_with_no_commit -> true
     end
   end
@@ -757,7 +757,9 @@ defmodule OneCore.Apps.Lifecycle do
         newest == commit ->
           {:ok, nil}
 
-        not Git.ancestor?(copy, commit, newest) ->
+        # What runs comes after the source's newest, as a deploy from a later commit does. A commit the source has no
+        # record of (one rebased since it was deployed) is no later than it: the source's newest is its update.
+        Git.ancestor?(copy, newest, commit) ->
           {:ok, nil}
 
         Git.tree(copy, newest, path) == Git.tree(copy, commit, path) ->
