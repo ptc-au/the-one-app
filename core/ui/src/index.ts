@@ -41,7 +41,7 @@
 /// root, checks a page, as a deploy does of one whose entrypoint says its `runtime_version` and refuses it with the errors. What a page may use is `core/ui/src/types/ui.d.ts`: one that needs what isn't
 /// there adds it there, with only what every host can draw (`drawing-primitives/renderer.ts`), and core/ui's `bun run typecheck` then says
 /// whether the UI library's components take it.
-export { call, changed, client, memoryWarning, component, connection, covers, direction, go, haptic, keydown, leave, link, open, pickFiles, pinShortcut, reducedMotion, safeArea, share, showRecoveryKey, sizeChanged, upload, useRecoveryKey, viewport, visible } from "./bridge.ts"
+export { call, changed, client, copy, memoryWarning, component, connection, covers, direction, go, haptic, keydown, leave, link, open, pickFiles, pinShortcut, reducedMotion, safeArea, share, showRecoveryKey, sizeChanged, upload, useRecoveryKey, viewport, visible } from "./bridge.ts"
 export { date, plural, seen, since, size } from "./format.ts"
 export { Badge, Button, Icon, Spinner } from "./styled-components/button.tsx"
 export { Checkbox, Field, Input, RadioGroup, Search, Switch, Textarea } from "./styled-components/field.tsx"

@@ -609,6 +609,8 @@ export declare function showRecoveryKey(options?: Subject): Promise<boolean>
 export declare function useRecoveryKey(options?: Subject): Promise<boolean>
 export declare function go(change: () => void, options?: { back?: boolean }): void
 export declare function share(text: string): Promise<"shared" | "copied" | undefined>
+/** Puts `text` on the device's clipboard, as a Copy button does, which its client does: a page has none of its own. */
+export declare function copy(text: string): Promise<void>
 export declare function date(at: string | number | Date): string
 export declare function plural(count: number, one: string, other?: string): string
 export declare function seen(at: string | number | Date): string

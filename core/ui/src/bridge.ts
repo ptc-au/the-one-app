@@ -317,7 +317,6 @@ export function back(): void {
   throw new Error("A native host has no history to go back through: a screen's Back says where it goes (`onBack`)")
 }
 
-/** Puts text on the clipboard, which its client does (`one/copy`): a page has none of its own. */
 /** Sends a file the page chose where the network keeps it: the host takes it as base64, the
  * only way a file crosses its JSON channel. */
 export const upload: typeof Page.upload = async (file) => {
@@ -336,6 +335,8 @@ export const pickFiles: typeof Page.pickFiles = async (options = {}) => {
   const { files } = await ask<{ files: { name: string; body: string }[] }>("one/files", { accept: options.accept ?? [], multiple: !!options.multiple })
   return files.map((file) => new File([Uint8Array.from(atob(file.body), (character) => character.charCodeAt(0))], file.name))
 }
+/// `copy(url).then(() => setCopied(true))`: puts text on the device's clipboard, as a Copy button does, which its client
+/// does (`one/copy`): a page has none of its own.
 export const copy = async (text: string): Promise<void> => (await greeted, void (await ask("one/copy", { text })))
 
 /// `await share(link)`: hands text to the device's own share sheet where it has one, and copies it otherwise. Call
