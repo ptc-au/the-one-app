@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Starts a worktree that hasn't built yet from a copy of the build of the worktree beside it that built last: what
-# Cargo, Mix and bun build into (`target/`, `_build/`, `deps/`, `node_modules/`). On a file system that shares a
-# copy's blocks, as btrfs does here, it's copied at once and takes no room. Each tool then builds only what differs,
-# in seconds, rather than every package it uses, in minutes. Where it can't be copied that way, nothing is.
+# Cargo and Mix build into (`target/`, `_build/`, `deps/`). On a file system that shares a copy's blocks, as btrfs does
+# here, it's copied at once and takes no room. Each tool then builds only what differs, in seconds, rather than every
+# package it uses, in minutes. Where it can't be copied that way, nothing is. Not bun's `node_modules/`, which
+# `bun install` links from its cache in a second: those links are files of the cache, which btrfs won't share with a
+# worktree made with copy-on-write off, as T3's are, and one such file failed the whole copy (23 Nov: first networks of
+# 12 minutes, Rust built from nothing).
 # `tooling/network` and `mix compile` (`core/server/mix.exs`) run it in a worktree with no `target/`; run it yourself
 # before a first `cargo build`. Of the worktrees beside it, one that builds from the same Cargo manifests is copied
 # first, as only its own crates differ, and then the one that built last.
@@ -36,9 +39,16 @@ done | sort -k1,1nr -k2,2nr | cut -d' ' -f3- | while read -r there; do
   # Cargo holds this lock while it builds there, and a copy taken meanwhile could be half of a build.
   lock=$there/target/debug/.cargo-build-lock
   [[ -e $lock ]] || continue
-  # What's here already, as `mix deps.get` fetches `deps/`, stays.
-  folders=$(git -C "$there" ls-files -oi --exclude-standard --directory | grep -E '(^|/)(target|_build|deps|node_modules)/$|^clients/app/gen/android/' |
-    while read -r folder; do [[ -e $folder ]] || echo "$folder"; done || true)
+  # What's here already, as `mix deps.get` fetches `deps/`, stays. The edge's builds (`target/edge-*`) are made anew
+  # each time (`core/edge/edge.js`), with bun's links in them, so they're left.
+  folders=$(git -C "$there" ls-files -oi --exclude-standard --directory | grep -E '(^|/)(target|_build|deps)/$|^clients/app/gen/android/' |
+    while read -r folder; do
+      if [[ $folder == target/ ]]; then
+        for built in "$there"/target/*; do [[ ${built##*/} == edge-* ]] || echo "target/${built##*/}"; done
+      else
+        [[ -e $folder ]] || echo "$folder"
+      fi
+    done || true)
   # shellcheck disable=SC2086 # one folder per word
   if flock -n -s "$lock" sh -c 'from=$1 && shift && for folder; do
        mkdir -p "$(dirname "$folder")" && cp -a --reflink=always "$from/$folder" "$folder" || exit 1
