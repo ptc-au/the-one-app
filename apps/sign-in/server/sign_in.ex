@@ -360,6 +360,18 @@ defmodule SignIn do
         }
       },
       %{
+        name: "browser",
+        description:
+          "Signs a browser in as you with no passkey, on a network being built: a new session's cookies, as " <>
+            "Playwright's storage state has them (`storageState`), which a test browser loads to open the network signed in",
+        inputs: %{type: "object", properties: %{}},
+        outputs: %{
+          type: "object",
+          properties: %{cookies: %{type: "array", items: %{type: "object"}}, origins: %{type: "array"}},
+          required: ["cookies", "origins"]
+        }
+      },
+      %{
         name: "remove_device",
         description: "Removes one of your devices, assistants or browsers. It's signed out from then on",
         inputs: %{
@@ -624,6 +636,8 @@ defmodule SignIn do
     %{"approved" => name} = ask(%{ask: "approve", who: person(call), code: code})
     %{approved: name}
   end
+
+  def call("browser", _inputs, call), do: ask(%{ask: "browser", who: person(call)})
 
   def call("remove_device", %{"device" => device}, call) do
     %{"removed" => name, "device" => key} = ask(%{ask: "remove_device", who: person(call), device: device})

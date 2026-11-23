@@ -10,7 +10,7 @@
 import { env } from "cloudflare:workers";
 import { betterAuth, getCurrentAdapter } from "better-auth";
 import { APIError, createAuthEndpoint, createAuthMiddleware, getAuthoritativeSessionFromCtx, getOAuthState, getSessionFromCtx } from "better-auth/api";
-import { jwt } from "better-auth/plugins";
+import { jwt, testUtils } from "better-auth/plugins";
 import { cimd } from "@better-auth/cimd";
 import { mcp } from "@better-auth/mcp";
 import { DEVICE_CODE_GRANT_TYPE, getIssuer, oauthDeviceAuthorization, verifyOAuthQueryParams } from "@better-auth/oauth-provider";
@@ -965,6 +965,16 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   }
   if (!user) return { error: `${name} hasn't joined this network.` };
   const mine = [{ field: "userId", value: user.id }];
+
+  // In a network being built, where a server acts as whoever a client says, a browser is signed in as whoever it's
+  // asked for with no passkey: a new session's cookies, as Playwright's storage state has them, so a test browser
+  // opens the network signed in (`browser.json`, `tooling/network`). Better Auth's test helpers make it, in an
+  // instance of its own, so the network's has none of them.
+  if (ask === "browser") {
+    if (!building) return { error: "Only a network being built signs a browser in with no passkey." };
+    const { test } = await betterAuth({ ...options(origin, (await auth.$context).secret), plugins: [testUtils()] }).$context;
+    return { cookies: await test.getCookies({ userId: user.id }), origins: [] };
+  }
 
   if (ask === "called") {
     const called = String(about.called ?? "").trim().slice(0, 100);
