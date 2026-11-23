@@ -61,7 +61,7 @@ struct InstalledApps: EnumerableEntityQuery, EntityStringQuery {
 @available(iOS 17.0, *)
 struct OpenApp: OpenIntent {
     static let title: LocalizedStringResource = "Open App"
-    static let description = IntentDescription("Opens an app in the One App.")
+    static let description = IntentDescription("Opens one of your network's apps.")
 
     @Parameter(title: "App") var target: InstalledApp
 
@@ -100,7 +100,7 @@ struct OnCharger: AppIntent {
 
 @available(iOS 17.0, *)
 struct OnChargerFailed: Error, CustomLocalizedStringResourceConvertible {
-    var localizedStringResource: LocalizedStringResource { "Your network wasn't told. Is the One App signed in?" }
+    var localizedStringResource: LocalizedStringResource { "Your network wasn't told. Is this app signed in?" }
 }
 
 /// Where the app's Rust says whether Device Activity was told (`charger` in src/lib.rs), for each `OnCharger` it was
