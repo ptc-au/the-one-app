@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# The networks' repos, one per line: the repos in the home folder whose main, on the remote, has an `app/address`, as
+# every network's repo has. `tooling/release client` makes each one's iPhone app and installers from its repo.
+for repo in "$HOME"/*/; do
+  git -C "$repo" cat-file -e origin/main:app/address 2>/dev/null && echo "${repo%/}"
+done
+exit 0

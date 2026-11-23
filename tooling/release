@@ -208,17 +208,14 @@ getting_dev_builds() {
 }
 
 # Every network's iPhone app goes to TestFlight beside its computers' clients, where its native code changed
-# (`tooling/testflight`), each built from its network's repo: those repos in the home folder whose main has an
-# `app/address`, as the networks' repos have (the PTC pilot had its upload only when someone remembered, 23 Nov: 5208).
-# The release ends once Apple has taken every upload, and fails if one isn't taken. The installers are made from the
-# repo ONE_NETWORK_REPO names, the network of this machine's `one`, once the release has ended, published or covered by
-# another, from the builds the network has then (`tooling/installers`).
-iphones=() installers=
+# (`tooling/testflight`), each built from its network's repo (`tooling/networks`; the PTC pilot had its upload only when
+# someone remembered, 23 Nov: 5208). The release ends once Apple has taken every upload, and fails if one isn't taken.
+# Every network's installers are made once the release has ended, published or covered by another, from the builds the
+# core has then (`tooling/installers`).
+iphones=() networks=()
 if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
-  installers=${ONE_NETWORK_REPO:-}
-  [[ -n $installers ]] || echo "The installers aren't built: ONE_NETWORK_REPO names the network's repo, which they're built from"
-  for repo in "$HOME"/*/; do
-    git -C "$repo" cat-file -e origin/main:app/address 2>/dev/null || continue
+  mapfile -t networks < <(tooling/networks)
+  for repo in "${networks[@]}"; do
     tooling/testflight "$repo" > >(sed "s|^|iphone $(basename "$repo"): |") 2>&1 &
     iphones+=($!)
   done
@@ -231,8 +228,10 @@ iphone_done() {
   local pid failed=
   for pid in "${iphones[@]}"; do wait "$pid" || failed=1; done
   [[ -z $failed ]] || { echo "An iPhone's app didn't reach TestFlight." >&2 && exit 1; }
-  [[ $status != 0 || -z $installers ]] || tooling/installers "$installers" > >(sed 's/^/installers: /') 2>&1 ||
-    { echo "The network's installers weren't published." >&2 && exit 1; }
+  [[ $status != 0 ]] || for repo in "${networks[@]}"; do
+    tooling/installers "$repo" > >(sed "s|^|installers $(basename "$repo"): |") 2>&1 || failed=1
+  done
+  [[ -z $failed ]] || { echo "A network's installers weren't published." >&2 && exit 1; }
 }
 trap 'iphone_done $?' EXIT
 

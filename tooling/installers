@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Makes a network's installers, its app as a person installs it the first time on each kind of computer and phone, from
 # the core's latest builds, and publishes them in the network's Software Update (`publish_installer`), which the
-# network's download page, <address>/download, offers (the Downloads app): for the network of this machine's `one`, or
-# the one in ONE_HOME, from the network's repo, which says its name, icon and address:
+# network's download page, <address>/download, offers (the Downloads app): for the network a repo (`tooling/networks`)
+# says, from the repo, which says its name, icon and address, as this machine's client of that network (its `network`
+# file, in the default folder or a `client` folder in the home folder) publishes them:
 #
 #     tooling/installers <the network's repo>
 #
-# An installer whose build is the one published already is left as it is. `tooling/release client` runs it once it has
-# published, from ONE_NETWORK_REPO. From then on the app updates itself.
+# An installer whose build is the one published already is left as it is. `tooling/release client` runs it for every
+# network once it has published. From then on the app updates itself.
 set -euo pipefail
 [[ -d ${1:-} ]] || { echo "tooling/installers <the network's repo>" >&2 && exit 1; }
 network=$(cd "$1" && pwd)
@@ -18,6 +19,13 @@ git -C "$network" fetch -q origin main
 git -C "$network" archive origin/main app | tar -x -C "$work"
 config=$(cat "$work/app/tauri.conf.json")
 name=$(jq -r '.productName // "The One App"' <<<"$config")
+address=$(<"$work/app/address")
+home=
+for client in "$HOME/.local/share/app.theone.client" "$HOME"/*/client; do
+  [[ $(jq -r .address "$client/network" 2>/dev/null) != "$address" ]] || home=$client
+done
+[[ -n $home ]] || { echo "This machine has no client of $address" >&2 && exit 1; }
+export ONE_HOME=$home
 published=$(one software-update installers)
 # The core's latest build of `$2` for a kind of machine `$1`, as every network's devices take it (`core/edge/updater/core.ts`).
 latest() { curl -fsSL "https://github.com/ptc-au/the-one-app/releases/download/builds/$1.json" | jq -e ".[\"$2\"]"; }
@@ -52,7 +60,7 @@ else
   windows=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.windows.conf.json ]] && echo "$work/app/tauri.windows.conf.json"))
   program=$work/$(jq -r '.mainBinaryName // "one"' <<<"$windows").exe
   fetched "$one" "$program"
-  jq -c --arg address "$(cat "$work/app/address")" \
+  jq -c --arg address "$address" \
     '{address: $address, name: .productName, identifier, command: .mainBinaryName} | with_entries(select(.value != null))' \
     <<<"$windows" >"$work/network"
   named=(-DNETWORK="$work/network")
