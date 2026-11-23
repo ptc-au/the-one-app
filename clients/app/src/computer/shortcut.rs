@@ -1,7 +1,8 @@
 //! The launcher's shortcut, which shows it from anywhere, or puts it away: one for every network's app on this
 //! computer (the One App, and a network's own, as the PTC App beside it), as a person has one keyboard. The computer
-//! keeps it in one folder they share (`shared`): the shortcut chosen, which network was used last (`last`), and where
-//! each app running listens (`apps/<identifier>`, its channel, `hosts::address`). The first of them running has it
+//! keeps it in one folder they share (`shared`): the shortcut chosen, which network was used last (`last`), where the
+//! launcher was dragged to (`places`), and where each app running listens (`apps/<identifier>`, its channel,
+//! `hosts::address`). The first of them running has it
 //! (`shortcut.lock`, which it holds while it runs, its identifier in it), and the others wait on its lock, so the
 //! next takes it the moment it quits, as the program after an update takes it from the one before. Pressed, it shows
 //! the launcher of the network used last, which the one that has it tells over that app's channel (`toggle`), or
@@ -53,6 +54,12 @@ static HOLDS: OnceLock<std::fs::File> = OnceLock::new();
 /// take its person's shortcut.
 fn shared() -> &'static Path {
     SHARED.get().map_or(Path::new(""), PathBuf::as_path)
+}
+
+/// Where the launcher was dragged to on each screen, one file for every network's app on this computer: their launchers
+/// show where the one before it was (`switch`), as one launcher would.
+pub(crate) fn places() -> PathBuf {
+    shared().join("launcher-places.json")
 }
 
 /// Joins the computer's apps, as this one starts: says where it listens, and waits on the shortcut's lock, in a thread

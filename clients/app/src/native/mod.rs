@@ -374,8 +374,8 @@ fn options(kind: &Kind, entrypoint: &str, subject: Option<&str>, name: &str) -> 
         size: Size { width: Pixels(size.0), height: Pixels(size.1) },
         tag: json!({"entrypoint": entrypoint, "subject": subject}),
         panel: panel.map(|corner| corner as f32),
-        // The launcher's kept where it's dragged to, on each screen.
-        places: (launcher && !phone).then(|| crate::app().shell.home().ok()).flatten().map(|home| home.join("launcher-places.json")),
+        // The launcher's kept where it's dragged to, on each screen, for every network's app on this computer.
+        places: (launcher && !phone).then(crate::computer::places),
         // An app's window opens where it was left, as each computer's apps do.
         frame: frame_file(launcher, sheet.is_some(), entrypoint, subject),
         root: launcher && phone,

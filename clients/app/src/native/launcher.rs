@@ -103,7 +103,7 @@ pub(super) async fn unopened_launcher(entrypoint: &str, why: String, crashed: bo
                 size: Size { width: Pixels(computer::SIZE.width as f32), height: Pixels(computer::SIZE.height as f32) },
                 tag: json!({}),
                 panel: Some(computer::CORNER as f32),
-                places: crate::app().shell.home().ok().map(|home| home.join("launcher-places.json")),
+                places: Some(computer::places()),
                 frame: None,
                 root: false,
                 icon: None,
