@@ -22,7 +22,8 @@
 /// a field's box), `Modal` and `Portal` (what's drawn over the page), react-native-svg's `Svg` and `Path` (a vector
 /// shape), `Video` (a screen's live video, which `LiveScreen` draws) and `Frame` (another app's page, in a sandbox of
 /// its own, as an iframe is, which only a trusted app's page shows), each styled by its `style`: styles from `styles()`, beside what uses them, whose values are the design tokens (`tokens`, from
-/// core/ui/src/tokens.ts), where a raw colour or length is a warning, "make it a token", and a raw font fails the check:
+/// core/ui/src/tokens.ts), by role: name a role, never a value, and if none fits, add one in tokens.ts. A raw colour,
+/// length, shadow or font fails the check, but in an `illustration(why, …)`, a picture of what isn't ours:
 /// `const look = styles({ row: { flexDirection: "row", gap: tokens.space.md, paddingInline: tokens.length.gutter,
 /// backgroundColor: { default: tokens.colour.card, hover: tokens.colour.muted }, font: tokens.type.label } })`, then
 /// `<View style={[look.row, open() && look.open]} />`, the last to say a property winning. The build makes each
