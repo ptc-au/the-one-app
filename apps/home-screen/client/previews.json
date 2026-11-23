@@ -2958,6 +2958,9 @@
     "taps": [
       "Tips"
     ],
+    "motions": {
+      "Swiped to the next tip": { "from": { "x": 200, "y": 630 }, "gesture": { "swipe": [-200, 0], "speed": 800 } }
+    },
     "checks": {
       "a press on what's around the sheet closes it": [
         {

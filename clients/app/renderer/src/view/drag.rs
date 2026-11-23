@@ -175,8 +175,12 @@ impl Screen {
                 self.drag = None;
                 return;
             }
-            // It's dragged from here, as UIScrollView's pan's translation starts again as it's recognised.
-            (drag.began, drag.start) = (true, at);
+            // It's dragged from where the press crossed the few points, as UIScrollView's pan takes its slop off its
+            // translation as it's recognised: nothing jumps them, and the frame that recognises it draws it moved by
+            // what's past them, where one dragged from here drew it where it was, the same as the frame before (a
+            // tip swiped at 120 Hz).
+            let past = threshold / moved.x.hypot(moved.y);
+            (drag.began, drag.start) = (true, point(drag.start.x + moved.x * past, drag.start.y + moved.y * past));
             // Once it's dragged, it's not pressed.
             self.states.pressed = None;
             let id = drag.id;
