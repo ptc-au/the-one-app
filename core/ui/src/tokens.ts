@@ -78,9 +78,9 @@ const white = "oklch(1 0 0)"
 const neutral = { 185: "oklch(0.185 0 0)", 225: "oklch(0.225 0 0)", 260: "oklch(0.26 0 0)", 269: "oklch(0.269 0 0)" } as const
 const zinc = { 224: "oklch(0.224 0.008 285.76)", 919: "oklch(0.919 0.003 286.35)", 962: "oklch(0.962 0.004 286.32)", 977: "oklch(0.977 0.003 286.35)", 991: "oklch(0.991 0.001 286.38)" } as const
 const red = { 525: "oklch(0.525 0.204 25.56)", 745: "oklch(0.745 0.191 23.4)" } as const
-const orange = { 600: "oklch(0.60 0.164 57.12)", 782: "oklch(0.782 0.171 67.22)" } as const
+const orange = { 506: "#9a4d00", 600: "oklch(0.60 0.164 57.12)", 782: "oklch(0.782 0.171 67.22)", 820: "#ffb340" } as const
 const yellow = { 865: "#ffcc00", 885: "#ffd60a" } as const
-const green = { 600: "oklch(0.6 0.17 149)", 756: "#30d158" } as const
+const green = { 479: "#13702f", 600: "oklch(0.6 0.17 149)", 756: "#30d158" } as const
 const blue = { 510: "oklch(0.51 0.199 261.84)", 714: "oklch(0.714 0.139 249.06)" } as const
 const purple = { 615: "#af52de", 656: "#bf5af2" } as const
 const pink = { 650: "#ff2d55", 658: "#ff375f" } as const
@@ -265,6 +265,16 @@ const roles = {
   /** A switch's thumb: white in light and dark, as iOS's and macOS's are, off its track by its edge's shadow. */
   thumb: colour(white),
   loader: alpha(label, 40),
+  /** The row that's open among a few, each showing what it's about where it's open (Welcome's four, Connect your AI's
+   * assistants), and one under the pointer. */
+  choice: colour(opacity(black, 5), opacity(white, 8)),
+  choiceHover: colour(opacity(black, 3), opacity(white, 5)),
+  /** A page dot not shown: at 3:1 against the page, as a control's mark must be. */
+  pageDot: colour(opacity(black, 50), opacity(white, 50)),
+  /** Words that warn, and words that say it worked: orange's and green's, deep enough in light to read at WCAG AA's
+   * 4.5:1 on a page's grey, which the accents' aren't. */
+  warningLabel: colour(orange[506], orange[820]),
+  successLabel: colour(green[479], green[756]),
   ...accents,
   redTint: alpha(accents.red, 12),
   orangeTint: alpha(accents.orange, 12),
@@ -325,6 +335,9 @@ export const tokens = {
     gutter: lengths.gutter,
     readable: lengths.readable,
     hairline: lengths.hairline,
+    /** A centred screen's parts, as sign-in's, at their widest; and a network's mark over its name there. */
+    narrow: length(px(352)),
+    mark: length(px(88)),
     /** A split's list beside what it opens: its widest and its narrowest. */
     column: length(rem(24)),
     columnMin: length(rem(18)),
@@ -399,6 +412,8 @@ export const tokens = {
     /** A checkbox's and a radio's ring, off: a whole point, at 3:1 or more against what it's on (WCAG's non-text
      * contrast), as iOS's and macOS's are drawn. */
     tick: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(black, 45), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(white, 40), inset: true }]),
+    /** A keycap's, as a shortcut's keys are drawn: a soft shadow under it. */
+    keycap: shadow({ x: 0, y: 1, blur: 2, spread: 0, colour: opacity(black, 6) }),
     /** A key's chip: an outline, as Raycast draws ⌘ and K. */
     key: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(black, 16), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(white, 20), inset: true }]),
     /** A raised thing's edge inside: a half-pixel line, lit along the top. */

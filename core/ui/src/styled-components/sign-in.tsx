@@ -20,10 +20,10 @@ const look = styles({
     paddingInline: tokens.length.gutter,
     textAlign: "center",
   },
-  part: { maxWidth: 352, gap: tokens.grid[1], alignItems: "center" },
+  part: { maxWidth: tokens.length.narrow, gap: tokens.grid[1], alignItems: "center" },
   // What else it asks, as wide as it may be: a field has no width of its own.
-  asks: { width: "100%", maxWidth: 352, gap: tokens.grid[1], textAlign: "start" },
-  mark: { width: 88, height: 88 },
+  asks: { width: "100%", maxWidth: tokens.length.narrow, gap: tokens.grid[1], textAlign: "start" },
+  mark: { width: tokens.length.mark, height: tokens.length.mark },
   heading: { font: tokens.type.largeTitle },
   grey: { color: tokens.colour.secondaryLabel },
   shown: { font: tokens.type.largeTitle, fontFamily: tokens.font.mono },
@@ -37,7 +37,7 @@ const look = styles({
   words: { flexShrink: 1 },
   status: { flexDirection: "row", gap: tokens.grid[2], alignItems: "center", color: tokens.colour.secondaryLabel },
   // As wide as its widest button, which the other is too.
-  answers: { maxWidth: 352, gap: tokens.grid[2] },
+  answers: { maxWidth: tokens.length.narrow, gap: tokens.grid[2] },
   // `stop` first, then the button, side by side.
   beside: { flexDirection: "row-reverse" },
   half: { flexGrow: 1 },
