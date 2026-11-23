@@ -9,10 +9,14 @@ const MINUTES = 10
 /// past it the system stops one of them, never another program (22 Nov: the machine's 26 GB ran out, and the
 /// system stopped an agent).
 export const TOGETHER = 0.4
+/// Their CPU share against everything else on the machine, as batch work's: a slice's weight is its own against the
+/// other slices' (an agent's processes together have 10, a default one 100), so renders wait for agents and local
+/// networks, not the other way round.
+const CPU_WEIGHT = 10
 /// `command` within that memory, in a systemd scope of its own in the slice they all share, on Linux where systemd
 /// is; elsewhere as it is.
 const capped = (command) => (Bun.which("systemd-run") ? ["systemd-run", "--user", "--scope", "--quiet", "--slice=headless.slice", "-p", `MemoryMax=${MEMORY}`, "-p", "MemorySwapMax=0", ...command] : command)
-if (Bun.which("systemctl")) Bun.spawnSync(["systemctl", "--user", "set-property", "--runtime", "headless.slice", `MemoryMax=${Math.round(TOGETHER * 100)}%`, "MemorySwapMax=0"])
+if (Bun.which("systemctl")) Bun.spawnSync(["systemctl", "--user", "set-property", "--runtime", "headless.slice", `MemoryMax=${Math.round(TOGETHER * 100)}%`, "MemorySwapMax=0", `CPUWeight=${CPU_WEIGHT}`])
 
 /// Why a run's headless renderer was stopped, by its exit status, if it was.
 export const stopped = (status) => ({ 137: `it was stopped for its memory: past its own ${MEMORY}B, or the machine's headless renderers' together past ${TOGETHER * 100}% of its memory`, 124: `it ran for ${MINUTES} minutes, and was stopped` })[status]

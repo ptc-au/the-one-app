@@ -81,7 +81,7 @@ requests as one any worktree drew before is taken from `~/.cache/the-one-app/scr
 recently used going), so main's "before" is drawn once for every agent, and a pass after a change draws only what it changed;
 what the rules said of each is kept beside it (`judged`), so what was drawn before isn't judged again. Each is a persistent worker
 (`--persistent_worker`, Bazel's protocol) that keeps its GPU and draws one run after another, every run else its own;
-together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
+together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`, at CPU weight 10 as batch work). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
 not every time. Compare only runs made on the same GPU. What counts is **what changed since `--against`** on our renderer
 (`changed.png`, drawn where they differ): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
