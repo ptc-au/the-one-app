@@ -46,7 +46,7 @@ defmodule HomeScreen do
     ]
 
   # The tips a client shows each person once (`tip`).
-  @tips ["pull-home"]
+  @tips ["pull-home", "welcome"]
 
   @impl true
   def tools do
@@ -186,8 +186,9 @@ defmodule HomeScreen do
         name: "tips",
         read_only: true,
         description: """
-        The tips a client shows each person once, on whichever device they're on, that you've seen: `pull-home`, the
-        rail's "Pull to go home", shown the first time an app opens on a phone, a tablet or the mobile web.
+        The tips a client shows each person once, on whichever device they're on, that you've seen: `welcome`, the
+        Welcome the Home Screen opens on first, before your pages; and `pull-home`, the rail's "Pull to go home", shown
+        the first time an app opens on a phone, a tablet or the mobile web.
         """,
         inputs: none,
         outputs: seen
