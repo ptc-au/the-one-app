@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use ::client::{Client, Connection, State};
 use serde_json::{Value, json};
+use tokio::sync::broadcast;
 use url::Url;
 
 use crate::*;
@@ -120,7 +121,17 @@ pub(crate) async fn opens() {
     // notification reaches it with its window hidden.
     let mut notifications = client.notifications();
     spawn(async move {
-        while let Ok(message) = notifications.recv().await {
+        loop {
+            let message = match notifications.recv().await {
+                Ok(message) => message,
+                // What came while the runtime was held, as a Mac's locked app napping: the oldest are dropped and the
+                // rest still come. Ending here would leave the app hearing nothing more, whatever it runs until.
+                Err(broadcast::error::RecvError::Lagged(missed)) => {
+                    eprintln!("the network said {missed} things while this client was behind, so it hears what came after them");
+                    continue;
+                }
+                Err(broadcast::error::RecvError::Closed) => return,
+            };
             if message["method"] == "notifications/one/update" {
                 spawn(updater::heard(message["params"].clone()));
                 continue;

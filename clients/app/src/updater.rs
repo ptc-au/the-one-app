@@ -2,10 +2,12 @@
 //! without asking, as Chrome and VS Code update and start again: the network's only channel is its dev channel, where
 //! its person sees each change as soon as it's live. Its servers tell it as the network's update moves
 //! (`notifications/one/update`, `OneCore.Release.instructed/1`), with the latest build of each `one` and the build of
-//! the edge, which serves the page; it asks as it opens, as it reconnects, and as a window comes on screen, at most
-//! once a minute, for what it missed; and a computer's app hears its own program replaced, as its device's server or
-//! `one update` replaces it, so that alone has it start again, whatever it heard. What it decides it reports
-//! (`one.client.update.*`), as Telemetry shows.
+//! the edge, which serves the page; it asks as it opens, as it reconnects, as a window comes on screen, and every
+//! five minutes while it runs, whatever its windows are doing, for what it missed, at most once a minute: a server
+//! that couldn't reach it forgets it watches (`core/server/nif/one_core_iroh`'s `notify`), and one that wrote into a
+//! connection that had gone said it was sent, so a notice alone can be missed for good. A computer's app also hears
+//! its own program replaced, as its device's server or `one update` replaces it, so that alone has it start again,
+//! whatever it heard. What it decides it reports (`one.client.update.*`), as Telemetry shows.
 //!
 //! A computer's app takes a newer build of itself (on a device that's also a server, beside its server, which runs it
 //! from its next start, or by its server as it restarts on one that changed what it runs, `cli::serving`), or keeps a
@@ -44,6 +46,10 @@ static WAITING: AtomicBool = AtomicBool::new(false);
 #[cfg(target_os = "android")]
 static APK: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
 
+/// How long the app goes between asking the network what it missed, whatever its windows are doing: a notice it
+/// didn't hear, as a Mac's locked app napping through one, is found within this after it was sent.
+const EVERY: Duration = Duration::from_secs(300);
+
 /// Starts keeping the app on what's latest, as it opens: a computer's hears its own program replaced, and it asks the
 /// network what it has.
 pub fn start() {
@@ -55,6 +61,18 @@ pub fn start() {
         let _ = std::fs::remove_file(home.join("update.apk"));
     }
     looked();
+    asking();
+}
+
+/// Asks the network what the app missed every `EVERY`, for as long as it runs: the servers tell it when a build is
+/// there, and one of those notices can be lost, so nothing is left waiting for one.
+fn asking() {
+    crate::spawn(async {
+        loop {
+            tokio::time::sleep(EVERY).await;
+            looked();
+        }
+    });
 }
 
 /// A window came on screen, or the app opened: the network is asked what the app missed, if it wasn't in the last
