@@ -3,7 +3,7 @@
 // closes. A file and a commit open in the repo's place, with Back.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { marked, type Token, type Tokens } from "marked"
-import { Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Section, Select, share, Sheet, since, size, Skeleton, Split, styles, Svg, Tabs, Text, toast, tokens, View } from "ui"
+import { Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Skeleton, Split, styles, Svg, Tabs, Text, toast, tokens, View, viewport } from "ui"
 
 /** A commit, as the tools answer it. */
 interface Commit {
@@ -33,7 +33,19 @@ interface At {
 }
 
 const json = <T,>(tool: string, inputs?: object, options?: { subject?: string }): Promise<T> => call(tool, inputs, options).then(JSON.parse)
-const repos = createMemo(() => json<{ repos: { repo: string; whose: string; pushed?: number }[] }>("git-repos_list").then(({ repos }) => repos))
+/** A repo in the list, as `git-repos_list` answers it. */
+interface Listed {
+  repo: string
+  whose: string
+  owner: string
+  name: string
+  visibility: "private" | "everyone" | "group"
+  group: string | null
+  description: string | null
+  language: string | null
+  pushed: number
+}
+const repos = createMemo(() => json<{ repos: Listed[] }>("git-repos_list").then(({ repos }) => repos))
 changed(() => refresh(repos))
 
 /// The repo open beside the list, by its name, and where in it: a view, and a folder, a file or a commit.
@@ -120,6 +132,35 @@ const look = styles({
   lineText: { flexShrink: 0, color: tokens.colour.label, fontFamily: tokens.font.mono, whiteSpace: "nowrap" },
   message: { padding: tokens.grid[4] },
   messageMore: { paddingBottom: tokens.grid[2] },
+  // A repo's row: its owner's mark, its name with who can see it, and what it is and when it was pushed to.
+  avatar: { width: tokens.grid[8], height: tokens.grid[8], alignItems: "center", justifyContent: "center" },
+  person: { borderRadius: tokens.radius.full },
+  group: { borderRadius: tokens.radius.medium },
+  mark: { backgroundColor: tokens.colour.tile, color: tokens.colour.label },
+  initials: { font: tokens.type.small, fontWeight: tokens.weight.semibold },
+  owner: { fontWeight: tokens.weight.regular, color: tokens.colour.secondaryLabel },
+  name: { fontWeight: tokens.weight.semibold },
+  visible: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
+  language: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
+  dot: { width: tokens.grid[2], height: tokens.grid[2], borderRadius: tokens.radius.full },
+  pushed: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: tokens.grid[2.5], rowGap: tokens.grid[1] },
+  lock: { width: tokens.length.icon, height: tokens.length.icon, flexShrink: 0, color: tokens.colour.secondaryLabel },
+  chips: { gap: tokens.grid[2] },
+  chip: { flexShrink: 0, height: tokens.length.control, paddingInline: tokens.grid[4], alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.full, backgroundColor: tokens.colour.quinaryLabel, color: tokens.colour.label },
+  chosen: { backgroundColor: tokens.colour.label, color: tokens.colour.background },
+  filters: { gap: tokens.grid[3] },
+  blue: { backgroundColor: tokens.colour.blueTint, color: tokens.colour.label },
+  green: { backgroundColor: tokens.colour.greenTint, color: tokens.colour.label },
+  purple: { backgroundColor: tokens.colour.purpleTint, color: tokens.colour.label },
+  orange: { backgroundColor: tokens.colour.orangeTint, color: tokens.colour.label },
+  magenta: { backgroundColor: tokens.colour.magentaTint, color: tokens.colour.label },
+  red: { backgroundColor: tokens.colour.redTint, color: tokens.colour.label },
+  blueDot: { backgroundColor: tokens.colour.blue },
+  greenDot: { backgroundColor: tokens.colour.green },
+  purpleDot: { backgroundColor: tokens.colour.purple },
+  orangeDot: { backgroundColor: tokens.colour.orange },
+  magentaDot: { backgroundColor: tokens.colour.magenta },
+  redDot: { backgroundColor: tokens.colour.red },
 })
 
 /// The name a new repo may have.
@@ -234,21 +275,133 @@ function Waiting() {
 }
 const me = createMemo(() => mine())
 
+/// A person, a group or the network by a colour of its own, from its name, as an avatar is: the same one wherever it shows.
+const hue = (name: string) => [...name].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 6
+const fills = [look.blue, look.green, look.purple, look.orange, look.magenta, look.red]
+const dots = [look.blueDot, look.greenDot, look.purpleDot, look.orangeDot, look.magentaDot, look.redDot]
+
+/// An owner's mark as GitHub's avatars are: a person's is round, with their initials; a group's is square, and so is the network's.
+function Avatar(props: { owner: string; whose: string }) {
+  const network = () => props.whose === "network"
+  const initials = () => props.owner.split(/[-_]/).filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join("")
+  return (
+    <View aria-hidden="true" style={[look.avatar, props.whose.startsWith("users/") ? look.person : look.group, network() ? look.mark : fills[hue(props.owner)]]}>
+      <Text style={look.initials}>{initials()}</Text>
+    </View>
+  )
+}
+
+// Phosphor's lock, as the folder and the branch are drawn.
+const LOCK = "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80Zm-80,84a12,12,0,1,1,12-12A12,12,0,0,1,128,164Zm32-84H96V56a32,32,0,0,1,64,0Z"
+
+/// Who can see a repo: Private, with a lock, where only its owner and the people it's shared with by name do; Everyone, where the
+/// whole network can read it; or the name of the group it's shared with.
+function Visible(props: { repo: Listed }) {
+  return (
+    <View style={look.visible}>
+      <Show when={props.repo.visibility === "private"}>
+        <Svg viewBox="0 0 256 256" aria-hidden="true" style={look.lock}>
+          <Path d={LOCK} />
+        </Svg>
+      </Show>
+      <Badge variant="outline">{props.repo.visibility === "private" ? "Private" : props.repo.visibility === "everyone" ? "Everyone" : props.repo.group!}</Badge>
+    </View>
+  )
+}
+
+/// A repo's language, with a dot of its colour.
+function Language(props: { language: string }) {
+  return (
+    <View style={look.language}>
+      <View style={[look.dot, dots[hue(props.language)]]} />
+      <Text style={look.quiet}>{props.language}</Text>
+    </View>
+  )
+}
+
+/// What a repo is besides its name, in a line under its words (a row's `action` is under them in a narrow room, beside them
+/// in a wide one): who can see it, its main language, and when it was last pushed to.
+function About(props: { repo: Listed }) {
+  return (
+    <View style={look.pushed}>
+      <Visible repo={props.repo} />
+      <Show when={props.repo.language}>{(language) => <Language language={language()} />}</Show>
+      <Text style={look.quiet}>{props.repo.pushed ? `Pushed ${since(props.repo.pushed, "narrow")}` : "Empty"}</Text>
+    </View>
+  )
+}
+
+/// Which repos are shown: all, those that are yours, or those shared with you.
+const [view, setView] = createSignal("all")
+const [query, setQuery] = createSignal("")
+
+/// A way to choose a list's view, as a computer's tabs and a phone's chips.
+function Views(props: { counts: Record<string, number> }) {
+  const views = [
+    ["all", "All"],
+    ["yours", "Yours"],
+    ["shared", "Shared with you"],
+  ]
+  return (
+    <Show
+      when={viewport().width >= 768}
+      fallback={
+        <Shelf role="toolbar" aria-label="Show" style={look.chips}>
+          <For each={views}>
+            {(one) => (
+              <Pressable role="button" aria-pressed={view() === one[0] ? "true" : "false"} onPress={() => setView(one[0])} style={[look.chip, view() === one[0] && look.chosen]}>
+                <Text>{`${one[1]} ${props.counts[one[0]]}`}</Text>
+              </Pressable>
+            )}
+          </For>
+        </Shelf>
+      }
+    >
+      <Tabs.Root value={view()} onValueChange={setView}>
+        <Tabs.List>
+          <For each={views}>{(one) => <Tabs.Trigger value={one[0]}>{`${one[1]} ${props.counts[one[0]]}`}</Tabs.Trigger>}</For>
+          <Tabs.Indicator />
+        </Tabs.List>
+      </Tabs.Root>
+    </Show>
+  )
+}
+
 function GitRepos() {
+  const yours = (repo: Listed) => repo.whose === me()
+  const found = () => {
+    const words = query().trim().toLowerCase()
+    return repos().filter((repo) => `${repo.owner}/${repo.name} ${repo.description ?? ""}`.toLowerCase().includes(words))
+  }
+  const counts = () => ({ all: found().length, yours: found().filter(yours).length, shared: found().filter((repo) => !yours(repo)).length })
+  const shown = () => found().filter((repo) => view() === "all" || (view() === "yours") === yours(repo)).toSorted((a, b) => b.pushed - a.pushed)
   return (
     <Screen heading="Git Repos" action={<Button onPress={() => setAdding(true)}>New</Button>}>
       <Waiting />
       <Show when={repos().length} fallback={<Empty>No repos yet.</Empty>}>
-        <List each={repos()}>
-          {(repo) => (
-            <Row
-              heading={short(repo().repo)}
-              text={`${short(repo().whose)} · ${repo().pushed ? `Pushed ${since(repo().pushed!)}` : "Empty"}`}
-              current={repo().repo === open()}
-              onPress={() => go(() => (setAt({ tab: "code", path: "" }), setRef(), setOpen(repo().repo)))}
-            />
-          )}
-        </List>
+        <View style={look.filters}>
+          <Search placeholder="Find a repository…" aria-label="Find a repository" value={query()} onChangeText={setQuery} />
+          <Views counts={counts()} />
+        </View>
+        <Show when={shown().length} fallback={<Empty>No repositories match.</Empty>}>
+          <List each={shown()} keyed={(repo) => repo.repo}>
+            {(repo) => (
+              <Row
+                start={<Avatar owner={repo().owner} whose={repo().whose} />}
+                heading={
+                  <>
+                    <Text style={look.owner}>{repo().owner}/</Text>
+                    <Text style={look.name}>{repo().name}</Text>
+                  </>
+                }
+                text={repo().description ?? undefined}
+                action={<About repo={repo()} />}
+                current={repo().repo === open()}
+                onPress={() => go(() => (setAt({ tab: "code", path: "" }), setRef(), setOpen(repo().repo)))}
+              />
+            )}
+          </List>
+        </Show>
       </Show>
     </Screen>
   )
@@ -260,6 +413,7 @@ interface About {
   head: string
   clone: string
   whose: string
+  owner: string
   owns: boolean
   pushes: boolean
   branches: { branch: string }[]
@@ -275,7 +429,7 @@ function Repo(props: { repo: string }) {
   }
   return (
     <Screen
-      heading={short(props.repo)}
+      heading={`${about().owner}/${short(props.repo)}`}
       back
       action={
         <View style={look.actions}>
@@ -296,9 +450,7 @@ function Repo(props: { repo: string }) {
         </View>
       }
     >
-      <Text style={look.footnote}>
-        {short(about().whose)} · {about().pushes ? "You push to it" : "You read it"}
-      </Text>
+      <Text style={look.footnote}>{about().pushes ? "You push to it" : "You read it"}</Text>
       <Tabs.Root value={at().tab} onValueChange={(tab) => setAt({ tab, path: "" })}>
         <Tabs.List>
           <Tabs.Trigger value="code">Code</Tabs.Trigger>

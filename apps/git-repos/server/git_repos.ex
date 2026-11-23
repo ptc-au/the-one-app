@@ -32,7 +32,8 @@ defmodule GitRepos do
   def icon, do: "client/icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.403"}
+  def requires,
+    do: %{"core" => ">= 0.34.403", "software-update" => "to know what the network's own program is called, which owns its repos"}
 
   # Every repo is listed in one index, the network's, which a call reads and writes whoever it's for, so what it
   # keeps is whoever Git Repos is installed for's, and it runs on their servers.
@@ -63,7 +64,16 @@ defmodule GitRepos do
 
   @impl true
   def tools do
-    repo = %{type: "string", description: "The repo, as `list` names it: users/alice/made/git-repos/notes"}
+    repo = %{
+      type: "string",
+      description: "The repo, as `list` names it: users/alice/made/git-repos/notes, or as it's shown, alice/notes"
+    }
+
+    owner = %{
+      type: "string",
+      description:
+        "Its owner as it's shown: a person's user name, a group's, or the network's command, as GitHub shows an organisation's"
+    }
     ref = %{type: "string", description: "A branch, a tag or a commit. Left out, the repo's default branch"}
     path = %{type: "string", description: "A path in the repo, like src/app.js. Left out, the top"}
     pull_request = %{type: "string", description: "The pull_request's name, as `pull_requests` lists them"}
@@ -96,7 +106,7 @@ defmodule GitRepos do
         name: "list",
         read_only: true,
         description:
-          "Every repo you may read, the latest pushed first: its name, whose it is, when it was last pushed, and whether you push to it",
+          "Every repo you may read, the latest pushed first: its name, whose it is, who can see it, its description and main language, when it was last pushed, and whether you push to it",
         inputs: only.(%{}, []),
         outputs: only.(
           %{
@@ -108,11 +118,22 @@ defmodule GitRepos do
                   %{
                     repo: repo,
                     whose: %{type: "string", description: "users/<name>, groups/<name> or network"},
+                    owner: owner,
+                    name: %{type: "string", description: "Its name without its owner: notes"},
+                    visibility: %{
+                      type: "string",
+                      enum: ~w(private everyone group),
+                      description:
+                        "Who can see it: `private` where only its owner and the people it's shared with by name do, `everyone` where the whole network can read it, `group` where a group does and not everyone"
+                    },
+                    group: %{type: ["string", "null"], description: "What the group or groups it's visible to are called, for `group`"},
+                    description: %{type: ["string", "null"], description: "Its README's first line of words, if it has a README"},
+                    language: %{type: ["string", "null"], description: "The language most of its code is in, by its files' extensions"},
                     pushed: ms.("When it was last pushed"),
                     pushes: %{type: "boolean", description: "Whether you push to it"},
                     clone: clone
                   },
-                  ["repo", "whose", "pushed", "pushes", "clone"]
+                  ["repo", "whose", "owner", "name", "visibility", "pushed", "pushes", "clone"]
                 )
             }
           },
@@ -130,6 +151,7 @@ defmodule GitRepos do
             repo: repo,
             head: %{type: "string", description: "The default branch"},
             whose: %{type: "string"},
+            owner: owner,
             clone: clone,
             pushes: %{type: "boolean", description: "Whether you push to it"},
             owns: %{type: "boolean", description: "Whether you own it"},
@@ -139,7 +161,7 @@ defmodule GitRepos do
               items: Map.update!(commit, :properties, &Map.put(&1, :branch, %{type: "string"}))
             }
           },
-          ["repo", "head", "whose", "clone", "pushes", "owns", "branches"]
+          ["repo", "head", "whose", "owner", "clone", "pushes", "owns", "branches"]
         )
       },
       %{
@@ -355,8 +377,11 @@ defmodule GitRepos do
     nil
   end
 
+  # A repo is named in a tool's inputs as the tools name it, or as it's shown, `owner/name` (`andre/notes`).
   @impl true
-  def call("create", %{"name" => name}, call) do
+  def call(tool, inputs, call), do: run(tool, named(call, inputs), call)
+
+  defp run("create", %{"name" => name}, call) do
     if not (name =~ ~r/^[a-z0-9][a-z0-9_-]{0,63}$/),
       do: raise("A repo's name is lowercase letters, digits, - and _, starting with a letter or digit")
 
@@ -382,7 +407,9 @@ defmodule GitRepos do
     %{repo: Artifact.name(repo), clone: address(repo)}
   end
 
-  def call("list", _inputs, call) do
+  defp run("list", _inputs, call) do
+    command = command(call)
+    called = for %{"group" => group, "called" => called} <- Call.tool(call, "permissions", "groups", %{})["groups"], into: %{}, do: {group, called}
     names = for "index/" <> name <- Artifact.list(index(), "index/"), Call.reaches?(call, name), do: name
 
     repos =
@@ -394,22 +421,14 @@ defmodule GitRepos do
         # A repo restored while Git Repos wasn't installed wasn't heard of, so one marked removed is looked for.
         if stored["purging"] || (stored["removed"] && OneCore.Bucket.size(name <> "/repo.json") == :absent),
           do: [],
-          else: [
-            %{
-              repo: name,
-              whose: name |> String.split("/made/") |> hd(),
-              pushed: stored["pushed"],
-              pushes: Call.reaches?(call, name, "editor"),
-              clone: address(name)
-            }
-          ]
+          else: [listed(call, name, stored, command, called)]
       end)
       |> Enum.sort_by(& &1.pushed, :desc)
 
     %{repos: repos}
   end
 
-  def call("branches", %{"repo" => name}, call) do
+  defp run("branches", %{"repo" => name}, call) do
     {folder, state} = read(call, name)
 
     branches =
@@ -429,7 +448,8 @@ defmodule GitRepos do
     %{
       repo: name,
       head: state["head"],
-      whose: name |> String.split("/made/") |> hd(),
+      whose: whose(name),
+      owner: owner(whose(name), command(call)),
       clone: address(name),
       pushes: Call.reaches?(call, name, "editor"),
       owns: Call.reaches?(call, name, "owner"),
@@ -437,7 +457,7 @@ defmodule GitRepos do
     }
   end
 
-  def call("tree", %{"repo" => name} = inputs, call) do
+  defp run("tree", %{"repo" => name} = inputs, call) do
     {folder, state} = read(call, name)
     at = rev(state, inputs)
     path = String.trim(inputs["path"] || "", "/")
@@ -473,7 +493,7 @@ defmodule GitRepos do
     end
   end
 
-  def call("file", %{"repo" => name, "path" => path} = inputs, call) do
+  defp run("file", %{"repo" => name, "path" => path} = inputs, call) do
     {folder, state} = read(call, name)
     at = "#{rev(state, inputs)}:#{String.trim(path, "/")}"
     size = String.to_integer(String.trim(Mirror.git!(folder, ["cat-file", "-s", at])))
@@ -491,7 +511,7 @@ defmodule GitRepos do
     end
   end
 
-  def call("log", %{"repo" => name} = inputs, call) do
+  defp run("log", %{"repo" => name} = inputs, call) do
     {folder, state} = read(call, name)
     page = inputs["page"] || 0
 
@@ -503,7 +523,7 @@ defmodule GitRepos do
     end
   end
 
-  def call("commit", %{"repo" => name, "sha" => sha}, call) do
+  defp run("commit", %{"repo" => name, "sha" => sha}, call) do
     {folder, _state} = read(call, name)
     format = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%B%x1e"
 
@@ -523,7 +543,7 @@ defmodule GitRepos do
     }
   end
 
-  def call("pull_requests", %{"repo" => name}, call) do
+  defp run("pull_requests", %{"repo" => name}, call) do
     {folder, state} = read(call, name)
 
     pull_requests =
@@ -547,7 +567,7 @@ defmodule GitRepos do
     %{pull_requests: pull_requests}
   end
 
-  def call("merge", %{"repo" => name, "pull_request" => pull_request}, call) do
+  defp run("merge", %{"repo" => name, "pull_request" => pull_request}, call) do
     repo = Call.reach(call, name, "editor")
     by = call.actor || call.subject
     %{"people" => [person]} = Call.tool(call, "sign-in", "people", %{"users" => [by]})
@@ -579,7 +599,7 @@ defmodule GitRepos do
     result
   end
 
-  def call("close", %{"repo" => name, "pull_request" => pull_request}, call) do
+  defp run("close", %{"repo" => name, "pull_request" => pull_request}, call) do
     repo = writable(call, reach!(call, name))
     by = call.actor || call.subject
     editor = Call.reaches?(call, name, "editor")
@@ -607,7 +627,7 @@ defmodule GitRepos do
     result
   end
 
-  def call("remove", %{"repo" => name}, call) do
+  defp run("remove", %{"repo" => name}, call) do
     repo!(name)
     Call.tool(call, "soft-delete", "delete", %{"artifact" => name})
     indexed(name, "deleted", name)
@@ -615,7 +635,7 @@ defmodule GitRepos do
   end
 
   # Restored beside a repo made at its name since, it's at another name, notes-2, which it answers with.
-  def call("restore", %{"repo" => name}, call) do
+  defp run("restore", %{"repo" => name}, call) do
     repo!(name)
 
     item =
@@ -628,7 +648,7 @@ defmodule GitRepos do
     %{repo: as}
   end
 
-  def call("git", %{"repo" => name, "path" => path} = inputs, call) do
+  defp run("git", %{"repo" => name, "path" => path} = inputs, call) do
     repo = reach!(call, name)
     process = Mirror.of(call, repo)
     body = body(call, inputs)
@@ -867,7 +887,7 @@ defmodule GitRepos do
 
   defp repo!(name) do
     if not (name =~ @repo),
-      do: raise("#{name} isn't a repo's name.\n\nA repo's name is as `repos list` gives them: users/alice/made/git-repos/notes")
+      do: raise("#{name} isn't a repo's name.\n\nA repo's name is as `repos list` gives them: users/alice/made/git-repos/notes, or alice/notes")
   end
 
   # A ref asked for, which git checks; the default branch if none was.
@@ -954,6 +974,155 @@ defmodule GitRepos do
   @doc "The address git clones a repo by, on any device of the network: `one::<repo>`."
   def address(%Artifact{} = repo), do: address(Artifact.name(repo))
   def address(name), do: "one::" <> name
+
+  # A repo in the list: whose it is, who can see it, and what's kept of what's in it (`about`).
+  defp listed(call, name, stored, command, called) do
+    whose = whose(name)
+    {visibility, group} = visibility(call, name, whose, called)
+    about = about(call, name, stored)
+
+    %{
+      repo: name,
+      whose: whose,
+      owner: owner(whose, command),
+      name: name |> String.split("/") |> List.last(),
+      visibility: visibility,
+      group: group,
+      description: about["description"],
+      language: about["language"],
+      pushed: stored["pushed"],
+      pushes: Call.reaches?(call, name, "editor"),
+      clone: address(name)
+    }
+  end
+
+  defp whose(name), do: name |> String.split("/made/") |> hd()
+
+  # A person is their user name, a group its name, and the network what its own program is run as (`command`), as GitHub
+  # shows an organisation by its name.
+  defp owner("network", command), do: command
+  defp owner("users/" <> name, _command), do: name
+  defp owner("groups/" <> name, _command), do: name
+
+  # What the network's own program is run as, which its installers are named for (`<command>.exe`, `<command>-linux.run`):
+  # `one` where it has none of its own.
+  defp command(call) do
+    installers = Call.tool(call, "software-update", "installers", %{})["installers"]
+
+    Enum.find_value(installers, "one", fn
+      %{"platform" => "windows-program", "name" => name} -> Path.rootname(name)
+      %{"platform" => "linux", "name" => name} -> String.replace_suffix(name, "-linux.run", "")
+      _ -> nil
+    end)
+  end
+
+  # `owner/name` as the full name of a repo you may read, which `owner` is a user, a group or, as its program is called,
+  # the network's. Anything else is as it was.
+  defp named(call, %{"repo" => repo} = inputs) when is_binary(repo) do
+    case String.split(repo, "/") do
+      [owner, name] ->
+        found =
+          Enum.find(
+            (if owner == command(call), do: ["network"], else: []) ++ ["users/" <> owner, "groups/" <> owner],
+            fn whose ->
+              full = "#{whose}/made/git-repos/#{name}"
+              match?({:ok, _, _}, Artifact.read(index(), "index/" <> full)) and Call.reaches?(call, full)
+            end
+          )
+
+        if found, do: %{inputs | "repo" => "#{found}/made/git-repos/#{name}"}, else: inputs
+
+      _ ->
+        inputs
+    end
+  end
+
+  defp named(_call, inputs), do: inputs
+
+  # Who can see a repo, from what Permissions says: what the network's owns, everyone in it does, and what a group's
+  # owns, its members do; one of a person's only they do, unless it's shared with everyone or with a group.
+  defp visibility(_call, _name, "network", _called), do: {"everyone", nil}
+
+  defp visibility(call, name, whose, called) do
+    who = for %{"who" => who} <- Call.tool(call, "permissions", "shared", %{"artifact" => name})["tuples"], do: who
+
+    groups =
+      for group <- Enum.uniq((if String.starts_with?(whose, "groups/"), do: [whose], else: []) ++ for("groups/" <> _ = group <- who, do: group)),
+          do: called[group] || String.replace_prefix(group, "groups/", "")
+
+    cond do
+      "everyone" in who -> {"everyone", nil}
+      groups != [] -> {"group", Enum.join(groups, ", ")}
+      true -> {"private", nil}
+    end
+  end
+
+  # What a repo is, for the list, kept in its entry in the index for as long as it's not pushed to: its README's first
+  # line of words, and the language most of its files are in.
+  defp about(_call, _name, %{"about" => %{"at" => at} = about, "pushed" => at}), do: about
+
+  defp about(call, name, stored) do
+    {folder, state} = read(call, name)
+    head = state["head"]
+
+    about =
+      if Map.has_key?(state["refs"], "refs/heads/" <> head) do
+        files =
+          for entry <- String.split(Mirror.git!(folder, ["ls-tree", "-r", "-z", "-l", "refs/heads/" <> head]), "\0", trim: true),
+              [about, path] = String.split(entry, "\t", parts: 2),
+              [_mode, "blob", sha, size] = String.split(about, ~r/ +/),
+              do: {path, sha, String.to_integer(size)}
+
+        %{"description" => description(folder, files), "language" => language(files)}
+      else
+        %{}
+      end
+
+    about = Map.put(about, "at", stored["pushed"])
+    Artifact.update(index(), "index/" <> name, fn data -> data && JSON.encode!(Map.put(JSON.decode!(data), "about", about)) end)
+    about
+  end
+
+  # The first line of words of the repo's README: not its title if there's a line of words after it, nor a badge, a
+  # picture, a rule or a table.
+  defp description(folder, files) do
+    with {_, sha, size} when size < @shown <- Enum.find(files, fn {path, _, _} -> path =~ ~r/^readme(\.(md|markdown|txt))?$/i end) do
+      lines = for line <- lines(Mirror.git!(folder, ["cat-file", "blob", sha])), line = String.trim(line), line != "", do: line
+      prose = Enum.find(lines, &(not String.starts_with?(&1, ~w(# ![ [! < ``` --- | ===))))
+      line = prose || List.first(lines)
+      line && line |> String.trim_leading("#") |> String.trim() |> String.slice(0, 160)
+    else
+      _ -> nil
+    end
+  end
+
+  @code %{
+    "ts" => "TypeScript", "tsx" => "TypeScript", "js" => "JavaScript", "jsx" => "JavaScript", "mjs" => "JavaScript",
+    "cjs" => "JavaScript", "ex" => "Elixir", "exs" => "Elixir", "heex" => "Elixir", "rs" => "Rust", "py" => "Python",
+    "go" => "Go", "rb" => "Ruby", "java" => "Java", "kt" => "Kotlin", "swift" => "Swift", "c" => "C", "h" => "C",
+    "cc" => "C++", "cpp" => "C++", "hpp" => "C++", "cs" => "C#", "php" => "PHP", "sh" => "Shell", "bash" => "Shell",
+    "css" => "CSS", "scss" => "CSS", "html" => "HTML", "sql" => "SQL", "dart" => "Dart", "lua" => "Lua", "zig" => "Zig",
+    "nix" => "Nix", "wasm" => "WebAssembly"
+  }
+  # What isn't code only counts where a repo has none: a notes repo is Markdown.
+  @prose %{"md" => "Markdown", "markdown" => "Markdown", "txt" => "Text", "json" => "JSON", "yml" => "YAML", "yaml" => "YAML", "toml" => "TOML"}
+
+  # The language most of a repo's bytes are in, by its files' extensions.
+  defp language(files) do
+    count = fn languages ->
+      files
+      |> Enum.flat_map(fn {path, _sha, size} -> List.wrap(languages[path |> Path.extname() |> String.trim_leading(".") |> String.downcase()]) |> Enum.map(&{&1, size}) end)
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Enum.map(fn {language, sizes} -> {language, Enum.sum(sizes)} end)
+    end
+
+    case count.(@code) do
+      [] -> count.(@prose)
+      code -> code
+    end
+    |> Enum.max_by(&elem(&1, 1), fn -> nil end)
+    |> then(&(&1 && elem(&1, 0)))
+  end
 
   defp lines(text), do: String.split(text, "\n", trim: true)
   defp now, do: System.system_time(:millisecond)

@@ -6,16 +6,67 @@
           {
             "repo": "users/sam/made/git-repos/notes",
             "whose": "users/sam",
-            "pushed": 1767218400000
+            "owner": "sam",
+            "name": "notes",
+            "visibility": "private",
+            "group": null,
+            "description": "Packing lists and plans for the trips we take",
+            "language": "Markdown",
+            "pushed": 1767225480000,
+            "pushes": true,
+            "clone": "one::users/sam/made/git-repos/notes"
+          },
+          {
+            "repo": "network/made/git-repos/the-ptc-app",
+            "whose": "network",
+            "owner": "ptc",
+            "name": "the-ptc-app",
+            "visibility": "everyone",
+            "group": null,
+            "description": "The PTC App's network repo, synced with GitHub",
+            "language": "TypeScript",
+            "pushed": 1767225300000,
+            "pushes": true,
+            "clone": "one::network/made/git-repos/the-ptc-app"
+          },
+          {
+            "repo": "groups/ptc-systems/made/git-repos/systems-dashboard",
+            "whose": "groups/ptc-systems",
+            "owner": "ptc-systems",
+            "name": "systems-dashboard",
+            "visibility": "group",
+            "group": "PTC Systems",
+            "description": "One place to see how every PTC system is doing today, who looks after it and what needs fixing before the weekend",
+            "language": "TypeScript",
+            "pushed": 1767218400000,
+            "pushes": true,
+            "clone": "one::groups/ptc-systems/made/git-repos/systems-dashboard"
+          },
+          {
+            "repo": "users/james-woollett/made/git-repos/my-tasks",
+            "whose": "users/james-woollett",
+            "owner": "james-woollett",
+            "name": "my-tasks",
+            "visibility": "private",
+            "group": null,
+            "description": "Tasks I keep for myself",
+            "language": "Elixir",
+            "pushed": 1766966400000,
+            "pushes": true,
+            "clone": "one::users/james-woollett/made/git-repos/my-tasks"
           },
           {
             "repo": "groups/family/made/git-repos/recipes",
             "whose": "groups/family",
-            "pushed": 1766966400000
-          },
-          {
-            "repo": "users/sam/made/git-repos/scratch",
-            "whose": "users/sam"
+            "owner": "family",
+            "name": "recipes",
+            "visibility": "group",
+            "group": "Family",
+            "description": null,
+            "language": null,
+            "pushed": 1763769600000,
+            "pushes": true,
+            "clone": "one::groups/family/made/git-repos/recipes"
           }
         ]
       },
@@ -261,7 +312,38 @@
         "role": "button",
         "name": "More"
       },
-      "Transfer…"
+      "Transfer\u2026"
+    ]
+  },
+  "Repos on a computer": {
+    "like": "Repos",
+    "size": [
+      1100,
+      700
+    ]
+  },
+  "Repos you own": {
+    "like": "Repos",
+    "taps": [
+      "Yours 2"
+    ]
+  },
+  "Repos found by search": {
+    "like": "Repos",
+    "taps": [
+      "Find a repository",
+      {
+        "type": "dash"
+      }
+    ]
+  },
+  "No repos match": {
+    "like": "Repos",
+    "taps": [
+      "Find a repository",
+      {
+        "type": "zzz"
+      }
     ]
   }
 }
