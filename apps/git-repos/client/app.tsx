@@ -135,8 +135,6 @@ const look = styles({
   // A repo's row: its owner's mark, its name with who can see it, and what it is and when it was pushed to.
   owner: { fontWeight: tokens.weight.regular, color: tokens.colour.secondaryLabel },
   name: { fontWeight: tokens.weight.semibold },
-  visible: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
-  lock: { width: tokens.length.icon, height: tokens.length.icon, flexShrink: 0, color: tokens.colour.secondaryLabel },
   chips: { gap: tokens.grid[2] },
   chip: { flexShrink: 0, height: tokens.length.control, paddingInline: tokens.grid[4], alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.full, backgroundColor: tokens.colour.quinaryLabel, color: tokens.colour.label },
   chosen: { backgroundColor: tokens.colour.label, color: tokens.colour.background },
@@ -255,22 +253,10 @@ function Waiting() {
 }
 const me = createMemo(() => mine())
 
-// Phosphor's lock, as the folder and the branch are drawn.
-const LOCK = "M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80Zm-80,84a12,12,0,1,1,12-12A12,12,0,0,1,128,164Zm32-84H96V56a32,32,0,0,1,64,0Z"
-
-/// Who can see a repo: Private, with a lock, where only its owner and the people it's shared with by name do; Everyone, where the
-/// whole network can read it; or the name of the group it's shared with.
+/// Who can see a repo: Private, where only its owner and the people it's shared with by name do; Everyone, where the whole
+/// network can read it; or the name of the group it's shared with.
 function Visible(props: { repo: Listed }) {
-  return (
-    <View style={look.visible}>
-      <Show when={props.repo.visibility === "private"}>
-        <Svg viewBox="0 0 256 256" aria-hidden="true" style={look.lock}>
-          <Path d={LOCK} />
-        </Svg>
-      </Show>
-      <Badge variant="outline">{props.repo.visibility === "private" ? "Private" : props.repo.visibility === "everyone" ? "Everyone" : props.repo.group!}</Badge>
-    </View>
-  )
+  return <Badge variant="outline">{props.repo.visibility === "private" ? "Private" : props.repo.visibility === "everyone" ? "Everyone" : props.repo.group!}</Badge>
 }
 
 /// Which repos are shown: all, those that are yours, or those shared with you.
