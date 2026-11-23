@@ -46,7 +46,8 @@ declare global {
       };
       /** The apps that use this network's passkeys and open its links (`vars` in `wrangler.jsonc`). */
       APPLE_APPS: string[];
-      ANDROID_APPS: { package_name: string; sha256_cert_fingerprints: string[] }[];
+      ANDROID_APPS: string[];
+      ANDROID_KEYS: string[];
       APP_LINKS: string[];
       /**
        * The network's Google OAuth client, a web application's, whose redirect URI is
@@ -791,15 +792,15 @@ async function domains(): Promise<string[]> {
 
 /**
  * The network's name, icon and logo, as its owner said (`network`): what its sign-in page and web app show, and its
- * own apps are finished with. Its icon is on a tile of its own, as a Home Screen and a tab show it, and its logo is
+ * own apps are finished with; and its own Android app's package name, which its passkeys and links are its as well. Its icon is on a tile of its own, as a Home Screen and a tab show it, and its logo is
  * its mark alone, with no tile, as its pages draw it, as the One App's are `apple-touch-icon.png` and `Logo.png`: one
  * for a light page and one for a dark, either of which shows on both where it's alone. Each picture is a square PNG,
  * as base64, with its size, and is the One App's where there's none.
  */
-export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: { light?: Picture; dark?: Picture } | null }> {
-  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo')").all<{ name: string; value: string }>();
+export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: { light?: Picture; dark?: Picture } | null; android_package: string | null }> {
+  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo', 'android_package')").all<{ name: string; value: string }>();
   const kept = Object.fromEntries(results.map(({ name, value }) => [name, JSON.parse(value)]));
-  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null };
+  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null, android_package: kept.android_package ?? null };
 }
 
 /** A square PNG, as base64, with its size. */
@@ -889,6 +890,8 @@ export interface Ask {
   /** With `network`: the network's logo, its mark with no tile, as square PNGs as base64 for a light page and a dark one
    * (`{ light, dark }`, either alone shown on both), or null for the One App's. */
   logo?: unknown;
+  /** With `network`: its own Android app's package name (`tooling/android-apk`), or null where it has none. */
+  android_package?: unknown;
 }
 
 export async function asked(auth: Auth, origin: string, { ask, who: name, building, ...about }: Ask) {
@@ -941,7 +944,13 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       if (wrong) return { error: wrong };
       await set("logo", Object.keys(logo).length ? logo : null);
     }
-    const { name, icon, logo } = await network();
+    if (about.android_package !== undefined) {
+      const named = about.android_package === null ? null : String(about.android_package);
+      // Android's rule for an application ID: two or more parts, each a letter then letters, digits or underscores.
+      if (named !== null && !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(named)) return { error: "An Android package is named like app.ptc.android." };
+      await set("android_package", named);
+    }
+    const { name, icon, logo, android_package } = await network();
     // Its mark as data too, for a page drawn where only its app's own files load, as a native window's is.
     const data = (picture?: Picture) => picture && `data:image/png;base64,${picture.png}`;
     return {
@@ -949,6 +958,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       icon: icon && `${origin}/apple-touch-icon.png`,
       logo: logo && { light: `${origin}/Logo.png`, dark: `${origin}/Logo-dark.png` },
       mark: logo && { light: data(logo.light ?? logo.dark), dark: data(logo.dark ?? logo.light) },
+      android_package,
     };
   }
   // Everyone who has joined, and everyone invited who hasn't yet, with the name each goes by.

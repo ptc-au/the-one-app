@@ -11,7 +11,7 @@ import { asked, assistant, at, BELIEVED, browserDevice, copied, expire, keep, ne
 export default {
   async fetch(request: Request, _env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname in ASSOCIATIONS) return Response.json(ASSOCIATIONS[url.pathname](), { headers: { "cache-control": "public, max-age=3600" } });
+    if (url.pathname in ASSOCIATIONS) return Response.json(await ASSOCIATIONS[url.pathname](), { headers: { "cache-control": "public, max-age=3600" } });
     if (ICONS.includes(url.pathname)) return icon(url);
     if (url.pathname === "/manifest.webmanifest") return manifest();
     if (request.method === "GET" && (url.pathname.includes("/.well-known/") || url.pathname === JWKS)) return discovery(url, ctx);
@@ -27,20 +27,22 @@ export default {
 } satisfies ExportedHandler;
 
 /**
- * What tells iOS and Android which apps are this network's (`APPLE_APPS`, `ANDROID_APPS`), so that their web views
- * offer its passkeys and its links (`APP_LINKS`) open in them: Apple's app site association and Google's Digital
- * Asset Links.
+ * What tells iOS and Android which apps are this network's (`APPLE_APPS`, `ANDROID_APPS` and the network's own Android
+ * app, `android_package` in `network`), so that their web views offer its passkeys and its links (`APP_LINKS`) open in
+ * them: Apple's app site association and Google's Digital Asset Links.
  */
 const ASSOCIATIONS: Record<string, () => unknown> = {
   "/.well-known/apple-app-site-association": () => ({
     webcredentials: { apps: env.APPLE_APPS },
     applinks: { details: [{ appIDs: env.APPLE_APPS, components: env.APP_LINKS.map((path) => ({ "/": path })) }] },
   }),
-  "/.well-known/assetlinks.json": () =>
-    env.ANDROID_APPS.map((target) => ({
+  "/.well-known/assetlinks.json": async () => {
+    const { android_package } = await network();
+    return [...env.ANDROID_APPS, ...(android_package ? [android_package] : [])].map((package_name) => ({
       relation: ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
-      target: { namespace: "android_app", ...target },
-    })),
+      target: { namespace: "android_app", package_name, sha256_cert_fingerprints: env.ANDROID_KEYS },
+    }));
+  },
 };
 
 /**
