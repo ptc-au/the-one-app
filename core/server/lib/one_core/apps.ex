@@ -224,13 +224,16 @@ defmodule OneCore.Apps do
   missed being told something, and the edge what it is: it says its status again (`OneCore.Servers.report/0`),
   invalidates what it cached of servers and hooks, looks at once at who it acts for, and at everyone else it has
   looked at behind the next request for them (`refresh/0`). Saying its status is how the network's update hears
-  it's back, and catches it up if it missed a release.
+  it's back, and catches it up if it missed a release. The clients watching it are told the network's update again,
+  as an app asks this server for its latest build each time it hears it: one that asked while this server couldn't
+  answer asks again, where it waited for a release or a restart.
   """
   def reconnected do
     Servers.report()
     Hooks.invalidate()
     Servers.invalidate()
     Enum.each(refresh(), &reload/1)
+    if update = OneCore.Release.network(), do: Server.tell("update", update)
   end
 
   @doc """
