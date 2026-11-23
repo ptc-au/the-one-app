@@ -179,7 +179,8 @@ impl Screen {
             // translation as it's recognised: nothing jumps them, and the frame that recognises it draws it moved by
             // what's past them, where one dragged from here drew it where it was, the same as the frame before (a
             // tip swiped at 120 Hz).
-            let past = threshold / moved.x.hypot(moved.y);
+            // Mutant: dragged from where the press is now, as it was before 858f3fe89.
+            let past = if crate::mutants::mutant("drag-from-here") { 1.0 } else { threshold / moved.x.hypot(moved.y) };
             (drag.began, drag.start) = (true, point(drag.start.x + moved.x * past, drag.start.y + moved.y * past));
             // Once it's dragged, it's not pressed.
             self.states.pressed = None;
