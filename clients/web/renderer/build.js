@@ -4,7 +4,7 @@
 // from (tooling/cached-build). `--mutants` builds the web gate's own, which puts back a bug its address asks for
 // (`renderer::mutants`): never one the edge serves.
 import { $ } from "bun"
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { brotliCompressSync, constants } from "node:zlib"
@@ -37,11 +37,14 @@ if (!existsSync(kept)) {
   if (mutants !== "--mutants") writeFileSync(`${making}/${named}.br`, brotliCompressSync(wasm, { params: { [constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_LGWIN]: 24, [constants.BROTLI_PARAM_SIZE_HINT]: wasm.length } }))
   // Another build of the same renderer that finished first kept the same files.
   try { renameSync(making, kept) } catch { rmSync(making, { recursive: true }) }
-  // The last few builds are kept, the tests' (`--mutants`) and the edge's among them, of the renderers the machine's
-  // worktrees build.
-  const older = readdirSync(bound).map((name) => `${bound}/${name}`).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+  // The last few builds used are kept, the tests' (`--mutants`) and the edge's among them, of the renderers the machine's
+  // worktrees build; never one another build is still making (`-<pid>`, while that pid runs), which a dozen side by side lost.
+  const unfinished = (name) => name.includes("-") && (() => { try { return process.kill(Number(name.split("-")[1]), 0) } catch { return false } })()
+  const older = readdirSync(bound).filter((name) => !unfinished(name)).map((name) => `${bound}/${name}`).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
   for (const old of older.slice(8)) rmSync(old, { recursive: true, force: true })
 }
+// Used now, so it's among the last few another build keeps as it copies it.
+utimesSync(kept, new Date(), new Date())
 cpSync(kept, out, { recursive: true })
 const named = readdirSync(kept).find((file) => file.endsWith(".wasm"))
 for (const file of ["index.html", "renderer.js"]) writeFileSync(`${out}/${file}`, readFileSync(`${out}/${file}`, "utf8").replaceAll("web_renderer_bg.wasm", named))
