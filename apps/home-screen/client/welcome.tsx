@@ -51,6 +51,8 @@ const own = defineVars({
   headingLeading: 20,
   headingTextLeading: 17.5,
   row: { default: "#0000000d", dark: "#ffffff14" },
+  // A page dot not shown stands off the page at 3:1, as a control's mark must, where the mockup's 22% didn't.
+  dotOff: { default: "#00000080", dark: "#ffffff80" },
   rowHover: { default: "#00000008", dark: "#ffffff0d" },
 })
 
@@ -83,7 +85,7 @@ const look = styles({
   headingTitle: { fontSize: own.heading, fontWeight: 650, lineHeight: own.headingLeading, color: tokens.colour.label, textAlign: "center" },
   headingText: { fontSize: own.headingText, lineHeight: own.headingTextLeading, color: tokens.colour.secondaryLabel, textAlign: "center" },
   dots: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: tokens.grid[2], paddingBlock: tokens.grid[0.5] },
-  dot: { width: own.dot, height: own.dot, borderRadius: tokens.radius.full, backgroundColor: tokens.colour.quaternaryLabel, transitionProperty: ["width", "backgroundColor"], transition: tokens.motion.settle, cursor: "pointer" },
+  dot: { width: own.dot, height: own.dot, borderRadius: tokens.radius.full, backgroundColor: own.dotOff, transitionProperty: ["width", "backgroundColor"], transition: tokens.motion.settle, cursor: "pointer" },
   dotOn: { width: own.dotOn, backgroundColor: tokens.colour.label },
   go: { alignSelf: "stretch" },
 })

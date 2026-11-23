@@ -197,7 +197,7 @@ export function Devices() {
       </Box>
 
       <Box x={344} y={140} w={76} h={154} r={17} fill="#1c1c1e" shadow="inset 0 0 0 1.2px #5a5a5e, inset 0 0 0 2.2px #222222">
-        <Box x={3.4} y={3.4} w={69.2} h={147.2} r={14} clip fill="#f2f2f7">
+        <Box x={3.4} y={3.4} w={69.2} h={147.2} r={14} fill="#f2f2f7">
           <Box x={23.6} y={3.5} w={22} h={6.5} r={4} fill="#000000" z={2} />
           <Box h={13} row between pad={[1, 6, 0, 9]}>
             <Words size={5} weight={600}>9:41</Words>
@@ -212,7 +212,7 @@ export function Devices() {
           <Box m={[5, 5, 0, 5]} fill="#ffffff" r={6} pad={[1, 5]}>
             <List size={9} bar={3} pill={10} gap={3.5} />
           </Box>
-          <Box x={0} right={0} bottom={0} h={20} fill="#f9f9f9f0" row pad={[4, 0, 0, 0]} lines={[0.5, 0, "#d1d1d6"]} style={look.around}>
+          <Box x={0} right={0} bottom={0} h={20} r={[0, 0, 14, 14]} fill="#f9f9f9f0" row pad={[4, 0, 0, 0]} lines={[0.5, 0, "#d1d1d6"]} style={look.around}>
             <Shape w={7} h={7} viewBox="0 0 10 10" parts={[{ d: rect(1, 2, 8, 7, 1.4), fill: "#ff6a2b" }, { d: "M1 4.5h8", stroke: "#ffffff", width: 0.8 }]} />
             <Shape w={7} h={7} viewBox="0 0 10 10" parts={[{ d: circle(5, 3.4, 2), fill: "#8e8e93" }, { d: "M1.5 9.5c0-2.2 1.6-3.4 3.5-3.4s3.5 1.2 3.5 3.4z", fill: "#8e8e93" }]} />
             <Shape w={7} h={7} viewBox="0 0 10 10" parts={[{ d: circle(5, 5, 3.8), stroke: "#8e8e93", width: 1.2 }, { d: circle(5, 5, 1.2), fill: "#8e8e93" }]} />
@@ -451,10 +451,10 @@ function Asking(props: { x: number; y: number; who: Person; name: string; ring: 
 function Change(props: { h: number; m: number; ring: `#${string}`; who: Person; delay: number; grow: typeof moves.growPhoto; inner: typeof moves.photo; children?: Element; button?: boolean }) {
   return (
     <Box m={[0, 8, 0, 8]} move={props.grow} delay={props.delay} duration={500}>
-      <Box x={0} y={props.m} right={0} r={props.button ? 99 : 8} shadow={`0 0 0 1.5px #ffffff, 0 0 0 3px ${props.ring}`} move={props.inner} delay={props.delay} duration={500} middle={props.button} image={props.button ? "linear-gradient(135deg, #ff9a3d, #f2546b)" : undefined}>
+      <Box x={0} y={props.m} right={0} r={props.button ? 99 : 8} shadow={`0 0 0 1.5px #ffffff, 0 0 0 3px ${props.ring}`} move={props.inner} delay={props.delay} duration={500} middle={props.button} image={props.button ? "linear-gradient(135deg, #ff9a3d, #f2546b)" : "linear-gradient(180deg, #ffd27a, #ff9a5a 70%)"} clip={!props.button}>
         {props.children}
-        <Avatar who={props.who} size={14} right={-6} y={-6} shadow="0 0 0 1.5px #ffffff" move={moves.popFace} delay={props.delay + 350} duration={300} />
       </Box>
+      <Avatar who={props.who} size={14} right={-6} y={props.m - 6} shadow="0 0 0 1.5px #ffffff" move={moves.popFace} delay={props.delay + 350} duration={300} />
     </Box>
   )
 }
@@ -467,7 +467,7 @@ export function Multiplayer() {
       <Asking x={294} y={140} who="james" name="James" ring="#2f7cf6" logo="chatgpt.svg" ai="ChatGPT" fill="#ffffff" ink="#0d0d0d" bubble="#f4f4f4" round={12} ask="Add a Sign up button" delay={2000} />
 
       <Box x={164} y={50} w={112} h={230} r={20} fill="#1c1c1e" shadow="inset 0 0 0 1.2px #5a5a5e, 0 14px 32px #0000002e">
-        <Box x={3.5} y={3.5} w={105} h={223} r={17} fill="#ffffff" clip>
+        <Box x={3.5} y={3.5} w={105} h={223} r={17} fill="#ffffff">
           <Box x={40.5} y={4} w={24} h={7} r={4} fill="#000000" />
           <Box row gap={4} pad={[17, 8, 0, 8]}>
             <AppIcon size={13} glyph={camp()} />
@@ -475,9 +475,7 @@ export function Multiplayer() {
           </Box>
           <Change h={56} m={9} ring="#e8467c" who="sarah" delay={1350} grow={moves.growPhoto} inner={moves.photo}>
             {/* The lake, its sky a gradient, under its sun, hills and water. */}
-            <Box x={0} y={0} right={0} bottom={0} r={8} clip image="linear-gradient(180deg, #ffd27a, #ff9a5a 70%)">
-              <Shape x={0} y={0} w="100%" h="100%" viewBox="0 0 90 56" parts={[{ d: circle(66, 16, 7), fill: "#fff6c9" }, { d: "M0 38 20 20l14 12 12-9 22 15 22-8v26H0z", fill: "#c2410c8c" }, { d: "M0 40h90v16H0z", fill: "#3b82c4" }, { d: "M10 45h18M40 49h22M70 44h12", stroke: "#bfe0ff", width: 1.2 }]} />
-            </Box>
+            <Shape x={0} y={0} w="100%" h="100%" viewBox="0 0 90 56" parts={[{ d: circle(66, 16, 7), fill: "#fff6c9" }, { d: "M0 38 20 20l14 12 12-9 22 15 22-8v26H0z", fill: "#c2410c8c" }, { d: "M0 40h90v16H0z", fill: "#3b82c4" }, { d: "M10 45h18M40 49h22M70 44h12", stroke: "#bfe0ff", width: 1.2 }]} />
           </Change>
           <Words size={6.2} ink="#8e8e93" m={[7, 8, 2, 8]}>Name</Words>
           <Box h={14} m={[0, 8, 0, 8]} r={4} border={[1, "#d9d9de"]} />
