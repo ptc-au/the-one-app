@@ -17,8 +17,10 @@ import { pixels, tokens } from "../tokens.ts"
 
 const look = styles({
   screen: { position: "relative", flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0 },
-  // The bar keeps clear of what the device keeps for itself at the top, on a computer as under a finger.
-  bar: { paddingTop: tokens.length.safeTop, paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight, userSelect: "none" },
+  // The bar keeps clear of what the device keeps for itself at the top under a finger (its status bar). On a computer
+  // it is the window's title row, where the window has one, which is what's kept at its top there: it's in that row,
+  // after the window's controls and title (`atStart`), not under it.
+  bar: { paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight, userSelect: "none" },
   // Under a finger, what's in it scrolls under the bar, as UINavigationBar's and Android's top app bar's does: clear of
   // it where it's scrolled to its top (`clear`), and the bar takes its material and a hairline as what's in it goes
   // under, as a scroll edge's appearance gives way to the standard one.
@@ -98,7 +100,7 @@ const look = styles({
   detail: { flexGrow: 1, flexShrink: 1 },
   // A split's ?, beside its list on a computer: at the window's end of the title bar, over the end of what's open's
   // bar, which keeps room for it.
-  tipsAt: { position: "absolute", top: 0, end: 0, zIndex: 2, paddingTop: tokens.length.safeTop },
+  tipsAt: { position: "absolute", top: 0, end: 0, zIndex: 2 },
   tipsRow: { flexDirection: "row", alignItems: "center", minHeight: tokens.length.bar, paddingInline: tokens.length.gutter },
   tipsRoom: { width: tokens.length.control, flexShrink: 0 },
 })
@@ -258,7 +260,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   return (
     <View style={look.screen}>
       <Show when={barred()}>
-      <View role="banner" style={[look.bar, !computer && look.floating]} onLayout={computer ? undefined : (event) => setBarHeight(event.currentTarget.getBoundingClientRect().height)}>
+      <View role="banner" style={[look.bar, !computer && look.clear, !computer && look.floating]} onLayout={computer ? undefined : (event) => setBarHeight(event.currentTarget.getBoundingClientRect().height)}>
         <Show when={!computer}>
           <View style={[look.backdrop, look.faded(under())]} />
         </Show>
@@ -311,7 +313,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
       </View>
       </Show>
       <ScrollView role="main" style={look.main} onScroll={!computer || props.largeTitle ? (event) => setScrolled(event.currentTarget.scrollTop) : undefined}>
-        <View style={look.safe}>
+        <View style={[look.safe, computer && !barred() && look.clear]}>
           <Show when={!computer}>
             <Show when={barHeight()} fallback={<View style={look.clear}><View style={look.clearRow} /></View>}>
               <View style={look.clearBy(barHeight()!)} />

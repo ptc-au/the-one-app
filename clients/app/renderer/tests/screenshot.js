@@ -603,7 +603,12 @@ async function onAMac(drawn, scene, folder, app) {
   const lines = drawn.requests.split("\n")
   writeFileSync(join(folder, "mac-requests.jsonl"), [...lines, JSON.stringify({ v: 1, id: lines.length + 1, op: "window" })].join("\n"))
   const [at, , , ...rest] = drawn.asked
-  const flags = rest.flatMap((arg, n) => (arg === "--measure" || ["--safe-area", "--requests"].includes(arg) || ["--safe-area", "--requests"].includes(rest[n - 1]) ? [] : [arg]))
+  // Its page is told what an app's window tells it on a Mac (clients/app/src/native/channel.rs): that the window names
+  // it in its title row (`titled`), so its first screen's heading gives way to it.
+  const answers = JSON.parse(readFileSync(join(folder, "answers.json"), "utf8"))
+  const initialize = answers["ui/initialize"] ?? {}
+  writeFileSync(join(folder, "mac-answers.json"), JSON.stringify({ ...answers, "ui/initialize": { ...initialize, hostContext: { ...initialize.hostContext, titled: true } } }))
+  const flags = rest.flatMap((arg, n) => (arg === "--measure" || ["--safe-area", "--requests"].includes(arg) || ["--safe-area", "--requests"].includes(rest[n - 1]) ? [] : rest[n - 1] === "--answers" ? [join(folder, "mac-answers.json")] : [arg]))
   const name = app.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")
   const asked = [at, join(folder, "mac.png"), join(folder, "mac.json"), ...flags, "--requests", join(folder, "mac-requests.jsonl"), "--safe-area", `${TITLE_ROW},0,0,0`, "--title", name]
   const run = await keptRun(asked, [join(folder, "mac.png"), join(folder, "mac.json")])
@@ -622,7 +627,12 @@ async function onAMac(drawn, scene, folder, app) {
     if (rect.y < TITLE_ROW && rect.y + rect.height > 0 && rect.x < clear && rect.x + rect.width > 0)
       wrong.push(`"${node.name ?? node.role ?? node.kind}" is drawn in the title row from x ${Math.round(rect.x)}, ${Math.round(clear - rect.x)} pt short of ${LIGHTS_CLEAR} pt after the traffic lights, which end at ${window.lights}`)
   }
-  return wrong
+  // Its page's top bar is that row, as DESIGN.md has a Mac's app window (a unified toolbar), not a row under it.
+  const bar = nodes.filter((node) => node.role === "banner" && node.rect?.height > 0).sort((a, b) => a.rect.y - b.rect.y)[0]
+  if (bar && bar.rect.y + bar.rect.height > TITLE_ROW + 1) wrong.push(`its page's top bar runs under the title row, to y ${Math.round(bar.rect.y + bar.rect.height)}, where it's that row, ${TITLE_ROW} pt tall`)
+  // And the rules every screen meets, drawn so: its title row lays out what's in it as native.png's never does, so a
+  // page's bar pushed under it and after its title, its words on its ? (Settings' "Settings", 23 Nov), shows only here.
+  return [...wrong, ...rules(nodes, join(folder, "mac.png"), scene.size, `${app} · ${scene.name}`)]
 }
 
 const insets = ([top, right, bottom, left]) => ({ top, right, bottom, left })
