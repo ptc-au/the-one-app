@@ -2972,5 +2972,189 @@
       "Tips",
       "Tip 4 of 4"
     ]
+  },
+  "Welcome": {
+    "like": "Home, two pages",
+    "size": [
+      900,
+      560
+    ],
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      }
+    },
+    "wait": 0,
+    "motions": {
+      "Create your own apps chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Create your own apps"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Create your own apps"
+        }
+      },
+      "Automate anything chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Automate anything"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Automate anything"
+        }
+      },
+      "Secure chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Secure"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Secure"
+        }
+      },
+      "Multiplayer chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Multiplayer"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Multiplayer"
+        }
+      }
+    }
+  },
+  "Welcome, Automate anything": {
+    "like": "Welcome",
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Automate anything"
+      }
+    ],
+    "wait": 4000
+  },
+  "Welcome, Secure": {
+    "like": "Welcome",
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Secure"
+      }
+    ],
+    "wait": 4000
+  },
+  "Welcome, Multiplayer": {
+    "like": "Welcome",
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Multiplayer"
+      }
+    ],
+    "wait": 4000
+  },
+  "Welcome on a phone": {
+    "like": "Welcome",
+    "size": [
+      390,
+      844
+    ],
+    "wait": 0
+  },
+  "Welcome on a phone, Automate anything": {
+    "like": "Welcome on a phone",
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Automate anything"
+      }
+    ],
+    "wait": 4000
+  },
+  "Welcome on a phone, Secure": {
+    "like": "Welcome on a phone",
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Secure"
+      }
+    ],
+    "wait": 4000
+  },
+  "Welcome on a phone, Multiplayer": {
+    "like": "Welcome on a phone",
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Multiplayer"
+      }
+    ],
+    "wait": 4000
+  },
+  "Welcome in the launcher": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      }
+    },
+    "taps": [
+      {
+        "role": "tab",
+        "name": "Secure"
+      }
+    ],
+    "wait": 4000
   }
 }

@@ -13,10 +13,10 @@
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, View, viewport } from "ui"
+import { Button, call, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, toast, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth } from "./store.ts"
-import { type Owner, owners } from "./owners.ts"
+import { json, type Owner, owners } from "./owners.ts"
 import { OpenCategory } from "./category.tsx"
 import { made } from "./library.tsx"
 import { Holding } from "./holding.tsx"
@@ -27,15 +27,18 @@ import { Phone } from "./phone.tsx"
 import { createScreens } from "./screens.ts"
 import { createPaging } from "./paging.ts"
 import { Carried, createCarry } from "./carry.tsx"
+import { Welcome } from "./welcome.tsx"
+
+/// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
+const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(({ seen }) => seen, () => undefined))
 
 function HomeScreen(props: { owners: Owner[] }) {
   const layout = createScreens(props)
   const paging = createPaging(props, layout)
   const launching = createLauncher(props, layout, paging)
   const carrying = createCarry(props, layout, paging)
-  const { editBar, editBarGoing, overview, overviewGoing, library } = layout
+  const { library } = layout
   const { cardRect, found, openTarget, move, toggleLibrary } = launching
-  const { copy } = carrying
   // Editing begins with a tick, as an iPhone's does; lifting something into it plays its own.
   createEffect(
     createMemo(() => state().matches("editing")),
@@ -55,15 +58,44 @@ function HomeScreen(props: { owners: Owner[] }) {
     () => launcher(),
     (now) => (now ? keydown(launcherKeys({ move, open: openTarget, toggleLibrary, library, found: () => found().length })) : undefined),
   )
-  const opened = () => state().context.category
-  const held = () => (state().matches("holding") ? state().context.held : undefined)
-  const owner = () => props.owners[at().owner]
+  // Welcome first, once, until they go on from it, on this device or another (the tip `welcome`, theirs); in the
+  // launcher, in its card. Going on shows the Home Screen at once, and keeps that it's been seen behind it. Where
+  // their tips can't be asked, it isn't shown: never in the way of their Home Screen.
+  const [continued, setContinued] = createSignal(false)
+  const welcoming = () => tips()?.includes("welcome") === false && !continued()
+  const onContinue = () => {
+    setContinued(true)
+    call("home-screen_tip", { name: "welcome", seen: true }).catch((error) => toast(error as Error))
+  }
   // In the launcher, its sheets are its card's, as Raycast's are its panel's: nothing's drawn outside its panes.
   return (
     <PresentationContext value={() => (launcher() ? cardRect() : undefined)}>
       <View
         style={[looks.root, looks.sized(windowWidth(), viewport().height)]}
       >
+        <Show when={welcoming()} fallback={<HomeScreenShown owners={props.owners} layout={layout} paging={paging} launching={launching} carrying={carrying} />}>
+          <Show when={launcher()} fallback={<Welcome width={viewport().width} height={viewport().height} onContinue={onContinue} />}>
+            <View style={[looks.surface, looks.at(cardRect().x, cardRect().y, cardRect().width, cardRect().height)]}>
+              <Welcome width={cardRect().width} height={cardRect().height} onContinue={onContinue} />
+            </View>
+          </Show>
+        </Show>
+      </View>
+    </PresentationContext>
+  )
+}
+
+/// The Home Screen as it is once Welcome's been seen: its pages, or a computer's launcher, and what's open over them.
+function HomeScreenShown(props: { owners: Owner[]; layout: ReturnType<typeof createScreens>; paging: ReturnType<typeof createPaging>; launching: ReturnType<typeof createLauncher>; carrying: ReturnType<typeof createCarry> }) {
+  const { layout, paging, launching } = props
+  const { editBar, editBarGoing, overview, overviewGoing } = layout
+  const { cardRect } = launching
+  const { copy } = props.carrying
+  const opened = () => state().context.category
+  const held = () => (state().matches("holding") ? state().context.held : undefined)
+  const owner = () => props.owners[at().owner]
+  return (
+      <>
         <Show
           when={launcher()}
           fallback={<Phone owners={props.owners} layout={layout} paging={paging} />}
@@ -90,8 +122,7 @@ function HomeScreen(props: { owners: Owner[] }) {
             </>
           )}
         </Show>
-      </View>
-    </PresentationContext>
+      </>
   )
 }
 
