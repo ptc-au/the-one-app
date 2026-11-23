@@ -539,6 +539,8 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
     }
     shortcut::begin(&home);
     let mut kept: Option<shortcut::Kept> = None;
+    // Whether its person is recording another shortcut, so the one it has is let go of till they're done.
+    let mut paused = false;
     // Started again as it updated, the app windows that were open open again, once it's signed in: before, an app's
     // page can't be read. The launcher, open as the native one is, isn't an app's window.
     if let Some(reopen) = std::env::var("ONE_REOPEN").ok().and_then(|reopen| serde_json::from_str::<Vec<(String, Option<String>)>>(&reopen).ok()) {
@@ -666,13 +668,33 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 closing(|| std::process::exit(0))
             }
             Event::UserEvent(Told::Shortcut(asked)) => kept = shortcut::take(asked),
-            Event::UserEvent(Told::Choose(keys, answer)) => _ = answer.send(shortcut::choose(&mut kept, keys)),
-            // Taking it again after a pause, it's still this app's, so a failure is only said.
-            Event::UserEvent(Told::Paused(paused)) => {
+            // One chosen as it's recorded is chosen as if there were no pause, which is over once it's taken, and goes
+            // on, the one it has let go of again, while its person tries another.
+            Event::UserEvent(Told::Choose(keys, answer)) => {
+                let held = |kept: &Option<shortcut::Kept>, hold: bool| {
+                    if let Some((keeper, key)) = kept {
+                        let _ = if hold { keeper.register(*key) } else { keeper.unregister(*key) };
+                    }
+                };
+                if paused {
+                    held(&kept, true);
+                }
+                let chosen = shortcut::choose(&mut kept, keys);
+                if paused && chosen.is_err() {
+                    held(&kept, false);
+                } else {
+                    paused = false;
+                }
+                _ = answer.send(chosen)
+            }
+            // Pausing what's paused, or taking again what it has, does nothing; taking it again after a pause, it's
+            // still this app's, so a failure is only said.
+            Event::UserEvent(Told::Paused(pause)) if pause != paused => {
+                paused = pause;
                 if let Some((keeper, key)) = &kept {
-                    let done = if paused { keeper.unregister(*key) } else { keeper.register(*key) };
+                    let done = if pause { keeper.unregister(*key) } else { keeper.register(*key) };
                     if let Err(error) = done {
-                        eprintln!("the launcher's shortcut didn't {}: {error}", if paused { "pause" } else { "come back" });
+                        eprintln!("the launcher's shortcut didn't {}: {error}", if pause { "pause" } else { "come back" });
                     }
                 }
             }
