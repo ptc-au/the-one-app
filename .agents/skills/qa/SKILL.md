@@ -94,9 +94,10 @@ check of that one alone.
 ### Checks: every change to the UI library or the renderer
 
 A change under `core/ui/` or `clients/app/renderer/` runs the checks before it's committed, in `clients/app/renderer/tests`, after `bun
-build.js` in `core/ui` (under a minute for all 663 on
-the Linux machine at a load of 25, 8 headless renderers at once; a debug build takes several times as long, so name the folders your change
-can touch while you work):
+build.js` in `core/ui` (a minute and a bit for all 891 on
+the Linux machine, 8 headless renderers at once; a debug build takes several times as long, so name the folders your change
+can touch while you work). Each check's verdict is kept in the screenshot cache by its run (renderer, page, scene, seed, theme)
+and what judges it, so a pass over what already passed, as on main, takes 3 s, and only a check that failed runs again:
 
     bun animation.js --checks --release [<folder>…]
     bun animation.js --checks --release --dark [<folder>…]

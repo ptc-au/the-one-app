@@ -31,6 +31,10 @@ function digest(path) {
 const DRAWING = ["ONE_GLASS", "ONE_ATLAS", "ONE_MUTANT", "ONE_PIPELINES_MS", "ONE_WINDOW_MS", "VK_ICD_FILENAMES", "LP_NUM_THREADS"]
 const drawing = (env) => DRAWING.map((name) => [name, env[name]])
 
+/// What a run of the headless renderer at `headless` with `args` in `env` is by: the renderer, each argument (a path that
+/// exists by what's in it, an output by its name) and what changes how it draws.
+const runKey = (headless, args, env, outputs) => sha(JSON.stringify([digest(headless), args.map((arg) => (outputs.includes(arg) ? `out:${basename(arg)}` : existsSync(arg) ? `in:${digest(arg)}` : arg)), drawing(env)]))
+
 let pruned = false
 /// Keeps no more than MOST, the least recently used going first, once a pass.
 function prune() {
@@ -54,9 +58,7 @@ function prune() {
 export async function cached(headless, args, env, outputs, run) {
   mkdirSync(KEPT, { recursive: true })
   if (!pruned) prune()
-  const said = args.map((arg) => (outputs.includes(arg) ? `out:${basename(arg)}` : existsSync(arg) ? `in:${digest(arg)}` : arg))
-  const key = sha(JSON.stringify([digest(headless), said, drawing(env)]))
-  const at = join(KEPT, key)
+  const at = join(KEPT, runKey(headless, args, env, outputs))
   const lock = openSync(`${at}.lock`, "a")
   while (flock(lock, LOCK_EX | LOCK_NB) !== 0) await Bun.sleep(RETRY_MS)
   try {
@@ -94,5 +96,28 @@ export function judged(at, by, judge) {
   const said = judge()
   writeFileSync(`${file}.${process.pid}`, JSON.stringify(said))
   renameSync(`${file}.${process.pid}`, file)
+  return said
+}
+
+/// What `judge()` says of the headless renderer's run, as `cached` has them (its arguments), kept by that run and by
+/// `by` (what else it's judged by), as a verdict is: a run that went as it went before, and was judged by the same, isn't
+/// run or judged again, by any worktree on the machine. Only what `passed(said)` is kept: what failed is run again,
+/// for the pictures it leaves where it's run. → what `judge` said, or said before.
+export async function verdict(headless, args, env, outputs, by, judge, passed) {
+  mkdirSync(KEPT, { recursive: true })
+  if (!pruned) prune()
+  const at = join(KEPT, sha(JSON.stringify(["verdict", runKey(headless, args, env, outputs), by])))
+  const file = join(at, "verdict.json")
+  if (existsSync(file)) {
+    const now = new Date()
+    utimesSync(at, now, now)
+    return JSON.parse(readFileSync(file, "utf8")).said
+  }
+  const said = await judge()
+  if (passed(said)) {
+    mkdirSync(at, { recursive: true })
+    writeFileSync(`${file}.${process.pid}`, JSON.stringify({ said }))
+    renameSync(`${file}.${process.pid}`, file)
+  }
   return said
 }

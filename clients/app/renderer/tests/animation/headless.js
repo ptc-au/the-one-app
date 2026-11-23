@@ -2,6 +2,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { checking, dark, env, FACES, glass, headless, out, slot, ssh } from "./options.js"
+import { verdict } from "./cache.js"
 import { stopped, work } from "./workers.js"
 import { COMPONENTS, library, pageFolder } from "./pages.js"
 import { device, devices, hostScore } from "./tiers.js"
@@ -152,13 +153,28 @@ export const panel = (scene) => (panelled(scene) ? ["--panel", "18"] : [])
 
 /// The headless renderer run on a scene, with `requests`, once a slot of `jobs` is free: each answer, its stderr, and how long it
 /// ran. → `{ answers, said, failed, ms }`.
-export const run = (at, folder, scene, requests, seed = 0) =>
+export const run = (at, folder, scene, requests, seed = 0) => {
+  const asked = prepare(at, folder, scene, requests, seed)
+  return timed(at, folder, asked)
+}
+
+const timed = (at, folder, asked) =>
   slot(async () => {
     const started = performance.now()
-    return { ...(await headlessRun(at, folder, scene, requests, seed)), ms: performance.now() - started }
+    return { ...(await headlessRun(at, folder, asked)), ms: performance.now() - started }
   })
 
-async function headlessRun(at, folder, scene, requests, seed) {
+/// What `judge` says of the headless renderer's run on a scene, as `run` has it, a verdict kept by everything that makes
+/// the run and `by` (what else it's judged by), so a run that went as it went before isn't run or judged again
+/// (`verdict`), not on `--ssh`'s device, whose costs are its own. Only what `passed` is kept.
+export function judgedRun(at, folder, scene, requests, seed, by, judge, passed) {
+  const asked = prepare(at, folder, scene, requests, seed)
+  const judging = async () => judge(await timed(at, folder, asked))
+  return ssh ? judging() : verdict(headless, asked.args, asked.env, [join(folder, "end.png"), join(folder, "end.json")], by, judging, passed)
+}
+
+/// What a run is given, written into `folder`: the headless renderer's arguments and requests, and the environment it runs in.
+function prepare(at, folder, scene, requests, seed) {
   const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
   writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
   const lines = requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n")
@@ -168,13 +184,16 @@ async function headlessRun(at, folder, scene, requests, seed) {
   const slowest = devices.tiers.find((tier) => tier.name === (scene.touch ? "low-end Android" : "Intel UHD laptop at 4K"))
   const slower = hostScore && !ssh ? ["--slower", String((hostScore / slowest.cpu) * slowest.scale ** 2)] : []
   const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", join(folder, "requests.jsonl"), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower, ...Object.entries(scene.opens ?? {}).flatMap(([app, by]) => ["--open", `${app}=${join(at, by, "client")}`])]
+  // Its pipelines compile as slowly as the Surface's (`open.pipelines_ms`), so a frame that waits for some is a long one.
+  return { args, lines, env: { ...env, ONE_PIPELINES_MS: String(devices.measured.surface.open.pipelines_ms) } }
+}
+
+async function headlessRun(at, folder, { args, lines, env }) {
   if (ssh) {
     const { stdout, stderr, failed } = await runThere(at, folder, args, lines)
     return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: stderr.trim(), failed }
   }
-  // Its pipelines compile as slowly as the Surface's (`open.pipelines_ms`), so a frame that waits for some is a long one.
-  const compiling = { ONE_PIPELINES_MS: String(devices.measured.surface.open.pipelines_ms) }
-  const { exitCode, stdout, stderr } = await work(headless, args, { ...env, ...compiling })
+  const { exitCode, stdout, stderr } = await work(headless, args, env)
   return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: [stderr.trim(), stopped(exitCode)].filter(Boolean).join("\n"), failed: exitCode !== 0 }
 }
 

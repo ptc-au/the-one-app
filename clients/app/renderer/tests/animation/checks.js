@@ -1,14 +1,20 @@
 // Plays each scene's checks, walks it by Tab and draws it the same however it came to be.
-import { mkdirSync, writeFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { PNG } from "pngjs"
 import { messages } from "../../../../../core/ui/src/words.ts"
-import { dark, only, out, seeds } from "./options.js"
+import { dark, glass, here, only, out, root, seeds } from "./options.js"
 import { build, pageFolder } from "./pages.js"
-import { run, panelled, scenesOf } from "./headless.js"
+import { judgedRun, panelled, scenesOf } from "./headless.js"
 import { pressed } from "./gesture.js"
 import { requests, unlike, unmoved } from "./judges.js"
 import { legibility } from "./output.js"
+
+/// What judging a run's answers depends on beside the run and its scene: the code that judges them (and reads a picture,
+/// and the words it looks for) and the packages that read the pictures. A verdict is kept by it (`judgedRun`).
+const JUDGING = new Bun.CryptoHasher("sha256").update(["checks.js", "judges.js", "gesture.js", "output.js", "options.js"].map((file) => readFileSync(here(`animation/${file}`), "utf8")).concat(["clients/app/renderer/tests/bun.lock", "core/ui/src/words.ts"].map((file) => readFileSync(join(root, file), "utf8"))).join("\n")).digest("hex")
+/// What else a scene's verdicts are by, beside its checks, which `by` has apart: the scene, but for where its traces are.
+const sceneBy = ({ from, checks, seeds, motions, ...scene }) => [JUDGING, glass, scene]
 
 /// A page that threw while drawing shows `render`'s Problem, "Can't show this page", and nothing to press but Try Again,
 /// so what a check or the Tab walk finds there says nothing of the page; what it threw fails the headless renderer's run (it's
@@ -29,11 +35,12 @@ async function check(built, scene, folder) {
       const ran = requests(steps, scene.from, scene.answers)
       const own = join(folder, name.replace(/[^\w.-]+/g, "-"), String(seed))
       mkdirSync(own, { recursive: true })
-      const done = await run(at, own, scene, [{ op: "clock", step: 1000 }, ...taps, ...ran.map(({ request }) => request), crash], seed)
-      const answers = done.answers.slice(1 + taps.length)
-      const failed = done.failed
-        ? `the headless renderer failed: ${done.said.split("\n").at(-1)}`
-        : crashed(answers[ran.length]) ?? ran.map(({ judge, request, step }, n) => (answers[n]?.error ? `${step} (${request.op}): ${answers[n].error}` : judge && judge(answers[n]) ? `${step}: ${judge(answers[n])}` : undefined)).find(Boolean)
+      const failed = await judgedRun(at, own, scene, [{ op: "clock", step: 1000 }, ...taps, ...ran.map(({ request }) => request), crash], seed, ["check", sceneBy(scene), steps], (done) => {
+        const answers = done.answers.slice(1 + taps.length)
+        return done.failed
+          ? `the headless renderer failed: ${done.said.split("\n").at(-1)}`
+          : crashed(answers[ran.length]) ?? ran.map(({ judge, request, step }, n) => (answers[n]?.error ? `${step} (${request.op}): ${answers[n].error}` : judge && judge(answers[n]) ? `${step}: ${judge(answers[n])}` : undefined)).find(Boolean)
+      }, (failed) => !failed)
       return { name, seed, failed }
     }),
   )
@@ -53,35 +60,37 @@ async function walk(built, scene, folder) {
   const look = [{ op: "query" }, { op: "snap" }]
   // Each picture two of the caret's blinks after the keyboard came, where a field's caret shows.
   const asked = [{ op: "clock", step: 1000 }, ...taps, ...look, ...Array.from({ length: STOPS }, () => [{ op: "key", key: "Tab" }, { op: "clock", step: 2400 }, ...look]).flat()]
-  const done = await run(at, folder, scene, asked)
-  if (done.failed) return `the headless renderer failed: ${done.said.split("\n").at(-1)}`
-  const answers = done.answers.slice(1 + taps.length)
-  if (crashed(answers[0])) return crashed(answers[0])
-  // Each stop: what had the keyboard, where it was drawn, and the picture.
-  const stops = []
-  for (let n = 0; n <= STOPS; n++) {
-    const [query, snap] = [answers[n * 4], answers[n * 4 + 1]]
-    const node = query?.result?.nodes?.find((node) => node.focused)
-    if (!snap?.result?.png) return `step ${n}: ${snap?.error ?? query?.error ?? "no picture"}`
-    stops.push({ node, picture: PNG.sync.read(Buffer.from(snap.result.png, "base64")) })
-    // Round to where it started.
-    if (n > 1 && node && node.node === stops[1].node?.node) break
+  const judging = (done) => {
+    if (done.failed) return `the headless renderer failed: ${done.said.split("\n").at(-1)}`
+    const answers = done.answers.slice(1 + taps.length)
+    if (crashed(answers[0])) return crashed(answers[0])
+    // Each stop: what had the keyboard, where it was drawn, and the picture.
+    const stops = []
+    for (let n = 0; n <= STOPS; n++) {
+      const [query, snap] = [answers[n * 4], answers[n * 4 + 1]]
+      const node = query?.result?.nodes?.find((node) => node.focused)
+      if (!snap?.result?.png) return `step ${n}: ${snap?.error ?? query?.error ?? "no picture"}`
+      stops.push({ node, picture: PNG.sync.read(Buffer.from(snap.result.png, "base64")) })
+      // Round to where it started.
+      if (n > 1 && node && node.node === stops[1].node?.node) break
+    }
+    // Where a node is, in points, is in the picture's device pixels (a Surface's two a point).
+    const same = (one, other, rect) => {
+      const scale = one.width / scene.size[0]
+      const [x0, y0] = [Math.max(0, Math.floor((rect.x - 4) * scale)), Math.max(0, Math.floor((rect.y - 4) * scale))]
+      const [x1, y1] = [Math.min(one.width, Math.ceil((rect.x + rect.width + 4) * scale)), Math.min(one.height, Math.ceil((rect.y + rect.height + 4) * scale))]
+      for (let y = y0; y < y1; y++) if (one.data.compare(other.data, (y * one.width + x0) * 4, (y * one.width + x1) * 4, (y * one.width + x0) * 4, (y * one.width + x1) * 4) !== 0) return false
+      return true
+    }
+    const unseen = []
+    for (const [n, { node, picture }] of stops.entries()) {
+      if (!n || !node?.rect || !(node.opacity > 0) || !(node.seen > 0)) continue
+      const around = [stops[n - 1], stops[n + 1]].filter((other) => other && other.node?.node !== node.node)
+      if (around.some((other) => same(picture, other.picture, node.rect))) unseen.push(`${node.role ?? node.kind} "${node.name ?? ""}"`)
+    }
+    return unseen.length ? `Tab's keyboard focus draws nothing on ${[...new Set(unseen)].join(", ")}` : undefined
   }
-  // Where a node is, in points, is in the picture's device pixels (a Surface's two a point).
-  const same = (one, other, rect) => {
-    const scale = one.width / scene.size[0]
-    const [x0, y0] = [Math.max(0, Math.floor((rect.x - 4) * scale)), Math.max(0, Math.floor((rect.y - 4) * scale))]
-    const [x1, y1] = [Math.min(one.width, Math.ceil((rect.x + rect.width + 4) * scale)), Math.min(one.height, Math.ceil((rect.y + rect.height + 4) * scale))]
-    for (let y = y0; y < y1; y++) if (one.data.compare(other.data, (y * one.width + x0) * 4, (y * one.width + x1) * 4, (y * one.width + x0) * 4, (y * one.width + x1) * 4) !== 0) return false
-    return true
-  }
-  const unseen = []
-  for (const [n, { node, picture }] of stops.entries()) {
-    if (!n || !node?.rect || !(node.opacity > 0) || !(node.seen > 0)) continue
-    const around = [stops[n - 1], stops[n + 1]].filter((other) => other && other.node?.node !== node.node)
-    if (around.some((other) => same(picture, other.picture, node.rect))) unseen.push(`${node.role ?? node.kind} "${node.name ?? ""}"`)
-  }
-  return unseen.length ? `Tab's keyboard focus draws nothing on ${[...new Set(unseen)].join(", ")}` : undefined
+  return judgedRun(at, folder, scene, asked, 0, ["walk", sceneBy(scene)], judging, (why) => !why)
 }
 
 
@@ -111,25 +120,27 @@ async function agrees(built, scene, folder) {
     ...(scene.touch || panelled(scene) ? [] : [["made smaller", [{ op: "resize", width: scene.size[0] - 120, height: scene.size[1] - 80 }]]]),
   ]
   const asked = [{ op: "clock", step: 1000 }, ...taps, { op: "query", text: "" }, ...OVER.map((role) => ({ op: "query", role, descendants: true })), { op: "snap" }, rest, { op: "moved" }, ...changes.flatMap(([, ops]) => [...ops, rest, { op: "fresh" }]), crash]
-  const done = await run(at, folder, scene, asked)
-  if (done.failed) return { fresh: `the headless renderer failed: ${done.said.split("\n").at(-1)}` }
-  const answers = done.answers.slice(1 + taps.length)
-  if (crashed(answers.at(-1))) return { fresh: crashed(answers.at(-1)) }
-  const moved = unmoved(answers[3 + OVER.length], join(folder, "moved"))
-  const faint = illegible(answers[0], answers.slice(1, 1 + OVER.length), answers[1 + OVER.length], scene.size[0], folder)
-  if (faint) return { moved, fresh: faint }
-  let n = 4 + OVER.length
-  for (const [what, ops] of changes) {
-    const memory = ops.findIndex((op) => op.op === "memory")
-    const held = memory < 0 ? 0 : images(answers[n + memory])
-    if (held > IMAGES_HIDDEN) return { moved, fresh: `${what}: hidden, it still holds ${(held / 1e6).toFixed(1)} MB of images its window's size (its surface's, the frame it kept, its blurs)` }
-    n += ops.length + 1
-    const own = join(folder, what.replace(/[^\w.-]+/g, "-"))
-    mkdirSync(own, { recursive: true })
-    const why = unlike(answers[n++], own)
-    if (why) return { moved, fresh: `${what}: ${why} (${own})` }
+  const judging = (done) => {
+    if (done.failed) return { fresh: `the headless renderer failed: ${done.said.split("\n").at(-1)}` }
+    const answers = done.answers.slice(1 + taps.length)
+    if (crashed(answers.at(-1))) return { fresh: crashed(answers.at(-1)) }
+    const moved = unmoved(answers[3 + OVER.length], join(folder, "moved"))
+    const faint = illegible(answers[0], answers.slice(1, 1 + OVER.length), answers[1 + OVER.length], scene.size[0], folder)
+    if (faint) return { moved, fresh: faint }
+    let n = 4 + OVER.length
+    for (const [what, ops] of changes) {
+      const memory = ops.findIndex((op) => op.op === "memory")
+      const held = memory < 0 ? 0 : images(answers[n + memory])
+      if (held > IMAGES_HIDDEN) return { moved, fresh: `${what}: hidden, it still holds ${(held / 1e6).toFixed(1)} MB of images its window's size (its surface's, the frame it kept, its blurs)` }
+      n += ops.length + 1
+      const own = join(folder, what.replace(/[^\w.-]+/g, "-"))
+      mkdirSync(own, { recursive: true })
+      const why = unlike(answers[n++], own)
+      if (why) return { moved, fresh: `${what}: ${why} (${own})` }
+    }
+    return { moved }
   }
-  return { moved }
+  return judgedRun(at, folder, scene, asked, 0, ["agrees", sceneBy(scene)], judging, (said) => !said.fresh && !said.moved)
 }
 
 /// The least contrast (WCAG's ratio) a text drawn whole and in sight may have with what's behind it: the faintest any
