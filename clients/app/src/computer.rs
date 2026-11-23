@@ -79,6 +79,8 @@ pub(crate) enum Told {
     Talks,
     /// Opens a `one:` link.
     Open(String),
+    /// The network's logo was kept again (`logo`): the ring is drawn from it.
+    Logo,
     Restart,
     Quit,
     /// Every native window closed as it quits (`closing`): it ends.
@@ -92,6 +94,11 @@ fn tell(told: Told) {
     if let Some(proxy) = PROXY.get() {
         let _ = proxy.lock().expect("nothing panics holding it").send_event(told);
     }
+}
+
+/// The network's logo was kept, or changed.
+pub(crate) fn logo() {
+    tell(Told::Logo)
 }
 
 /// Shows the launcher, as an app window's Home does.
@@ -511,7 +518,7 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
     menu_events();
     #[cfg(target_os = "macos")]
     let _menu = menu();
-    let _ring = ring();
+    let ring = ring(&home);
 
     // The launcher's window, once it's open, whether it says Update Required, and whether it's been decided which it
     // is.
@@ -668,6 +675,11 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 closing(|| std::process::exit(0))
             }
             Event::UserEvent(Told::Shortcut(asked)) => kept = shortcut::take(asked),
+            Event::UserEvent(Told::Logo) => {
+                if let (Some(ring), Some(icon)) = (&ring, ring_icon(&home)) {
+                    let _ = ring.set_icon(Some(icon));
+                }
+            }
             // One chosen as it's recorded is chosen as if there were no pause, which is over once it's taken, and goes
             // on, the one it has let go of again, while its person tries another.
             Event::UserEvent(Told::Choose(keys, answer)) => {
@@ -952,6 +964,25 @@ fn menu() -> muda::Menu {
     menu
 }
 
+/// What the ring is drawn from: on Windows its network's own app's icon where it has one, and otherwise the network's
+/// logo as it keeps it, or the One App's ring.
+fn ring_icon(home: &std::path::Path) -> Option<tray_icon::Icon> {
+    use tray_icon::Icon;
+    #[cfg(windows)]
+    if let Some(own) = ::client::icon().and_then(|own| Icon::from_path(own, None).ok()) {
+        return Some(own);
+    }
+    if let Some(icon) = crate::logo::kept(home).and_then(|logo| crate::logo::icon(&logo.light, if cfg!(target_os = "macos") { 36 } else { 64 }, cfg!(target_os = "macos"))) {
+        return Some(icon);
+    }
+    #[cfg(target_os = "macos")]
+    let picture = include_bytes!("../../../icons/MenuBarIcon@2x.png");
+    #[cfg(not(target_os = "macos"))]
+    let picture = include_bytes!("../../../icons/AppIcon@2x.png");
+    let picture = resvg::tiny_skia::Pixmap::decode_png(picture).ok()?;
+    Icon::from_rgba(picture.data().to_vec(), picture.width(), picture.height()).ok()
+}
+
 /// What's chosen in a menu, every one muda makes: the ring's and the menu bar's (`ring`, `menu`), and a window's own,
 /// a field's menu for text, which its window does (`renderer::platform::menu_chosen`).
 fn menu_events() {
@@ -968,21 +999,13 @@ fn menu_events() {
 /// window of its own is there, and in a Linux desktop's panel. Its menu has Open, Settings… and Quit: on a Mac a click
 /// opens it, as Raycast's and every menu bar icon's does; on Windows a click shows the launcher or puts it away, and a
 /// right-click opens the menu, as a notification-area icon's does. A Mac's is a template, drawn as the menu bar's
-/// other icons are.
-fn ring() -> Option<tray_icon::TrayIcon> {
+/// other icons are. It's the network's own logo, as the network has one (`logo`), and otherwise the One App's ring.
+fn ring(home: &std::path::Path) -> Option<tray_icon::TrayIcon> {
     use tray_icon::menu::{Menu, MenuItem, PredefinedMenuItem};
-    use tray_icon::{Icon, TrayIconBuilder};
+    use tray_icon::TrayIconBuilder;
     #[cfg(windows)]
     use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
-    #[cfg(target_os = "macos")]
-    let picture = include_bytes!("../../../icons/MenuBarIcon@2x.png");
-    #[cfg(not(target_os = "macos"))]
-    let picture = include_bytes!("../../../icons/AppIcon@2x.png");
-    let picture = resvg::tiny_skia::Pixmap::decode_png(picture).ok()?;
-    let icon = Icon::from_rgba(picture.data().to_vec(), picture.width(), picture.height()).ok()?;
-    // A network's own app's, on Windows, where it has one.
-    #[cfg(windows)]
-    let icon = ::client::icon().and_then(|own| Icon::from_path(own, None).ok()).unwrap_or(icon);
+    let icon = ring_icon(home)?;
     let open = MenuItem::with_id("open", format!("Open {}", ::client::app_name()), true, None);
     // Settings…, the Settings app's window, as Raycast's menu has its own settings.
     let settings = MenuItem::with_id("settings", "Settings…", true, None);

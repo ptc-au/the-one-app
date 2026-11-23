@@ -92,6 +92,16 @@ pub(crate) async fn opens() {
     exited::told();
     // A newer build or page, which it's kept on from now on (`updater`).
     updater::start();
+    // The network's logo, which its sign-in screen and its menu bar or tray icon show once it's kept.
+    let kept = client.clone();
+    spawn(async move {
+        match async { logo::keep(&kept, &app.shell.home()?).await }.await {
+            #[cfg(not(mobile))]
+            Ok(true) => computer::logo(),
+            Ok(_) => {}
+            Err(error) => eprintln!("couldn't ask the network for its logo: {error:#}"),
+        }
+    });
 
     // Where a phone is with its push is what this device says of itself (`client`), so its views ask again as it
     // moves, as Notifications shows it.

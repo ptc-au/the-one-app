@@ -192,7 +192,9 @@ pub(crate) fn window(app: &AppHandle) -> Result<tauri::WebviewWindow, Box<dyn st
         .on_web_resource_request(|request, response| {
             use tauri::http::{HeaderValue, StatusCode, header};
             let path = request.uri().path();
-            if let Some(file) = page::kept(path) {
+            // The mark it draws as it opens is the network's own logo, as it keeps it (`logo`), where it has one.
+            let logo = (path == "/Logo.png").then(|| self::app().shell.home().ok().and_then(|home| crate::logo::kept(&home))).flatten();
+            if let Some(file) = logo.map(|logo| logo.light).or_else(|| page::kept(path)) {
                 *response.status_mut() = StatusCode::OK;
                 response.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static(page::kind(path)));
                 *response.body_mut() = file.into();

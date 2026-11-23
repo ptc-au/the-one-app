@@ -7,7 +7,7 @@ import { Input, leave, render, SignIn } from "/ui/client/native/ui.js"
 import { ask, cancelOnEscape } from "/client/ask.js"
 
 cancelOnEscape(leave)
-const { typed, code, why, mark } = await ask("one/sign-in")
+const { typed, code, why, mark, markDark } = await ask("one/sign-in")
 /// Why it shows a new code, as the device says it (`NotApproved` in core/client/src/auth.rs).
 const said = { denied: "It was denied where you signed in.", expired: "Its code expired before it was approved. Try again.", removed: "This device was removed from your network." }[why]
 /// How it signs in: in the browser with its code, or with its link opened elsewhere.
@@ -36,4 +36,4 @@ function shows() {
 }
 
 const prop = (name) => ({ get: () => shows()[name], enumerable: true })
-render(() => h(SignIn, Object.defineProperties({ mark }, Object.fromEntries(["heading", "note", "code", "problem", "status", "quiet", "button", "onSignIn", "stop", "onStop", "children"].map((name) => [name, prop(name)])))))
+render(() => h(SignIn, Object.defineProperties({ mark, markDark }, Object.fromEntries(["heading", "note", "code", "problem", "status", "quiet", "button", "onSignIn", "stop", "onStop", "children"].map((name) => [name, prop(name)])))))

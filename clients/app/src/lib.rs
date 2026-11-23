@@ -31,6 +31,7 @@ mod login;
 pub mod host;
 mod hosts;
 mod exited;
+mod logo;
 mod memory;
 mod native;
 mod suspended;

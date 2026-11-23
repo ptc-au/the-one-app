@@ -41,13 +41,17 @@ pub(super) fn theme(chosen: Option<&str>) -> Option<Appearance> {
 
 /// Where this device signs in, while it isn't in its network, as its sign-in page shows it: the link its person opens
 /// where they're signed in, as short as it's typed, the code it shows there, why there's a new one if there is, and the
-/// network's mark.
+/// network's mark, as it keeps it (`logo`).
 pub(super) fn signing_in() -> Option<Value> {
     let ::client::State::SignIn { code, why } = crate::app().start.borrow().as_ref()?.1.clone() else { return None };
     let link = Url::parse(&code.link).ok()?;
     let typed = format!("{}{}{}", link.host_str().unwrap_or_default(), link.port().map(|port| format!(":{port}")).unwrap_or_default(), &link[url::Position::BeforePath..]);
-    let mark = format!("data:image/png;base64,{}", BASE64.encode(include_bytes!("../../../../icons/Logo.png")));
-    Some(json!({"link": code.link, "typed": typed, "code": code.code, "why": why.map(|why| why.why()), "mark": mark}))
+    // The network's own logo, on a light page and a dark one, or the One App's ring.
+    let (mark, dark) = match crate::app().shell.home().ok().and_then(|home| crate::logo::kept(&home)) {
+        Some(logo) => (crate::logo::data(&logo.light), Some(crate::logo::data(&logo.dark))),
+        None => (crate::logo::data(include_bytes!("../../../../icons/Logo.png")), None),
+    };
+    Some(json!({"link": code.link, "typed": typed, "code": code.code, "why": why.map(|why| why.why()), "mark": mark, "markDark": dark}))
 }
 
 /// Answers what the app's JS posted its client: what the window page answers itself, here, at once, and the rest by
