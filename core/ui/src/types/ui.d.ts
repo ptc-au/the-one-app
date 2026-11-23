@@ -621,6 +621,9 @@ export type Client = {
   device: string
   network?: string
   build: string
+  /** The runtime version its renderer draws (`RUNTIME_VERSION`), from 6: a page that needs what a newer one draws
+   * shows it only where it's said and as new. */
+  runtimeVersion?: number
   /** This device as a server, while it is one or is becoming one: its key, and where becoming one or stopping being
    * one is. */
   server?: {

@@ -586,7 +586,8 @@ const commands = {
   },
   refresh: ({ view }) => refresh(view),
   close: ({ view }) => void views.delete(view),
-  client: () => ({ device, network: location.origin, push, web: true }),
+  // The runtime version its renderer draws, which ships with this page: renderer::RUNTIME_VERSION.
+  client: () => ({ device, network: location.origin, push, web: true, runtimeVersion: 6 }),
   /// Turns on its notifications, as its person taps to: the browser asks them first, which it does only for a tap.
   async push() {
     if (push?.state === "homeScreen") throw new Error("Add this to your Home Screen first.")
