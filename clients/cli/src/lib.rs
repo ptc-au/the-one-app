@@ -203,7 +203,7 @@ pub(crate) fn answered(client: &Client, result: &Value) -> Result<ExitCode> {
     }
     for part in parts {
         match part["text"].as_str() {
-            Some(text) => println!("{text}"),
+            Some(text) => println!("{}", answer_text(text)),
             None => {
                 // A large file is one the client fetched and kept, and any other is in the answer.
                 let file = match part["uri"].as_str().and_then(|uri| uri.strip_prefix("/.file/")) {
@@ -298,16 +298,24 @@ pub(crate) async fn command(client: &Client, args: &[String]) -> Result<ExitCode
     Ok(ExitCode::SUCCESS)
 }
 
-/// A skill's text as this program's person reads it: the skills of the network's apps say `one` where they mean the
-/// command, as every network's skills are the same text, and it's this program's (`client::command`), `ptc` for PTC's.
+/// A skill's text as this program's person reads it: the network's apps say `one` where they mean the command, as every
+/// network's apps are the same text, and it's this program's (`client::command`), `ptc` for PTC's.
 fn skill_text(skill: &str) -> String {
     let one = client::command();
     skill
         .replace("`one ", &format!("`{one} "))
         .replace("`one`", &format!("`{one}`"))
         .replace("\n    one ", &format!("\n    {one} "))
+        .replace("ln -s one", &format!("ln -s {one}"))
+        .replace("one.exe", &format!("{one}.exe"))
         .replace("git-remote-one", &format!("git-remote-{one}"))
         .replace("one::", &format!("{one}::"))
+}
+
+/// A tool's answer as this program's person reads it: Git Repos says the address git clones a repo by (`clone`) with
+/// the scheme `one::` (`GitRepos.address/1`), and this program's is its command's (`git-remote-` and the scheme, run by git).
+fn answer_text(answer: &str) -> String {
+    answer.replace("\"clone\":\"one::", &format!("\"clone\":\"{}::", client::command()))
 }
 
 /// The words that show a skill, from its address (`OneCore.Skills`): an app's own, `skill://<app>/<its own
