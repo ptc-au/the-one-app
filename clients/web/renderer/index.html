@@ -14,8 +14,17 @@
   </script>
   <!-- What an app's page may load and reach, as its own page's (`core/edge/mcp/mcp.ts`): what's at this address, and
        nothing it can send anywhere else; the renderer is WebAssembly, the import map the page's modules are
-       resolved by is written here, and a frame's page runs in a frame of its own from here (renderer.js). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src 'self'; base-uri 'none'">
+       resolved by is written here, and a frame's page runs in a frame of its own from here (renderer.js). The address
+       is named, as the edge names it for an app's page: the frame is sandboxed, so its origin is opaque, and Safari
+       takes 'self' to be that origin, which nothing matches, so every fetch failed ("Load failed") where Chrome's
+       'self' is the address's. -->
+  <script>
+    {
+      const here = location.origin
+      const policy = `default-src 'none'; script-src ${here} 'unsafe-inline' 'wasm-unsafe-eval'; connect-src ${here}; img-src ${here} data:; style-src ${here} 'unsafe-inline'; frame-src ${here}; base-uri 'none'`
+      document.head.append(Object.assign(document.createElement("meta"), { httpEquiv: "Content-Security-Policy", content: policy }))
+    }
+  </script>
   <!-- From its opaque origin, this address is another: the renderer it imports is found beside it once it's a CORS
        request. -->
   <!-- The renderer, which is most of what the frame loads, fetched from the start (renderer.js compiles it). -->
