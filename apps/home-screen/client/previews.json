@@ -2655,6 +2655,48 @@
       }
     }
   },
+  "General, its shortcut on a Mac": {
+    "component": "general",
+    "size": [
+      640,
+      560
+    ],
+    "answers": {
+      "one/client": {
+        "login": true,
+        "mac": true,
+        "target": "macos-aarch64",
+        "shortcut": {
+          "keys": "alt+Space",
+          "default": "alt+Space"
+        }
+      }
+    }
+  },
+  "General, its shortcut changed on Windows": {
+    "component": "general",
+    "size": [
+      640,
+      560
+    ],
+    "answers": {
+      "one/client": {
+        "login": false,
+        "mac": false,
+        "target": "windows-x86_64",
+        "shortcut": {
+          "keys": "control+alt+Space",
+          "default": "alt+super+Space"
+        }
+      }
+    }
+  },
+  "General, recording its shortcut": {
+    "like": "General, its shortcut on a Mac",
+    "taps": [
+      "Change"
+    ]
+  },
   "General, doesn't open at login": {
     "component": "general",
     "answers": {
