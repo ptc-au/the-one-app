@@ -375,7 +375,10 @@ fn options(kind: &Kind, entrypoint: &str, subject: Option<&str>, name: &str) -> 
         tag: json!({"entrypoint": entrypoint, "subject": subject}),
         panel: panel.map(|corner| corner as f32),
         // The launcher's kept where it's dragged to, on each screen, for every network's app on this computer.
+        #[cfg(not(mobile))]
         places: (launcher && !phone).then(crate::computer::places),
+        #[cfg(mobile)]
+        places: None,
         // An app's window opens where it was left, as each computer's apps do.
         frame: frame_file(launcher, sheet.is_some(), entrypoint, subject),
         root: launcher && phone,
