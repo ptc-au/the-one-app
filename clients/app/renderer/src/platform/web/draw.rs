@@ -11,8 +11,7 @@ use super::WINDOW;
 /// wide however it's stretched), drawn by the browser's canvas, as its own SVG would draw it: in BGRA, straight.
 pub(crate) fn path(d: &str, view_box: &str, device: Size<u32>, fill: Option<String>, stroke: Option<String>, stroke_width: f32) -> Option<crate::view::Decoded> {
     let [x, y, width, height] = <[f64; 4]>::try_from(view_box.split([' ', ',']).filter(|part| !part.is_empty()).map(|part| part.parse().unwrap_or(0.0)).collect::<Vec<f64>>()).ok()?;
-    let canvas = web_sys::OffscreenCanvas::new(device.width, device.height).ok()?;
-    let context: web_sys::OffscreenCanvasRenderingContext2d = canvas.get_context("2d").ok()??.dyn_into().ok()?;
+    let context = context(device.width, device.height)?;
     let (sx, sy) = (f64::from(device.width) / width.max(f64::EPSILON), f64::from(device.height) / height.max(f64::EPSILON));
     let shape = web_sys::Path2d::new_with_path_string(d).ok()?;
     // In device pixels, so its stroke is as wide however it's stretched (`vector-effect: non-scaling-stroke`).
@@ -40,12 +39,20 @@ pub(crate) fn path(d: &str, view_box: &str, device: Size<u32>, fill: Option<Stri
 /// The face the browser draws what no face of the renderer's has in: its UI's, which falls back to its emoji's.
 const BROWSER_FONT: &str = "system-ui, sans-serif";
 
+/// A 2D canvas of `width` by `height` whose pixels are read back as they're drawn, so on the CPU (`willReadFrequently`):
+/// left to Chrome, a canvas was on the GPU or the CPU as it chose, and each drew a picture made smaller otherwise.
+fn context(width: u32, height: u32) -> Option<web_sys::OffscreenCanvasRenderingContext2d> {
+    let canvas = web_sys::OffscreenCanvas::new(width.max(1), height.max(1)).ok()?;
+    let options = web_sys::ContextAttributes2d::new();
+    options.set_will_read_frequently(true);
+    canvas.get_context_with_context_options("2d", &options).ok()??.dyn_into().ok()
+}
+
 /// A 2D canvas of `width` by `height`, its text in the browser's face at `size` pixels, unhinted (`geometricPrecision`),
 /// as the renderer draws its own faces' (`text`): hinted, Chrome on Linux drew a glyph two ways, as the font's hinting it
 /// takes from the system came a second or two after the page opened or before.
 fn canvas(width: u32, height: u32, size: f32) -> Option<web_sys::OffscreenCanvasRenderingContext2d> {
-    let canvas = web_sys::OffscreenCanvas::new(width.max(1), height.max(1)).ok()?;
-    let context: web_sys::OffscreenCanvasRenderingContext2d = canvas.get_context("2d").ok()??.dyn_into().ok()?;
+    let context = context(width, height)?;
     context.set_font(&format!("{size}px {BROWSER_FONT}"));
     // web-sys doesn't bind `textRendering`.
     js_sys::Reflect::set(&context, &"textRendering".into(), &"geometricPrecision".into()).ok()?;
@@ -117,8 +124,7 @@ pub(crate) async fn decode(src: &str, device: Size<u32>) -> Option<crate::view::
         }
         Size { width, height }
     };
-    let canvas = web_sys::OffscreenCanvas::new(size.width, size.height).ok()?;
-    let context: web_sys::OffscreenCanvasRenderingContext2d = canvas.get_context("2d").ok()??.dyn_into().ok()?;
+    let context = context(size.width, size.height)?;
     let (width, height) = (f64::from(size.width), f64::from(size.height));
     if svg {
         // Fitted in its box, keeping its shape, as resvg draws one natively.
