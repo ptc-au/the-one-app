@@ -21,7 +21,7 @@ pub async fn update(client: &Client) -> Result<String> {
         return Ok(format!("This device is on the latest build already: {BUILD}"));
     }
     let program = program()?;
-    put(&fetched_program(one, &program).await?, &program)?;
+    put(&fetched_program(client, one, &program).await?, &program)?;
     Ok(format!("This device is on the build {} now.", one["build"].as_str().unwrap_or_default()))
 }
 
@@ -40,7 +40,7 @@ pub async fn take_program(client: &Client) -> Result<Option<String>> {
         return Ok(None);
     }
     let program = program()?;
-    let new = fetched_program(one, &program).await?;
+    let new = fetched_program(client, one, &program).await?;
     fs::create_dir_all(here.folder.join("programs").join(PROGRAM))?;
     fs::copy(&new, here.program(latest))?;
     // Put in place under the record's lock, and only while the server takes no update of its own, which pairs the
@@ -120,7 +120,7 @@ pub(super) async fn prepare(
         })
         .await?;
     let prepared = match latest_builds(server, said).await {
-        Ok(builds) => prepared(here, record, server, program, &builds).await,
+        Ok(builds) => prepared(&reports.client, here, record, server, program, &builds).await,
         Err(error) => Err(error),
     };
     let on = record.current.as_ref().map(|current| current.build.clone()).unwrap_or_default();
@@ -146,6 +146,7 @@ pub(super) async fn prepare(
 
 /// Takes the latest pair among the network's `builds` and checks it (`prepare`): `false` where it's on it already.
 pub(super) async fn prepared(
+    client: &Client,
     here: &Here,
     record: &mut Record,
     server: &mut Child,
@@ -160,7 +161,7 @@ pub(super) async fn prepared(
             record.server_update_stage = Some(ServerUpdateStage::Checking);
         })
         .await?;
-    take(here, record, program, builds).await?;
+    take(client, here, record, program, builds).await?;
     let taking = if next.build == current.build { format!("{} {}", client::command(), next.program) } else { next.build.clone() };
     println!("Prepared {taking}");
     *record = here
@@ -215,7 +216,7 @@ pub(super) async fn latest_builds(server: &mut Child, said: &mut UnboundedReceiv
 
 /// Takes the latest server build and `one` among the network's `builds`, which `record` names as `next`: the build put
 /// together and checked, and the program replacing this one, the one before kept to go back to.
-pub(super) async fn take(here: &Here, record: &Record, program: &Path, builds: &Map<String, Value>) -> Result<()> {
+pub(super) async fn take(client: &Client, here: &Here, record: &Record, program: &Path, builds: &Map<String, Value>) -> Result<()> {
     let current = record.current.as_ref().context("a build it's on")?;
     let next = record.next.as_ref().context("a pair it takes")?;
     if next.build != current.build {
@@ -227,7 +228,7 @@ pub(super) async fn take(here: &Here, record: &Record, program: &Path, builds: &
         fs::create_dir_all(here.folder.join("programs").join(PROGRAM))?;
         fs::copy(program.canonicalize()?, here.program(&current.program))?;
         if !here.program(&next.program).exists() {
-            fs::rename(fetched_program(&builds[PROGRAM], program).await?, here.program(&next.program))?;
+            fs::rename(fetched_program(client, &builds[PROGRAM], program).await?, here.program(&next.program))?;
         }
     }
     Ok(())

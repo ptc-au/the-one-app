@@ -12,9 +12,9 @@
 # where there's none), which names its program, `ptc` for PTC's, and its network's address (`address`), which goes in its
 # `Contents/Resources/network`, read as it starts (`bundled` in core/client). The rest of its Info.plist is the One
 # App's (`clients/app/macos`), with the network's name for the One App's. It's signed with the Developer ID
-# (`tooling/developer-id-sign`). Each update after replaces its program alone and keeps the rest (`bundled` in
-# clients/cli), and its client keeps its own folder, by its identifier, beside the One App's (`identifier` in
-# core/client).
+# (`tooling/developer-id-sign`). Its program is signed in it, so each update after takes the program of this app as its
+# network publishes it (`networks_program` in clients/cli), never the plain build, which macOS kills here, and its client
+# keeps its own folder, by its identifier, beside the One App's (`identifier` in core/client).
 set -euo pipefail
 (($# == 2)) && [[ $2 == *.app ]] || { echo "tooling/mac-app <the network's repo> <the network's app, a folder that ends in .app>" >&2 && exit 1; }
 network=$1 out=$2
