@@ -16,7 +16,10 @@ defmodule SoftwareUpdate do
 
   And it keeps the network's own installers, one for each kind of computer and phone (`@platforms`), the network's app
   as a person installs it the first time, which `tooling/release client` publishes (`publish_installer`) and the
-  Downloads app offers. Each is the upload it was sent as, never copied, and the one it replaces is removed.
+  Downloads app offers. Each is the upload it was sent as, never copied, and the one it replaces is removed. Beside
+  them it keeps what a Windows app takes as it updates, the network's own program (`windows-program`), named, iconed
+  and signed as its installer's is, which the Downloads app doesn't offer: Windows' installer closes the app and its
+  server, the updater among them, so it can't be the update, as a Mac's disk image is.
   """
   @behaviour OneCore.App
   require Logger
@@ -25,8 +28,8 @@ defmodule SoftwareUpdate do
   @item "Cloudflare edge deploy"
 
   # The kinds of computer and phone an installer is for: a Mac with Apple silicon or Intel, Windows, Linux as an
-  # AppImage or a .deb, and Android.
-  @platforms ~w(mac mac-intel windows linux-appimage linux-deb android)
+  # AppImage or a .deb, and Android; and Windows' program, which its app updates to.
+  @platforms ~w(mac mac-intel windows windows-program linux-appimage linux-deb android)
 
   @impl true
   def icon, do: "icon.svg"
@@ -76,7 +79,8 @@ defmodule SoftwareUpdate do
         platform: %{type: "string", enum: @platforms},
         name: %{type: "string", description: "Its file's name, as it's downloaded"},
         build: %{type: "string", description: "The build of the network's app it installs"},
-        size: %{type: "integer", description: "In bytes"}
+        size: %{type: "integer", description: "In bytes"},
+        sha256: %{type: "string", description: "Its SHA-256, in hex, where its publisher said it"}
       },
       required: ["platform", "name", "build", "size"]
     }
@@ -127,7 +131,8 @@ defmodule SoftwareUpdate do
             platform: %{type: "string", enum: @platforms},
             name: %{type: "string", description: "Its file's name, as it's downloaded: The PTC App.dmg"},
             build: %{type: "string", description: "The build of the network's app it installs, as `one builds` names it"},
-            file: %{type: "string", format: "upload", description: "The installer"}
+            file: %{type: "string", format: "upload", description: "The installer"},
+            sha256: %{type: "string", description: "Its SHA-256, in hex, which whatever downloads it checks"}
           },
           required: ["platform", "name", "build", "file"]
         },
@@ -166,7 +171,7 @@ defmodule SoftwareUpdate do
     end
   end
 
-  def call("publish_installer", %{"platform" => platform, "name" => name, "build" => build, "file" => file}, call) do
+  def call("publish_installer", %{"platform" => platform, "name" => name, "build" => build, "file" => file} = inputs, call) do
     if String.contains?(name, ["/", "\\"]) or String.trim(name) != name or name == "", do: raise("An installer's name is a file's name, with no folder: The PTC App.dmg")
 
     size =
@@ -178,7 +183,8 @@ defmodule SoftwareUpdate do
     before = kept(call)[platform]
 
     Artifact.update(call.own, "installers", fn was ->
-      JSON.encode!(Map.put(if(was, do: JSON.decode!(was), else: %{}), platform, %{name: name, build: build, file: file, size: size}))
+      published = %{name: name, build: build, file: file, size: size, sha256: inputs["sha256"]}
+      JSON.encode!(Map.put(if(was, do: JSON.decode!(was), else: %{}), platform, published))
     end)
 
     if before && before["file"] != file, do: Artifact.remove(call.own, before["file"])
@@ -209,7 +215,10 @@ defmodule SoftwareUpdate do
 
   defp installers(call), do: for({platform, installer} <- Enum.sort(kept(call)), do: shown(platform, installer))
 
-  defp shown(platform, installer), do: %{platform: platform, name: installer["name"], build: installer["build"], size: installer["size"]}
+  defp shown(platform, installer) do
+    shown = %{platform: platform, name: installer["name"], build: installer["build"], size: installer["size"]}
+    if installer["sha256"], do: Map.put(shown, :sha256, installer["sha256"]), else: shown
+  end
 
   # The devices, each on unless it was switched off.
   defp listed(call) do
