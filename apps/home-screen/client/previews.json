@@ -3173,7 +3173,63 @@
         "runtimeVersion": 6
       }
     },
-    "wait": 0
+    "wait": 0,
+    "motions": {
+      "Automate anything chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Automate anything"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Automate anything"
+        }
+      },
+      "Secure chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Secure"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Secure"
+        }
+      },
+      "Multiplayer chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Multiplayer"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Multiplayer"
+        }
+      }
+    }
   },
   "Welcome, Automate anything": {
     "like": "Welcome",
@@ -3183,7 +3239,45 @@
         "name": "Automate anything"
       }
     ],
-    "wait": 4000
+    "wait": 4000,
+    "motions": {
+      "Create your own apps chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Create your own apps"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Create your own apps"
+        }
+      },
+      "Multiplayer chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Multiplayer"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Multiplayer"
+        }
+      }
+    }
   },
   "Welcome, Secure": {
     "like": "Welcome",
@@ -3193,7 +3287,45 @@
         "name": "Secure"
       }
     ],
-    "wait": 4000
+    "wait": 4000,
+    "motions": {
+      "Create your own apps chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Create your own apps"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Create your own apps"
+        }
+      },
+      "Multiplayer chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Multiplayer"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Multiplayer"
+        }
+      }
+    }
   },
   "Welcome, Multiplayer": {
     "like": "Welcome",
@@ -3203,7 +3335,63 @@
         "name": "Multiplayer"
       }
     ],
-    "wait": 4000
+    "wait": 4000,
+    "motions": {
+      "Create your own apps chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Create your own apps"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Create your own apps"
+        }
+      },
+      "Automate anything chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Automate anything"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Automate anything"
+        }
+      },
+      "Secure chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Secure"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Secure"
+        }
+      }
+    }
   },
   "Welcome on a phone": {
     "like": "Welcome",
@@ -3211,7 +3399,81 @@
       390,
       844
     ],
-    "wait": 0
+    "wait": 0,
+    "motions": {
+      "Create your own apps chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Create your own apps"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Create your own apps"
+        }
+      },
+      "Automate anything chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Automate anything"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Automate anything"
+        }
+      },
+      "Secure chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Secure"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Secure"
+        }
+      },
+      "Multiplayer chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Multiplayer"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Multiplayer"
+        }
+      }
+    }
   },
   "Welcome on a phone, Automate anything": {
     "like": "Welcome on a phone",
@@ -3860,7 +4122,8 @@
           }
         }
       ]
-    }
+    },
+    "motions": {}
   },
   "Connect your AI": {
     "like": "Home, two pages",

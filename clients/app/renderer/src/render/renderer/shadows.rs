@@ -11,13 +11,21 @@ const TILE_MOST: f32 = 2048.0;
 /// device pixel.
 pub(super) type TileKey = [u32; 7];
 
+/// `value` to the nearest quarter of a device pixel, as `quarter` in shaders.wgsl has it.
+fn quarter(value: f32) -> f32 {
+    (value * 4.0 + 0.5).floor() / 4.0
+}
+
 /// A shadow drawn from a tile, as Skia and Chromium draw a blurred rounded box: its box blurred once, exactly, into a
 /// texture of its own, and drawn from that. Along an axis longer than two corners (each its radius and three blurs),
 /// the tile's box is two corners long, and drawn stretched: its corners as they are and between them its middle, as
 /// along an edge the blur no longer depends on how far the other edge is; along a shorter one, the box is as long as it
-/// is. One with no blur, or inside its box (`inset`), is worked out where it's drawn. → its tile's key, and its box in
-/// the tile.
-pub(super) fn tiled(shadow: &Shadow) -> Option<(TileKey, [f32; 2])> {
+/// is. One with no blur, or inside its box (`inset`), is worked out where it's drawn. A tile is its key's alone: drawn
+/// from its blur, corners and box each to a quarter of a pixel, and read so (`fs_shadow_tile`), so every shadow with its
+/// key draws the same whichever made it: drawn from the first's own sizes, a shadow growing by keyframes was drawn from
+/// a tile an earlier frame's made, a level or two from one drawn afresh (Welcome's flying values, 23 Nov). → its
+/// tile's key, and its blur, its corners (top left, top right, bottom right, bottom left) and its box in the tile.
+pub(super) fn tiled(shadow: &Shadow) -> Option<(TileKey, f32, [f32; 4], [f32; 2])> {
     let blur = shadow.blur_radius.0;
     let radii = &shadow.corner_radii;
     let corner = radii.top_left.0.max(radii.top_right.0).max(radii.bottom_right.0).max(radii.bottom_left.0) + 3.0 * blur;
@@ -25,9 +33,9 @@ pub(super) fn tiled(shadow: &Shadow) -> Option<(TileKey, [f32; 2])> {
     if shadow.inset != 0 || blur <= 0.0 || tile[0].max(tile[1]) + 6.0 * blur > TILE_MOST {
         return None;
     }
-    let quarter = |value: f32| (value * 4.0).round() as u32;
-    let key = [quarter(blur), quarter(radii.top_left.0), quarter(radii.top_right.0), quarter(radii.bottom_right.0), quarter(radii.bottom_left.0), quarter(tile[0]), quarter(tile[1])];
-    Some((key, tile))
+    let (blur, radii, tile) = (quarter(blur), [radii.top_left.0, radii.top_right.0, radii.bottom_right.0, radii.bottom_left.0].map(quarter), tile.map(quarter));
+    let key = [blur, radii[0], radii[1], radii[2], radii[3], tile[0], tile[1]].map(|value| (value * 4.0) as u32);
+    Some((key, blur, radii, tile))
 }
 
 impl Renderer {
@@ -36,7 +44,7 @@ impl Renderer {
         pass.set_bind_group(1, instances, &[offset]);
         let mut at = 0;
         while at < shadows.len() {
-            match tiled(&shadows[at]).and_then(|(key, _)| self.shadow_tiles.get(&key)) {
+            match tiled(&shadows[at]).and_then(|(key, ..)| self.shadow_tiles.get(&key)) {
                 Some((_, group)) => {
                     pass.set_pipeline(&self.pipelines.tiles);
                     pass.set_bind_group(2, group, &[]);
@@ -45,7 +53,7 @@ impl Renderer {
                 }
                 None => {
                     // The run of those worked out where they're drawn.
-                    let end = (at..shadows.len()).find(|one| tiled(&shadows[*one]).is_some_and(|(key, _)| self.shadow_tiles.contains_key(&key))).unwrap_or(shadows.len());
+                    let end = (at..shadows.len()).find(|one| tiled(&shadows[*one]).is_some_and(|(key, ..)| self.shadow_tiles.contains_key(&key))).unwrap_or(shadows.len());
                     pass.set_pipeline(&self.pipelines.shadows);
                     self.clipped(pass, rects, &|pass| pass.draw(0..10, at as u32..end as u32));
                     at = end;

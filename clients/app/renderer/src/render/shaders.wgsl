@@ -1166,15 +1166,21 @@ fn fs_shadow_tile(input: ShadowVarying) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
     let radii = shadow.corner_radii;
-    let margin = 3.0 * shadow.blur_radius;
     let size = shadow.bounds.size;
-    let tile = min(size, vec2<f32>(2.0 * (max(max(radii.top_left, radii.top_right), max(radii.bottom_right, radii.bottom_left)) + margin)));
+    // Its tile is its blur and its box's, each to a quarter of a pixel, as `tiled` in shadows.rs makes it.
+    let tile = quarter(min(size, vec2<f32>(2.0 * (max(max(radii.top_left, radii.top_right), max(radii.bottom_right, radii.bottom_left)) + 3.0 * shadow.blur_radius))));
+    let margin = 3.0 * quarter(vec2<f32>(shadow.blur_radius)).x;
     let corner = tile / 2.0;
     let along = input.local - shadow.bounds.origin;
     let point = select(select(corner, along - (size - tile), along > size - corner), along, along < corner);
     let uv = (point + margin) / vec2<f32>(textureDimensions(t_sprite));
     let alpha = textureSampleLevel(t_sprite, s_sprite, uv, 0.0).r;
     return masked(blend_color_dithered(input.color, alpha * saturate(0.5 + outside), input.position.xy, shadow.bounds.origin), mask);
+}
+
+// `value` to the nearest quarter of a device pixel, as `quarter` in shadows.rs has it.
+fn quarter(value: vec2<f32>) -> vec2<f32> {
+    return floor(value * 4.0 + 0.5) / 4.0;
 }
 
 // How much of `point` a shadow's box covers, blurred.

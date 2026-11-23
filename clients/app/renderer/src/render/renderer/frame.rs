@@ -294,15 +294,16 @@ impl Renderer {
         let in_tiles: Vec<&Scene> = rastering.iter().flat_map(|(_, tiles)| tiles.iter().map(|tile| &*tile.scene)).collect();
         for shadows in shadows.chain(in_tiles.iter().map(|scene| &scene.shadows[..])) {
             for shadow in shadows.iter() {
-                let Some((key, tile)) = tiled(shadow) else { continue };
+                let Some((key, blur, radii, tile)) = tiled(shadow) else { continue };
                 if self.shadow_tiles.contains_key(&key) || tiles.iter().any(|(planned, ..)| *planned == key) {
                     continue;
                 }
-                let blur = shadow.blur_radius.0;
                 let side = [(tile[0] + 6.0 * blur).ceil() as u32, (tile[1] + 6.0 * blur).ceil() as u32];
                 let globals = GlobalParams { viewport_size: [side[0] as f32, side[1] as f32], origin: [0.0; 2] };
                 let globals = self.push(bytemuck::bytes_of(&globals));
                 let mut alone = shadow.clone();
+                alone.blur_radius = crate::geometry::ScaledPixels(blur);
+                alone.corner_radii = crate::geometry::Corners { top_left: crate::geometry::ScaledPixels(radii[0]), top_right: crate::geometry::ScaledPixels(radii[1]), bottom_right: crate::geometry::ScaledPixels(radii[2]), bottom_left: crate::geometry::ScaledPixels(radii[3]) };
                 alone.bounds = crate::geometry::Bounds {
                     origin: crate::geometry::Point { x: crate::geometry::ScaledPixels(3.0 * blur), y: crate::geometry::ScaledPixels(3.0 * blur) },
                     size: crate::geometry::Size { width: crate::geometry::ScaledPixels(tile[0]), height: crate::geometry::ScaledPixels(tile[1]) },
