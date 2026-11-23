@@ -50,6 +50,7 @@ const MUTANTS = {
   "spring-rest": { bug: "spring rest at 0.1 pt", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "safe-area": { bug: "safe area ignored in a frame", plays: [screenshot("apps/vault", "in its own frame")] },
   // From the reports and look-issues.
+  "jumped-forgotten": { bug: "a style changed while it had no transition forgotten, so a transition named later moves from before it (a row let go snapped into its place)", plays: [animation("clients/app/renderer/tests/gallery", "Reordered by hand on a computer")] },
   "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "surface-in-layer": { bug: "a scroll in a layer being drawn made a surface, its rows shown past its box once the page had scrolled", plays: [animation("clients/app/renderer/tests/gallery", "Lists in cards about to move")] },

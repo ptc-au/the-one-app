@@ -318,6 +318,7 @@ export declare function createVelocityTracker(options?: { horizon?: number; stal
 export declare function projected(velocity: number, rate?: number): number
 export declare function List(props: { listbox?: Listbox; label?: string; children?: Element }): Element
 export declare function List<T>(props: { listbox?: Listbox; label?: string; each: readonly T[]; keyed?: (item: T) => unknown; children: (item: () => T, index: () => number) => Element }): Element
+export declare function ReorderList<T>(props: { label: string; each: readonly T[]; keyed: (item: T) => string; heading: (item: T) => string; fixed?: (item: T) => boolean; onReorder: (items: T[]) => void }): Element
 /** How the lists in it are drawn (`ListStyle`): plain, inset grouped cards, or a window's sidebar. */
 export declare function ListStyle(props: { value: "plain" | "insetGrouped" | "sidebar"; children: Element }): Element
 export declare function Row(props: {
@@ -336,7 +337,7 @@ export declare function Row(props: {
 
 export type IconName =
   | "arrow-counter-clockwise" | "arrow-elbow-down-left" | "calendar-blank" | "caret-down" | "caret-left" | "caret-right" | "caret-up-down" | "check" | "copy" | "corners-in"
-  | "corners-out" | "device-mobile" | "devices" | "dots-three" | "dots-three-circle" | "download-simple" | "file" | "gear-six" | "globe" | "hard-drives" | "magnifying-glass" | "minus" | "minus-circle"
+  | "corners-out" | "device-mobile" | "devices" | "dots-three" | "dots-three-circle" | "download-simple" | "file" | "gear-six" | "globe" | "hard-drives" | "list" | "magnifying-glass" | "minus" | "minus-circle"
   | "paperclip" | "pencil-simple" | "plus" | "plus-circle" | "question" | "robot" | "squares-four" | "terminal-window" | "trash" | "warning-circle" | "x"
 export declare function Icon(props: { name: IconName; along?: boolean; large?: boolean }): Element
 export declare function Spinner(): Element

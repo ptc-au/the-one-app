@@ -477,7 +477,12 @@ impl Transitions {
     pub fn apply(&mut self, id: Id, computed: &mut Computed, entering: Option<&Computed>, now: f64, since: f64, reduced: bool, unseen: bool, size: Size<f32>) {
         self.drawn.insert(id);
         let dragged = self.drag(id, computed, now, size, reduced);
-        let Some(transition) = computed.transition.clone() else { return };
+        let Some(transition) = computed.transition.clone() else {
+            for (property, _) in PROPERTIES {
+                self.jumped(id, property, computed);
+            }
+            return;
+        };
         for (property, moves) in PROPERTIES {
             let key = (id, property);
             // Where it's dragged, it's where the drag has it.
@@ -487,8 +492,7 @@ impl Transitions {
             }
             let to = get(computed, property).filter(|_| transition.properties.iter().any(|named| named == property));
             let Some(to) = to else {
-                self.values.remove(&key);
-                self.moving.remove(&key);
+                self.jumped(id, property, computed);
                 continue;
             };
             let was = self.values.insert(key, to.clone());
@@ -538,6 +542,23 @@ impl Transitions {
             self.moving.insert((id, "opacity"), moving);
             self.ending.insert(id);
             self.arriving.insert(id);
+        }
+    }
+
+    /// Node `id`'s `property`, changed with no transition to move it: it's where it's set at once, and that's where a
+    /// transition named later moves it on from, as CSS's before-change style is, so a row held under a finger, then let
+    /// go to move into its place, moves from where it was held, not from where it was before it was picked up.
+    fn jumped(&mut self, id: Id, property: &'static str, computed: &Computed) {
+        let key = (id, property);
+        self.moving.remove(&key);
+        match get(computed, property) {
+            // (Mutant: it isn't kept, so a transition named later moves from where it was before, as before this.)
+            Some(now) if self.values.contains_key(&key) => {
+                if !crate::mutants::mutant("jumped-forgotten") {
+                    self.values.insert(key, now);
+                }
+            }
+            _ => drop(self.values.remove(&key)),
         }
     }
 

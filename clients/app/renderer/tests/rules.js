@@ -105,7 +105,16 @@ function pages(nodes) {
     // in the tree and over some of its box, as what's under a layer is veiled or hidden, not read.
     const order = new Map(here.map((node, at) => [node.node, at]))
     const layers = here.filter((node) => node.rect && node.opacity > 0 && node.resolved && ((node.resolved.backgroundColor && node.resolved.backgroundColor.token !== "transparent") || node.resolved.backdropFilter))
-    const covered = (node) => node.rect && layers.some((layer) => order.get(layer.node) > order.get(node.node) && !above(node).includes(layer) && !above(layer).includes(node) && overlap(layer.rect, node.rect))
+    // Drawn after: by the tree, but where two part, the one whose branch says the higher `zIndex` after, as the renderer
+    // stacks them (view/paint.rs), as a row a finger carries is lifted over the rows it passes.
+    const after = (a, b) => {
+      const [from, to] = [[...above(a).reverse(), a], [...above(b).reverse(), b]]
+      let at = 0
+      while (from[at] && from[at] === to[at]) at++
+      const z = (node) => node?.resolved?.zIndex ?? 0
+      return z(from[at]) !== z(to[at]) ? z(from[at]) > z(to[at]) : order.get(a.node) > order.get(b.node)
+    }
+    const covered = (node) => node.rect && layers.some((layer) => after(layer, node) && !above(node).includes(layer) && !above(layer).includes(node) && overlap(layer.rect, node.rect))
     // What's drawn after it, not in it nor holding it, with a shadow reaching over `rect`: a floating panel's shadow lies
     // over what's beside it, as a corner past its rounding may show.
     const shadowed = (node, rect) => here.some((one) => one.rect && one.opacity > 0 && one.resolved?.boxShadow && order.get(one.node) > order.get(node.node) && !above(node).includes(one) && !above(one).includes(node) && overlap({ x: one.rect.x - SHADOW, y: one.rect.y - SHADOW, width: one.rect.width + 2 * SHADOW, height: one.rect.height + 2 * SHADOW }, rect))

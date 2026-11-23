@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Badge, Button, Checkbox, createListbox, Icon, List, Menu, Metadata, Row, type Scenes, Search, Section, styles, Text, tokens, View } from "ui"
+import { Badge, Button, Checkbox, createListbox, Icon, List, Menu, Metadata, ReorderList, Row, type Scenes, Search, Section, styles, Text, tokens, View } from "ui"
 
 const look = styles({
   column: { gap: tokens.grid[2] },
@@ -76,7 +76,60 @@ const Details = () => (
   </Section>
 )
 
+/// Whose Home Screens, put in order by hand, You first and Everyone last where they stay, and the order as text, so a
+/// check can say.
+const Owners = () => {
+  const [owners, setOwners] = createSignal(["You", "Family", "PTC Systems", "Book Club", "Everyone"])
+  return (
+    <View style={look.column}>
+      <ReorderList label="Home Screens" each={owners()} keyed={(owner) => owner} heading={(owner) => owner} fixed={(owner) => owner === "You" || owner === "Everyone"} onReorder={setOwners} />
+      <Text>{`Order: ${owners().join(", ")}`}</Text>
+    </View>
+  )
+}
+const order = (...owners: string[]) => ({ expect: { text: `Order: ${owners.join(", ")}` } })
+const handle = (owner: string) => ({ role: "button", name: `Reorder ${owner}` })
+// A row's handle dragged down past the next row, and held there, or let go.
+const dragged = (lift: boolean) => ({ from: handle("Family"), follow: { role: "listitem", name: "Family" }, gesture: { moves: [{ ms: 120 }, { dy: 70, ms: 400 }, { ms: 200 }], lift } })
+
 export default {
+  "Lists/Reordered by hand on a computer": {
+    size: [750, 475],
+    render: Owners,
+    motions: { "A row dragged past the next and let go": dragged(true), "A row dragged and held": dragged(false) },
+    checks: {
+      // The UI SDK's reorder keys (foundation/drag-and-drop/reorder.ts at the commit reorder.ts names): Space picks a
+      // row up, the arrows, Home and End move it, Space drops it, Escape puts it back.
+      "Space, an arrow and Space move a row": [{ key: "Tab" }, { expect: { focused: handle("Family") } }, { key: " " }, { key: "ArrowDown" }, { key: " " }, order("You", "PTC Systems", "Family", "Book Club", "Everyone"), { expect: { focused: handle("Family") } }],
+      "Escape puts it back": [{ key: "Tab" }, { key: " " }, { key: "ArrowDown" }, { key: "ArrowDown" }, { key: "Escape" }, order("You", "Family", "PTC Systems", "Book Club", "Everyone")],
+      "Up and Down move between the handles until one is picked up": [{ key: "Tab" }, { key: "ArrowDown" }, { expect: { focused: handle("PTC Systems") } }, { key: "ArrowDown" }, { expect: { focused: handle("Book Club") } }, { key: "ArrowDown" }, { expect: { focused: handle("Book Club") } }],
+      // You and Everyone stay first and last: nothing passes them, and they have no handle.
+      "Fixed rows stay where they are": [
+        { key: "Tab" },
+        { key: " " },
+        { key: "ArrowUp" },
+        { key: "End" },
+        { key: " " },
+        order("You", "PTC Systems", "Book Club", "Family", "Everyone"),
+        { expect: { gone: handle("You") } },
+        { expect: { gone: handle("Everyone") } },
+      ],
+      // A click on a handle is a drag that didn't go anywhere, not Space: it picks nothing up.
+      "A click on a handle picks nothing up": [{ press: handle("Family") }, { key: "ArrowDown" }, order("You", "Family", "PTC Systems", "Book Club", "Everyone"), { expect: { states: { of: handle("Family"), is: { pressed: false } } } }],
+    },
+  },
+  // Dragged past the end, it takes the last place there is, before Everyone, which stays (it once couldn't: held at
+  // the end, its middle was the last row's middle, never past it).
+  "Lists/Reordered by hand, to the end": {
+    size: [750, 475],
+    render: Owners,
+    motions: { "A row dragged past the end and let go": { from: handle("Family"), follow: { role: "listitem", name: "Family" }, gesture: { moves: [{ ms: 120 }, { dy: 200, ms: 500 }, { ms: 200 }], lift: true } } },
+  },
+  "Lists/Reordered by hand under a finger": {
+    touch: true,
+    render: Owners,
+    motions: { "A row dragged by its handle past the next and let go": dragged(true), "A row dragged by its handle and held": dragged(false) },
+  },
   "Lists/Metadata on a computer": { size: [750, 475], render: Details },
   "Lists/Metadata under a finger": { touch: true, render: Details },
   "Lists/Sections on a computer": {

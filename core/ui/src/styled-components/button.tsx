@@ -24,6 +24,7 @@ import dotsThreeCircle from "@phosphor-icons/core/assets/regular/dots-three-circ
 import downloadSimple from "@phosphor-icons/core/assets/regular/download-simple.svg?raw"
 import file from "@phosphor-icons/core/assets/regular/file.svg?raw"
 import gearSix from "@phosphor-icons/core/assets/fill/gear-six-fill.svg?raw"
+import list from "@phosphor-icons/core/assets/regular/list.svg?raw"
 import magnifyingGlass from "@phosphor-icons/core/assets/regular/magnifying-glass.svg?raw"
 import paperclip from "@phosphor-icons/core/assets/regular/paperclip.svg?raw"
 import pencilSimple from "@phosphor-icons/core/assets/regular/pencil-simple.svg?raw"
@@ -68,6 +69,7 @@ const svgs = {
   "download-simple": downloadSimple,
   file,
   "gear-six": gearSix,
+  list,
   "magnifying-glass": magnifyingGlass,
   minus,
   "minus-circle": minusCircle,

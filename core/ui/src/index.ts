@@ -49,6 +49,7 @@ export { Checkbox, Field, Input, RadioGroup, Search, Switch, Textarea } from "./
 export { createVelocityTracker, projected } from "./behavior-primitives/velocity.ts"
 export { Select } from "./styled-components/select.tsx"
 export { List, ListStyle, Row } from "./styled-components/list.tsx"
+export { ReorderList } from "./styled-components/reorder.tsx"
 export { createListbox, type Listbox } from "./headless-components/listbox.ts"
 export { Metadata } from "./styled-components/metadata.tsx"
 export { History, Screen, Section, Shelf, Split } from "./styled-components/screen.tsx"
