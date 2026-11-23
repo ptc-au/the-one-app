@@ -25,8 +25,15 @@ pub(super) fn register_window_class() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| unsafe {
         let module = GetModuleHandleW(None).unwrap_or_default();
-        // The program's own icon, its first, as Explorer shows it.
-        let icon = LoadIconW(Some(module.into()), PCWSTR(1 as _)).unwrap_or_default();
+        // A network's own app's icon, beside its program (`icon.ico`, `tooling/installers`), which an update, replacing
+        // the program alone, leaves; or the program's own, its first, as Explorer shows it.
+        let beside = std::env::current_exe().ok().map(|program| program.with_file_name("icon.ico")).filter(|icon| icon.exists());
+        let icon = match beside {
+            Some(file) => LoadImageW(None, &windows::core::HSTRING::from(file.as_os_str()), IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE)
+                .map(|image| HICON(image.0))
+                .unwrap_or_default(),
+            None => LoadIconW(Some(module.into()), PCWSTR(1 as _)).unwrap_or_default(),
+        };
         let class = WNDCLASSW {
             lpfnWndProc: Some(window_procedure),
             hIcon: icon,

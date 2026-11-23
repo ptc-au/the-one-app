@@ -34,13 +34,14 @@ pub struct Program {
     pub stop_within: Duration,
 }
 
-/// The name the system knows `name` for the server `key` by: a unit's, a LaunchAgent's label, a task's.
+/// The name the system knows `name` for the server `key` by: a unit's, a LaunchAgent's label, a task's, which on
+/// Windows, where Task Scheduler shows it, starts with the app's name (`installer.nsi` finds the server's by it).
 pub fn name(name: &str, key: &str) -> String {
     let key = &key[..key.len().min(12)];
     if cfg!(target_os = "macos") {
         format!("app.theone.{name}.{key}")
     } else if cfg!(windows) {
-        format!("the One App {name} {key}")
+        format!("{} {name} {key}", crate::app_name())
     } else {
         format!("one-{name}-{key}.service")
     }

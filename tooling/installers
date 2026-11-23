@@ -15,7 +15,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
 
 git -C "$network" fetch -q origin main
-config=$(git -C "$network" show origin/main:app/tauri.conf.json)
+git -C "$network" archive origin/main app | tar -x -C "$work"
+config=$(cat "$work/app/tauri.conf.json")
 name=$(jq -r '.productName // "The One App"' <<<"$config")
 published=$(one software-update installers)
 # The core's latest build of `$2` for a kind of machine `$1`, as every network's devices take it (`core/edge/updater/core.ts`).
@@ -38,15 +39,34 @@ else
   echo "mac: published $name.dmg, $build"
 fi
 
-# Windows: the One App's installer (`clients/app/installer.nsi`), with the network's address beside the app, signed
-# with its uninstaller (`tooling/windows-sign`).
+# Windows: the One App's installer (`clients/app/installer.nsi`), the network's own app, as Tauri's config says it, with
+# `tauri.windows.conf.json` over it where there is one, as Tauri merges a platform's: its address, and its name,
+# identifier and command (`productName`, `identifier`, `mainBinaryName`) where it names them, in the `network` beside
+# the program, which the app is named by as it runs (`bundle` in core/client), and its icon (`icons/icon.png`) as the
+# installer's, the program's and, beside it as `icon.ico`, its windows', which an update, replacing the program alone,
+# leaves. The program, named so, is signed again, and the installer with its uninstaller (`tooling/windows-sign`).
 one=$(latest windows-x86_64 one) build=$(jq -r .build <<<"$one")
 if has windows "$build"; then
   echo "windows: $name Setup.exe is $build already"
 else
   fetched "$one" "$work/one.exe"
-  git -C "$network" show origin/main:app/address | jq -Rc '{address: .}' >"$work/network"
-  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$work/one.exe" -DNETWORK="$work/network" -DOUTFILE="$work/$name Setup.exe" -DSIGN="$root/tooling/windows-sign" \
+  windows=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.windows.conf.json ]] && echo "$work/app/tauri.windows.conf.json"))
+  jq -c --arg address "$(cat "$work/app/address")" \
+    '{address: $address, name: .productName, identifier, command: .mainBinaryName} | with_entries(select(.value != null))' \
+    <<<"$windows" >"$work/network"
+  named=(-DNETWORK="$work/network")
+  for define in NAME:productName IDENTIFIER:identifier COMMAND:mainBinaryName; do
+    value=$(jq -r ".${define#*:} // empty" <<<"$windows")
+    [[ -z $value ]] || named+=(-D"${define%%:*}=$value")
+  done
+  icon=
+  if [[ -f $work/app/icons/icon.png ]]; then
+    icon=$work/icon.ico && convert "$work/app/icons/icon.png" -define icon:auto-resize=256,128,64,48,32,24,16 "$icon"
+    named+=(-DICON="$icon")
+  fi
+  ICON=$icon NAME=$(jq -r '.productName // empty' <<<"$windows") VERSION=${build%%+*} "$root/tooling/windows-name" "$work/one.exe"
+  "$root/tooling/windows-sign" "$work/one.exe"
+  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$work/one.exe" "${named[@]}" -DOUTFILE="$work/$name Setup.exe" -DSIGN="$root/tooling/windows-sign" \
     -DCOPYRIGHT="$(grep -m1 '^Copyright' "$root/LICENSE")" "$root/clients/app/installer.nsi"
   one software-update publish_installer --platform windows --name "$name Setup.exe" --build "$build" --file-from "$work/$name Setup.exe" >/dev/null
   echo "windows: published $name Setup.exe, $build"

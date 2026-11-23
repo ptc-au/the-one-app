@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // Makes the Windows programs it's given the One App's in their version resources and icon, which Windows shows a
 // program by: in Windows Firewall's prompt (its name, its icon and, for a program that isn't signed, its publisher,
-// which is CompanyName) and its list of allowed apps, among others. A program with no version resource, as Rust builds
+// which is CompanyName) and its list of allowed apps, among others; or a network's own app's, with NAME its name and
+// ICON its icon, an .ico (`tooling/installers`). A program with no version resource, as Rust builds
 // one, has one made, of version VERSION. Its OriginalFilename is its file's name. Erlang/OTP's copyright stays in its
 // VM's, after ours. A signed program, as Erlang/OTP's are, is left unsigned, as a changed one's signature no longer
 // holds.
@@ -13,7 +14,8 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const copyright = readFileSync(join(root, "LICENSE"), "utf8").match(/^Copyright .*$/m)[0];
-const icon = ResEdit.Data.IconFile.from(readFileSync(join(root, "icons/AppIcon.ico")));
+const icon = ResEdit.Data.IconFile.from(readFileSync(process.env.ICON || join(root, "icons/AppIcon.ico")));
+const name = process.env.NAME || "the One App";
 
 for (const file of process.argv.slice(2)) {
   const exe = PE.NtExecutable.from(readFileSync(file), { ignoreCert: true });
@@ -28,10 +30,10 @@ for (const file of process.argv.slice(2)) {
   for (const language of languages.length ? languages : [{ lang: 1033, codepage: 1200 }]) {
     const theirs = version.getStringValues(language).LegalCopyright;
     version.setStringValues(language, {
-      CompanyName: "the One App",
-      ProductName: "the One App",
+      CompanyName: name,
+      ProductName: name,
       // What Task Manager and Windows Firewall call a program: the app, or with DESCRIPTION what else of the One App it is.
-      FileDescription: process.env.DESCRIPTION ?? "the One App",
+      FileDescription: process.env.DESCRIPTION ?? name,
       LegalCopyright: theirs ? `${copyright}. ${theirs}` : copyright,
       OriginalFilename: basename(file),
     });

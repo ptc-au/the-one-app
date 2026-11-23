@@ -256,8 +256,8 @@ pub fn identifier() -> &'static str {
     &bundle().identifier
 }
 
-/// The app's name, as a person sees it: its Mac bundle's (`CFBundleName`), as for `identifier`, and otherwise
-/// `clients/app/tauri.conf.json`'s `productName` (`build.rs`).
+/// The app's name, as a person sees it: its Mac bundle's (`CFBundleName`), as for `identifier`, on Windows and Linux
+/// its `network`'s, and otherwise `clients/app/tauri.conf.json`'s `productName` (`build.rs`).
 pub fn app_name() -> &'static str {
     &bundle().name
 }
@@ -265,7 +265,8 @@ pub fn app_name() -> &'static str {
 /// What a person types to run this program, which a network names as it names its app, by Tauri's `mainBinaryName`
 /// (`tooling/mac-app` makes the bundle's program that): `one`, or `ptc` for PTC's. It's what the program says of itself
 /// where a person or an agent reads it, and what `git-remote-` and `::` in a git address are followed by. On a Mac it's
-/// its bundle's (`CFBundleExecutable`), through any link to it, as for `identifier`; elsewhere it's `one`.
+/// its bundle's (`CFBundleExecutable`), through any link to it, as for `identifier`, on Windows and Linux its
+/// `network`'s; elsewhere it's `one`.
 pub fn command() -> &'static str {
     &bundle().command
 }
@@ -288,13 +289,43 @@ fn bundle() -> &'static Bundle {
                 return Bundle { identifier, name, command };
             }
         }
-        Bundle { identifier: env!("ONE_IDENTIFIER").to_owned(), name: env!("ONE_APP_NAME").to_owned(), command: "one".to_owned() }
+        let built = Bundle { identifier: env!("ONE_IDENTIFIER").to_owned(), name: env!("ONE_APP_NAME").to_owned(), command: "one".to_owned() };
+        // On Windows and Linux, where an app has no bundle that says them, a network's own app says them in its
+        // `network`, beside its address, as its network names them (`tooling/installers`).
+        #[cfg(any(windows, target_os = "linux"))]
+        if let Some(named) = bundled_file().and_then(|network| serde_json::from_slice::<Named>(&network).ok()) {
+            return Bundle {
+                identifier: named.identifier.unwrap_or(built.identifier),
+                name: named.name.unwrap_or(built.name),
+                command: named.command.unwrap_or(built.command),
+            };
+        }
+        built
     })
 }
 
+/// A network's own app's icon on Windows, an .ico beside its program, as its `network` is (`tooling/installers`), which
+/// an update, replacing the program alone, leaves: its notifications' and its ring's, where it has one, as its windows'
+/// are (`register_window_class` in the renderer).
+#[cfg(windows)]
+pub fn icon() -> Option<PathBuf> {
+    Some(env::current_exe().ok()?.with_file_name("icon.ico")).filter(|icon| icon.exists())
+}
+
+/// What a network's own app's `network` says of it beside its address, where its network names it, as Tauri's config
+/// does (`productName`, `identifier`, `mainBinaryName`): its name, its identifier and its command.
+#[cfg(any(windows, target_os = "linux"))]
+#[derive(serde::Deserialize)]
+struct Named {
+    name: Option<String>,
+    identifier: Option<String>,
+    command: Option<String>,
+}
+
 /// The `network` file an app made for one network has among its resources, if it has one: `{"address": "https://..."}`,
-/// which the network's finishing puts in the plain build, as white-label apps are made (`tooling/testflight`). An app
-/// with none starts on no network until one is given. Its resources are beside its program, or a Mac bundle's
+/// with its name, identifier and command on Windows and Linux (`Named`), which the network's finishing puts in the
+/// plain build, as white-label apps are made (`tooling/testflight`). An app with none starts on no network until one is
+/// given. Its resources are beside its program, or a Mac bundle's
 /// `Contents/Resources`, or on Android its APK's `assets`.
 fn bundled() -> Result<Option<NetworkConfig>> {
     let Some(network) = bundled_file() else { return Ok(None) };

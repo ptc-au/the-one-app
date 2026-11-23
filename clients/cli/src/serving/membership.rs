@@ -258,7 +258,7 @@ pub(super) fn kept(here: &Here, key: &str, program: &Path, env: Vec<(&str, Strin
     client::system::Program {
         name: SERVER.to_owned(),
         key: key.to_owned(),
-        description: format!("the One App server, which `{} serve off` removes.", client::command()),
+        description: format!("{} server, which `{} serve off` removes.", client::app_name(), client::command()),
         command,
         env,
         folder: here.folder.clone(),

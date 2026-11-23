@@ -840,12 +840,18 @@ fn links() -> anyhow::Result<()> {
 fn toasts() -> anyhow::Result<()> {
     use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
     use windows::core::HSTRING;
-    let icon = crate::shortcuts::local_data_dir()?.join("AppIcon.ico");
-    std::fs::create_dir_all(icon.parent().expect("a file has a folder"))?;
-    let drawn = include_bytes!("../../../icons/AppIcon.ico");
-    if std::fs::read(&icon).ok().as_deref() != Some(drawn.as_slice()) {
-        std::fs::write(&icon, drawn)?;
-    }
+    let icon = match ::client::icon() {
+        Some(icon) => icon,
+        None => {
+            let icon = crate::shortcuts::local_data_dir()?.join("AppIcon.ico");
+            std::fs::create_dir_all(icon.parent().expect("a file has a folder"))?;
+            let drawn = include_bytes!("../../../icons/AppIcon.ico");
+            if std::fs::read(&icon).ok().as_deref() != Some(drawn.as_slice()) {
+                std::fs::write(&icon, drawn)?;
+            }
+            icon
+        }
+    };
     let key = format!(r"Software\Classes\AppUserModelId\{}", ::client::identifier());
     for (name, value) in [("DisplayName", ::client::app_name().to_owned()), ("IconUri", icon.display().to_string())] {
         let value: Vec<u16> = value.encode_utf16().chain([0]).collect();
@@ -952,6 +958,9 @@ fn ring() -> Option<tray_icon::TrayIcon> {
     let picture = include_bytes!("../../../icons/AppIcon@2x.png");
     let picture = resvg::tiny_skia::Pixmap::decode_png(picture).ok()?;
     let icon = Icon::from_rgba(picture.data().to_vec(), picture.width(), picture.height()).ok()?;
+    // A network's own app's, on Windows, where it has one.
+    #[cfg(windows)]
+    let icon = ::client::icon().and_then(|own| Icon::from_path(own, None).ok()).unwrap_or(icon);
     let open = MenuItem::with_id("open", format!("Open {}", ::client::app_name()), true, None);
     // Settings…, the Settings app's window, as Raycast's menu has its own settings.
     let settings = MenuItem::with_id("settings", "Settings…", true, None);
