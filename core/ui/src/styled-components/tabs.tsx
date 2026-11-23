@@ -23,6 +23,8 @@ const look = styles({
     position: "relative",
     zIndex: 1,
     flexGrow: 1,
+    flexDirection: "row",
+    gap: tokens.grid[1.5],
     alignItems: "center",
     justifyContent: "center",
     paddingInline: tokens.grid[3],
@@ -62,7 +64,7 @@ const Shared = createContext<ReturnType<typeof createTabs>>()
 /// `<Tabs.Root defaultValue="all">`, then `<Tabs.List>` around `<Tabs.Trigger value="all">All</Tabs.Trigger>`s and
 /// a `<Tabs.Indicator />`, then a `<Tabs.Content value="all">...</Tabs.Content>` for each: a few views of one thing,
 /// one showing at a time, chosen in a segmented control: `value` says which is showing, `onValueChange` is told the
-/// value chosen, and with neither the first is.
+/// value chosen, and with neither the first is. A trigger's `icon` goes before its words, as a picture of what it is.
 /// The indicator slides to the tab chosen. The keyboard moves between the tabs as WAI-ARIA's tabs pattern has it: the
 /// arrows along them (the other way right to left), Home and End to the first and last, each choosing as it goes.
 export const Tabs = {
@@ -76,12 +78,13 @@ export const Tabs = {
       {props.children}
     </View>
   ),
-  Trigger: (props: { value: string; children?: JSX.Element }) => {
+  Trigger: (props: { value: string; icon?: JSX.Element; children?: JSX.Element }) => {
     const tabs = useContext(Shared)!
     onCleanup(tabs.add(props.value))
     const chosen = () => tabs.value() === props.value
     return (
       <Pressable {...tabs.trigger(props.value)} style={[look.trigger, chosen() && look.chosen, chosen() && !tabs.indicated() && look.mark]}>
+        {props.icon}
         <Text style={look.label}>{props.children}</Text>
       </Pressable>
     )

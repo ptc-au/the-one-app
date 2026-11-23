@@ -461,7 +461,8 @@ export declare const Menu: {
 export declare const Tabs: {
   Root: (props: { value?: string; defaultValue?: string; onValueChange?: (value: string) => void; children?: Element }) => Element
   List: (props: { children?: Element }) => Element
-  Trigger: (props: { value: string; children?: Element }) => Element
+  /** `icon` goes before its words, as a picture of what it is. */
+  Trigger: (props: { value: string; icon?: Element; children?: Element }) => Element
   Content: (props: { value: string; children?: Element }) => Element
   Indicator: (props: {}) => Element
 }
