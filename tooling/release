@@ -207,27 +207,30 @@ getting_dev_builds() {
          | group_by(.target) | map({target: .[0].target, names: map(.name)}))}'
 }
 
-# A network's iPhone app goes to TestFlight beside its computers' clients, where its native code changed
-# (`tooling/testflight`), built from the network's repo, which ONE_NETWORK_REPO names (Agent Memory says where it is).
-# The release ends once Apple has taken the upload, and fails if it doesn't. Its installers are made from the network's
-# repo too, once the release has ended, published or covered by another, from the builds the network has then
-# (`tooling/installers`).
-iphone= installers=
+# Every network's iPhone app goes to TestFlight beside its computers' clients, where its native code changed
+# (`tooling/testflight`), each built from its network's repo: those repos in the home folder whose main has an
+# `app/address`, as the networks' repos have (the PTC pilot had its upload only when someone remembered, 23 Nov: 5208).
+# The release ends once Apple has taken every upload, and fails if one isn't taken. The installers are made from the
+# repo ONE_NETWORK_REPO names, the network of this machine's `one`, once the release has ended, published or covered by
+# another, from the builds the network has then (`tooling/installers`).
+iphones=() installers=
 if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
   installers=${ONE_NETWORK_REPO:-}
-  if [[ -z ${ONE_NETWORK_REPO:-} ]]; then
-    echo "The iPhone's app and the installers aren't built: ONE_NETWORK_REPO names the network's repo, which they're built from"
-  elif getting_dev_builds | jq -e '[.devices[] | select(.target | startswith("ios-"))] | length > 0' >/dev/null; then
-    tooling/testflight "$ONE_NETWORK_REPO" > >(sed 's/^/iphone: /') 2>&1 &
-    iphone=$!
-  fi
+  [[ -n $installers ]] || echo "The installers aren't built: ONE_NETWORK_REPO names the network's repo, which they're built from"
+  for repo in "$HOME"/*/; do
+    git -C "$repo" cat-file -e origin/main:app/address 2>/dev/null || continue
+    tooling/testflight "$repo" > >(sed "s|^|iphone $(basename "$repo"): |") 2>&1 &
+    iphones+=($!)
+  done
 fi
 # The machine's lock goes first, as waiting for Apple holds up nothing here: the next client release (19 Nov: 164 s).
 # It's given the status the release ends with.
 iphone_done() {
   local status=$1
   exec 9>&-
-  [[ -z $iphone ]] || wait "$iphone" || { echo "The iPhone's app didn't reach TestFlight." >&2 && exit 1; }
+  local pid failed=
+  for pid in "${iphones[@]}"; do wait "$pid" || failed=1; done
+  [[ -z $failed ]] || { echo "An iPhone's app didn't reach TestFlight." >&2 && exit 1; }
   [[ $status != 0 || -z $installers ]] || tooling/installers "$installers" > >(sed 's/^/installers: /') 2>&1 ||
     { echo "The network's installers weren't published." >&2 && exit 1; }
 }
