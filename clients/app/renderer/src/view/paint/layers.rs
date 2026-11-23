@@ -289,7 +289,7 @@ impl Painter<'_> {
                 // where it's drawn ungrown and unturned and not in a layer being drawn (whose texts, drawn each frame
                 // where they are outside the surface, would go uncut by its box: a card's list showed its rows past it):
                 // painted, not cut to what shows, into a scene of its own, which is put back once it's painted, its
-                // texts only those in the tiles that show.
+                // texts only those in the tiles that show. (Mutant: one in a layer being drawn a surface too.)
                 let mut surface = None;
                 if look.clips || look.scrolls {
                     child_mask = placement.clip(&look, mask, self.turn);
@@ -298,7 +298,7 @@ impl Painter<'_> {
                         let (most, now, by) = scroll(&laid, at(self.scrolled), at(&self.stretched), self.scale);
                         self.scrolled.insert(id, now);
                         child_offset = point(child_offset.x - by.x, child_offset.y - by.y);
-                        if (most.x > 0.0 || most.y > 0.0) && transform.scale == 1.0 && self.turn == TransformationMatrix::unit() && self.recording.is_none() && self.room() {
+                        if (most.x > 0.0 || most.y > 0.0) && transform.scale == 1.0 && self.turn == TransformationMatrix::unit() && (self.recording.is_none() || crate::mutants::mutant("surface-in-layer")) && self.room() {
                             let (at, area, tiles) = self.tiles_shown(child_mask, child_offset);
                             surface = Some((std::mem::take(&mut *self.scene), child_mask, at, area, std::mem::replace(&mut self.shows, tiles)));
                             child_mask = ContentMask::from(Bounds { origin: point(-1.0e6, -1.0e6), size: Size { width: 2.0e6, height: 2.0e6 } });

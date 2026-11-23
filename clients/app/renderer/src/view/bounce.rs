@@ -7,7 +7,7 @@ use serde_json::json;
 
 use super::Screen;
 use crate::geometry::{Point, point};
-use crate::motion::{Spring, decay, rubber_band, rubber_band_slope};
+use crate::motion::{Spring, decay, decay_for, rubber_band, rubber_band_slope};
 use crate::tree::Id;
 
 /// How loose the rubber band is: UIScrollView's.
@@ -55,11 +55,20 @@ pub(super) struct Aim {
 }
 
 impl Screen {
-    /// The innermost thing at `at` that scrolls the way `by` goes, or `along` where it's said: its id, whether it
-    /// scrolls along, how far it's scrolled that way, how far it can, and how long it is that way.
-    fn scroller(&self, at: Point<f32>, by: Point<f32>) -> Option<(Id, bool, f32, f32, f32)> {
+    /// What a finger's moves at `at` scroll, from the innermost out: what it scrolled first (`latched`), for all its
+    /// moves, as a browser latches a scroll gesture to the scroller it began on; else what's under it. A page flung from
+    /// between two cards gave the rest of its moves to the list of the card that came under the finger, which ran to
+    /// its end and stretched, the page stopped dead (23 Nov). (Mutant: never latched.)
+    pub(super) fn reached(&self, at: Point<f32>, latched: Option<Id>) -> (Option<Id>, Vec<Id>) {
+        let latched = latched.filter(|id| !crate::mutants::mutant("unlatched") && self.placed(*id).is_some_and(|placed| placed.scroll.is_some()));
+        (latched, latched.map_or_else(|| self.under(at), |id| vec![id]))
+    }
+
+    /// The innermost thing in `chain` that scrolls the way `by` goes: its id, whether it scrolls along, how far it's
+    /// scrolled that way, how far it can, and how long it is that way.
+    fn scroller(&self, chain: &[Id], by: Point<f32>) -> Option<(Id, bool, f32, f32, f32)> {
         let along = by.x.abs() > by.y.abs();
-        self.under(at).into_iter().find_map(|id| {
+        chain.iter().copied().find_map(|id| {
             let placed = self.placed(id)?;
             let (most_y, most_x, its_along) = placed.scroll?;
             (its_along == along).then_some(())?;
@@ -69,16 +78,18 @@ impl Screen {
     }
 
     /// A finger on what scrolls at `at` moved it `by` points (down and right positive, as `pan`): it scrolls, and past
-    /// its end, stretches, less the further it's pulled; pulled back, it gives up its stretch before it scrolls.
-    pub fn drag_scroll(&mut self, at: Point<f32>, by: Point<f32>) -> Option<Id> {
-        let held = self.under(at).into_iter().find(|id| self.coasts.get(id).is_some_and(|coast| coast.held));
+    /// its end, stretches, less the further it's pulled; pulled back, it gives up its stretch before it scrolls. What
+    /// it scrolled first (`latched`) it goes on scrolling (`reached`).
+    pub fn drag_scroll(&mut self, at: Point<f32>, by: Point<f32>, latched: Option<Id>) -> Option<Id> {
+        let (latched, chain) = self.reached(at, latched);
+        let held = chain.iter().copied().find(|id| self.coasts.get(id).is_some_and(|coast| coast.held));
         let target = match held {
             Some(id) => Some(id),
             None => {
-                if let Some(scrolled) = self.pan(at, by) {
+                if let Some(scrolled) = self.pan_latched(at, by, latched) {
                     return Some(scrolled);
                 }
-                let (id, along, _, _, _) = self.scroller(at, by)?;
+                let (id, along, _, _, _) = self.scroller(&chain, by)?;
                 let now = self.js.clock().now();
                 self.coasts.insert(id, Coast { along, held: true, flung: false, pulled: 0.0, stretch: 0.0, velocity: 0.0, stepped: now, aim: None });
                 Some(id)
@@ -93,7 +104,7 @@ impl Screen {
             let along = coast.along;
             self.coasts.remove(&id);
             if pulled != 0.0 {
-                self.pan(at, if along { point(pulled, 0.0) } else { point(0.0, pulled) });
+                self.pan_latched(at, if along { point(pulled, 0.0) } else { point(0.0, pulled) }, Some(id));
             }
         } else {
             coast.pulled = pulled;
@@ -203,10 +214,15 @@ impl Screen {
                 let to = (was + by as f32).clamp(0.0, most);
                 self.scroll_to(id, along, to);
                 let coast = self.coasts.get_mut(&id).expect("it's there");
+                let flung = f64::from(coast.velocity);
                 coast.velocity = velocity;
-                // Reaching an end going on, it bounces off it; slow enough, it stops.
+                // Reaching an end going on, it bounces off it from when it got there, as UIScrollView's does, the rest of
+                // the refresh its spring's: stopped at the end for that refresh, a page flung to its end went 23.5, 10.6,
+                // 20.2 pt a refresh (23 Nov). Slow enough, it stops.
                 if (to == 0.0 && velocity < 0.0) || (to == most && velocity > 0.0) {
-                    coast.flung = false;
+                    let reached = if crate::mutants::mutant("end-held") { seconds } else { decay_for(flung, f64::from(to - was)).min(seconds) };
+                    let (stretch, velocity) = BACK.at(0.0, decay(flung, reached).1, seconds - reached);
+                    (coast.flung, coast.stretch, coast.velocity) = (false, stretch as f32, velocity as f32);
                 } else if velocity.abs() < STOPPED {
                     self.coasts.remove(&id);
                 }
@@ -221,12 +237,12 @@ impl Screen {
         }
     }
 
-    /// The innermost thing at `at` that can still scroll the way `delta` goes (a scroll along takes the wheel's turn as
+    /// The innermost thing in `chain` that can still scroll the way `delta` goes (a scroll along takes the wheel's turn as
     /// along where it doesn't go down, as a row of pages does), from where it's going: where a wheel's notch eases it
     /// to, or where it is. → its id, where that is, how far `delta` takes it, how far it can go, and whether it scrolls
     /// along.
-    pub(super) fn scrolls(&self, at: Point<f32>, delta: Point<f32>) -> Option<(Id, f32, f32, f32, bool)> {
-        self.under(at).into_iter().find_map(|id| {
+    pub(super) fn scrolls(&self, chain: &[Id], delta: Point<f32>) -> Option<(Id, f32, f32, f32, bool)> {
+        chain.iter().copied().find_map(|id| {
             let (most_y, most_x, along) = self.placed(id)?.scroll?;
             let now = self.scrolled.get(&id).copied().unwrap_or(point(0.0, 0.0));
             let from = self.coasts.get(&id).and_then(|coast| coast.aim.as_ref()).map_or(if along { now.x } else { now.y }, |aim| aim.to);
@@ -238,7 +254,7 @@ impl Screen {
     /// A mouse wheel's notch turned at `at`, by `delta` points: what scrolls there eases to where it sends it
     /// (`NOTCH_MS`), from where the notches before were sending it. → what scrolls.
     pub(super) fn wheel_scroll(&mut self, at: Point<f32>, delta: Point<f32>) -> Option<Id> {
-        let (id, from, by, most, along) = self.scrolls(at, delta)?;
+        let (id, from, by, most, along) = self.scrolls(&self.under(at), delta)?;
         let (to, now) = ((from + by).clamp(0.0, most), self.js.clock().now());
         match self.coasts.get_mut(&id) {
             Some(Coast { aim: Some(aim), .. }) => {

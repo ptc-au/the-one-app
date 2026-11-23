@@ -97,8 +97,8 @@ pub(super) struct Finger {
     /// It's moved past the slop, so it's decided whether it pans or is what it's on's.
     moved: bool,
     panning: bool,
-    /// What its moves scrolled last, which it goes on scrolling as it lifts, as a browser's fling goes on in the scroll
-    /// its gesture latched to, not whatever is innermost under where it landed.
+    /// What its moves scrolled first, which the rest of its moves and its fling as it lifts go on scrolling, as a
+    /// browser latches a scroll gesture to the scroller it began on, not whatever is innermost under where it landed.
     scrolled: Option<Id>,
     on_input: bool,
     stopped: bool,
@@ -256,8 +256,8 @@ impl Screen {
         }
         if finger.panning {
             match fingers.flings {
-                true => drop(self.pan(finger.start, step)),
-                false => finger.scrolled = self.drag_scroll(finger.start, step).or(finger.scrolled),
+                true => finger.scrolled = self.pan_latched(finger.start, step, finger.scrolled).or(finger.scrolled),
+                false => finger.scrolled = self.drag_scroll(finger.start, step, finger.scrolled).or(finger.scrolled),
             }
             return Touched::Panning;
         }

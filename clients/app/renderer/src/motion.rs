@@ -93,6 +93,13 @@ pub fn decay(velocity: f64, seconds: f64) -> (f64, f64) {
     (velocity * (kept - 1.0) / DECELERATION.ln() / 1000.0, velocity * kept)
 }
 
+/// How long, in seconds, a fling going `velocity` (each a second) takes to go `distance`, as `decay` has it: forever
+/// where it stops short of it.
+pub fn decay_for(velocity: f64, distance: f64) -> f64 {
+    let kept = 1.0 + distance * DECELERATION.ln() * 1000.0 / velocity;
+    if kept <= 0.0 { f64::INFINITY } else { kept.ln() / DECELERATION.ln() / 1000.0 }
+}
+
 /// How far something pulled `past` an edge shows past it, in something `size` long: less the further it's pulled,
 /// never as far as `size`, as UIScrollView's rubber band. `elastic` is how loose it is: iOS's is 0.55.
 pub fn rubber_band(past: f32, size: f32, elastic: f32) -> f32 {

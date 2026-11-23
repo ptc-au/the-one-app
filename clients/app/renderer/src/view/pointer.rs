@@ -400,10 +400,18 @@ impl Screen {
     /// A finger (or a screen reader) moved what's at `at` by `delta` pixels (down and right positive): the innermost
     /// thing there that can still scroll that way does, telling its app if it listens. → what scrolled.
     pub fn pan(&mut self, at: Point<f32>, delta: Point<f32>) -> Option<Id> {
-        if let Some(frame) = self.frame_scroll(at, delta, None) {
-            return Some(frame);
+        self.pan_latched(at, delta, None)
+    }
+
+    /// As `pan`, but what a finger scrolled first (`latched`) it goes on scrolling (`reached`).
+    pub(super) fn pan_latched(&mut self, at: Point<f32>, delta: Point<f32>, latched: Option<Id>) -> Option<Id> {
+        let (latched, chain) = self.reached(at, latched);
+        if latched.is_none() {
+            if let Some(frame) = self.frame_scroll(at, delta, None) {
+                return Some(frame);
+            }
         }
-        let (id, from, by, most, along) = self.scrolls(at, delta)?;
+        let (id, from, by, most, along) = self.scrolls(&chain, delta)?;
         // Moved by hand as a notch eases it, it goes on from where that was going, at once.
         if self.coasts.get(&id).is_some_and(|coast| coast.aim.is_some()) {
             self.coasts.remove(&id);

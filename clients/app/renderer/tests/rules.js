@@ -77,6 +77,12 @@ function picture(file, points) {
 const rgb = (colour) => `rgb(${colour.join(", ")})`
 const box = ({ x, y, width, height }) => `${Math.round(x)},${Math.round(y)} ${Math.round(width)}×${Math.round(height)}`
 const overlap = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 1
+/// What of `a` is in `b`, if any of it is.
+const within = (a, b) => {
+  const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y)
+  const width = Math.min(a.x + a.width, b.x + b.width) - x, height = Math.min(a.y + a.height, b.y + b.height) - y
+  return width > 0 && height > 0 ? { x, y, width, height } : undefined
+}
 const inside = (a, b) => a.x >= b.x - 0.5 && a.y >= b.y - 0.5 && a.x + a.width <= b.x + b.width + 0.5 && a.y + a.height <= b.y + b.height + 0.5
 
 /// Each page's nodes by themselves (a frame's page has ids of its own, `in` says which frames it's in), with each node's
@@ -165,10 +171,12 @@ export function wordsApart(nodes) {
   return pages(nodes).flatMap(({ here, byId, above, scrolled, covered }) => {
     const related = (a, b) => above(a).includes(b) || above(b).includes(a)
     const texts = here.filter((node) => node.kind === "text" && node.name?.trim() && node.opacity >= 0.99 && node.seen > 0 && node.rect && !covered(node))
-    // A text's ink is its pieces' boxes, which a text box wider than its words isn't.
+    // A text's ink is its pieces' boxes, which a text box wider than its words isn't, cut to what shows of each scroll
+    // it's in: a row scrolled half out of a card's list, under the card's title, is drawn only in the list.
     const inked = (node) => {
       const pieces = (node.children ?? []).map((child) => byId.get(child)).filter((child) => child?.kind === "raw-text" && child.rect?.width > 0)
-      return pieces.length ? pieces.map((piece) => piece.rect) : [node.rect]
+      const scrolls = above(node).filter((up) => up.kind === "scroll" && up.rect)
+      return (pieces.length ? pieces.map((piece) => piece.rect) : [node.rect]).map((rect) => scrolls.reduce((shown, up) => shown && within(shown, up.rect), rect)).filter(Boolean)
     }
     const wrong = []
     for (const [n, a] of texts.entries())

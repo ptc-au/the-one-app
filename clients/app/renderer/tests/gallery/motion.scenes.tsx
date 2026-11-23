@@ -1,11 +1,14 @@
 import { createSignal } from "solid-js"
-import { Button, List, Row, Screen, Sheet, Split, styles, Text, tokens, View, type Scenes } from "ui"
+import { Button, List, Row, Screen, ScrollView, Sheet, Split, styles, Text, tokens, View, type Scenes } from "ui"
 
 const look = styles({
   card: { padding: tokens.grid[4], borderRadius: tokens.radius.large, backgroundColor: tokens.colour.card, boxShadow: tokens.shadow.lifted, gap: tokens.grid[1] },
   page: { padding: tokens.grid[4], gap: tokens.grid[4] },
   phone: { height: 844 },
   box: { width: 64, height: 64, borderRadius: tokens.radius.medium, backgroundColor: tokens.colour.blue },
+  // About to move: a surface of its own, drawn from its picture.
+  lifting: { willChange: ["translateY"] },
+  inner: { height: 120 },
   smooth: (translateX: number) => ({ translateX, transitionProperty: ["translateX"], transition: tokens.motion.smooth }),
   snappy: (translateX: number) => ({ translateX, transitionProperty: ["translateX"], transition: tokens.motion.snappy }),
 })
@@ -32,6 +35,20 @@ const Springs = () => {
 }
 
 const notes = Array.from({ length: 200 }, (_, at) => `Note ${at + 1}`)
+
+/// Cards about to move, each a surface of its own, each with a list scrolled inside it, on a page taller than its window.
+const Cards = () => (
+  <ScrollView style={look.phone}>
+    <View style={look.page}>
+      {Array.from({ length: 8 }, (_, card) => (
+        <View style={[look.card, look.lifting]}>
+          <Text>{`Card ${card + 1}`}</Text>
+          <ScrollView style={look.inner}>{notes.slice(0, 12).map((note) => <Text>{note}</Text>)}</ScrollView>
+        </View>
+      ))}
+    </View>
+  </ScrollView>
+)
 
 /// A list whose rows say which was chosen, as a finger takes them.
 const Chosen = () => {
@@ -122,6 +139,16 @@ export default {
       "Pulled past its top": { from: { x: 195, y: 300 }, gesture: { swipe: [0, 240], speed: 800 } },
     },
     render: () => <List each={notes}>{(note) => <Row heading={note()} />}</List>,
+  },
+  // Lists in cards drawn from their pictures, the page flung on past its end: what scrolls in a card stays in it (a
+  // surface of the page's tiles drew a card's rows past its box, 23 Nov), the page keeps the finger as a card's list
+  // comes under it (the list took it, ran to its end and stretched, the page stopped), and it stretches on past its
+  // end at the speed it reached it.
+  "Motion/Lists in cards about to move": {
+    touch: true,
+    // Flung from between two cards, not from a card's list, so the page takes the finger.
+    motions: { Flung: { from: { x: 195, y: 285 }, gesture: { fling: [0, -300] } } },
+    render: () => <Cards />,
   },
   // A finger as a phone's screen gives it, which every phone's host takes alike (the renderer's `view::touch`).
   "Motion/Rows under a finger": {

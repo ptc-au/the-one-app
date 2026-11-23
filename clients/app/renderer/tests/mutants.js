@@ -52,6 +52,9 @@ const MUTANTS = {
   // From the reports and look-issues.
   "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "surface-in-layer": { bug: "a scroll in a layer being drawn made a surface, its rows shown past its box once the page had scrolled", plays: [animation("clients/app/renderer/tests/gallery", "Lists in cards about to move")] },
+  "unlatched": { bug: "a finger's moves scrolling whatever came under where it landed, a card's list taking a page's fling (23 Nov)", plays: [animation("clients/app/renderer/tests/gallery", "Lists in cards about to move")] },
+  "end-held": { bug: "a fling held at its end for the refresh it reached it in, then stretching on", plays: [animation("clients/app/renderer/tests/gallery", "Lists in cards about to move")] },
   "rest-undrawn": { bug: "a layer carried along drawn from its picture half a pixel aside in a motion's last frame, left so at rest (the App Library after a wheel's spin, 23 Nov)", plays: [animation("apps/home-screen", "Launcher, five pages")] },
   "tile-squeezed": { bug: "a tile shown in part drawn from all of it, squeezed", plays: [checks("clients/app/renderer/tests/gallery", "Motion/Long list")] },
   "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
