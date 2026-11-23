@@ -55,6 +55,8 @@ const MUTANTS = {
   "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
+  "leaving-loop": { bug: "what's closed with a spinner in it never gone, its see-through scrim taking every press (Vault on Andre's Mac and ptcau.app in Chrome, 23 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Over the page/A sheet closed as something's under way")] },
+  "leaving-pointer": { bug: "what's in a layer drawn going taking a press where its style says it takes the pointer, as a sheet's scrim did", plays: [checks("clients/app/renderer/tests/gallery", "Over the page/A sheet closed as something's under way")] },
   "hit-scroll": { bug: "what's in a scroll taking a press where it'd be unscrolled", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   // Planted hangs (22 Nov, a Surface's Intel driver hung on our frames): the app recovers on a new device, or stops
   // saying why, never freezes, and the headless renderer fails.

@@ -59,6 +59,7 @@ pub(super) struct Deferred {
     opacity: f32,
     parent: Option<Id>,
     pointer: bool,
+    inert: bool,
     near: Bounds<f32>,
     turn: TransformationMatrix,
 }
@@ -202,7 +203,7 @@ impl Placer<'_> {
         if let Some(panel) = self.panel.filter(|panel| panel.whole) {
             self.out.glass.push(crate::platform::Glass { bounds: self.window, radius: panel.corner, opacity: 1.0 });
         }
-        self.place_node(root, point(0.0, 0.0), Transform::NONE, ContentMask::from(self.window), 1.0, None, true);
+        self.place_node(root, point(0.0, 0.0), Transform::NONE, ContentMask::from(self.window), 1.0, None, true, false);
         self.out
     }
 
@@ -215,15 +216,15 @@ impl Placer<'_> {
     fn place_deferred(&mut self, deferred: Deferred) {
         let (near, turn) = (self.near, self.turn);
         (self.near, self.turn) = (deferred.near, deferred.turn);
-        self.place_node(deferred.taffy_node, deferred.offset, deferred.transform, deferred.mask, deferred.opacity, deferred.parent, deferred.pointer);
+        self.place_node(deferred.taffy_node, deferred.offset, deferred.transform, deferred.mask, deferred.opacity, deferred.parent, deferred.pointer, deferred.inert);
         (self.near, self.turn) = (near, turn);
     }
 
     /// Places `node`, with its parent's top left at `offset` in its layout, drawn through `transform` and turned as what
     /// it's in is, clipped to `mask` (in the window), `opacity` as opaque as it shows, in `parent`, taking the pointer if
-    /// `pointer`, as `Painter::paint_node` draws it.
+    /// `pointer` and what it's in isn't `inert`, as `Painter::paint_node` draws it.
     #[allow(clippy::too_many_arguments)]
-    fn place_node(&mut self, taffy_node: NodeId, offset: Point<f32>, transform: Transform, mask: ContentMask<f32>, opacity: f32, parent: Option<Id>, pointer: bool) {
+    fn place_node(&mut self, taffy_node: NodeId, offset: Point<f32>, transform: Transform, mask: ContentMask<f32>, opacity: f32, parent: Option<Id>, pointer: bool, inert: bool) {
         let (tree, layout) = (self.tree, self.layout);
         let Ok(laid) = layout.taffy.layout(taffy_node) else { return };
         // What isn't displayed isn't drawn, and nothing in it is.
@@ -250,8 +251,11 @@ impl Placer<'_> {
         let drawn = turned(turn, bounds);
         let shown = drawn.intersect(&mask.bounds);
         let root = id == 0;
-        // What's inert takes no pointer, nor does what's in it.
-        let pointer = !node.is("inert") && !tree.leaving(id) && look.pointer_events.unwrap_or(pointer);
+        // What's inert, or going, takes no pointer, nor does anything in it, whatever its `pointerEvents`, as the DOM's
+        // `inert` has it.
+        // Mutant: what's in it taking the pointer where its style says, as it did.
+        let inert = (inert && !crate::mutants::mutant("leaving-pointer")) || node.is("inert") || tree.leaving(id);
+        let pointer = !inert && look.pointer_events.unwrap_or(pointer);
         if node.str("aria-modal") == Some("true") && !tree.leaving_in(id) {
             self.out.modal = Some(id);
         }
@@ -340,6 +344,7 @@ impl Placer<'_> {
                         opacity: if leaf.fixed { 1.0 } else { opacity },
                         parent: Some(id),
                         pointer,
+                        inert,
                         near: if leaf.fixed { self.grown(self.window) } else { inside },
                         turn,
                     };

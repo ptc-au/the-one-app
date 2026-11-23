@@ -484,8 +484,10 @@ impl Screen {
                 }
             }
         }
-        // What's going is gone once nothing in it moves, having been drawn going.
-        let still = self.transitions.moving();
+        // What's going is gone once nothing in it is on its way, having been drawn going: a loop in it (a spinner's
+        // `animation`) never arrives, so it doesn't hold it.
+        // Mutant: a loop in what's going holding it, as it did.
+        let still: Vec<Id> = if crate::mutants::mutant("leaving-loop") { self.transitions.moving().into_iter().collect() } else { self.transitions.on_the_way().collect() };
         let gone: Vec<Id> = self.tree.going().filter(|id| self.going.contains(id) && !still.iter().any(|moving| self.within(*moving, *id))).collect();
         for id in gone {
             self.tree.left(id);

@@ -1,5 +1,5 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { Alert, Button, Menu, Screen, Sheet, Text, toast, View, type Scenes } from "ui"
+import { Alert, Button, Menu, Screen, Sheet, Spinner, Text, toast, View, type Scenes } from "ui"
 
 const OwnMenu = (props: { onSelect?: (value: string) => void; onOpenChange?: (open: boolean) => void }) => (
   <Menu.Root onSelect={props.onSelect} onOpenChange={props.onOpenChange}>
@@ -139,6 +139,24 @@ const Adding = () => {
   )
 }
 
+/// A sheet closed as something in it is under way (a spinner), as Vault's and Chrome Profiles' are as they save, and
+/// a button on the page under it that counts its presses.
+const Saving = () => {
+  const [open, setOpen] = createSignal(false)
+  const [presses, setPresses] = createSignal(0)
+  return (
+    <View>
+      <Button onPress={() => setOpen(true)}>Add Profile</Button>
+      <Button onPress={() => setPresses((count) => count + 1)}>Count</Button>
+      <Text>{`Pressed: ${presses()}`}</Text>
+      <Sheet heading="New Profile" open={open()} onClose={() => setOpen(false)}>
+        <Spinner />
+        <Button onPress={() => setOpen(false)}>Save</Button>
+      </Sheet>
+    </View>
+  )
+}
+
 /// A pushed screen with a sheet over it, as Vault's Add Item is, whose own state outlives the screen. The screen says where
 /// its Back goes after the sheet is open, so it registers with the device's Back later than the sheet does.
 const Pushed = () => {
@@ -224,6 +242,17 @@ export default {
       "Escape closes it": ["Add Note", { wait: 400 }, { key: "Escape" }, { expect: { gone: { role: "dialog" } } }],
       "A press outside closes it": ["Add Note", { wait: 400 }, { x: 195, y: 20 }, { expect: { gone: { role: "dialog" } } }],
       "Its button closes it": ["Add Note", { wait: 400 }, "Save", { expect: { gone: { role: "dialog" } } }],
+    },
+  },
+  // What's closed is gone for the pointer at once, as it goes, as the DOM's `inert` has it, and gone for good once it
+  // has gone, whatever's still looping in it.
+  "Over the page/A sheet closed as something's under way": {
+    render: () => <Saving />,
+    touch: false,
+    checks: {
+      "The page takes presses once it's gone": ["Add Profile", { wait: 400 }, "Save", { wait: 1000 }, "Count", { expect: { text: "Pressed: 1" } }, { expect: { gone: { role: "dialog" } } }],
+      "The page takes a press as it goes": ["Add Profile", { wait: 400 }, "Save", "Count", { expect: { text: "Pressed: 1" } }],
+      "Escaped, the page takes presses": ["Add Profile", { wait: 400 }, { key: "Escape" }, { wait: 1000 }, "Count", { expect: { text: "Pressed: 1" } }],
     },
   },
   // Android's OnBackPressedDispatcher and the web's top layer: what's drawn over the screen closes before it, however the

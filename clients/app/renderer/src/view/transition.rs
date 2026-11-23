@@ -749,7 +749,8 @@ impl Transitions {
         self.animated.iter().filter(|id| !arriving.contains(id)).count()
     }
 
-    fn on_the_way(&self) -> impl Iterator<Item = Id> + '_ {
+    /// The nodes with something on its way that'll arrive: what moves but a loop.
+    pub(super) fn on_the_way(&self) -> impl Iterator<Item = Id> + '_ {
         self.moving.keys().map(|(id, _)| *id).chain(self.dragged.keys().copied()).chain(self.flips.keys().copied()).chain(self.playing.iter().copied())
     }
 
