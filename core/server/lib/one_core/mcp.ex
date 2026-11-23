@@ -174,8 +174,11 @@ defmodule OneCore.Mcp do
       # The network's updater, through the relay at the network's address, saying where the network's update is and
       # what each server is to do: only the edge says it.
       {:ok, %{"method" => "notifications/one/update", "params" => %{} = update}} when from == nil ->
-        # Where this server is to deploy its build's edge, the apps that deploy it do (`OneCore.Release.edge/0`).
-        if OneCore.Release.instructed(update, Hooks.hooking("edge", "network") != []) == :deploy_edge,
+        # Where this server is to deploy its build's edge, the apps that deploy it do (`OneCore.Release.edge/0`): only
+        # on one of the network's own servers, which runs them, as a person's own server passing it on is refused.
+        deploys = Servers.here?("network") and Hooks.hooking("edge", "network") != []
+
+        if OneCore.Release.instructed(update, deploys) == :deploy_edge,
           do: Hooks.observe("edge", %{"build" => OneCore.Builds.build()}, {nil, "network"})
 
         ""
