@@ -38,7 +38,7 @@ const ASSOCIATIONS: Record<string, () => unknown> = {
   }),
   "/.well-known/assetlinks.json": async () => {
     const { android_package } = await network();
-    return [...env.ANDROID_APPS, ...(android_package ? [android_package] : [])].map((package_name) => ({
+    return [...new Set([...env.ANDROID_APPS, ...(android_package ? [android_package] : [])])].map((package_name) => ({
       relation: ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
       target: { namespace: "android_app", package_name, sha256_cert_fingerprints: env.ANDROID_KEYS },
     }));
