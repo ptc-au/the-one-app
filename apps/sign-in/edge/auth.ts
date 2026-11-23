@@ -206,7 +206,7 @@ export async function keep() {
       console.log(`Gave sign-in's database back its ${kept.user.length} people, as kept in the bucket`);
       return was;
     }
-    const rows = await env.DB.batch(KEPT.map((table) => env.DB.prepare(`select * from "${table}" order by id`)));
+    const rows = await env.DB.batch(KEPT.map((table) => env.DB.prepare(`select * from "${table}" order by rowid`)));
     return JSON.stringify(Object.fromEntries(KEPT.map((table, at) => [table, rows[at].results])));
   });
 }

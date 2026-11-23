@@ -22,7 +22,10 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled() {
-    await Promise.all([keep(), copied(), expire(), pictures()]);
+    // Each runs to its end whichever fails, as a Worker's work is cut off when its handler's promise settles.
+    const done = await Promise.allSettled([keep(), copied(), expire(), pictures()]);
+    const failed = done.filter((one) => one.status === "rejected");
+    if (failed.length) throw new AggregateError(failed.map((one) => one.reason), `${failed.length} of the ten minutes' jobs failed`);
   },
 } satisfies ExportedHandler;
 
