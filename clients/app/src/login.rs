@@ -10,8 +10,11 @@
 
 use std::path::PathBuf;
 
-/// The name it's kept by: a `Run` key's value, an autostart entry's file.
-const KEY: &str = "the One App";
+/// The name it's kept by, a `Run` key's value and an autostart entry's: the app's, so a network's own app has one of
+/// its own beside the One App's (`app_name` in core/client).
+fn key() -> &'static str {
+    ::client::app_name()
+}
 
 /// Whether this build keeps one.
 pub fn available() -> bool {
@@ -98,16 +101,16 @@ mod system {
     const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
     pub fn is_on() -> bool {
-        unsafe { RegGetValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), &HSTRING::from(super::KEY), RRF_RT_REG_SZ, None, None, None) }.is_ok()
+        unsafe { RegGetValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), &HSTRING::from(super::key()), RRF_RT_REG_SZ, None, None, None) }.is_ok()
     }
 
     pub fn change(on: bool) -> anyhow::Result<()> {
         if on {
             let program = cli::serving::program()?;
             let value: Vec<u16> = format!("\"{}\"", program.display()).encode_utf16().chain([0]).collect();
-            unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), &HSTRING::from(super::KEY), REG_SZ.0, Some(value.as_ptr().cast()), (value.len() * 2) as u32) }.ok()?;
+            unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), &HSTRING::from(super::key()), REG_SZ.0, Some(value.as_ptr().cast()), (value.len() * 2) as u32) }.ok()?;
         } else {
-            unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), &HSTRING::from(super::KEY)) }.ok()?;
+            unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), &HSTRING::from(super::key())) }.ok()?;
         }
         Ok(())
     }
@@ -118,7 +121,7 @@ mod system {
     use std::path::PathBuf;
 
     fn entry() -> anyhow::Result<PathBuf> {
-        Ok(dirs::config_dir().ok_or_else(|| anyhow::anyhow!("this user has no config folder"))?.join("autostart").join("one.desktop"))
+        Ok(dirs::config_dir().ok_or_else(|| anyhow::anyhow!("this user has no config folder"))?.join("autostart").join(format!("{}.desktop", ::client::command())))
     }
 
     pub fn is_on() -> bool {
@@ -130,7 +133,7 @@ mod system {
         if on {
             let program = cli::serving::program()?;
             std::fs::create_dir_all(entry.parent().expect("a file has a folder"))?;
-            std::fs::write(&entry, format!("[Desktop Entry]\nType=Application\nName={}\nExec=\"{}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\n", super::KEY, program.display()))?;
+            std::fs::write(&entry, format!("[Desktop Entry]\nType=Application\nName={}\nExec=\"{}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\n", super::key(), program.display()))?;
         } else {
             std::fs::remove_file(&entry)?;
         }
