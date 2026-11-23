@@ -461,10 +461,11 @@ defmodule OneCore.Apps do
          for owner <- here, reduce: state do
            state ->
              try do
-               installed = Installed.running(owner)
-               newer = Store.newer(Enum.uniq(Map.values(installed)), state.latest)
+               {read, installed} = :timer.tc(fn -> Installed.running(owner) end, :millisecond)
+               {loading, newer} = :timer.tc(fn -> Store.newer(Enum.uniq(Map.values(installed)), state.latest) end, :millisecond)
                {state, _changed, _any} = took_over(state, owner, true, installed, newer)
                LoadedVersion.release(for {_artifact, _number, {:ok, version}} <- newer, do: version)
+               Logger.info("#{owner}'s #{map_size(installed)} apps started here: what's installed read in #{read} ms, the apps loaded in #{loading} ms")
                state
              rescue
                unanswered -> unstarted(state, owner, unanswered)

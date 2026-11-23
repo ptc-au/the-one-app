@@ -75,6 +75,7 @@ defmodule OneCore.Application do
         # A server nothing keeps running, as a network being built runs one, has nothing to answer by its key to.
         up = fn ->
           Apps.started()
+          Logger.info("This server's apps are started, #{elem(:erlang.statistics(:wall_clock), 0)} ms after the runtime began")
           OneCore.Hooks.observe("started", %{"server" => key}, {nil, OneCore.Servers.owner()})
           if not Application.get_env(:one_core, :installed, false), do: Release.told(%{"server_daemon_status" => "running"})
           # A new network's first server makes it, once it's running (`OneCore.Apps.Lifecycle.found/1`).
