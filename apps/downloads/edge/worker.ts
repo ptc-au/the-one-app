@@ -188,6 +188,7 @@ function hero(device: Device | null, name: string, files: { link: string; label:
         <li><span class="number">1</span><span class="words">Open <b>${saved}</b> once it downloads.</span></li>
         <li><span class="number">2</span><span class="words">If you're asked, allow installs from your browser.</span></li>
         <li><span class="number">3</span><span class="words">Tap <b>Install</b>.</span></li>
+        <li><span class="number">4</span><span class="words">If Google Play Protect recommends a scan, tap <b>Scan app</b>. It sends the app's details to Google to check it.</span></li>
       </ol>${web}`;
   const lede = { mac: `For Mac with ${main.label === "Intel" ? "Intel" : "Apple silicon"}.`, windows: "For Windows 10 and 11.", linux: `For Linux, as an ${main.label}.` }[device];
   const then = { mac: `Open ${saved}, then drag ${name} to Applications.`, windows: `Open ${saved} to install it.`, linux: `Open ${saved} to start it.` }[device];

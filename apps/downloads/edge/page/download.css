@@ -167,7 +167,7 @@ main {
   font-size: var(--text-base);
 }
 
-/* Steps, as on an iPhone (TestFlight, then the app) and on Android (open, allow, install). */
+/* Steps, as on an iPhone (TestFlight, then the app) and on Android (open, allow, install, scan). */
 .steps {
   display: grid;
   gap: var(--grid-3);
