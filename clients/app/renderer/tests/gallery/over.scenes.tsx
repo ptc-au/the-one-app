@@ -303,7 +303,7 @@ export default {
     // Opened, so the gallery shows the sheet over the page that pages.
     taps: [{ role: "button", name: "Edit Order…" }],
     checks: {
-      "Its rows move by the arrows, and the page under it doesn't": [
+      "The arrows are the sheet's, and the page under it doesn't page": [
         { key: "Tab" },
         { key: "Tab" },
         { expect: { focused: reorderHandle("Family") } },
