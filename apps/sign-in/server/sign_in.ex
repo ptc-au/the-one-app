@@ -677,13 +677,14 @@ defmodule SignIn do
          else: (_ -> nil)
   end
 
-  # What the edge says a person's devices are, each app under the name it says it has now: the edge names a device as
-  # it signed in, and an app says what it's called each time it connects.
+  # What the edge says a person's devices are, each app under the name it says it has now and the command that ran it:
+  # the edge names a device as it signed in, and an app says what it's called, and its command if a terminal ran it,
+  # each time it connects.
   defp devices(who) do
     %{"devices" => devices} = list = ask(%{ask: "devices", who: who})
-    names = Builds.names(who, for(%{"kind" => "app", "id" => id} <- devices, do: id))
+    said = Builds.said(who, for(%{"kind" => "app", "id" => id} <- devices, do: id))
     passkeys = for passkey <- list["passkeys"] || [], do: Map.put(passkey, "code", code(passkey["prf_key"]))
-    %{list | "devices" => for(device <- devices, do: Map.update!(device, "name", &Map.get(names, device["id"], &1))), "passkeys" => passkeys}
+    %{list | "devices" => for(device <- devices, do: Map.merge(device, Map.get(said, device["id"], %{}))), "passkeys" => passkeys}
   end
 
   # A passkey's key, as its person checks it's the one they used, as Signal's safety numbers are: 20 digits in fours

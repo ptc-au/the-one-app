@@ -141,11 +141,11 @@ defmodule OneCore.Builds do
   end
 
   @doc """
-  Keeps which build the device whose key is `device`, `by`'s, says it is, and the protocol it speaks, when that's
-  changed.
+  Keeps which build the device whose key is `device`, `by`'s, says it is, the protocol it speaks, its name and the
+  `command` that ran it if a terminal did, when that's changed.
   """
   def seen(by, device, %{} = info) do
-    info = Map.take(info, ~w(build target name protocol))
+    info = Map.take(info, ~w(build target name protocol command))
     blob = "#{by}/devices/#{device}"
 
     case Bucket.read(blob) do
@@ -159,17 +159,17 @@ defmodule OneCore.Builds do
   def seen(_by, _device, _said), do: :ok
 
   @doc """
-  What each of `by`'s `devices` calls itself, as it said when it last connected (`seen/3`): `%{device => name}`, with
-  none for a device that hasn't said. It's what its person has called it since, where the name it signed in under
-  isn't.
+  What each of `by`'s `devices` calls itself and the command that ran it, as it said when it last connected
+  (`seen/3`): `%{device => %{"name" => name, "command" => command}}`, with each only where the device said it. It's
+  what its person has called it since, where the name it signed in under isn't, and a device let in before the
+  network asked for a command says it here.
   """
-  def names(by, devices) do
+  def said(by, devices) do
     reads = Bucket.read_all(Enum.map(devices, &"#{by}/devices/#{&1}"))
 
-    for {device, {:ok, info, _tag}} <- Enum.zip(devices, reads),
-        name = JSON.decode!(info)["name"],
-        is_binary(name) and name != "",
-        into: %{},
-        do: {device, name}
+    for {device, {:ok, info, _tag}} <- Enum.zip(devices, reads), into: %{} do
+      said = for {key, value} <- Map.take(JSON.decode!(info), ~w(name command)), is_binary(value) and value != "", into: %{}, do: {key, value}
+      {device, said}
+    end
   end
 end
