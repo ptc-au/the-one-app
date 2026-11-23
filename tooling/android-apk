@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
 # Finishes the plain build of the One App for Android for a network, as `tooling/mac-app` does a Mac's: the APK the core's
 # release has as `one/android-aarch64` (`tooling/release`), given here, made the network's own. Its `app/`, as the
-# network's repo's main has it on the remote, says its name (`tauri.conf.json`'s `productName`, with
-# `tauri.android.conf.json` over it where there is one, as Tauri merges a platform's config), which takes the One App's
-# place in its strings, and its icon (`icons/icon.png`, square, filling its square as its own background), which
-# `cargo tauri icon` makes Android's launcher icons of, on its own colour; both go in with apktool, and a network that
-# names neither keeps the One App's. Its address (`address`) goes in as its `assets/network`, read as the app starts
-# (`bundled` in core/client). It's aligned and signed with the platform's Android release key, which signs every
-# network's APK and each update after, as Android takes an update only signed as the app it replaces ("The One App
-# Android release keystore" in 1Password's `ptc-nosudo`, its password beside it; `ANDROID_APPS` in
-# apps/sign-in/edge/wrangler.jsonc names it, so the app's web view uses the network's passkeys), or with the keystore
-# given, whose password is ANDROID_KEYSTORE_PASSWORD (the Android SDK's debug keystore's is `android`):
+# network's repo's main has it on the remote, says it in Tauri's config (`tauri.conf.json`, with `tauri.android.conf.json`
+# over it where there is one, as Tauri merges a platform's):
+#
+# - its application ID (`identifier`), which Android tells apps apart by, so each network's installs beside the
+#   others' with its own data and sign-in, and takes only its own updates. The plain build's, `app.theone.client`, is
+#   the One App's. Its Firebase app is the one `clients/app/gen/android/app/google-services.json` lists for it, whose
+#   push messages it gets, and it's named to the network's edge as its own (`android_package`, which `tooling/installers`
+#   sets), whose assetlinks let it use the network's passkeys and open its links;
+# - its app links (the deep-link plugin's `mobile` entries with `appLink`), as Tauri's build puts them in the manifest:
+#   a Vault request's link opens in the app;
+# - its name (`productName`), which takes the One App's place in its strings, and its icon (`icons/icon.png`, square,
+#   filling its square as its own background), which `cargo tauri icon` makes Android's launcher icons of, on its own
+#   colour; a network that names neither keeps the One App's.
+#
+# These go in with apktool. Its address (`address`) goes in as its `assets/network`, read as the app starts (`bundled`
+# in core/client). It's aligned and signed with the platform's Android release key, which signs every network's APK
+# and each update after, as Android takes an update only signed as the app it replaces ("The One App Android release
+# keystore" in 1Password's `ptc-nosudo`, its password beside it; `ANDROID_KEYS` in apps/sign-in/edge/wrangler.jsonc names
+# it), or with the keystore given, whose password is ANDROID_KEYSTORE_PASSWORD (the Android SDK's debug keystore's is
+# `android`):
 #
 #     tooling/android-apk <the network's repo> <the plain APK> <the network's APK> [<keystore>]
 #
-# Its package stays the One App's, `app.theone.client`, which its push notifications (Firebase) and its Rust know it by,
-# so a phone has one network's app at a time.
+# Its code is the plain build's, whose classes keep their package, `app.theone.client`, which its Rust finds them by.
 set -euo pipefail
 (($# == 3 || $# == 4)) || { echo "tooling/android-apk <the network's repo> <the plain APK> <the network's APK> [<keystore>]" >&2 && exit 1; }
 network=$1 plain=$2 out=$3
@@ -36,38 +45,73 @@ git -C "$network" fetch -q origin main
 git -C "$network" archive origin/main app | tar -x -C "$work"
 config=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.android.conf.json ]] && echo "$work/app/tauri.android.conf.json"))
 name=$(jq -r '.productName // empty' <<<"$config")
+id=$(jq -r '.identifier // "app.theone.client"' <<<"$config")
 icon=$work/app/icons/icon.png
-cp "$plain" "$work/app.apk"
+firebase=$(jq -ec --arg id "$id" '.project_info as $project | .client[] | select(.client_info.android_client_info.package_name == $id) | {app: .client_info.mobilesdk_app_id, key: .api_key[0].current_key, sender: $project.project_number, project: $project.project_id, bucket: $project.storage_bucket}' \
+  "$root/clients/app/gen/android/app/google-services.json") ||
+  { echo "No Firebase app for $id in clients/app/gen/android/app/google-services.json: add one to the Firebase project with the release key's fingerprints" >&2 && exit 1; }
 
-if [[ -n $name || -f $icon ]]; then
-  apktool=(java -jar "$(mise -C "$root" which apktool.jar)")
-  # Its resources decoded, its code left as it is.
-  "${apktool[@]}" d -q -f -s -o "$work/decoded" "$plain"
-  if [[ -n $name ]]; then
-    python3 -I - "$work/decoded/res/values/strings.xml" "$name" <<'EOF'
-import sys
-from xml.sax.saxutils import escape
-path, name = sys.argv[1:]
-with open(path) as file:
+apktool=(java -jar "$(mise -C "$root" which apktool.jar)")
+# Its resources decoded, its code left as it is.
+"${apktool[@]}" d -q -f -s -o "$work/decoded" "$plain"
+FIREBASE=$firebase python3 -I - "$work/decoded" "$id" "$name" "$config" <<'EOF'
+import json, os, re, sys
+from xml.sax.saxutils import escape, quoteattr
+decoded, id, name, config = sys.argv[1:]
+config = json.loads(config)
+
+# Its application ID, as aapt2's --rename-manifest-package gives it, and what's named after it: its providers'
+# authorities and the permission its receivers are guarded by, which two apps on a phone can't share.
+with open(f"{decoded}/apktool.yml") as file:
+    yml = file.read()
+with open(f"{decoded}/apktool.yml", "w") as file:
+    file.write(yml.replace("packageInfo:\n", f"packageInfo:\n  renameManifestPackage: {id}\n", 1))
+with open(f"{decoded}/AndroidManifest.xml") as file:
+    manifest = file.read()
+manifest = re.sub(r'(android:authorities="|<(?:uses-)?permission android:name=")app\.theone\.client\.', rf"\g<1>{id}.", manifest)
+
+# Its app links, each as Tauri's build has the deep-link plugin put it in the manifest.
+def data(attribute, values):
+    return "".join(f"<data android:{attribute}={quoteattr(value)}/>" for value in values)
+links = "".join(
+    '<intent-filter android:autoVerify="true"><action android:name="android.intent.action.VIEW"/>'
+    '<category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/>'
+    + data("scheme", link.get("scheme", ["https"])) + data("host", [link["host"]]) + data("pathPrefix", link.get("pathPrefix", []))
+    + "</intent-filter>"
+    for link in config.get("plugins", {}).get("deep-link", {}).get("mobile", []) if link.get("appLink") and link.get("host")
+)
+main = manifest.index('android:name="app.theone.client.MainActivity"')
+end = manifest.index("</activity>", main)
+manifest = manifest[:end] + links + manifest[end:]
+with open(f"{decoded}/AndroidManifest.xml", "w") as file:
+    file.write(manifest)
+
+# Its Firebase app's, as the Google services plugin writes them from google-services.json, and its name.
+firebase = json.loads(os.environ["FIREBASE"])
+values = {"google_app_id": firebase["app"], "google_api_key": firebase["key"], "google_crash_reporting_api_key": firebase["key"],
+          "gcm_defaultSenderId": firebase["sender"], "project_id": firebase["project"], "google_storage_bucket": firebase["bucket"]}
+with open(f"{decoded}/res/values/strings.xml") as file:
     strings = file.read()
-with open(path, "w") as file:
-    file.write(strings.replace("the One App", escape(name).replace("'", "\\'")))
+for key, value in values.items():
+    strings = re.sub(rf'(<string name="{key}"[^>]*>)[^<]*(</string>)', lambda found: found[1] + escape(value) + found[2], strings)
+if name:
+    strings = strings.replace("the One App", escape(name).replace("'", "\\'"))
+with open(f"{decoded}/res/values/strings.xml", "w") as file:
+    file.write(strings)
 EOF
-  fi
-  if [[ -f $icon ]]; then
-    (cd "$root/clients/app" && cargo tauri icon "$icon" -o "$work/icons" >/dev/null)
-    # apktool names a density's folder as Android first had it (`mipmap-hdpi-v4`).
-    for file in "$work"/decoded/res/mipmap-*/ic_launcher*.png; do
-      folder=$(basename "$(dirname "$file")")
-      cp "$work/icons/android/${folder%-v4}/$(basename "$file")" "$file"
-    done
-    # The adaptive icon's background is the icon's own colour, at its corner, so its edge doesn't show.
-    colour=$(convert "$icon" -format '%[hex:p{0,0}]' info: | cut -c1-6)
-    sed -i "s|<color name=\"ic_launcher_background\">#[0-9a-fA-F]*</color>|<color name=\"ic_launcher_background\">#$colour</color>|" \
-      "$work/decoded/res/values/colors.xml"
-  fi
-  "${apktool[@]}" b -q -o "$work/app.apk" "$work/decoded"
+if [[ -f $icon ]]; then
+  (cd "$root/clients/app" && cargo tauri icon "$icon" -o "$work/icons" >/dev/null)
+  # apktool names a density's folder as Android first had it (`mipmap-hdpi-v4`).
+  for file in "$work"/decoded/res/mipmap-*/ic_launcher*.png; do
+    folder=$(basename "$(dirname "$file")")
+    cp "$work/icons/android/${folder%-v4}/$(basename "$file")" "$file"
+  done
+  # The adaptive icon's background is the icon's own colour, at its corner, so its edge doesn't show.
+  colour=$(convert "$icon" -format '%[hex:p{0,0}]' info: | cut -c1-6)
+  sed -i "s|<color name=\"ic_launcher_background\">#[0-9a-fA-F]*</color>|<color name=\"ic_launcher_background\">#$colour</color>|" \
+    "$work/decoded/res/values/colors.xml"
 fi
+"${apktool[@]}" b -q -o "$work/app.apk" "$work/decoded"
 
 jq -nc --arg address "$(cat "$work/app/address")" '{address: $address}' >"$work/network"
 python3 -I -c $'import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], "a") as apk: apk.write(sys.argv[2], "assets/network")' \

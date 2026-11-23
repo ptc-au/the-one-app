@@ -83,7 +83,10 @@ else
 fi
 
 # Android: the network's own APK (`tooling/android-apk`), signed with the platform's Android release key. The app takes
-# each one published after it by itself (`apk` in clients/app/src/updater.rs).
+# each one published after it by itself (`apk` in clients/app/src/updater.rs). Its application ID is named to the
+# network, whose assetlinks trust it with the network's passkeys and links.
+android=$(jq -s '.[0] * (.[1] // {}) | .identifier // "app.theone.client"' -r "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.android.conf.json ]] && echo "$work/app/tauri.android.conf.json"))
+one sign-in network --android_package "$android" >/dev/null
 one=$(latest android-aarch64 one) build=$(jq -r .build <<<"$one")
 if has android "$build"; then
   echo "android: $name.apk is $build already"
