@@ -16,10 +16,10 @@
 // refusal, and `{ "$image": "data:image/png;base64,…" }` a picture, as a server answers one (MCP's `image`: a screenshot). A method of the client's (`ui/initialize`, `one/client`) is answered as it's named too. It's 1 January 2026,
 // 00:00 UTC, as a native host's headless renderer has it, so a fixture's times are said from then.
 //
-// Each scene is drawn on a native host by its headless renderer (clients/app/renderer's `screenshot` example), with
-// `--web` by our renderer in headless Chromium too, in a frame a stand-in client answers (its web frame, clients/web/renderer, on Chromium's WebGPU: on a machine with no GPU,
-// SwiftShader's, which draws every frame on the CPU, so it's slow, run for every change to the renderer, the UI library or the web client (the `qa` skill); elsewhere native and
-// web draw with the same renderer), with `--ssh` on a device's GPU too, by its own build of the headless renderer (a Windows
+// Each scene is drawn on a native host by its headless renderer (clients/app/renderer's `headless` example): the check
+// every change runs (the `qa` skill). With `--web`, a tool for debugging the web client itself and never a routine check,
+// it's drawn by our renderer in headless Chromium too, in a frame a stand-in client answers (its web frame,
+// clients/web/renderer, on Chromium's WebGPU, on the machine's GPU through Vulkan), with `--ssh` on a device's GPU too, by its own build of the headless renderer (a Windows
 // one's Direct3D 12, as animation.js plays there: where each node is laid out there and here, and how much of the
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
 // semantic tree as text (src/drawing-primitives/outline.ts) too. On the web every frame from opening the app's frame until its
@@ -79,7 +79,7 @@ const ssh = option("--ssh")
 // Only the scenes whose names have these words, as animation.js's `--scene`.
 const only = option("--scene")?.toLowerCase()
 const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--headless", "--scene", "--glass", "--jobs"].includes(args[at - 1])).map((folder) => resolve(folder))
-const targets = folders.length ? folders : changed([here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json")))], onTheWeb)
+const targets = folders.length ? folders : changed([here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json")))])
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
 // page written for this one, so there's nothing yet to compare.
 const speaks = (file, pattern) => Number(readFileSync(join(root, file), "utf8").match(pattern)?.[1])

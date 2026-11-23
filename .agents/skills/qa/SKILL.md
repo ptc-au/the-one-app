@@ -62,7 +62,7 @@ expectations of its own: the renderer's tests run over every one. Every change t
 
 Without folders named, a pass (here and in animation.js) draws only the folders what changed since your branch left
 main can draw differently (`git diff` from their merge base, uncommitted too, `animation/changed.js`): every one for a
-change to the renderer, its tests or the UI library (and to `clients/web` on the web), else the gallery's or an app's
+change to the renderer, its tests or the UI library, else the gallery's or an app's
 client's own; it says which on stderr, and `--all` draws every one. Main's pictures are kept for the machine, so a
 pass of main another agent made costs little.
 
@@ -79,9 +79,7 @@ recently used going), so main's "before" is drawn once for every agent, and a pa
 (`--persistent_worker`, Bazel's protocol) that keeps its GPU and draws one run after another, every run else its own;
 together, whoever started them, they have at most 40% of the machine's memory (systemd's `headless.slice`). `--lavapipe` draws on Mesa's lavapipe, on the CPU, instead: the second
 GPU, whose frames must agree with the first's (within 0.1% on 22 Nov), run once at the end of a change to the renderer,
-not every time. Compare only runs made on the same GPU. With `--web` it draws by our renderer on the web too, in headless Chromium
-(Playwright's, which `bunx playwright-core install chromium` fetches where it's missing; its WebGPU on SwiftShader,
-which draws on the CPU: `web.png`, compared with `native.png`, the web gate below). What counts is **what changed since `--against`** on our renderer
+not every time. Compare only runs made on the same GPU. What counts is **what changed since `--against`** on our renderer
 (`changed.png`, drawn where they differ): a tree that changed, or pictures more than 2% apart, is looked at. A difference that's meant is said
 in the commit; one that isn't is fixed. Our renderer is the reference, judged against DESIGN.md (Raycast-inspired), not
 the browser: it draws the web too. A native host that hasn't the runtime version the UI library needs draws nothing, which it says.
@@ -112,20 +110,12 @@ component or primitive changed or added gets checks for what it promises, ported
 it's copied from the UI SDK. A bug a device showed that the checks passed is the tests' too: make a check fail on
 it first (a scene shaped like where it happened), say why the tests missed it, then fix both.
 
-### The web gate: every change to the renderer, the UI library or the web client
+### The web
 
-A change under `clients/app/renderer/`, `core/ui/` or `clients/web/` runs every scene on the web too, light and dark,
-before it's committed, in `clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
-
-    bun screenshot.js --web --release --out <scratch>/web-light
-    bun screenshot.js --web --release --dark --out <scratch>/web-dark
-
-Each must exit 0: a web picture more than 1% from its native one, a word on one and not the other, a blank picture or
-an error the scene doesn't say it logs fails it. The two run side by side in about 12 minutes on the Linux machine's
-SwiftShader (240 scenes each, idle, 22 Nov), so start them as you start checking, not at the end. Chromium on its GPU
-took 8, but its pictures, under load, were taken before what a page does on the browser's own clock had settled. A difference that's meant
-goes in `WEB_DIFFERS` with why; the gate isn't widened. On 21 Nov a change to how the launcher's scenes are drawn
-natively failed 13 of them on the web, unnoticed for five hours, as it ran without `--web`.
+The check every change runs is the native pass above: our renderer draws the web too, so a change's web pictures are its
+native ones (Andre, 23 Nov). `--web` draws each scene on the web as well, in headless Chromium (Playwright's, which
+`bunx playwright-core install chromium` fetches where it's missing), on the machine's GPU, and compares `web.png` with
+`native.png`: a tool for debugging the web client itself, on the scenes it's about (`--scene`), never a routine check.
 
 ### Mutants: every change to the renderer's tests
 
