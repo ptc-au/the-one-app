@@ -83,7 +83,7 @@ export { built, env, FACES, glass, headless, jobs, lavapipe, pLimit, setHeadless
 export { stopped, work } from "./animation/workers.js"
 export { decoded, differs } from "./animation/output.js"
 export { machine } from "./animation/machine.js"
-export { cached } from "./animation/cache.js"
+export { cached, judged } from "./animation/cache.js"
 export { changed } from "./animation/changed.js"
 export { moves, selector } from "./animation/gesture.js"
 export { monospaced } from "./animation/judges.js"

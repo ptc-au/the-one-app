@@ -49,8 +49,8 @@ function prune() {
 }
 
 /// `run(args)` of the headless renderer at `headless` in `env`, whose `outputs` (paths among `args`) are what it draws,
-/// or what it drew with the same before, anywhere on the machine. → its exit status, stdout and stderr, and whether it
-/// was kept (`kept`).
+/// or what it drew with the same before, anywhere on the machine. → its exit status, stdout and stderr, whether it
+/// was kept (`kept`), and where it's kept (`at`, for `judged`), where it drew.
 export async function cached(headless, args, env, outputs, run) {
   mkdirSync(KEPT, { recursive: true })
   if (!pruned) prune()
@@ -64,7 +64,7 @@ export async function cached(headless, args, env, outputs, run) {
       for (const output of outputs) if (existsSync(join(at, basename(output)))) cpSync(join(at, basename(output)), output)
       const now = new Date()
       utimesSync(at, now, now)
-      return { ...JSON.parse(readFileSync(join(at, "ran.json"), "utf8")), kept: true }
+      return { ...JSON.parse(readFileSync(join(at, "ran.json"), "utf8")), kept: true, at }
     }
     const ran = await run(args)
     // Only what drew: what failed is said again by the next run, which may not.
@@ -75,10 +75,24 @@ export async function cached(headless, args, env, outputs, run) {
       for (const output of outputs) if (existsSync(output)) cpSync(output, join(making, basename(output)))
       writeFileSync(join(making, "ran.json"), JSON.stringify(ran))
       renameSync(making, at)
+      return { ...ran, at }
     }
     return ran
   } finally {
     flock(lock, LOCK_UN)
     closeSync(lock)
   }
+}
+
+/// What `judge()` says of a drawing kept at `at` (`cached`'s), by `by` (what else it depends on: the code that judges and
+/// what it's told), kept beside it, so a drawing judged before isn't judged again, by any worktree on the machine, and
+/// goes as it goes. Nowhere to keep it (`at` unsaid: a drawing that wasn't kept), it's judged.
+export function judged(at, by, judge) {
+  if (!at) return judge()
+  const file = join(at, `judged-${sha(JSON.stringify(by))}.json`)
+  if (existsSync(file)) return JSON.parse(readFileSync(file, "utf8"))
+  const said = judge()
+  writeFileSync(`${file}.${process.pid}`, JSON.stringify(said))
+  renameSync(`${file}.${process.pid}`, file)
+  return said
 }

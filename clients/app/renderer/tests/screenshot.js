@@ -54,7 +54,7 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, built, cached, changed, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
+import { build, built, cached, changed, judged, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -509,6 +509,10 @@ const headlessRun = (asked) => slot(() => work(headless, asked, env))
 /// them (`cached`).
 const keptRun = (asked, outputs) => slot(() => cached(headless, asked, env, outputs, (args) => work(headless, args, env)))
 
+/// What judging a scene's native drawing depends on beside the drawing, its scene and its size: the code that judges it
+/// (the rules, this file, how a picture is read and the packages that read it) and the tokens the rules read.
+const JUDGING = new Bun.CryptoHasher("sha256").update(["clients/app/renderer/tests/rules.js", "clients/app/renderer/tests/screenshot.js", "clients/app/renderer/tests/animation/output.js", "clients/app/renderer/tests/bun.lock", "core/ui/src/tokens.css"].map((file) => readFileSync(join(root, file), "utf8")).join("\n")).digest("hex")
+
 /// A scene drawn by a native host's headless renderer, or nothing where it hasn't been built or can't draw the page.
 /// `again` draws it a second time, only to be compared with the first: afresh, never kept, without what only the first
 /// is judged by (how quickly it drew, `--measure`, and the rules).
@@ -545,7 +549,9 @@ async function native(built, scene, folder, again = false) {
   const overflowing = overflowingWords(queried, scene.size[0])
   const allNodes = said.at(-after - 1)?.result?.nodes ?? []
   writeFileSync(join(folder, "native-nodes.json"), JSON.stringify(allNodes))
-  const broken = !again && existsSync(join(folder, "native.png")) ? rules(allNodes, join(folder, "native.png"), scene.size, `${basename(dirname(folder))} · ${scene.name}`) : []
+  // The rules it breaks and how much of its picture is drawn (`inked`), judged once for what it drew (`judged`).
+  const named = `${basename(dirname(folder))} · ${scene.name}`
+  const { broken, ink } = again || !existsSync(join(folder, "native.png")) ? { broken: [] } : judged(run.at, [JUDGING, named], () => ({ broken: rules(allNodes, join(folder, "native.png"), scene.size, named), ink: inked(join(folder, "native.png")) }))
   // The words in sight, as the last frame drew them: each text and name of the semantic tree whose node, or the nearest
   // above it the inspector knows (a text in a line, a page in a frame), has some of its box in the window and isn't
   // see-through.
@@ -566,7 +572,7 @@ async function native(built, scene, folder, again = false) {
   const every = (list) => list.flatMap((node) => [...(node.name ? [node.name] : []), ...every(node.children ?? [])])
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
-  return { kept: run.kept, tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, blurring, answers: said, at, asked, requests }
+  return { kept: run.kept, tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, ink, blurring, answers: said, at, asked, requests }
 }
 
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
@@ -998,8 +1004,8 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
     // A picture that drew nothing, or only its background: two near-empty pictures are under the 1% above, so each is judged by
     // itself. A scene always shows something (a blank native one is a root that rendered nothing), and the web's shows what the
     // native one does.
-    if (existsSync(join(folder, "native.png"))) {
-      const native = inked(join(folder, "native.png"))
+    if (drawn.ink !== undefined) {
+      const native = drawn.ink
       if (native === 0) {
         said.push(failing("  native: the picture is blank (nothing drawn)"))
       }
