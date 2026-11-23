@@ -261,7 +261,7 @@ impl Screen {
         // what's in it changes, which draws its layer again, as a snapshot is taken then (`Transitions::dissolving`).
         let dissolving: HashSet<Id> = whole.iter().filter(|id| self.transitions.dissolving(**id, now).is_some()).copied().collect();
         let layered: HashSet<Id> = whole.iter().chain(&self.layout.will_change).filter(|id| (!touched.contains(id) || dissolving.contains(id)) && !text(id)).copied().collect();
-        self.layers.retain(|id, _| layered.contains(id) && !(dissolving.contains(id) && touched.contains(id)));
+        self.layers.retain(|id, layer| (layered.contains(id) || (layer.grouped && !touched.contains(id))) && !(dissolving.contains(id) && touched.contains(id)));
         // Mutant: each third frame every surface dropped and what's in it painted again, as when promotion was guessed
         // from what moved the frame before and flipped.
         if crate::mutants::mutant("surface-dropped") && self.frame % 3 == 2 {
@@ -324,6 +324,7 @@ impl Screen {
             unseen: !self.visible,
             afresh: self.afresh,
             recording: None,
+            grouping: false,
             parts: Vec::new(),
         };
         // The window, as a page's body: its root's background and text, scrolling what's taller than it.

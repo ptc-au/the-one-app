@@ -28,7 +28,9 @@ impl Painter<'_> {
             None => Surfaced::Painted,
         };
         if surfaced != Surfaced::Kept {
+            let grouping = std::mem::replace(&mut self.grouping, look.opacity < 1.0);
             let layer = self.record(taffy_node, id, offset, transform, key, laid_out.origin);
+            self.grouping = grouping;
             self.layers.insert(id, layer);
         }
         let bytes = self.layers[&id].bytes();
@@ -112,13 +114,16 @@ impl Painter<'_> {
         let mut drawn = std::mem::replace(&mut self.parts, parts);
         scene.sort();
         drawn.push(Part::Scene(std::sync::Arc::new(scene), None));
+        // A group faded as one is a picture even while what's in it moves, drawn again each frame it does, since what
+        // it draws is faded as a whole.
+        let pictures = kept || self.grouping;
         for (at, part) in drawn.iter_mut().enumerate() {
             if let Part::Scene(scene, image) = part {
-                *image = kept.then(|| pictured(scene, picture(id, at))).flatten();
+                *image = pictures.then(|| pictured(scene, picture(id, at))).flatten();
             }
         }
         self.animating |= animating;
-        Layer { key, laid_out, at: transform.offset, scale: transform.scale, kept, parts: drawn }
+        Layer { key, laid_out, at: transform.offset, scale: transform.scale, kept, grouped: self.grouping, parts: drawn }
     }
 
     /// Paints `node` with its parent's top left at `offset` in its layout, drawn through `transform` and turned as
@@ -145,6 +150,11 @@ impl Painter<'_> {
         let Some(leaf) = self.layout.taffy.get_node_context(taffy_node) else { return };
         let (id, text, mut look) = (leaf.id, leaf.text, leaf.look.clone());
         let words = matches!(self.tree.nodes[&id].kind, Kind::Text | Kind::RawText);
+        // Faded with something in it, it's a group drawn as one and then faded, as CSS's `opacity` is, so what's over
+        // something else in it hides it: never each thing in it faded on its own, which showed a window's words through
+        // the window over them as a picture faded in (Andre's iPhone, 23 Nov). A word alone draws the same either way.
+        // It's how it looks, not a saving, so it's one in a frame drawn afresh too, and whatever room surfaces have.
+        let grouped = self.recording.is_none() && look.opacity > 0.0 && look.opacity < 1.0 && !words && self.tree.preorder(id).nth(1).is_some();
         // Starting to cross-dissolve, where it rests changed in this frame: it's drawn where it was, as it is, and from
         // the next, from its layer there and where it rests (`paint_layer`).
         let dissolving = self.transitions.dissolving(id, self.time).filter(|_| self.recording.is_none());
@@ -159,7 +169,7 @@ impl Painter<'_> {
         } else if self.recording.is_some() && self.layered.contains(&id) && self.turn != TransformationMatrix::unit() {
             // Turned in the layer being drawn, it's drawn in it as usual, which is drawn again each frame.
             self.animating = true;
-        } else if self.recording.is_some() && (self.layered.contains(&id) || (words && !crate::mutants::mutant("text-stretched"))) {
+        } else if self.recording.is_some() && !self.grouping && (self.layered.contains(&id) || (words && !crate::mutants::mutant("text-stretched"))) {
             // (Mutant: a text in a layer drawn from the layer's picture, grown and moved with it, as before fb657c5ce.)
             // A layer of its own in the one being drawn: drawn into it each frame, where that's moved it. So is a text,
             // turned with what it's in or not, its glyphs drawn where they are, at the size they are, as sharp moving as
@@ -171,7 +181,7 @@ impl Painter<'_> {
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));
             self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, turn: self.turn }));
             return;
-        } else if (self.layered.contains(&id) && self.room() || dissolving.is_some()) && !starting && self.turn == TransformationMatrix::unit() && look.animation.is_none() {
+        } else if (self.layered.contains(&id) && self.room() || grouped || dissolving.is_some()) && !starting && self.turn == TransformationMatrix::unit() && (look.animation.is_none() || grouped) && !crate::mutants::mutant("faded-apart") {
             // Cross-dissolving, it's drawn from its picture in two places, which drawn in what it's in it couldn't be:
             // it's a surface whatever the window's others take.
             return self.paint_layer(taffy_node, id, offset, transform, &look, mask, opacity);
@@ -296,7 +306,10 @@ impl Painter<'_> {
                 // Its children in CSS's painting order (`painted_children`). What's positioned or says its `zIndex` is
                 // drawn after its stacking context's flow, by `zIndex` and then the tree's order, as its stacking
                 // context's: this one's, where it makes one, or what it's in's (`Painter::stacked`).
-                let context = stacks(id, &look, self.layout.leaf(taffy_node).fixed, self.layered);
+                // What a layer is drawn of is a stacking context however it rests (its look's fade and move are its
+                // layer's, not drawn here), so what's positioned in it is in its picture, never drawn outside it,
+                // unfaded, as a faded group's absolute parts were.
+                let context = stacks(id, &look, self.layout.leaf(taffy_node).fixed, self.layered) || self.recording == Some(id);
                 let outer = context.then(|| std::mem::take(&mut self.stacked));
                 for (at, child, z) in painted_children(self.layout, taffy_node) {
                     let leaf = self.layout.leaf(child);

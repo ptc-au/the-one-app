@@ -44,6 +44,7 @@ const MUTANTS = {
   "dark-token": { bug: "dark mode not applied to one token (the text's, `label`)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Type styles")], only: "dark" },
   "rounded-clip": { bug: "rounded clip off", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Rounded corners clip")] },
   "text-stretched": { bug: "text drawn from a stretched picture", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
+  "faded-apart": { bug: "a faded group's things each faded on their own, what's under showing through what's over it (Welcome on Andre's iPhone, 23 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Faded as one")] },
   "late-tap": { bug: "a tap delivered a frame late", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
   "stale-rect": { bug: "a stale inspector rect", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "wrong-node": { bug: "a selector matching the wrong node", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Alike")] },

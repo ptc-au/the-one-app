@@ -35,7 +35,28 @@ const look = styles({
   pages: { flexDirection: "row", width: "100%", height: "100%" },
   slid: (translateX: number) => ({ width: "100%", height: "100%", backgroundColor: tokens.colour.orange, translateX, transitionProperty: ["translateX"], transition: tokens.motion.smooth }),
   words: { width: "100%", height: "100%", font: tokens.type.title, color: tokens.colour.onAccent, backgroundColor: tokens.colour.blue },
+  // A group faded to half: a square in the text's colour, and a card in the page's over its end with words on it, as
+  // a window over another, which only the square showing through the card tells apart, light or dark.
+  faded: { position: "relative", width: 220, height: 140, opacity: 0.5 },
+  under: { position: "absolute", top: 0, start: 0, width: 140, height: 140, backgroundColor: tokens.colour.label },
+  over: { position: "absolute", top: 30, start: 80, width: 140, height: 80, padding: tokens.grid[3], backgroundColor: tokens.colour.background },
+  overWords: { font: tokens.type.medium, color: tokens.colour.label },
+  // What's in it moving by its own keyframes, as a picture playing as it fades in.
+  turning: { animationName: "spin", animation: tokens.motion.spin },
 })
+
+/// A group faded as one: what's over something in it hides it, as CSS's `opacity` draws it, never each thing in it
+/// faded on its own, with what's under showing through. `moving`: what's in it moves by its keyframes meanwhile.
+function Faded(props: { moving?: boolean }) {
+  return (
+    <View style={look.faded}>
+      <View role="img" aria-label="Under" style={[look.under, props.moving && look.turning]} />
+      <View role="img" aria-label="Over" style={look.over}>
+        <Text style={look.overWords}>Over it</Text>
+      </View>
+    </View>
+  )
+}
 
 /** Pressables for `hits`, each square and in a colour of its own: a press reaches what's drawn where it lands. */
 const hit = styles({
@@ -244,6 +265,16 @@ export default {
       "Nothing in a rounded box shows past its corners": [...cases.map((name) => ({ expect: { rounded: { of: name, radius: 18 } } })), { expect: { rounded: { of: "Round", radius: 80 } } }],
       "Nor as its card slides": [{ role: "button", name: "Slide" }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }, { wait: 120 }, { expect: { rounded: { of: "Card", radius: 18 } } }],
     },
+  },
+  // Drawn per thing, the card's start over the square was a mix of the two (2.2:1 by it), the square showing through;
+  // faded as one, about 4:1; not faded at all, its parts drawn outside its layer, far more.
+  "Styling/Faded as one": {
+    render: () => <Faded />,
+    checks: { "What's over another in a faded group hides it": [{ expect: { contrast: { of: { role: "img", name: "Over" }, least: 3, most: 6 } } }] },
+  },
+  "Styling/Faded as one, as what's in it moves": {
+    render: () => <Faded moving />,
+    checks: { "What's over another in a faded group hides it while what's under moves": [{ wait: 300 }, { expect: { contrast: { of: { role: "img", name: "Over" }, least: 3, most: 6 } } }] },
   },
   "Styling/Hit areas": {
     render: () => <HitAreas />,

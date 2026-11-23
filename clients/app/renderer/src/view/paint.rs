@@ -103,6 +103,9 @@ pub(super) struct Layer {
     pub(super) scale: f32,
     /// What's in it doesn't move by itself, so it's drawn from what it drew: otherwise it's drawn again each frame.
     pub(super) kept: bool,
+    /// It's a group faded as one (`Painter::grouping`), kept from frame to frame while nothing in it changes, as what
+    /// moves whole is, rather than painted again each frame, which drew the same frame again.
+    pub(super) grouped: bool,
     /// What it draws, in order: its scenes, and between them what's in it that's a layer of its own (`Sublayer`).
     pub(super) parts: Vec<Part>,
 }
@@ -309,6 +312,10 @@ pub(super) struct Painter<'a> {
     /// frame drawn from surfaces and their tiles is checked against one drawn without.
     pub(super) afresh: bool,
     pub(super) recording: Option<Id>,
+    /// The layer being drawn is a group faded as one (`Look::opacity` under 1, with what's in it), as CSS's `opacity`
+    /// and Core Animation's group opacity draw one: everything in it, its words and what moves too, is drawn into its
+    /// picture, which is then faded, so nothing in it shows through what's over it in it.
+    pub(super) grouping: bool,
     /// The parts of the layer being drawn so far, before its scene now.
     pub(super) parts: Vec<Part>,
     pub(super) tree: &'a Tree,
