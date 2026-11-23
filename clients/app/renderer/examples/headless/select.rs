@@ -15,6 +15,12 @@ pub(crate) fn ask(windows: &mut Windows, id: renderer::platform::WindowId, mut r
     answered.borrow_mut().take()
 }
 
+/// Which of the nodes a request's selector matches it means: its `nth`, or the first.
+pub(crate) fn nth(request: &renderer::inspect::Request) -> usize {
+    // Mutant: a selector's `nth` counted from 1 where several match, the node after the one meant.
+    request.inputs.get("nth").and_then(Value::as_u64).map_or(0, |nth| nth as usize + usize::from(renderer::mutants::mutant("wrong-node")))
+}
+
 /// Where a request's press goes: the middle of the node it selects, as the window last drew it, or its point.
 pub(crate) fn point_of(windows: &mut Windows, id: renderer::platform::WindowId, request: &renderer::inspect::Request) -> anyhow::Result<(f32, f32)> {
     if !request.selects() {
@@ -25,8 +31,7 @@ pub(crate) fn point_of(windows: &mut Windows, id: renderer::platform::WindowId, 
     }
     let mut query = json!({"op": "query"});
     query.as_object_mut().into_iter().for_each(|query| query.extend(request.selector_inputs()));
-    // Mutant: a selector's `nth` counted from 1 where several match, the node after the one meant.
-    let nth = request.inputs.get("nth").and_then(Value::as_u64).map_or(0, |nth| nth as usize + usize::from(renderer::mutants::mutant("wrong-node")));
+    let nth = nth(request);
     // What isn't there yet, its page busy, is waited for, a second at most, as Playwright's click waits for its locator.
     let started = renderer::platform::fake_time();
     let node = loop {

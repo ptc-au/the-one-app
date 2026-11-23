@@ -6,7 +6,7 @@ use renderer::Appearance;
 use serde_json::{Value, json};
 
 use crate::replay::replay;
-use crate::select::{ask, point_of};
+use crate::select::{ask, nth, point_of};
 
 /// The inspector's requests that a person's input answers, and its clock's: on the fake platform, the display's own
 /// events, each at its own time, with the display's frames between, as a host gives a window input, and its time
@@ -196,10 +196,12 @@ pub(crate) fn input(windows: &mut Windows, id: renderer::platform::WindowId, req
             loop {
                 let found = ask(windows, id, query.clone()).ok_or_else(|| anyhow::anyhow!("its window didn't answer"))?;
                 let nodes = found["result"]["nodes"].as_array().cloned().unwrap_or_default();
-                let node = nodes.first();
+                // The one its `nth` says, as a press's: the first of them judged in its place, a check of the App Library's
+                // name in a category passed on Home's of the same app (23 Nov, its names gone after its app's menu).
+                let node = nodes.get(nth(request));
                 let states = |node: &Value| is.iter().all(|(state, want)| node["states"].get(state).unwrap_or(&json!(false)) == want);
                 let met = match state {
-                    "gone" => nodes.is_empty(),
+                    "gone" => node.is_none(),
                     "focused" => nodes.iter().any(|node| node["focused"] == true && states(node)),
                     "there" => node.is_some_and(states),
                     // Drawn at `opacity` (within a hundredth), as its look says it is now.

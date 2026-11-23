@@ -2559,6 +2559,14 @@
   },
   "App Library on a computer": {
     "like": "App Library",
+    "checks": {
+      "An app's menu closed, its category's names come back": [
+        { "press": { "role": "button", "name": "Mail", "nth": 3 }, "hold": 800 },
+        { "expect": { "shown": { "role": "menuitem", "name": "Remove App" } } },
+        { "key": "Escape" },
+        { "expect": { "drawn": { "of": { "role": "text", "name": "Chat", "nth": 3 }, "opacity": 1 } } }
+      ]
+    },
     "size": [
       1280,
       800
@@ -2657,7 +2665,21 @@
   },
   "App Library, by a finger": {
     "like": "App Library",
-    "touch": true
+    "touch": true,
+    "checks": {
+      "A category opened and closed, then its pages swiped, keeps its names and its icons in its square": [
+        { "role": "group", "name": "Utilities" },
+        { "wait": 800 },
+        { "back": true },
+        { "wait": 800 },
+        { "expect": { "drawn": { "of": { "role": "text", "name": "Clock", "nth": 3 }, "opacity": 1 } } },
+        { "trace": "traces/finger-swipe-right.json" },
+        { "wait": 800 },
+        { "trace": "traces/finger-swipe-left.json" },
+        { "wait": 800 },
+        { "expect": { "drawn": { "of": { "role": "text", "name": "Clock", "nth": 3 }, "opacity": 1 } } }
+      ]
+    }
   },
   "Launcher, a background app with a section": {
     "like": "Launcher on a computer",
