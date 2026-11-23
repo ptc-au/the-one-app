@@ -13,6 +13,11 @@ defmodule OneCore.Apps.Git do
   # How git is run for an untrusted app: over https alone, signed in as nobody.
   @untrusted ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "credential.helper="]
 
+  # A file is its committed bytes, whatever machine reads it: a version's hashes are the same on every server. Git for
+  # Windows installs with `core.autocrlf=true`, and `git archive` then writes every text file with CRLF line endings,
+  # which breaks a shell script (`exec: desktop: not found`) and makes the same commit two versions.
+  @bytes ["-c", "core.autocrlf=false", "-c", "core.eol=lf"]
+
   # A clone or a fetch of a repo takes minutes, and one that stops answering is ended.
   @timeout 600
 
@@ -93,7 +98,7 @@ defmodule OneCore.Apps.Git do
   defp git(folder, args, trim \\ true) do
     with {:ok, git} <- Programs.path(:git) do
       # An archive is its output alone; anything else is said with what git says.
-      case Command.run([git, "-C", folder | args], @timeout, env: [{"GIT_TERMINAL_PROMPT", "0"}], binary: !trim) do
+      case Command.run([git | @bytes] ++ ["-C", folder | args], @timeout, env: [{"GIT_TERMINAL_PROMPT", "0"}], binary: !trim) do
         %{exit: 0, stdout: out} -> {:ok, if(trim, do: String.trim(out), else: out)}
         %{stdout: out, stderr: errors} -> {:error, "git #{hd(args -- @untrusted)} said: #{String.trim(out <> errors)}"}
       end
