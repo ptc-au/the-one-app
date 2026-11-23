@@ -177,14 +177,15 @@ for (const { part, worker, tail } of workers.sort((a, b) => b.tail - a.tail || (
   await Bun.write(`${part}/wrangler.jsonc`, JSON.stringify(tail ? worker : tailed(worker), null, 2));
 }
 
-// The edge, with the web client's files as its assets, which are sent without the Worker but for the paths it answers
-// and the renderer's files, which it sends as they're kept compressed (`web/web.ts`); its build, by which the relay knows
+// The edge, with the web client's files as its assets, which are sent without the Worker but for the paths it answers,
+// the renderer's files, which it sends as they're kept compressed, and the client's pages, which it names as the
+// network is (`web/web.ts`); its build, by which the relay knows
 // which servers talk with it (`relay/relay.ts`); and which part answers which path, and the part that says who a
 // request is from, bound.
 const own = {
   ...edge,
   main: relative(built, `${here}/${edge.main}`),
-  assets: { directory: "web", binding: "ASSETS", run_worker_first: [...Object.keys(paths).flatMap((path) => [`/${path}`, `/${path}/*`]), "/renderer/*"] },
+  assets: { directory: "web", binding: "ASSETS", run_worker_first: [...Object.keys(paths).flatMap((path) => [`/${path}`, `/${path}/*`]), "/renderer/*", "/", "/unsupported"] },
   vars: { VERSION: version, PARTS: parts },
 };
 const full = tailed({
