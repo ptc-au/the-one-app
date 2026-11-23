@@ -436,8 +436,7 @@ export class NetworkUpdater extends DurableObject<Env> {
     return {
       network_update_status: state.network_update_status,
       build: state.build ?? null,
-      // Every server reads what it takes in `latest` for now, and clients the newest builds.
-      latest: state.serving ?? null,
+      latest: state.latest ?? null,
       serving: state.serving ?? null,
       done: state.servers.filter((server) => server.ready !== undefined).length,
       of: state.servers.length,
