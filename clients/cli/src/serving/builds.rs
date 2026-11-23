@@ -67,7 +67,7 @@ const TEAM: &str = "X96JC3HCV7";
 /// The `Contents` of the app bundle a Mac's `program` is the program of, if it's one, and whether the bundle is
 /// another app's than the One App's, as a network's own app is (`tooling/mac-app`), by its identifier.
 #[cfg(target_os = "macos")]
-fn bundle_of(program: &Path) -> Option<(PathBuf, bool)> {
+pub(super) fn bundle_of(program: &Path) -> Option<(PathBuf, bool)> {
     let contents = program.parent().filter(|folder| folder.ends_with("Contents/MacOS"))?.parent()?.to_owned();
     let identifier = |info: Option<plist::Value>| Some(info?.into_dictionary()?.get("CFBundleIdentifier")?.as_string()?.to_owned());
     let ours = identifier(plist::from_bytes(BUNDLE[0].1).ok());
@@ -138,16 +138,14 @@ async fn networks_program(client: &Client, build: &str, program: &Path, contents
 }
 
 /// The build the program `new` says it is (`build_of`), downloaded beside a Mac's `program`: where that's in an app
-/// bundle, it's checked as the program of a copy of the bundle it's to be put in (`Contents/Updates/<pid>.app`), signed
-/// by the platform for it (`TEAM`), and run there, so it's put in place only where macOS runs it. The One App's bundle
-/// has `BUNDLE` put in place around both, which each build of `one` is signed in. A bundle that's another app's, as a
-/// network's own app is (`tooling/mac-app`), keeps its own Info.plist, icon, `network` and seal, as white-label apps
-/// keep theirs, and takes its network's program (`networks_program`), signed in it.
+/// bundle, it's run as the program of a copy of the bundle it's to be put in, once it's signed for it (`Checking`), so
+/// it's put in place only where macOS runs it. The One App's bundle has `BUNDLE` put in place first, which each build
+/// of `one` is signed in. A bundle that's another app's, as a network's own app is (`tooling/mac-app`), keeps its own
+/// Info.plist, icon, `network` and seal, as white-label apps keep theirs, and takes its network's program
+/// (`networks_program`), signed in it.
 #[cfg(target_os = "macos")]
 pub(super) async fn bundled(new: &Path, program: &Path) -> Result<Option<String>> {
     let Some((contents, another)) = bundle_of(program) else { return build_of(new).await };
-    let updates = contents.join("Updates");
-    let checking = updates.join(format!("{}.app/Contents", std::process::id()));
     if !another {
         for (file, bytes) in BUNDLE {
             let path = contents.join(file);
@@ -160,36 +158,56 @@ pub(super) async fn bundled(new: &Path, program: &Path) -> Result<Option<String>
             fs::rename(&writing, &path)?;
         }
     }
-    let checked = checking.join("MacOS").join(program.file_name().context("a program has a name")?);
-    fs::create_dir_all(checking.join("MacOS"))?;
-    fs::rename(new, &checked)?;
-    let build = async {
-        // The bundle's own files but its program, copied as `ditto` copies a bundle.
+    let checking = Checking::new(new, program)?;
+    build_of(&checking.checked).await
+}
+
+/// The program `new`, beside a Mac's `program`, checked as the program of a copy of the app bundle `program` is in
+/// (`Contents/Updates/<pid>.app`), its own files but the program copied as `ditto` copies a bundle: made only where
+/// it's signed by the platform for that bundle (`TEAM`), `codesign --verify --strict`, as macOS kills one that isn't
+/// there ("Code Signature Invalid"). It's put back beside `program` as it's dropped.
+#[cfg(target_os = "macos")]
+pub(super) struct Checking {
+    new: PathBuf,
+    checked: PathBuf,
+    contents: PathBuf,
+}
+
+#[cfg(target_os = "macos")]
+impl Checking {
+    pub(super) fn new(new: &Path, program: &Path) -> Result<Self> {
+        let (contents, _) = bundle_of(program).context("a program in a bundle")?;
+        let copy = contents.join("Updates").join(format!("{}.app", std::process::id()));
+        let checked = copy.join("Contents/MacOS").join(program.file_name().context("a program has a name")?);
+        fs::create_dir_all(checked.parent().context("a program is in a folder")?)?;
+        fs::rename(new, &checked)?;
+        let checking = Checking { new: new.to_owned(), checked, contents: contents.clone() };
         for entry in fs::read_dir(&contents)?.flatten() {
             if !["MacOS", "Updates"].contains(&entry.file_name().to_string_lossy().as_ref()) {
-                let mut copy = command("ditto");
-                copy.arg(entry.path()).arg(checking.join(entry.file_name()));
-                let copied = ran(copy, Duration::from_secs(60)).await?;
+                let copied = command("ditto").arg(entry.path()).arg(copy.join("Contents").join(entry.file_name())).output()?;
                 ensure!(copied.status.success(), "{}", String::from_utf8_lossy(&copied.stderr).trim());
             }
         }
-        let mut verify = command("codesign");
-        verify.args(["--verify", "--strict", "-R"]).arg(format!("=anchor apple generic and certificate leaf[subject.OU] = \"{TEAM}\""));
-        verify.arg(checking.parent().context("a bundle's contents are in it")?);
-        let verified = ran(verify, Duration::from_secs(60)).await?;
+        let requirement = format!("=anchor apple generic and certificate leaf[subject.OU] = \"{TEAM}\"");
+        let verified = command("codesign").args(["--verify", "--strict", "-R", &requirement]).arg(&copy).output()?;
         ensure!(
             verified.status.success(),
             "It isn't signed by the platform for this app, so macOS would kill it there, and the one there is kept: {}",
             String::from_utf8_lossy(&verified.stderr).trim()
         );
-        build_of(&checked).await
+        Ok(checking)
     }
-    .await;
-    fs::rename(&checked, new)?;
-    fs::remove_dir_all(checking.parent().context("a bundle is in a folder")?)?;
-    // Another's may be checking beside it, as the app and the server take a build at once.
-    let _ = fs::remove_dir(&updates);
-    build
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for Checking {
+    fn drop(&mut self) {
+        let _ = fs::rename(&self.checked, &self.new);
+        let updates = self.contents.join("Updates");
+        let _ = fs::remove_dir_all(updates.join(format!("{}.app", std::process::id())));
+        // Another's may be checking beside it, as the app and the server take a build at once.
+        let _ = fs::remove_dir(&updates);
+    }
 }
 
 /// The build the program `program` says it is (`one --version`), if it starts. It's run as `tar` is (`ran`), on a

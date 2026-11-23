@@ -57,13 +57,13 @@ pub(super) async fn serve(client: &Arc<Client>, here: &Here, reports: &Reports) 
     let mut pair = record.pair().context("The record names no build to run")?;
     // A build is run by the `one` it's paired with, whichever the system started: one put in place for a pair being
     // verified, or the one before for a pair gone back from, has that one put in place, and started instead. Where
-    // that one isn't kept, as where a person put another `one` in place by hand, the one they put there runs it.
+    // that one isn't kept, as where a person put another `one` in place by hand, or can't run in its app (`put_program`),
+    // the one there runs it.
     if pair.program != BUILD {
-        if here.program(&pair.program).exists() {
-            here.put_program(&pair.program, &program)?;
-            return Err(again(here, &program));
+        match here.put_program(&pair.program, &program) {
+            Ok(()) => return Err(again(here, &program)),
+            Err(error) => println!("{error:#}, so {BUILD} runs {}.", pair.build),
         }
-        println!("The one the record pairs with {}, {}, isn't kept here, so {BUILD} runs it.", pair.build, pair.program);
         pair.program = BUILD.to_owned();
         record = here.change(|record| {
             let paired = if verifying { &mut record.next } else { &mut record.current };

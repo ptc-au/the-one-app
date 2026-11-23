@@ -54,11 +54,19 @@ impl Here {
     }
 
     /// Puts the build `build` of the program, kept beside it since an update took it or the one before (`take`), in
-    /// place of `program`.
+    /// place of `program`: on a Mac only where it's signed for the bundle it's put in (`Checking`), as one kept before
+    /// a network's app took its network's program may be the plain build, which macOS kills there.
     pub(super) fn put_program(&self, build: &str, program: &Path) -> Result<()> {
         let new = program.canonicalize()?.with_extension(format!("{}.new", std::process::id()));
         fs::copy(self.program(build), &new)
             .with_context(|| format!("The build {build} of one, which the server's record pairs with its build, isn't kept here"))?;
+        #[cfg(target_os = "macos")]
+        if bundle_of(program).is_some()
+            && let Err(error) = Checking::new(&new, program)
+        {
+            let _ = fs::remove_file(&new);
+            return Err(error.context(format!("The build {build} of one kept here can't run in this app")));
+        }
         put(&new, program)
     }
 
