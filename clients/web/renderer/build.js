@@ -48,3 +48,17 @@ utimesSync(kept, new Date(), new Date())
 cpSync(kept, out, { recursive: true })
 const named = readdirSync(kept).find((file) => file.endsWith(".wasm"))
 for (const file of ["index.html", "renderer.js"]) writeFileSync(`${out}/${file}`, readFileSync(`${out}/${file}`, "utf8").replaceAll("web_renderer_bg.wasm", named))
+// Each script the frame loads is named by what's in it too, as the WebAssembly is, beside its own name (by which the
+// Sign-In and Vault pages load renderer.js), and the frame's page loads those, so a browser that opened it before asks
+// for none of them again (clients/web/_headers): not renderer.js, then each module it imports, each asked again.
+const hashed = (/** @type {string} */ file, /** @type {string} */ text) => {
+  const name = file.replace(/\.js$/, `-${hash(text)}.js`)
+  writeFileSync(`${out}/${name}`, text)
+  return name
+}
+// The modules it imports are fetched from the start too, beside it, as `modulepreload` has a page say.
+let script = readFileSync(`${out}/renderer.js`, "utf8")
+const modules = ["web_renderer.js", "text-input.js", "semantics.js", "video.js"].map((module) => [module, hashed(module, readFileSync(`${out}/${module}`, "utf8"))])
+for (const [module, name] of modules) script = script.replaceAll(`"./${module}"`, `"./${name}"`)
+const preloads = modules.map(([, name]) => `<link rel="modulepreload" href="${name}" crossorigin>\n  `).join("")
+writeFileSync(`${out}/index.html`, readFileSync(`${out}/index.html`, "utf8").replace('<script src="renderer.js"', `${preloads}<script src="${hashed("renderer.js", script)}"`))

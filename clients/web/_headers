@@ -5,6 +5,13 @@
 # An app's page has an origin of its own (`host.js`), and loads the UI library from here as one from elsewhere.
 /ui/*
   Access-Control-Allow-Origin: *
+# Its chunks, named by what's in them (`chunkFileNames` in core/ui/build.js), so kept for good.
+/ui/client/solid-*
+  Cache-Control: public, max-age=31536000, immutable
+/ui/client/ui-*
+  Cache-Control: public, max-age=31536000, immutable
+/ui/client/native/ui-*
+  Cache-Control: public, max-age=31536000, immutable
 # The renderer's frame (`renderer/`), whose page says what it may load, as an app's own page does, and which loads
 # the renderer, from here, as from elsewhere, its origin being its own.
 /renderer/*
@@ -14,4 +21,15 @@
   Cache-Control: public, max-age=31536000, immutable
 # The renderer's WebAssembly, named by what's in it (clients/web/renderer/build.js), so kept for good.
 /renderer/web_renderer_bg-*
+  Cache-Control: public, max-age=31536000, immutable
+# The frame's scripts, named by what's in them too (clients/web/renderer/build.js).
+/renderer/renderer-*
+  Cache-Control: public, max-age=31536000, immutable
+/renderer/web_renderer-*
+  Cache-Control: public, max-age=31536000, immutable
+/renderer/text-input-*
+  Cache-Control: public, max-age=31536000, immutable
+/renderer/semantics-*
+  Cache-Control: public, max-age=31536000, immutable
+/renderer/video-*
   Cache-Control: public, max-age=31536000, immutable
