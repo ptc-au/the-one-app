@@ -46,7 +46,7 @@ defmodule HomeScreen do
     ]
 
   # The tips a client shows each person once (`tip`).
-  @tips ["own-server", "pull-home", "welcome"]
+  @tips ["own-server", "pull-home", "vault", "vault-unlock", "welcome"]
 
   @impl true
   def tools do
@@ -188,7 +188,9 @@ defmodule HomeScreen do
         description: """
         The tips a client shows each person once, on whichever device they're on, that you've seen: `welcome`, the
         Welcome the Home Screen opens on first, before your pages; `own-server`, onboarding's Your own server after it,
-        on the first computer's app they open that isn't one of the network's servers; and `pull-home`, the rail's
+        on the first computer's app they open that isn't one of the network's servers; `vault` and `vault-unlock`,
+        onboarding's last, Set Up Your Vault where they've no key yet and Unlock Your Vault on the first device that
+        can't open it; and `pull-home`, the rail's
         "Pull to go home", shown the first time an app opens on a phone, a tablet or the mobile web.
         """,
         inputs: none,

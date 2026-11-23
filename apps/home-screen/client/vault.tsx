@@ -9,26 +9,34 @@ import { createEffect, createMemo, createSignal, For, onCleanup, refresh, Show }
 import { Button, call, changed, client, defineVars, Icon, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
 import { Box, circle, type Part, rect, Shape, Words } from "./art.tsx"
 import { amazon, google, microsoft, stripe } from "./slides.tsx"
+import { network } from "./welcome.tsx"
 
 /** Which of the two a Vault needs here. */
 export type VaultStepKind = "set-up" | "unlock"
 
 /** What `vault_security` says that this step needs. */
 type Security = { readiness: "not_set_up" | "no_server" | "device_lacks_key" | "ready"; device: string | null }
-/** What `encryption_key` says that this step needs: each artifact encrypted for its person, and the servers waiting for its keys. */
-type Key = { access: { missing: unknown[] }[] }
+/** What `encryption_key` says that this step needs: each artifact encrypted for its person, the servers that hold its
+ * keys and those waiting for them. */
+type Key = { access: { servers: { key: string }[]; missing: unknown[] }[] }
 
 const json = <T,>(tool: string, inputs?: object) => call(tool, inputs).then((text) => JSON.parse(text) as T)
 
-/// Which of the two someone's Vault needs here, or neither.
-const needs = (security: Security, key: Key): VaultStepKind | undefined => {
+/// Which of the two someone's Vault needs here, or neither. `server` is this device's key as a server, while it is one
+/// or is becoming one: one just made a server, in the step before, isn't waiting for the key until it's joined, but will.
+const needs = (security: Security, key: Key, server?: string): VaultStepKind | undefined => {
   if (security.readiness === "not_set_up") return "set-up"
   if (security.readiness !== "ready" || key.access.some((artifact) => artifact.missing.length > 0)) return "unlock"
+  if (server && !key.access.some((artifact) => artifact.servers.some((held) => held.key === server))) return "unlock"
   return undefined
 }
 
 /// Which the Vault step is for whoever's looking, or none, and none where it can't be asked: never in their way.
-export const vaultStep = () => Promise.all([json<Security>("vault_security"), json<Key>("encryption_key")]).then(([security, key]) => needs(security, key), () => undefined)
+export const vaultStep = () =>
+  Promise.all([json<Security>("vault_security"), json<Key>("encryption_key"), client()]).then(
+    ([security, key, { server }]) => needs(security, key, server?.key),
+    () => undefined,
+  )
 
 /// The art board the picture is drawn on (art.tsx), and the part of it that's fitted to the room it has, as Welcome's.
 const BOARD = { width: 440, height: 330, fits: [428, 302] }
@@ -274,7 +282,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
   const Brand = (brand: { phone?: boolean }) => (
     <View style={brand.phone ? look.brandPhone : look.brand(Math.min(props.width - 48, READABLE))}>
       <View style={look.named}>
-        <Image src="/Logo.png" srcDark="/Logo-dark.png" alt="" style={brand.phone ? look.logoPhone : look.logo} />
+        <Image src={network().light} srcDark={network().dark} alt="" style={brand.phone ? look.logoPhone : look.logo} />
         <Text role="heading" aria-level={1} style={brand.phone ? look.titlePhone : look.title}>
           {setUp() ? "Set Up Your Vault" : "Unlock Your Vault"}
         </Text>

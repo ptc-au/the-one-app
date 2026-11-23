@@ -29,18 +29,27 @@ import { createPaging } from "./paging.ts"
 import { Carried, createCarry } from "./carry.tsx"
 import { Welcome } from "./welcome.tsx"
 import { computer, OwnServer } from "./own-server.tsx"
+import { VaultStep, vaultStep } from "./vault.tsx"
 
 /// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
 const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(({ seen }) => seen, () => undefined))
 /// The runtime version this device's renderer draws: Welcome's pictures need 6 (CSS's own values and keyframes that
-/// end), which a device on an older build doesn't draw, so it isn't shown there until it's updated.
+/// end), which a device on an older build doesn't draw, so it isn't shown there until it's updated; nor is the Vault's.
 const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVersion ?? 0, () => 0))
+/// Which the Vault's step is, Set Up or Unlock, while either is still to be seen, asked again as each step goes on: the
+/// one before may have made this computer a server that's waiting for its person's key.
+const vaultNeed = createMemo(() => (["vault", "vault-unlock"].some((tip) => tips()?.includes(tip) === false) ? vaultStep() : undefined))
 /// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, and the devices it's
-/// for: Welcome on every one that draws it, and Your own server on a computer's app that isn't one of the network's servers.
+/// for: Welcome on every one that draws it, Your own server on a computer's app that isn't one of the network's
+/// servers, and last the Vault's where it needs a passkey: Set Up Your Vault once, and Unlock Your Vault once, on the
+/// first device that can't open it (`vaultStep`).
 const steps = [
   { tip: "welcome", Step: Welcome, here: () => drawn() >= 6 },
   { tip: "own-server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
+  { tip: "vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up" },
+  { tip: "vault-unlock", Step: (size: StepProps) => <VaultStep kind="unlock" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "unlock" },
 ]
+type StepProps = { width: number; height: number; onContinue: () => void }
 /// Each step gone on from (true), or started again (false), here since `tips` was asked, by its tip.
 const [continued, setContinued] = createSignal<Record<string, boolean>>({})
 /// Whether a step shows: until they go on from it, on this device or another (its tip, theirs).
@@ -52,6 +61,7 @@ const step = () => steps.find(({ tip, here }) => here() && showing(tip))
 /// (`again`) starts it again, as its tip set unseen has it.
 const go = (tip: string, again = false) => {
   setContinued((done) => ({ ...done, [tip]: !again }))
+  refresh(vaultNeed)
   call("home-screen_tip", { name: tip, seen: !again }).catch((error) => toast(error as Error))
 }
 /// Whether they've been through Welcome, so the Home Screen's tips offer it again (pills.tsx).
