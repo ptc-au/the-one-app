@@ -9,6 +9,8 @@
   // Its people, passkeys and devices are kept in the bucket every ten minutes, where they changed (`keep` in `auth.ts`),
   // and a server copies whose each device is (`copied`).
   "triggers": { "crons": ["*/10 * * * *"] },
+  // Makes the pictures people set square and small (`pictures.ts`).
+  "images": { "binding": "IMAGES" },
   // Which version of it is deployed, which a discovery document cached from another is told from by (`worker.ts`).
   "version_metadata": { "binding": "VERSION" },
   // The apps that use this network's passkeys, and open the links of its listed in APP_LINKS, which iOS and Android

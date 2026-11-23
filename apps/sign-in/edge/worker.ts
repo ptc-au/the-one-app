@@ -6,7 +6,7 @@
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { asked, assistant, at, BELIEVED, browserDevice, copied, expire, keep, network, ONE_APP, who, type Ask, type Auth } from "./auth.ts";
+import { asked, assistant, at, BELIEVED, browserDevice, copied, expire, keep, network, ONE_APP, pictures, who, type Ask, type Auth } from "./auth.ts";
 
 export default {
   async fetch(request: Request, _env, ctx) {
@@ -22,7 +22,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
   async scheduled() {
-    await Promise.all([keep(), copied(), expire()]);
+    await Promise.all([keep(), copied(), expire(), pictures()]);
   },
 } satisfies ExportedHandler;
 

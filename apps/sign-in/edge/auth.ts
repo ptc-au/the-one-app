@@ -18,6 +18,7 @@ import { passkey } from "@better-auth/passkey";
 import { bytesToHex, randomBytes } from "@noble/hashes/utils.js";
 import Bowser from "bowser";
 import * as z from "zod";
+import { keepGoogle, keepNetwork, MOST, removeAll, setOwn } from "./pictures.ts";
 import type { BetterAuthOptions, BetterAuthPlugin, DBAdapter, GenericEndpointContext, User as AuthUser } from "better-auth";
 
 declare global {
@@ -289,6 +290,16 @@ async function place(adapter: Adapter, device: string, kind: Device["kind"], nam
 async function goesBy(user: User) {
   const person = { called: user.called ?? null, email: user.emailVerified ? user.email : null };
   await env.OWN.update(`people/${user.name}`, () => JSON.stringify(person));
+  // Better Auth keeps Google's picture's address as `image`, which is taken again each time they sign in with Google.
+  // Where Google doesn't answer it's taken at the next ten minutes (`pictures`), as signing in doesn't wait for it.
+  await keepGoogle(user.name, user.image).catch((error) => console.error(`Couldn't take ${user.name}'s picture from Google: ${error.message}`));
+}
+
+/** Takes Google's picture for everyone who has one and doesn't yet, and the network's, which the edge calls every ten minutes (`wrangler.jsonc`), as a network made before pictures was, or where Google didn't answer, has none. */
+export async function pictures() {
+  const { results } = await env.DB.prepare('select name, image from "user" where image is not null').all<{ name: string; image: string }>();
+  await Promise.all(results.map(({ name, image }) => keepGoogle(name, image).catch((error) => console.error(`Couldn't take ${name}'s picture from Google: ${error.message}`))));
+  await keepNetwork((await network()).icon?.png ?? null, false);
 }
 
 /** Makes a device nobody's, on every server. */
@@ -597,7 +608,8 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
       },
     },
     // A network with a Google client signs people in with it too, choosing the account each time.
-    socialProviders: env.GOOGLE_CLIENT_ID ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET!, prompt: "select_account" as const } } : {},
+    // Their profile is read again each time they sign in, for the picture (`goesBy`), which Better Auth takes with their name; `update.before` below keeps the name.
+    socialProviders: env.GOOGLE_CLIENT_ID ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET!, prompt: "select_account" as const, overrideUserInfoOnSignIn: true } } : {},
     databaseHooks: {
       user: {
         // Someone joining with Google is `users/<name>` by the invitation they came with, or by a name made of their
@@ -619,7 +631,9 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
           },
           after: goesBy,
         },
-        update: { after: goesBy },
+        // Signing in with Google again makes Better Auth give the user Google's name, where the name they're
+        // `users/<name>` by never changes.
+        update: { before: async ({ name: _, ...data }) => ({ data }), after: goesBy },
       },
       // A browser that's signed in is one of its person's devices for as long as it is: the web client asks as its
       // session (`worker.ts`).
@@ -897,6 +911,8 @@ export interface Ask {
   android_package?: unknown;
   /** With `network`: its own iPhone app's app ID, its team and bundle identifier (`tooling/testflight`), or null where it has none. */
   apple_app?: unknown;
+  /** With `picture`: the picture the person sets for themselves, as base64, or null to go back to Google's. */
+  image?: unknown;
 }
 
 export async function asked(auth: Auth, origin: string, { ask, who: name, building, ...about }: Ask) {
@@ -962,6 +978,8 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       await set("apple_app", named);
     }
     const { name, icon, logo, android_package, apple_app } = await network();
+    // Its picture is its icon, made small, kept for the people who show it.
+    if (about.icon !== undefined) await keepNetwork(icon?.png ?? null, true);
     // Its mark as data too, for a page drawn where only its app's own files load, as a native window's is.
     const data = (picture?: Picture) => picture && `data:image/png;base64,${picture.png}`;
     return {
@@ -996,6 +1014,27 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     if (!building) return { error: "Only a network being built signs a browser in with no passkey." };
     const { test } = await betterAuth({ ...options(origin, (await auth.$context).secret), plugins: [testUtils()] }).$context;
     return { cookies: await test.getCookies({ userId: user.id }), origins: [] };
+  }
+
+  // A picture a person sets for themselves: any picture, made small and square, which is theirs from then on, or null.
+  if (ask === "picture") {
+    if (about.image === null) {
+      await setOwn(user.name, null);
+      return { picture: null };
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = Uint8Array.from(atob(String(about.image)), (char) => char.charCodeAt(0));
+    } catch {
+      return { error: "A picture is sent as base64." };
+    }
+    if (bytes.length > MOST) return { error: "A picture is 10 MB at most." };
+    try {
+      await setOwn(user.name, bytes);
+    } catch (error) {
+      return { error: `That isn't a picture the network can use (${(error as Error).message}).` };
+    }
+    return { picture: "own" };
   }
 
   if (ask === "called") {
@@ -1086,6 +1125,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     await adapter.delete({ model: "user", where: [{ field: "id", value: user.id }] });
     await gone();
     await env.OWN.remove(`people/${user.name}`);
+    await removeAll(user.name);
     return { removed: user.called ?? user.name };
   }
   // A link that this person makes another passkey by, in a browser, within a quarter of an hour.

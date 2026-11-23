@@ -5,7 +5,9 @@ defmodule SignIn do
   in its database, which it copies from the edge (`copy`) as a device it doesn't know asks, and as the edge has it do
   once one is removed, and every ten minutes. One Core asks whose a device is, the `device` hook, and it's answered from
   that copy, so a call asks nothing of the edge or the bucket but what the database does. What each person goes by
-  is in this app's own artifact, `people/<name>`, which `people` tells whoever may see who's in the network.
+  is in this app's own artifact, `people/<name>`, which `people` tells whoever may see who's in the network, and the
+  picture each is shown by in `pictures/<name>/own` (the one they set) and `pictures/<name>/google`, as the network's is
+  `pictures/network` (`pictures`).
 
   What a person does with their devices in the app is asked of the edge function, which keeps them. A network
   with an address that isn't being built is joined by invitation, its first owner's included: until they've joined,
@@ -40,6 +42,7 @@ defmodule SignIn do
   @impl true
   def tools do
     none = %{type: "object", properties: %{}}
+    picture_source = %{type: ["string", "null"], enum: ["own", "google", nil], description: "Whose picture they're shown by: the one they set, Google's, or none (initials)"}
 
     [
       %{
@@ -80,9 +83,10 @@ defmodule SignIn do
                   called: %{type: ["string", "null"], description: "The name they go by"},
                   email: %{type: ["string", "null"]},
                   joined: %{type: "boolean", description: "Whether they've joined, or are only invited"},
-                  first_owner: %{type: "boolean", description: "Whether they're the network's first owner, who stays an owner"}
+                  first_owner: %{type: "boolean", description: "Whether they're the network's first owner, who stays an owner"},
+                  picture: picture_source
                 },
-                required: ["who", "called", "email", "joined", "first_owner"]
+                required: ["who", "called", "email", "joined", "first_owner", "picture"]
               }
             }
           },
@@ -339,13 +343,53 @@ defmodule SignIn do
                 properties: %{
                   who: %{type: "string", description: "users/<name>"},
                   called: %{type: ["string", "null"], description: "The name they go by"},
-                  email: %{type: ["string", "null"], description: "Their email, where signing in has one"}
+                  email: %{type: ["string", "null"], description: "Their email, where signing in has one"},
+                  picture: picture_source
                 },
-                required: ["who", "called", "email"]
+                required: ["who", "called", "email", "picture"]
               }
             }
           },
           required: ["people"]
+        }
+      },
+      %{
+        name: "pictures",
+        read_only: true,
+        description:
+          "Gives the pictures people and the network are shown by, each a small square JPEG as a `data:` address, or null where there is none (a group has none): a person's own, or the one Google has for them. An app draws them with the UI library's `Avatar`",
+        inputs: %{
+          type: "object",
+          properties: %{
+            subjects: %{
+              type: "array",
+              items: %{type: "string"},
+              maxItems: 100,
+              description: "Whose: users/<name> or network"
+            }
+          },
+          required: ["subjects"]
+        },
+        outputs: %{
+          type: "object",
+          properties: %{pictures: %{type: "object", additionalProperties: %{type: ["string", "null"]}, description: "Each subject's picture, by the subject"}},
+          required: ["pictures"]
+        }
+      },
+      %{
+        name: "picture",
+        description:
+          "Sets the picture you go by in the network, or without `upload` takes it away, which leaves your Google picture where signing in with Google gave one, and your initials where not. It's made square and small, from its middle",
+        inputs: %{
+          type: "object",
+          properties: %{
+            upload: %{type: "string", format: "upload", description: "A picture of any size up to 10 MB: its name, as the upload tool answers once it's sent (the command's --upload-from does both)"}
+          }
+        },
+        outputs: %{
+          type: "object",
+          properties: %{picture: %{type: ["string", "null"], enum: ["own", "google", nil], description: "Whose picture you're shown by now"}},
+          required: ["picture"]
         }
       },
       %{
@@ -516,7 +560,9 @@ defmodule SignIn do
   def call("everyone", _inputs, call) do
     if not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
     first = OneCore.User.first_owner()
-    %{people: for(person <- ask(%{ask: "everyone"})["people"], do: Map.put(person, "first_owner", person["who"] == first))}
+    people = ask(%{ask: "everyone"})["people"]
+    pictures = kept(call, Enum.map(people, & &1["who"]))
+    %{people: for(person <- people, do: person |> Map.put("first_owner", person["who"] == first) |> Map.put("picture", source(pictures[person["who"]])))}
   end
 
   # Whoever invites says who joins with no invitation, and any member sees it.
@@ -637,10 +683,34 @@ defmodule SignIn do
     if users -- [call.actor] != [] and not Call.member?(call, "network"),
       do: raise("Only a member of the network sees who's in it.")
 
-    people =
-      for user <- users, do: Map.put(stored(call, user), "who", user)
+    pictures = kept(call, users)
+    people = for user <- users, do: stored(call, user) |> Map.put("who", user) |> Map.put("picture", source(pictures[user]))
 
     %{people: people}
+  end
+
+  # Whoever may see who's in the network sees how each is shown, as `people` has it: a member of it, and everyone sees themselves.
+  def call("pictures", %{"subjects" => subjects}, call) do
+    if subjects -- [call.actor] != [] and not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
+
+    %{pictures: Map.new(kept(call, subjects), fn {subject, found} -> {subject, found && data_address(elem(found, 1))} end)}
+  end
+
+  # Anyone sets their own. It was sent to the bucket by itself (an upload), and the edge makes it square and small.
+  def call("picture", inputs, call) do
+    who = person(call)
+
+    image =
+      with upload when is_binary(upload) <- inputs["upload"] do
+        case Artifact.read(call.own, upload) do
+          {:ok, bytes, _tag} -> Base.encode64(bytes)
+          :absent -> raise "Nothing was uploaded as #{upload}: send the picture to the link the upload tool gives (the command's --upload-from does it) and give the name it answers."
+        end
+      end
+
+    ask(%{ask: "picture", who: who, image: image})
+    if inputs["upload"], do: Artifact.remove(call.own, inputs["upload"])
+    %{picture: source(kept(call, [who])[who])}
   end
 
   def call("name", %{"called" => called}, call) do
@@ -694,6 +764,31 @@ defmodule SignIn do
   end
 
   # The database module goes with the database it opened.
+  # What the network keeps as each subject's picture, as `{source, blob}`, a person's own before Google's, and nil for none: a
+  # group has none, and a name that isn't a user's has nothing to read.
+  defp kept(call, subjects) do
+    wanted = for subject <- subjects, {source, name} <- picture_blobs(subject), do: {subject, source, name}
+    reads = Artifact.read_all(call.own, Enum.map(wanted, &elem(&1, 2)))
+    found = for {{subject, source, _}, {:ok, blob, _tag}} <- Enum.zip(wanted, reads), do: {subject, source, blob}
+    Map.new(subjects, fn subject -> {subject, Enum.find_value(found, fn {^subject, source, blob} -> {source, blob}; _ -> nil end)} end)
+  end
+
+  defp picture_blobs("network"), do: [{"network", "pictures/network"}]
+
+  defp picture_blobs("users/" <> name = subject) do
+    if Regex.match?(~r/^users\/[a-z][a-z0-9-]*$/, subject), do: [{"own", "pictures/#{name}/own"}, {"google", "pictures/#{name}/google"}], else: []
+  end
+
+  defp picture_blobs(_subject), do: []
+
+  defp source({source, _blob}) when source in ["own", "google"], do: source
+  defp source(_none), do: nil
+
+  defp data_address(blob) do
+    %{"type" => type, "data" => data} = JSON.decode!(blob)
+    "data:#{type};base64,#{data}"
+  end
+
   defp transaction(call, fun) do
     database = Call.app(call, "database")
     database.transaction(call, @schema, &fun.({database, &1}))
