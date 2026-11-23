@@ -101,7 +101,10 @@ export default {
     if (url.pathname === "/vault/callback") return env.ASSETS.fetch(new URL("/vault/", url));
     if (url.pathname === "/vault/request") {
       const id = url.searchParams.get("id");
-      return Response.redirect(new URL(`/?open=${encodeURIComponent(id ? `settings#vault/accounts&request=${id}` : "settings#vault/accounts")}`, url).href, 302);
+      // Whose Vault the request waits in: the person's own where the link says none.
+      const owner = url.searchParams.get("owner");
+      const place = `settings#vault/accounts${id ? `&request=${id}` : ""}${id && owner ? `&owner=${encodeURIComponent(owner)}` : ""}`;
+      return Response.redirect(new URL(`/?open=${encodeURIComponent(place)}`, url).href, 302);
     }
     return env.ASSETS.fetch(request);
   },

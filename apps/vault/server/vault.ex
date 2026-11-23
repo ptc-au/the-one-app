@@ -960,7 +960,8 @@ defmodule Vault do
     by = with %{agent: agent} <- SignIns.began(call), do: agent, else: (_ -> nil)
     id = Requests.create(call, db, title, fields, Map.get(inputs, "hosts", []), app, by, inputs["why"])
     timed(call, db)
-    link = if address = Application.get_env(:one_core, :address), do: "#{address}/vault/request?id=#{id}"
+    # Whose Vault it waits in, so the link opens it there: the person's, a group's or the network's.
+    link = if address = Application.get_env(:one_core, :address), do: "#{address}/vault/request?id=#{id}&owner=#{URI.encode_www_form(call.subject)}"
     where = if link, do: "Give them this link: #{link}. It", else: "Ask them to open Vault on a device of theirs: it"
     %{id: id, link: link, message: "#{where} shows the request, to answer on their own device. You never see what they type."}
   end

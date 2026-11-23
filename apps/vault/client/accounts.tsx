@@ -855,11 +855,13 @@ export default function Accounts() {
 }
 
 function Vault() {
-  // A link to a request, `one:settings#vault/accounts&request=<id>`, as a request's own link leads to: its alert,
-  // once the Vault has listed it.
+  // A link to a request, `one:settings#vault/accounts&request=<id>&owner=<whose Vault>`, as a request's own link leads
+  // to: its alert, once that Vault has listed it.
   const [linked, setLinked] = createSignal<string>()
   createEffect(link, (to) => {
     const id = to && /(?:^|&)request=([^&]*)/.exec(to)?.[1]
+    const owner = to && /(?:^|&)owner=([^&]*)/.exec(to)?.[1]
+    if (owner) setWhose(decodeURIComponent(owner))
     if (id) setLinked(decodeURIComponent(id))
   })
   createEffect(
