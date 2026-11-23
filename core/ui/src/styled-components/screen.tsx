@@ -96,6 +96,11 @@ const look = styles({
   // A window's sidebar is narrower, as macOS's and Raycast's Settings' are.
   sidebar: { flexBasis: tokens.length.sidebar, minWidth: tokens.length.sidebar, maxWidth: tokens.length.sidebar },
   detail: { flexGrow: 1, flexShrink: 1 },
+  // A split's ?, beside its list on a computer: at the window's end of the title bar, over the end of what's open's
+  // bar, which keeps room for it.
+  tipsAt: { position: "absolute", top: 0, end: 0, zIndex: 2, paddingTop: tokens.length.safeTop },
+  tipsRow: { flexDirection: "row", alignItems: "center", minHeight: tokens.length.bar, paddingInline: tokens.length.gutter },
+  tipsRoom: { width: tokens.length.control, flexShrink: 0 },
 })
 
 /** How far a screen whose own page draws its large title (`largeTitle`) is scrolled when that's gone under its bar, in
@@ -144,6 +149,11 @@ export function History(props: { value: Went; children?: JSX.Element }) {
 /** Which of the window's edges a screen's bar reaches, where its title row's controls and title are: a split's
  * list beside what it opens reaches the start, and what it opens the end. */
 const Edge = createContext<() => { start: boolean; end: boolean }>(() => ({ start: true, end: true }))
+/** Where a screen in a split hands it its `tips`, which a split beside its list draws once, at the window's end. →
+ * what takes them back. */
+const HandTips = createContext<((tips: () => Tip[] | undefined) => () => void) | null>(null)
+/** Whether the split a screen is in draws the ? for it (`HandTips`), and whether over the end of this screen's bar. */
+const TipsDrawn = createContext<() => { drawn: boolean; over: boolean }>(() => ({ drawn: false, over: false }))
 /** Whether a state is all there is of where it is, which it fills, in its middle, inside the gutter: a split's
  * detail beside its list, or a page or a part of one with no screen around it (an app that couldn't show its first
  * screen, an empty Home page), as iOS's ContentUnavailableView is. In a screen's parts, it's one of them. */
@@ -181,6 +191,11 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   const history = useContext(Went)
   const style = useContext(ListStyle)
   const edge = useContext(Edge)
+  // In a split beside its list, its tips are the window's, drawn by the split at the window's end; else its own.
+  const hand = useContext(HandTips)
+  const splitTips = useContext(TipsDrawn)
+  if (hand) onSettled(() => hand(() => props.tips))
+  const tips = () => (splitTips().drawn ? undefined : props.tips?.length ? props.tips : undefined)
   // On a computer, as Raycast's: the bar's buttons and menus' items are the screen's actions, in the footer's pills and
   // its action panel (⌘K), after what the row chosen can do; under a finger they stay in the bar.
   const computer = !touch()
@@ -218,7 +233,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   const footed = () => panelled && actions().length > 0
   // On a computer, a screen that says nothing in its bar, in a window whose title bar already names it (a dialog's),
   // has no bar; under a finger the bar keeps clear of the status bar.
-  const barred = () => !computer || !!props.heading || !!props.action || !!props.tips?.length || backed() || titled() || (computer && !!history())
+  const barred = () => !computer || !!props.heading || !!props.action || !!tips() || backed() || titled() || (computer && !!history())
   return (
     <View style={look.screen}>
       <Show when={barred()}>
@@ -255,8 +270,8 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
           <Heading level={1} aria-hidden={named() ? undefined : "true"} style={[look.title, computer && look.computerTitle, titleShown() < 1 && look.faded(titleShown())]}>
             {props.heading}
           </Heading>
-          <Show when={!computer && props.tips?.length}>
-            <Tips tips={props.tips!} />
+          <Show when={!computer && tips()}>
+            {(now) => <Tips tips={now()} />}
           </Show>
           <Show when={props.action}>
             <BarEnd value={true}>
@@ -265,8 +280,11 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
               </Collect>
             </BarEnd>
           </Show>
-          <Show when={computer && props.tips?.length}>
-            <Tips tips={props.tips!} />
+          <Show when={computer && tips()}>
+            {(now) => <Tips tips={now()} />}
+          </Show>
+          <Show when={computer && splitTips().over && edge().end}>
+            <View style={look.tipsRoom} />
           </Show>
         </View>
       </View>
@@ -375,6 +393,16 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
   // How many `Empty` its list side shows.
   const [blank, setBlank] = createSignal(0)
   const close = () => props.onClose?.()
+  // The tips its screens hand it (`HandTips`), each with its side: beside its list on a computer, one ? at the window's
+  // end of the title bar has them, what's open's first, as one window has one Help.
+  const [handed, setHanded] = createSignal<{ side: "list" | "detail"; tips: () => Tip[] | undefined }[]>([])
+  const hand = (side: "list" | "detail") => (tips: () => Tip[] | undefined) => {
+    const one = { side, tips }
+    setHanded((now) => [...now, one])
+    return () => setHanded((now) => now.filter((other) => other !== one))
+  }
+  const of = (side: "list" | "detail") => handed().filter((one) => one.side === side).map((one) => one.tips()).filter((tips) => tips?.length).at(-1)
+  const windowTips = () => (beside() && !touch() ? ((props.open && of("detail")) || of("list")) : undefined)
 
   // Escape closes it, unless it's for something open over it, a sheet or a menu, or a split open in it, which closes
   // first.
@@ -404,7 +432,11 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
           <Opened value={() => (props.open ? close : undefined)}>
             <Middle value={() => false}>
               <Blank value={(change) => setBlank((count) => count + change)}>
-                <ListKeys>{props.children}</ListKeys>
+                <HandTips value={hand("list")}>
+                  <TipsDrawn value={() => ({ drawn: !!windowTips(), over: false })}>
+                    <ListKeys>{props.children}</ListKeys>
+                  </TipsDrawn>
+                </HandTips>
               </Blank>
             </Middle>
           </Opened>
@@ -418,11 +450,15 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
             <History value={beside() ? history() : null}>
             <InDetail value={beside}>
               <Middle value={beside}>
-                <Show when={beside() && !props.open && (blank() || props.pick)} fallback={props.detail}>
-                  <Show when={!blank()}>
-                    <Empty>{props.pick}</Empty>
-                  </Show>
-                </Show>
+                <HandTips value={hand("detail")}>
+                  <TipsDrawn value={() => ({ drawn: !!windowTips(), over: !!windowTips() })}>
+                    <Show when={beside() && !props.open && (blank() || props.pick)} fallback={props.detail}>
+                      <Show when={!blank()}>
+                        <Empty>{props.pick}</Empty>
+                      </Show>
+                    </Show>
+                  </TipsDrawn>
+                </HandTips>
               </Middle>
             </InDetail>
             </History>
@@ -430,6 +466,15 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
           </Edge>
         </Room>
       </View>
+      <Show when={windowTips()}>
+        {(tips) => (
+          <View style={look.tipsAt}>
+            <View style={[look.tipsRow, edge().end && look.atEnd]}>
+              <Tips tips={tips()} />
+            </View>
+          </View>
+        )}
+      </Show>
     </View>
   )
 }

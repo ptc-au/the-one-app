@@ -2907,5 +2907,13 @@
     "taps": [
       "Tips"
     ]
+  },
+  "Settings, its tips by F1": {
+    "like": "Settings",
+    "taps": [
+      {
+        "key": "F1"
+      }
+    ]
   }
 }

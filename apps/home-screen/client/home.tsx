@@ -31,6 +31,19 @@ import { Welcome } from "./welcome.tsx"
 
 /// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
 const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(({ seen }) => seen, () => undefined))
+/// Whether Welcome's been gone on from (true), or started again (false), here since `tips` was asked.
+const [continued, setContinued] = createSignal<boolean>()
+/// Whether Welcome shows: until they go on from it, on this device or another (the tip `welcome`, theirs). Where their
+/// tips can't be asked, it isn't shown: never in the way of their Home Screen.
+const welcoming = () => tips()?.includes("welcome") === false ? continued() !== true : continued() === false
+/// Whether they've been through Welcome, so the Home Screen's tips offer it again (pills.tsx).
+export const welcomed = () => !welcoming() && tips()?.includes("welcome") !== undefined
+/// Goes on from Welcome, showing the Home Screen at once and keeping that it's been seen behind it, or (`again`) starts
+/// it again from its first step, as the tip `welcome` set unseen has it.
+export const welcome = (again = false) => {
+  setContinued(!again)
+  call("home-screen_tip", { name: "welcome", seen: !again }).catch((error) => toast(error as Error))
+}
 
 function HomeScreen(props: { owners: Owner[] }) {
   const layout = createScreens(props)
@@ -58,15 +71,8 @@ function HomeScreen(props: { owners: Owner[] }) {
     () => launcher(),
     (now) => (now ? keydown(launcherKeys({ move, open: openTarget, toggleLibrary, library, found: () => found().length })) : undefined),
   )
-  // Welcome first, once, until they go on from it, on this device or another (the tip `welcome`, theirs); in the
-  // launcher, in its card. Going on shows the Home Screen at once, and keeps that it's been seen behind it. Where
-  // their tips can't be asked, it isn't shown: never in the way of their Home Screen.
-  const [continued, setContinued] = createSignal(false)
-  const welcoming = () => tips()?.includes("welcome") === false && !continued()
-  const onContinue = () => {
-    setContinued(true)
-    call("home-screen_tip", { name: "welcome", seen: true }).catch((error) => toast(error as Error))
-  }
+  // Welcome first, once, until they go on from it (`welcoming`); in the launcher, in its card.
+  const onContinue = () => welcome()
   // In the launcher, its sheets are its card's, as Raycast's are its panel's: nothing's drawn outside its panes.
   return (
     <PresentationContext value={() => (launcher() ? cardRect() : undefined)}>

@@ -286,7 +286,7 @@ export declare function render(code: () => Element): () => void
 /** One of a screen's tips: one idea in a few words, a sentence, and keys drawn as keycaps or a picture of the app's own. */
 export type Tip = { title: string; body: string; keys?: string[]; picture?: string }
 export declare function Screen(props: { heading?: Element; action?: Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: Element }): Element
-export declare function Tips(props: { tips: Tip[] }): Element
+export declare function Tips(props: { tips: Tip[]; action?: Action }): Element
 export declare function Section(props: { heading?: Element; "aria-label"?: string; children?: Element }): Element
 /** A row that scrolls sideways from the window's edge to its edge, its first item where the screen's column starts (`style` may say its `gap`). */
 export declare function Shelf(props: { role?: "group" | "toolbar" | "list"; "aria-label"?: string; style?: Styles<"gap">; children?: Element }): Element
@@ -331,9 +331,9 @@ export declare function Row(props: {
 }): Element
 
 export type IconName =
-  | "arrow-elbow-down-left" | "calendar-blank" | "caret-down" | "caret-left" | "caret-right" | "caret-up-down" | "check" | "copy" | "corners-in"
-  | "corners-out" | "device-mobile" | "devices" | "dots-three" | "dots-three-circle" | "file" | "gear-six" | "globe" | "hard-drives" | "magnifying-glass" | "minus" | "minus-circle"
-  | "paperclip" | "pencil-simple" | "plus" | "plus-circle" | "robot" | "squares-four" | "terminal-window" | "trash" | "warning-circle" | "x"
+  | "arrow-counter-clockwise" | "arrow-elbow-down-left" | "calendar-blank" | "caret-down" | "caret-left" | "caret-right" | "caret-up-down" | "check" | "copy" | "corners-in"
+  | "corners-out" | "device-mobile" | "devices" | "dots-three" | "dots-three-circle" | "download-simple" | "file" | "gear-six" | "globe" | "hard-drives" | "magnifying-glass" | "minus" | "minus-circle"
+  | "paperclip" | "pencil-simple" | "plus" | "plus-circle" | "question" | "robot" | "squares-four" | "terminal-window" | "trash" | "warning-circle" | "x"
 export declare function Icon(props: { name: IconName; along?: boolean; large?: boolean }): Element
 export declare function Spinner(): Element
 

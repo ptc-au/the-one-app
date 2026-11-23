@@ -119,7 +119,7 @@ const look = styles({
 const [bars, setBars] = createSignal<object[]>([])
 
 /** Whether it's a Mac, whose keys are ⌘ where a PC's are Ctrl, as its client says. */
-const [mac, setMac] = createSignal(false)
+export const [mac, setMac] = createSignal(false)
 let asked = false
 /** Asks the client whether it's a Mac, once, for `pressed`. */
 export const askMac = () => {

@@ -3181,5 +3181,74 @@
       }
     ],
     "wait": 4000
+  },
+  "Launcher, its tips once welcomed": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "target": "macos-aarch64"
+      },
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "home-screen_tip": {
+        "seen": []
+      }
+    },
+    "taps": [
+      "Tips"
+    ]
+  },
+  "Launcher, Welcome again": {
+    "like": "Launcher, its tips once welcomed",
+    "taps": [
+      "Tips",
+      "Show Welcome Again"
+    ]
+  },
+  "Launcher, its tips by ⌘?": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "target": "macos-aarch64"
+      }
+    },
+    "taps": [
+      {
+        "key": "?",
+        "meta": true,
+        "shift": true
+      }
+    ]
+  },
+  "Home, its tips once welcomed": {
+    "like": "Home, two pages",
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "home-screen_tip": {
+        "seen": []
+      }
+    },
+    "taps": [
+      "Tips"
+    ]
   }
 }

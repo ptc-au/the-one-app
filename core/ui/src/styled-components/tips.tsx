@@ -3,10 +3,10 @@
 import { createSignal, For, onSettled, Show } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Image, Modal, Pressable, Text, View } from "#primitives"
-import { client, direction, open as openLink, touch, viewport } from "#bridge"
+import { client, direction, keydown, open as openLink, touch, viewport } from "#bridge"
 import { Button, Icon } from "./button.tsx"
 import { Sheet } from "./sheet.tsx"
-import { askMac, shown } from "./actions.tsx"
+import { type Action, askMac, mac, shown } from "./actions.tsx"
 import { messages } from "../words.ts"
 import { createDismissable } from "../behavior-primitives/dismissable.ts"
 import { computePlacement } from "../behavior-primitives/placement.ts"
@@ -94,8 +94,15 @@ const look = styles({
   rowIcon: { color: tokens.colour.secondaryLabel },
   rowTitle: { font: tokens.type.medium },
   rowText: { font: tokens.type.small, color: tokens.colour.secondaryLabel },
-  sheetFoot: { marginTop: tokens.grid[2] },
+  sheetFoot: { marginTop: tokens.grid[2], gap: tokens.grid[2] },
 })
+
+/** What opens each `Tips` drawn, the last drawn last: the screen in front's, which Help's key opens. */
+const opens: (() => void)[] = []
+let listening: (() => void) | undefined
+/** Whether a key is Help's, as a Mac's Help menu has ⌘? and Windows' and Linux's apps F1: ⌘? on a Mac, Ctrl+? or F1
+ * elsewhere. */
+const help = (event: Keyed) => event.key === "F1" || (event.key === "?" && (mac() ? event.metaKey : event.ctrlKey))
 
 const rectOf = (event: Laid): Rect => {
   const { x, y, width, height } = event.currentTarget.getBoundingClientRect()
@@ -105,10 +112,12 @@ const rectOf = (event: Laid): Rect => {
 /// `<Tips tips={[{ title: "Copy without looking", body: "Return copies the chosen item's password.", keys: ["enter"] }, …]} />`:
 /// a ? that opens a screen's 2 to 4 tips, one at a time, as a Mac's and an iPhone's apps teach theirs: a popover under
 /// it on a computer, a sheet swiped through under a finger. ← and → and the dots flip through them; Escape, a press
-/// outside and the device's back close them. A tip draws its `keys` as keycaps, or its `picture`, one of the app's own
-/// files. In a browser it ends with Get the App. A `Screen`'s `tips` draw one in its bar; this is for a page with no
+/// outside and the device's back close them, and ⌘? on a Mac (Ctrl+? or F1 elsewhere) opens the screen in front's,
+/// as Help does. A tip draws its `keys` as keycaps, or its `picture`, one of the app's own
+/// files. `action` is one thing to do at their foot, as Show Welcome Again (an `Action`: its `label`, `onAction`, an
+/// `icon`). In a browser it ends with Get the App. A `Screen`'s `tips` draw one in its bar; this is for a page with no
 /// `Screen`, as the Home Screen is.
-export function Tips(props: { tips: Tip[] }) {
+export function Tips(props: { tips: Tip[]; action?: Action }) {
   const [open, setOpen] = createSignal(false)
   const [anchor, setAnchor] = createSignal<Rect>()
   const [web, setWeb] = createSignal<string>()
@@ -117,6 +126,20 @@ export function Tips(props: { tips: Tip[] }) {
     client().then((said) => setWeb(said.web ? said.network : undefined), () => {})
   })
   const close = () => setOpen(false)
+  // Help's key opens the tips of the screen in front, the last drawn, as a Mac's Help menu shows the app's help.
+  const show = () => setOpen(true)
+  onSettled(() => {
+    opens.push(show)
+    listening ??= keydown((event) => {
+      if (!help(event) || !opens.length) return
+      event.preventDefault()
+      opens.at(-1)!()
+    })
+    return () => {
+      opens.splice(opens.indexOf(show), 1)
+      if (!opens.length) (listening?.(), (listening = undefined))
+    }
+  })
   // Its popover's: a sheet is dismissed as a sheet is.
   const layer = createDismissable({ open: () => open() && !touch(), onDismiss: close })
   return (
@@ -141,7 +164,25 @@ export function Tips(props: { tips: Tip[] }) {
             {(at) => (
               <Popover at={at()} keydown={layer.keydown} outside={layer.outside}>
                 <Deck tips={props.tips} />
-                <Show when={web()}>{(network) => <GetTheApp network={network()} />}</Show>
+                <Show when={props.action || web()}>
+                  <View style={look.foot}>
+                    <Show when={props.action}>
+                      {(action) => (
+                        <Pressable role="button" onPress={() => (close(), action().onAction())} style={look.row}>
+                          <Show when={action().icon}>
+                            {(icon) => (
+                              <View style={look.rowIcon}>
+                                <Icon name={icon()} />
+                              </View>
+                            )}
+                          </Show>
+                          <Text style={[look.rowWords, look.rowTitle]}>{action().label}</Text>
+                        </Pressable>
+                      )}
+                    </Show>
+                    <Show when={web()}>{(network) => <GetTheApp network={network()} />}</Show>
+                  </View>
+                </Show>
               </Popover>
             )}
           </Show>
@@ -149,15 +190,25 @@ export function Tips(props: { tips: Tip[] }) {
       >
         <Sheet heading={messages.tips} open={open()} onClose={close}>
           <Deck tips={props.tips} />
-          <Show when={web()}>
-            {(network) => (
-              <View style={look.sheetFoot}>
-                <Button variant="secondary" onPress={() => void openLink(`${network()}/download`)}>
-                  <Icon name="download-simple" along />
-                  {messages.getTheApp}
-                </Button>
-              </View>
-            )}
+          <Show when={props.action || web()}>
+            <View style={look.sheetFoot}>
+              <Show when={props.action}>
+                {(action) => (
+                  <Button variant="secondary" onPress={() => (close(), action().onAction())}>
+                    <Show when={action().icon}>{(icon) => <Icon name={icon()} along />}</Show>
+                    {action().label}
+                  </Button>
+                )}
+              </Show>
+              <Show when={web()}>
+                {(network) => (
+                  <Button variant="secondary" onPress={() => void openLink(`${network()}/download`)}>
+                    <Icon name="download-simple" along />
+                    {messages.getTheApp}
+                  </Button>
+                )}
+              </Show>
+            </View>
           </Show>
         </Sheet>
       </Show>
@@ -280,16 +331,14 @@ function Page(props: { tip: Tip; shown: boolean }) {
 /** In a browser: the One App for this computer or phone, from the network's download page. */
 function GetTheApp(props: { network: string }) {
   return (
-    <View style={look.foot}>
-      <Pressable role="link" onPress={() => void openLink(`${props.network}/download`)} style={look.row}>
-        <View style={look.rowIcon}>
-          <Icon name="download-simple" />
-        </View>
-        <View style={look.rowWords}>
-          <Text style={look.rowTitle}>{messages.getTheApp}</Text>
-          <Text style={look.rowText}>{messages.everyDevice}</Text>
-        </View>
-      </Pressable>
-    </View>
+    <Pressable role="link" onPress={() => void openLink(`${props.network}/download`)} style={look.row}>
+      <View style={look.rowIcon}>
+        <Icon name="download-simple" />
+      </View>
+      <View style={look.rowWords}>
+        <Text style={look.rowTitle}>{messages.getTheApp}</Text>
+        <Text style={look.rowText}>{messages.everyDevice}</Text>
+      </View>
+    </Pressable>
   )
 }

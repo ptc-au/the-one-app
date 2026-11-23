@@ -9,6 +9,7 @@ import { createButton } from "../headless-components/button.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 import type { Laid, Located } from "../types/ui.d.ts"
+import arrowCounterClockwise from "@phosphor-icons/core/assets/regular/arrow-counter-clockwise.svg?raw"
 import arrowElbowDownLeft from "@phosphor-icons/core/assets/regular/arrow-elbow-down-left.svg?raw"
 import calendarBlank from "@phosphor-icons/core/assets/regular/calendar-blank.svg?raw"
 import caretLeft from "@phosphor-icons/core/assets/regular/caret-left.svg?raw"
@@ -45,6 +46,7 @@ import x from "@phosphor-icons/core/assets/regular/x.svg?raw"
 
 // The Phosphor icons the UI library draws with, by Phosphor's own names: each one path in a 256 square.
 const svgs = {
+  "arrow-counter-clockwise": arrowCounterClockwise,
   "arrow-elbow-down-left": arrowElbowDownLeft,
   "calendar-blank": calendarBlank,
   "caret-down": caretDown,
