@@ -215,8 +215,8 @@ getting_dev_builds() {
 iphones=() networks=()
 if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
   mapfile -t networks < <(tooling/networks)
-  for repo in "${networks[@]}"; do
-    tooling/testflight "$repo" > >(sed "s|^|iphone $(basename "$repo"): |") 2>&1 &
+  for network in "${networks[@]}"; do
+    tooling/testflight "$network" > >(sed "s|^|iphone $(basename "$network"): |") 2>&1 &
     iphones+=($!)
   done
 fi
@@ -228,8 +228,8 @@ iphone_done() {
   local pid failed=
   for pid in "${iphones[@]}"; do wait "$pid" || failed=1; done
   [[ -z $failed ]] || { echo "An iPhone's app didn't reach TestFlight." >&2 && exit 1; }
-  [[ $status != 0 ]] || for repo in "${networks[@]}"; do
-    tooling/installers "$repo" > >(sed "s|^|installers $(basename "$repo"): |") 2>&1 || failed=1
+  [[ $status != 0 ]] || for network in "${networks[@]}"; do
+    tooling/installers "$network" > >(sed "s|^|installers $(basename "$network"): |") 2>&1 || failed=1
   done
   [[ -z $failed ]] || { echo "A network's installers weren't published." >&2 && exit 1; }
 }
