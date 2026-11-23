@@ -192,7 +192,7 @@ export interface Commands {
   theme(args: { theme: "light" | "dark" | null }): void
   listen(): void
   /** Opens an app in a window of its own, at `link`, or brings it forward there if it's open, and on a phone says whether its native window opened, from its icon at `icon` where it was opened from one. */
-  open_window(args: { entrypoint: string; subject: string | undefined; link: string; icon?: [number, number, number, number] }): boolean
+  open_window(args: { entrypoint: string; subject: string | undefined; link: string; icon?: [number, number, number, number]; tip?: boolean }): boolean
   /** Opens the launcher natively, as a phone's root window, and says whether it did. */
   open_launcher(args: { entrypoint: string }): boolean | void
   /** Says whether the native launcher shows, which it doesn't while an app is over it. */
@@ -231,6 +231,8 @@ export interface Events {
   launcher: { native?: boolean; behind?: boolean; why?: string; crashed?: boolean; over?: boolean }
   /** The native launcher opens an app (`link`, for `subject`), or only starts it (`behind`), out of the icon at `from`. */
   go: { link: string; subject: string | null; behind: boolean; from: Rect | null }
+  /** Its person pulled an app's window home past the rail's tip, or tapped its Got it (`tip` with `open_window`). */
+  tipped: null
   /** What a server says changed: an open app's key, or `client` for the files listed. */
   changed: string
   /** The open apps loaded against a version of an app, or a build of the UI library, a server says is gone, as their addresses name them. */

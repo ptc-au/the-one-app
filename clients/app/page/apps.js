@@ -47,7 +47,7 @@ export async function behind() {
 
 /// Calls the network's tool `name` as this device's client, and gives what it answered, or throws the error it said.
 /** @param {string} name @param {Record<string, unknown>} [inputs] @returns {Promise<any>} */
-async function call(name, inputs = {}) {
+export async function call(name, inputs = {}) {
   const result = /** @type {{ structuredContent?: unknown, content: { text: string }[], isError?: boolean }} */ (await invoke("request", { view: "client", method: "tools/call", params: { name, arguments: inputs } }))
   if (result.isError) throw new Error(result.content[0]?.text)
   return result.structuredContent ?? JSON.parse(result.content[0].text)

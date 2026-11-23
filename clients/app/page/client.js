@@ -16,7 +16,7 @@ import { draw } from "./draw.js"
 import { gestures } from "./gestures.js"
 import { moveMachine } from "./move-machine.js"
 import { pageMachine } from "./page-machine.js"
-import { rail } from "./rail.js"
+import { rail, unseen } from "./rail.js"
 import { used } from "./shortcuts.js"
 import { byId } from "./util.js"
 import { machine } from "./window-machine.js"
@@ -338,7 +338,7 @@ export function go(link, subject, behind, from) {
     notes()
     /** @type {[number, number, number, number] | undefined} */
     const icon = from && [from.x, from.y, from.width, from.height]
-    invoke("open_window", { entrypoint: page, subject, link: fragment ? `${page}#${fragment}` : page, icon }).then((opened) => opened || failed(NEWER), failed)
+    invoke("open_window", { entrypoint: page, subject, link: fragment ? `${page}#${fragment}` : page, icon, tip: unseen }).then((opened) => opened || failed(NEWER), failed)
     return true
   }
   const tapped = performance.now()

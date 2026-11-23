@@ -32,6 +32,19 @@
        an app's title row, as a browser's own sits beside its Back, and its top bar starts after it (rail.js's `rail`,
        chrome.js's `homes`). -->
   <button id="home" type="button" class="press ring" aria-label="Home Screen" title="Home Screen" data-away><svg class="ui-icon" viewBox="0 0 256 256" aria-hidden="true"><path d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z"/></svg></button>
+  <!-- The rail's tip (rail.js's `tipping`): over the first app a person opens where a finger works the line, a
+       callout pointing at it says how to go home, until they pull it home or tap Got it, once for them on every
+       device. Until then, a ring pulses on the line and a see-through finger pulls the app in a little. -->
+  <div id="tip" hidden>
+    <div class="ring"></div>
+    <div class="trail"></div>
+    <div class="finger"></div>
+    <div class="callout" role="dialog" aria-labelledby="tip-title" aria-describedby="tip-about">
+      <svg class="symbol" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 3v10" stroke-width="2"/><path d="M10 8H2.5M5.5 5 2.5 8l3 3" stroke-width="1.8"/></svg>
+      <p><b id="tip-title">Pull to go home</b><span id="tip-about">Drag the line on the right edge in, from any app.</span></p>
+      <button id="tip-done" class="press">Got it</button>
+    </div>
+  </div>
   <!-- What the window shows of itself, in its middle, over the frames, as the UI library's Steps, Status, Empty and
        Problem draw it (core/ui/src/styled-components/states.tsx): its mark from its first paint and the steps it takes as it opens, until
        its person's home has drawn over them; an update under way; that there's no Home Screen; or a problem. -->
