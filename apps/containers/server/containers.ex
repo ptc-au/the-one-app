@@ -113,7 +113,7 @@ defmodule Containers do
         name: "machines",
         read_only: true,
         description:
-          "The machines that run containers, each by the name `create` takes, whether it's on now, and if not when it last was (ms since 1970), and where it's on and has no desktop image yet, how far its build is. Each machine builds it by itself as Containers starts there, in about a minute, and again each week. One that's on and doesn't answer says why, as `failed`.",
+          "The machines that run containers, each by the name `create` takes, whether it's on now, and if not when it last was (ms since 1970), and where it's on and has no desktop image yet, how far its build is. Containers runs by itself on each server that can; each that can't says what it lacks, as `lacks`. Each machine builds the desktop image by itself as Containers starts there, in about a minute, and again each week. One that's on and doesn't answer says why, as `failed`.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{
           type: "object",
@@ -130,7 +130,8 @@ defmodule Containers do
                     type: ["string", "null"],
                     description: ~s(How far the image desktop's build is, as a person reads it, while the machine has none yet: "Installing packages: 40%". Null otherwise.)
                   },
-                  failed: %{type: "string", description: "Why it didn't answer, if it's on and didn't: it has no `desktop` then"}
+                  failed: %{type: "string", description: "Why it didn't answer, if it's on and didn't: it has no `desktop` then"},
+                  lacks: %{type: "string", description: "What the machine lacks to run containers, in words, if it can't: Podman isn't installed"}
                 },
                 required: ["machine", "on"]
               }
@@ -456,7 +457,8 @@ defmodule Containers do
   end
 
   def call("machines", _inputs, call) do
-    listed = Enum.zip(Service.machines(call, Podman), Service.servers(call, Podman))
+    {lacking, running} = Enum.split_with(Service.machines(call, Podman), &is_map_key(&1, :lacks))
+    listed = Enum.zip(running, Service.servers(call, Podman))
     on = for {m, server} <- listed, m.on, do: server
     {answers, failed} = OneCore.Asks.each(on, &Service.call(call, Podman, :progress, [], &1))
     progress = Map.new(answers)
@@ -470,7 +472,7 @@ defmodule Containers do
         end
       end
 
-    %{machines: machines}
+    %{machines: machines ++ lacking}
   end
 
   def call("images", _inputs, call) do
@@ -484,7 +486,7 @@ defmodule Containers do
     {containers, _failed} = containers(call)
     if Enum.any?(containers, &(&1.name == name)), do: raise("You have a container called #{name} already")
     servers = Service.servers(call, Podman)
-    if servers == [], do: raise("No computer runs containers yet. Ask your network's admin to set one up.\n\n`install_service` runs Containers.Podman on one.")
+    if servers == [], do: raise(none(call))
     {image, server} = image(call, inputs["image"], inputs["machine"] && Service.machine!(call, Podman, inputs["machine"]))
     server = server || hd(servers)
 
@@ -707,6 +709,13 @@ defmodule Containers do
   @doc false
   # How far the desktop image's build is changed: every app watching is told. For `Containers.Podman`.
   def changed(call), do: Call.changed(call)
+
+  # Why no machine runs containers: Containers runs by itself on each server that has what it needs, so each that doesn't
+  # says what it lacks.
+  defp none(call) do
+    why = for %{machine: machine, lacks: lacks} <- Service.machines(call, Podman), do: "#{machine}: #{lacks}."
+    "No computer runs containers. " <> if(why == [], do: "Containers runs by itself on each of your servers that has Podman, and none is on.", else: Enum.join(why, " "))
+  end
 
   defp settings(call) do
     case Artifact.read(call.own, "settings") do

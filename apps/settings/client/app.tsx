@@ -49,6 +49,12 @@ interface App {
 /// What an update says to a person. Why one failed is for Telemetry and the agents (`apps`), never a person's screen.
 const updateText = (update: Update) => (update.state === "failed" ? "This update can't be installed yet" : "Update ready")
 
+/** What `services` answers that an app's page shows: where its services run, and what the machines that can't lack. */
+interface Serving {
+  names: Record<string, string | null>
+  services: { app: string; service: string; called: string; servers: string[]; lacks: Record<string, string> }[]
+}
+
 /** What `builds` answers that Updates shows. */
 interface Builds {
   devices: { device: string; build?: string; target?: string }[]
@@ -88,6 +94,7 @@ const look = styles({
   initials: { font: tokens.type.small, fontWeight: tokens.weight.semibold, color: tokens.colour.onAccent },
   /// Why an app can't be removed, under Remove App.
   why: { font: tokens.type.small, color: tokens.colour.secondaryLabel, paddingInline: tokens.grid[3] },
+  muted: { color: tokens.colour.secondaryLabel },
   personName: { fontWeight: tokens.weight.semibold },
   readable: { gap: tokens.length.gutter, maxWidth: tokens.length.readable },
 })
@@ -331,6 +338,9 @@ function Updates() {
 const whose = (owner: string) => (owner === "network" ? "Everyone" : owner === me()?.who ? "You" : owner.split("/").pop()!)
 
 /// Whether each app may notify whoever's looking, as Notifications keeps it, or nothing where it isn't installed.
+/// Where services run, for whoever's looking and for the network, whose apps are theirs.
+const serving = createMemo(() => Promise.all([json<Serving>("services"), json<Serving>("services", {}, "network")]).then(([mine, network]) => ({ mine, network }), () => undefined))
+changed(() => refresh(serving))
 const notifying = createMemo(() => json<{ apps: { app: string; allowed: boolean }[] }>("notifications_apps").then(({ apps }) => apps, () => undefined))
 
 /// An app's page: who it's for, whether it's trusted, its notifications, its update, what it adds here, and Remove App.
@@ -338,6 +348,20 @@ function AppPage(props: { app: App }) {
   const app = () => props.app
   const [working, setWorking] = createSignal<string>()
   const allowed = () => notifying()?.find((one) => one.app === app().app)
+  // Each of the app's services that runs somewhere or can't where it should, with its machines: running, or what each lacks.
+  const services = () => {
+    const of = app().for === "network" ? serving()?.network : serving()?.mine
+    return (of?.services ?? [])
+      .filter((one) => one.app === app().name && (one.servers.length || Object.keys(one.lacks).length))
+      .map((one) => ({
+        called: one.called,
+        key: one.service,
+        machines: [
+          ...one.servers.map((key) => ({ key, machine: of?.names[key] ?? key, why: undefined as string | undefined })),
+          ...Object.entries(one.lacks).map(([key, why]) => ({ key, machine: of?.names[key] ?? key, why })),
+        ],
+      }))
+  }
   const trust = (trusted: boolean) => doing(() => call("apps_trust", { name: app().name, trusted }, { subject: app().for }))
   const allow = (allow: boolean) => doing(() => call("notifications_allow", { app: app().app, allow }).then(() => refresh(notifying)))
   const update = async () => {
@@ -371,6 +395,15 @@ function AppPage(props: { app: App }) {
           <Row heading="Update ready" text={app().update!.state === "failed" ? updateText(app().update!) : undefined} action={<Button variant="outline" loading={working() === "update"} onPress={update}>Update</Button>} />
         </Show>
       </List>
+      <For each={services()} keyed={(one) => one.key}>
+        {(service) => (
+          <Section heading={service().called}>
+            <List each={service().machines} keyed={(machine) => machine.key}>
+              {(machine) => <Row heading={machine().machine} text={machine().why} end={<Text style={look.muted}>{machine().why ? "Can't run it" : "Running"}</Text>} />}
+            </List>
+          </Section>
+        )}
+      </For>
       <Groups in="app" app={app().name} />
       <List>
         <Row

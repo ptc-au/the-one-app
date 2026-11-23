@@ -91,6 +91,24 @@ defmodule OneCore.Servers do
     cached({:installed, key}, fn -> for [app, name] <- read("servers/#{key}/services", []), do: {app, name} end)
   end
 
+  @doc """
+  Why the server whose key is `key` doesn't run the services that run by themselves where a machine can
+  (`OneCore.Service.lacks/0`): each one's app and name, with what its machine lacks, in words its owner reads.
+  """
+  def lacking(key) do
+    cached({:lacking, key}, fn -> for [app, name, why] <- read("servers/#{key}/lacking", []), do: {app, name, why} end)
+  end
+
+  @doc "Says what this server's machine lacks to run the service `{app, name}`, or with `nil` that it lacks nothing."
+  def lack({app, name}, why) do
+    with :ok <-
+           Bucket.update("servers/#{Server.key()}/lacking", fn was ->
+             others = for [a, n, _] = entry <- if(was, do: JSON.decode!(was), else: []), {a, n} != {app, name}, do: entry
+             JSON.encode!(Enum.sort(if(why, do: [[app, name, why] | others], else: others)))
+           end),
+         do: invalidate()
+  end
+
   @doc "This server's services installed are `services` from now on."
   def install(services) do
     say("servers/#{Server.key()}/services", JSON.encode!(for {app, name} <- services, do: [app, name]))
@@ -518,7 +536,7 @@ defmodule OneCore.Servers do
   """
   def reload(owner) do
     Cache.invalidate(__MODULE__, {:listed, owner})
-    servers = for key <- listed(owner), what <- [{:members, key}, {:installed, key}, {:name, key}], do: what
+    servers = for key <- listed(owner), what <- [{:members, key}, {:installed, key}, {:lacking, key}, {:name, key}], do: what
     Enum.each(if(owner == @network, do: [:first_owner | servers], else: servers), &Cache.invalidate(__MODULE__, &1))
   end
 

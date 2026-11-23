@@ -667,7 +667,8 @@ defmodule OneCore.Tools.Definitions do
       read_only: true,
       description: """
       Lists the services your apps have, what each needs of a machine, and the servers that run it, with
-      what each server's machine is called. A service is a part of an app that runs on particular machines,
+      what each server's machine is called. A service that runs by itself says so (`auto`), and each server whose machine
+      can't run it says what it lacks (`lacks`). A service is a part of an app that runs on particular machines,
       for what is only there.
       """,
       inputs: %{type: "object", properties: %{}},
@@ -695,9 +696,15 @@ defmodule OneCore.Tools.Definitions do
                   items: %{type: "string"},
                   description: "The systems it runs on, as npm's os field names them: darwin, linux, win32. Null for any"
                 },
-                servers: %{type: "array", items: %{type: "string"}, description: "The keys of the servers running it"}
+                servers: %{type: "array", items: %{type: "string"}, description: "The keys of the servers running it"},
+                auto: %{type: "boolean", description: "Whether it runs by itself on each server whose machine has what it needs, with none installing it"},
+                lacks: %{
+                  type: "object",
+                  additionalProperties: %{type: "string"},
+                  description: "For each server whose machine can't run it, by its key, what the machine lacks, in words"
+                }
               },
-              required: ["app", "service", "called", "needs", "servers"]
+              required: ["app", "service", "called", "needs", "servers", "auto", "lacks"]
             }
           }
         },
@@ -707,7 +714,7 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "install_service",
       description: """
-      Runs an app's service on a server from now on.
+      Runs an app's service on a server from now on. A service that runs by itself (`services` says) is run on every server that can, and isn't installed.
       That is the server's owner's to decide, knowing what the service needs of the machine, which `services` says.
       """,
       inputs: %{

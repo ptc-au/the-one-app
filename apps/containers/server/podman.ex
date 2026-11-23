@@ -35,6 +35,21 @@ defmodule Containers.Podman do
       "creating one enables: systemctl --user enable podman-restart.service and loginctl enable-linger."
   end
 
+  # Containers runs on each server whose machine has Podman, and works: `podman info` starts Podman as a container
+  # would, which is where one in a container that doesn't allow containers inside it, or with no user namespaces for
+  # rootless Podman, stops.
+  @impl OneCore.Service
+  def lacks do
+    if System.find_executable("podman") do
+      case OneCore.Command.run(["podman", "info"], 30) do
+        %{exit: 0} -> nil
+        %{stderr: stderr} -> "Podman is installed, but it can't run containers on this machine: #{reason(stderr)}"
+      end
+    else
+      "Podman isn't installed"
+    end
+  end
+
   @impl GenServer
   def init(_) do
     System.find_executable("podman") || raise "This machine has no podman to run containers with"
@@ -561,9 +576,14 @@ defmodule Containers.Podman do
   # more, as its warnings and retries before it.
   defp why(stderr) do
     lines = String.split(String.trim(stderr), "\n", trim: true)
+    if length(lines) > 1, do: reason(stderr) <> "\n\n" <> String.trim(stderr), else: reason(stderr)
+  end
+
+  # Its last `Error:` line, without the word.
+  defp reason(stderr) do
+    lines = String.split(String.trim(stderr), "\n", trim: true)
     error = Enum.find(Enum.reverse(lines), List.last(lines) || "Podman failed", &String.starts_with?(&1, "Error: "))
-    reason = String.replace_prefix(error, "Error: ", "")
-    if length(lines) > 1, do: reason <> "\n\n" <> String.trim(stderr), else: reason
+    String.replace_prefix(error, "Error: ", "")
   end
 
   # Runs podman with `args` for at most `timeout` seconds (`OneCore.Command`). With `each`, a function and what it

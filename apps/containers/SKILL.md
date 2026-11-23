@@ -41,5 +41,5 @@ One left running and unused (no `exec`, file, screenshot or request) for `idle_h
 is stopped on the hour; `start` brings it back with its files. Yours are yours: nobody else sees them but the
 network's owner.
 
-A machine runs containers once its service is installed there: `install_service --app containers --service
-Containers.Podman --server <key>`. It needs Podman, rootless where it can be.
+Every server that has Podman (rootless where it can be) runs containers by itself, with nothing installed. One that
+can't says what it lacks in `machines` (`lacks`), in Settings and in Device Activity, and runs them once it has it.

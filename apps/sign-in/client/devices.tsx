@@ -55,6 +55,10 @@ interface Service {
   /** The systems it runs on, as npm's `os` names them; nothing for any. */
   os?: string[] | null
   servers: string[]
+  /** Whether it runs by itself on each server that can, with none switching it on. */
+  auto: boolean
+  /** What each server whose machine can't run it lacks, by the server's key. */
+  lacks: Record<string, string>
 }
 
 /** A device or a server, as a row says it. */
@@ -249,7 +253,13 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
     setServing()
   }
   // A service that runs on some systems only shows on servers of those, and where it's on, so it can be switched off.
-  const runnable = () => (server()?.services ?? []).filter((service) => service.on || !service.os?.length || !system(server()!.target) || service.os.includes(system(server()!.target)!))
+  // One that runs by itself shows where it does, and where its machine can't, with what it lacks.
+  const runnable = () =>
+    (server()?.services ?? []).filter((service) =>
+      service.auto
+        ? service.on || !!service.lacks[server()!.id]
+        : service.on || !service.os?.length || !system(server()!.target) || service.os.includes(system(server()!.target)!),
+    )
   const stage = () => (updating(thing()) ? (thing().server_update_status as keyof typeof updates) : undefined)
   // This device becoming a server, or stopping being one, at the stage the app says.
   const membership = () => (thing().here && thing().kind === "app" ? props.all.here.server : undefined)
@@ -299,16 +309,21 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
             {(service) => (
               <Row
                 heading={service().called}
+                text={service().auto ? service().lacks[server()!.id] : undefined}
                 end={
-                  <Switch
-                    aria-label={service().called}
-                    value={service().on}
-                    onValueChange={async (on) => {
-                      // What it needs of the machine is read as it's switched on, where its owner decides.
-                      if (on && !(await confirm({ heading: `Switch on ${service().called}?`, text: service().needs, action: "Switch On" }))) return refresh(mine)
-                      doing(() => call(on ? "install_service" : "uninstall_service", { app: service().app, service: service().service, server: server()!.id }, { subject: server()!.subject }))
-                    }}
-                  />
+                  service().auto ? (
+                    <Text style={look.muted}>{service().on ? "Running" : "Not running"}</Text>
+                  ) : (
+                    <Switch
+                      aria-label={service().called}
+                      value={service().on}
+                      onValueChange={async (on) => {
+                        // What it needs of the machine is read as it's switched on, where its owner decides.
+                        if (on && !(await confirm({ heading: `Switch on ${service().called}?`, text: service().needs, action: "Switch On" }))) return refresh(mine)
+                        doing(() => call(on ? "install_service" : "uninstall_service", { app: service().app, service: service().service, server: server()!.id }, { subject: server()!.subject }))
+                      }}
+                    />
+                  )
                 }
               />
             )}

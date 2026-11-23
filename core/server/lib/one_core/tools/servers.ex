@@ -59,7 +59,9 @@ defmodule OneCore.Tools.Servers do
       ) do
     on(inputs["server"], "install_service", inputs, principal, fn ->
       reaches!(principal, owner(), "owner")
-      with {:error, why} <- Services.install(app(subject, name), service), do: raise(why)
+      artifact = app(subject, name)
+      by_itself!(artifact, service)
+      with {:error, why} <- Services.install(artifact, service), do: raise(why)
       %{app: name, service: service, server: Server.key()}
     end)
   end
@@ -73,9 +75,22 @@ defmodule OneCore.Tools.Servers do
       ) do
     on(inputs["server"], "uninstall_service", inputs, principal, fn ->
       reaches!(principal, owner(), "owner")
-      with {:error, why} <- Services.remove(app(subject, name), service), do: raise(why)
+      artifact = app(subject, name)
+      by_itself!(artifact, service)
+      with {:error, why} <- Services.remove(artifact, service), do: raise(why)
       %{app: name, service: service, server: Server.key()}
     end)
+  end
+
+  # A service that lacks nothing runs by itself on every server that can (`OneCore.Service.lacks/0`), so nobody
+  # installs or removes it there.
+  defp by_itself!(artifact, service) do
+    with %{services: services} <- Apps.version(artifact),
+         true <- Enum.any?(services, &(&1.name == service and &1.auto)) do
+      raise "#{service} runs by itself on each of your servers that can: `services` says which, and what the others lack"
+    end
+
+    :ok
   end
 
   # The app that something running for `who` finds by `name`, as its artifact's name.

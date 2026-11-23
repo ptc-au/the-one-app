@@ -233,13 +233,13 @@ defmodule OneCore.Apps.Version.Compile do
         process? = &(GenServer in Version.behaviours(&1) or :gen_statem in Version.behaviours(&1))
 
         with {:ok, description, services} <- said(app, services) do
-          if Enum.all?(services, fn {module, called, needs, os} ->
+          if Enum.all?(services, fn {module, called, needs, os, _auto} ->
                process?.(module) and is_binary(needs) and is_binary(called) and
                  (is_nil(os) or (is_list(os) and Enum.all?(os, &is_binary/1)))
              end) do
             services =
-              for {module, called, needs, os} <- services,
-                  do: %{name: Version.own_name(module), called: called, needs: needs, os: os}
+              for {module, called, needs, os, auto} <- services,
+                  do: %{name: Version.own_name(module), called: called, needs: needs, os: os, auto: auto}
 
             Checks.checked(under, app, description, services, rest, skills)
           else
@@ -257,7 +257,7 @@ defmodule OneCore.Apps.Version.Compile do
 
   # What the app and its services say of themselves, by their own functions, which may raise.
   defp said(app, services) do
-    {:ok, Manifest.said(app), for(module <- services, do: {module, module.called(), module.needs(), if(function_exported?(module, :os, 0), do: module.os())})}
+    {:ok, Manifest.said(app), for(module <- services, do: {module, module.called(), module.needs(), if(function_exported?(module, :os, 0), do: module.os()), function_exported?(module, :lacks, 0)})}
   rescue
     error ->
       functions = Enum.map_join(Manifest.said(), ", ", &"#{&1}/0")

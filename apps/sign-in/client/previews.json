@@ -116,7 +116,9 @@
             "needs": "Needs a disk",
             "servers": [
               "srv1"
-            ]
+            ],
+            "auto": false,
+            "lacks": {}
           },
           {
             "app": "telemetry",
@@ -125,7 +127,9 @@
             "servers": [
               "srv1",
               "srv2"
-            ]
+            ],
+            "auto": false,
+            "lacks": {}
           }
         ]
       },
@@ -147,6 +151,34 @@
     "taps": [
       "Cloud Server"
     ]
+  },
+  "A server that can't run a service": {
+    "like": "Server",
+    "taps": [
+      "Cloud Server"
+    ],
+    "answers": {
+      "services": {
+        "services": [
+          {
+            "app": "containers",
+            "service": "Containers.Podman",
+            "called": "Containers' Podman",
+            "needs": "A Linux machine with Podman, which pulls images and runs containers as the user this server runs as.",
+            "os": [
+              "linux"
+            ],
+            "servers": [
+              "srv1"
+            ],
+            "auto": true,
+            "lacks": {
+              "srv2": "Podman isn't installed"
+            }
+          }
+        ]
+      }
+    }
   },
   "Update failed": {
     "like": "Server",

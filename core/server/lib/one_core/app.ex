@@ -563,6 +563,11 @@ defmodule OneCore.App do
     what it needs, and `install_service` runs one on a server. The server starts it, starts it again whenever it
     stops, and stops it when the app is removed. `init/1` is given nothing, and raises if the machine lacks
     what the service needs.
+  - A service whose machine may lack what it needs (a program, a permission) says `lacks/0`: what the machine lacks, in
+    words its owner reads, or `nil`. It then runs by itself on every server of whoever the app is installed for
+    whose machine lacks nothing, and nobody installs it there. Each server that lacks something says what, in
+    `services`, in Device Activity and on the app's page in Settings, and an app's `machines` tool says it
+    (`OneCore.Service.machines/2`): `def lacks, do: if(System.find_executable("redis-server"), do: nil, else: "Redis isn't installed")`.
   - Its public functions are what the rest of the app calls, and nothing else can. In a tool,
     `OneCore.Service.call(call, Hello.Door, :rings)` runs `Hello.Door.rings(service)` on a machine that runs the
     service and gives its answer, where `service` is the service's process there. More arguments follow it:

@@ -59,7 +59,7 @@ defmodule OneCore.Apps.Version.Description do
 
       services =
         for service <- json["services"] || [],
-            do: %{name: service["name"], called: service["called"], needs: service["needs"], os: service["os"]}
+            do: %{name: service["name"], called: service["called"], needs: service["needs"], os: service["os"], auto: service["auto"] == true}
 
       under = {:described, artifact, json["code"]}
       tools = Enum.map(said.tools, &Version.schemas/1)

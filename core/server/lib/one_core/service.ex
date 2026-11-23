@@ -23,7 +23,17 @@ defmodule OneCore.Service do
   `"win32"`). Left out, it runs on any. Settings shows it only on servers of these, and a server of another refuses it.
   """
   @callback os() :: [String.t()]
-  @optional_callbacks os: 0
+
+  @doc """
+  What a machine lacks to run the service, in words its owner reads (`"Podman isn't installed"`), or `nil` when it
+  has what `needs/0` says. Saying it makes the service run by itself: on every server of whoever its app is installed
+  for whose machine lacks nothing, with no one installing it there, and again once a machine that lacked something
+  doesn't. A server whose machine lacks something says what, where its owner reads the service's servers (`services`,
+  Device Activity, its app's page in Settings). It is called by the server, in a process of its own, about once a
+  minute while the service isn't running there.
+  """
+  @callback lacks() :: String.t() | nil
+  @optional_callbacks os: 0, lacks: 0
 
   @doc """
   Calls a function of a service of this call's app, on a machine that runs it, and gives its answer. The
@@ -79,15 +89,29 @@ defmodule OneCore.Service do
 
   @doc """
   The machines that run a service of this call's app, as an app's `machines` tool answers them: each by its name,
-  whether it's on, and when it was last seen where it's off.
+  whether it's on, and when it was last seen where it's off. Then each machine of its servers that can't run it, by
+  its name, with what it `lacks` (`lacks/0`).
   """
   def machines(%Call{} = call, service) do
-    for server <- servers(call, service) do
-      case seen(server) do
-        at when is_integer(at) -> %{machine: name(server), on: false, last_on: at}
-        _ -> %{machine: name(server), on: true}
+    running =
+      for server <- servers(call, service) do
+        case seen(server) do
+          at when is_integer(at) -> %{machine: name(server), on: false, last_on: at}
+          _ -> %{machine: name(server), on: true}
+        end
       end
-    end
+
+    running ++ for {server, why} <- lacking(call, service), do: %{machine: name(server), on: !is_integer(seen(server)), lacks: why}
+  end
+
+  @doc "The keys of the servers acting for this call's subject that can't run a service of this call's app, each with what its machine lacks."
+  def lacking(%Call{} = call, service) do
+    app = whose(call, service)
+    service = Version.own_name(service)
+
+    for key <- OneCore.Apps.covering(OneCore.User.owner(call.subject) || "network"),
+        {^app, ^service, why} <- Servers.lacking(key),
+        do: {key, why}
   end
 
   @doc """

@@ -21,6 +21,10 @@ defmodule OneCore.Services do
   # while (a program that won't build, a device unplugged), and it would otherwise be started as fast as it stops.
   @apart 5_000
 
+  # How long a machine that lacks something a service needs waits to look again, in milliseconds. What it lacks is
+  # installed by someone, at any time, and nothing tells this server.
+  @recheck 60_000
+
   def child_spec(_), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [nil]}}
   def start_link(nil), do: :gen_statem.start_link({:local, __MODULE__}, __MODULE__, nil, [])
 
@@ -37,7 +41,8 @@ defmodule OneCore.Services do
   @doc """
   The services of the apps something that runs for `who` finds, as the bucket has them now: each one's
   `app`, its `service` name, what it's `called` where a person reads it, what it `needs` of a machine, the `os` it
-  runs on (`nil` for any), and the `servers` that run it.
+  runs on (`nil` for any), the `servers` that run it, whether it `auto`matically runs on each server that can
+  (`OneCore.Service.lacks/0`), and for each server that can't, what its machine `lacks`, by its key.
   """
   def list(who) do
     reload(who)
@@ -45,7 +50,9 @@ defmodule OneCore.Services do
 
     for {app, version} <- Enum.sort(Apps.running(who)), service <- version.services do
       servers = Enum.filter(acting, &({version.artifact, service.name} in Servers.installed(&1)))
-      %{app: app, service: service.name, called: service.called, needs: service.needs, os: Map.get(service, :os), servers: servers}
+      lacks = Map.new(for key <- acting, {artifact, name, why} <- Servers.lacking(key), {artifact, name} == {version.artifact, service.name}, do: {key, why})
+
+      %{app: app, service: service.name, called: service.called, needs: service.needs, os: Map.get(service, :os), servers: servers, auto: Map.get(service, :auto, false), lacks: lacks}
     end
   end
 
@@ -225,6 +232,17 @@ defmodule OneCore.Services do
 
   def handle_event({:timeout, service}, :start, stages, _data), do: {:next_state, start(stages, service), nil}
 
+  # A service that runs by itself where it can, and isn't installed here: whether this machine has what it needs is
+  # looked at in a process of its own, as it runs its app's code, and again after `@recheck` for as long as it's not.
+  def handle_event({:timeout, {:look, {app, name} = service}}, :look, _stages, _data) do
+    if service in automatic(app) and service not in here() do
+      Task.start(fn -> place(app, name) end)
+      {:keep_state_and_data, [{{:timeout, {:look, service}}, @recheck, :look}]}
+    else
+      :keep_state_and_data
+    end
+  end
+
   # What's asked of this reads which services are installed here from the bucket, through the edge, which may not
   # answer for a while (`OneCore.Edge.Unreachable`): that fails whoever asked, saying why (`call/1`), and not this.
   def handle_event({:call, from}, ask, stages, _data) do
@@ -318,7 +336,8 @@ defmodule OneCore.Services do
   defp called(from, {:start, app}, stages) do
     starting = for {^app, name} = service <- here(), Apps.Process.whereis(app, name) == nil, do: service
     cancel = for service <- starting, do: {{:timeout, service}, :cancel}
-    {:next_state, Enum.reduce(starting, stages, &start(&2, &1)), nil, [{:reply, from, :ok} | cancel]}
+    looking = for service <- automatic(app), service not in here(), do: {{:timeout, {:look, service}}, 0, :look}
+    {:next_state, Enum.reduce(starting, stages, &start(&2, &1)), nil, [{:reply, from, :ok} | cancel] ++ looking}
   end
 
   defp called(from, {:stopped, {app, name} = service}, stages) do
@@ -336,6 +355,47 @@ defmodule OneCore.Services do
     case :gen_statem.call(__MODULE__, ask) do
       {:unreachable, unreachable} -> raise unreachable
       answer -> answer
+    end
+  end
+
+  # The services of `app` that run by themselves on each server that has what they need.
+  defp automatic(app) do
+    case Apps.version(app) do
+      %{services: services} -> for %{auto: true, name: name} <- services, do: {app, name}
+      nil -> []
+    end
+  end
+
+  # Runs the service here if this machine has what it needs, and otherwise says what it lacks, where whoever reads
+  # the service's servers sees it (`list/1`). Said only when it changed, to the servers that read it.
+  defp place(app, name) do
+    lack = lack(app, name)
+
+    with true <- lack != :absent,
+         now = if(lack == nil, do: [], else: [lack]),
+         true <- now != for({^app, ^name, why} <- Servers.lacking(Server.key()), do: why) do
+      with :ok <- Servers.lack({app, name}, lack), do: Server.notify_servers(Servers.here())
+    end
+
+    if lack == nil do
+      with {:error, why} <- install(app, name), do: Logger.warning("#{app}'s #{name} wasn't installed here: #{why}")
+    end
+  rescue
+    unreachable in OneCore.Edge.Unreachable -> Logger.info("#{app}'s #{name} wasn't looked at, as the edge was unreachable: #{Exception.message(unreachable)}")
+  end
+
+  # What this machine lacks to run the service, in words its owner reads, or `nil`; `:absent` where its app isn't running here.
+  defp lack(app, name) do
+    with %{} <- Apps.version(app),
+         :ok <- known(app, name) do
+      case Apps.run(app, fn version -> Version.module(version, name).lacks() end) do
+        why when is_binary(why) or is_nil(why) -> why
+        :absent -> :absent
+        {:error, why} -> "It couldn't tell whether this machine has what it needs: #{why}"
+      end
+    else
+      nil -> :absent
+      {:error, why} -> why
     end
   end
 
