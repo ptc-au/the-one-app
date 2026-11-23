@@ -1,0 +1,21 @@
+{
+  "name": "downloads",
+  "description": "Downloads' edge function: the network's download page, for whoever's signed in to it, and each of its installers.",
+  "private": true,
+  "type": "module",
+  "paths": [
+    "download"
+  ],
+  "scripts": {
+    "build": "bun ../../../core/ui/dist/build/app.js \"$PWD/page\" \"$PWD/files/download/page\" apps/downloads/edge/page",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "bowser": "2.14.1",
+    "uqr": "0.1.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261116.1",
+    "typescript": "7.0.2"
+  }
+}
