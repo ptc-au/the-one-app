@@ -279,7 +279,8 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
   const host = () => (device().network ? new URL(device().network!).host : "Cloud")
   const [starting, setStarting] = createSignal(false)
   const go = async () => {
-    if (on()) {
+    // A computer that's a server already, as onboarding shown again finds it, only goes on.
+    if (on() && !device().server) {
       setStarting(true)
       // Going on says it's done; only why it couldn't is said.
       try {

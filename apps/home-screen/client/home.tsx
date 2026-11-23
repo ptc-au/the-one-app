@@ -39,9 +39,12 @@ const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(
 /// The runtime version this device's renderer draws: Welcome's pictures need 6 (CSS's own values and keyframes that
 /// end), which a device on an older build doesn't draw, so it isn't shown there until it's updated; nor is the Vault's.
 const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVersion ?? 0, () => 0))
-/// Which the Vault's step is, Set Up or Unlock, while either is still to be seen, asked again as each step goes on: the
-/// one before may have made this computer a server that's waiting for its person's key.
-const vaultNeed = createMemo(() => (["vault", "vault-unlock"].some((tip) => tips()?.includes(tip) === false) ? vaultStep() : undefined))
+/// Whether onboarding's shown again, from its first step, as they chose (`showOnboarding`), until they've gone on from
+/// its last.
+const [replaying, setReplaying] = createSignal(false)
+/// Which the Vault's step is, Set Up or Unlock, while either is still to be seen or onboarding's shown again, asked
+/// again as each step goes on: the one before may have made this computer a server that's waiting for its person's key.
+const vaultNeed = createMemo(() => (replaying() || ["vault", "vault-unlock"].some((tip) => tips()?.includes(tip) === false) ? vaultStep() : undefined))
 /// Whether an AI already uses the network as whoever's looking: an assistant let in (Claude, ChatGPT), or `one` run in a
 /// terminal, as a coding agent runs it (`command`), among their devices. Where that can't be asked, it's taken as one
 /// that does, so Connect your AI is never in the way.
@@ -49,41 +52,43 @@ const assisted = createMemo(() =>
   json<{ devices: { kind: string; command?: string | null }[] }>("sign-in_devices").then(({ devices }) => devices.some((device) => device.kind === "assistant" || !!device.command), () => true),
 )
 /// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, its name in the progress
-/// over it, and the devices it's for: Welcome on every one that draws it, Connect your AI after it where no AI uses the network as them yet, Open from
-/// anywhere on a computer's app, whose launcher has a shortcut, Your own server on a computer's app that isn't one of the network's
-/// servers, and last the Vault's where it needs a passkey: Set Up Your Vault once, and Unlock Your Vault once, on the
-/// first device that can't open it (`vaultStep`).
+/// over it, the devices it shows on (`here`): Welcome on every one that draws it, Connect your AI after it where no AI
+/// uses the network as them yet, Open from anywhere on a computer's app, whose launcher has a shortcut, Your own server
+/// on a computer's app that isn't one of the network's servers, and last the Vault's where it needs a passkey: Set Up
+/// Your Vault once, and Unlock Your Vault once, on the first device that can't open it (`vaultStep`); and where it shows
+/// again, as they chose to see onboarding again (`again`): on every device it's for, done or not, showing it done (an
+/// AI connected, this computer a server already, the Vault unlocked here) with Continue.
 const steps = [
-  { tip: "welcome", name: "Welcome", Step: Welcome, here: () => drawn() >= 6 },
-  { tip: "connect-ai", name: "Connect your AI", Step: ConnectAI, here: () => drawn() >= 6 && !assisted() },
-  { tip: "shortcut", name: "Open from anywhere", Step: OpenFromAnywhere, here: () => drawn() >= 6 && !!shortcut() },
-  { tip: "own-server", name: "Your own server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
-  { tip: "vault", name: "Vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up" },
-  { tip: "vault-unlock", name: "Vault", Step: (size: StepProps) => <VaultStep kind="unlock" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "unlock" },
+  { tip: "welcome", name: "Welcome", Step: Welcome, here: () => drawn() >= 6, again: () => drawn() >= 6 },
+  { tip: "connect-ai", name: "Connect your AI", Step: ConnectAI, here: () => drawn() >= 6 && !assisted(), again: () => drawn() >= 6 },
+  { tip: "shortcut", name: "Open from anywhere", Step: OpenFromAnywhere, here: () => drawn() >= 6 && !!shortcut(), again: () => drawn() >= 6 && !!shortcut() },
+  { tip: "own-server", name: "Your own server", Step: OwnServer, here: () => !!computer(device().target) && !device().server, again: () => !!computer(device().target) },
+  { tip: "vault", name: "Vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up", again: () => drawn() >= 6 && vaultNeed() === "set-up" },
+  { tip: "vault-unlock", name: "Vault", Step: (size: StepProps) => <VaultStep kind="unlock" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "unlock", again: () => drawn() >= 6 && vaultNeed() !== "set-up" && vaultNeed() !== null },
 ]
 type StepProps = { width: number; height: number; onContinue: () => void; progress?: Element }
 type Step = (typeof steps)[number]
-/// Each step gone on from (true), or started again (false), here since `tips` was asked, by its tip.
-const [continued, setContinued] = createSignal<Record<string, boolean>>({})
-/// Whether a step shows: until they go on from it, on this device or another (its tip, theirs).
-const showing = (tip: string) => (tips()?.includes(tip) === false ? continued()[tip] !== true : continued()[tip] === false)
-/// The step shown: the first for this device that shows. Where their tips can't be asked, none is: never in the way of
-/// their Home Screen.
-const step = () => steps.find(({ tip, here }) => here() && showing(tip))
-/// The steps this device shows, which the progress counts: each for it still to be seen as `tips` was asked, or gone on
-/// from or started again here since. One seen on another device before isn't one of them.
-const counted = () => steps.filter(({ tip, here }) => here() && (tips()?.includes(tip) === false || continued()[tip] !== undefined))
-/// Goes on from a step, showing the next, or the Home Screen, at once and keeping that it's been seen behind it, or
-/// (`again`) starts it again, as its tip set unseen has it.
-const go = (tip: string, again = false) => {
-  setContinued((done) => ({ ...done, [tip]: !again }))
+/// Each step gone on from here since `tips` was asked, or since onboarding was shown again, by its tip.
+const [continued, setContinued] = createSignal<Record<string, true>>({})
+/// The step shown: the first for this device still to be gone on from, as its tip says, on this device or another, or
+/// shown again, here. Where their tips can't be asked, none is: never in the way of their Home Screen.
+const step = () => (replaying() ? steps.find(({ tip, again }) => again() && !continued()[tip]) : steps.find(({ tip, here }) => here() && tips()?.includes(tip) === false && !continued()[tip]))
+/// The steps this device shows, which the progress counts: every one shown again, or each for it still to be seen as
+/// `tips` was asked. One seen on another device before isn't one of them.
+const counted = () => steps.filter(({ tip, here, again }) => (replaying() ? again() : here() && tips()?.includes(tip) === false))
+/// Goes on from a step, showing the next, or the Home Screen, at once and keeping that it's been seen behind it.
+const go = (tip: string) => {
+  setContinued((done) => ({ ...done, [tip]: true }))
   refresh(vaultNeed)
-  call("home-screen_tip", { name: tip, seen: !again }).catch((error) => toast(error as Error))
+  call("home-screen_tip", { name: tip, seen: true }).catch((error) => toast(error as Error))
 }
-/// Whether they've been through Welcome, so the Home Screen's tips offer it again (pills.tsx).
-export const welcomed = () => !showing("welcome") && tips() !== undefined
-/// Goes on from Welcome, or (`again`) starts it again from its first step, as the tip `welcome` set unseen has it.
-export const welcome = (again = false) => go("welcome", again)
+/// Whether they've been through onboarding, so the Home Screen's tips offer it again (pills.tsx).
+export const onboarded = () => tips() !== undefined && !step()
+/// Shows onboarding again from its first step, through every step this device has, done or not.
+export const showOnboarding = () => {
+  setContinued({})
+  setReplaying(true)
+}
 
 function HomeScreen(props: { owners: Owner[] }) {
   const layout = createScreens(props)

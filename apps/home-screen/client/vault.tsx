@@ -31,11 +31,12 @@ const needs = (security: Security, key: Key, server?: string): VaultStepKind | u
   return undefined
 }
 
-/// Which the Vault step is for whoever's looking, or none, and none where it can't be asked: never in their way.
+/// Which the Vault step is for whoever's looking, or none (`undefined`), and where it can't be asked, `null`: never in
+/// their way, even shown again.
 export const vaultStep = () =>
   Promise.all([json<Security>("vault_security"), json<Key>("encryption_key"), client()]).then(
     ([security, key, { server }]) => needs(security, key, server?.key),
-    () => undefined,
+    () => null,
   )
 
 /// How wide the heading's words go before they wrap, as the mockup's 34em.

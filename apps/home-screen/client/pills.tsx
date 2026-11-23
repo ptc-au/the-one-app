@@ -5,7 +5,7 @@ import { BAR, DOTS } from "./layout.ts"
 import { type Kind } from "./machine.ts"
 import { looks } from "./looks.ts"
 import { home, state, seen, along, rolled, at, screensOf, lastOf, editingNow, editingOwner, launcher, device } from "./store.ts"
-import { welcome, welcomed } from "./home.tsx"
+import { onboarded, showOnboarding } from "./home.tsx"
 import { type Owner } from "./owners.ts"
 
 /// A window onto a row for each owner, which rolls as the owners move up and down, `at` in owners, each row `height`
@@ -192,7 +192,7 @@ export function TipsPill() {
         ]
   return (
     <View style={[looks.pill, looks.glass, looks.ownerPill]}>
-      <Tips tips={tips()} action={welcomed() ? { label: "Show Welcome Again", icon: "arrow-counter-clockwise", onAction: () => welcome(true) } : undefined} />
+      <Tips tips={tips()} action={onboarded() ? { label: "Show Onboarding Again", icon: "arrow-counter-clockwise", onAction: showOnboarding } : undefined} />
     </View>
   )
 }

@@ -3812,13 +3812,6 @@
       "Tips"
     ]
   },
-  "Launcher, Welcome again": {
-    "like": "Launcher, its tips once welcomed",
-    "taps": [
-      "Tips",
-      "Show Welcome Again"
-    ]
-  },
   "Launcher, its tips by ⌘?": {
     "like": "Launcher on a computer",
     "answers": {
@@ -4441,6 +4434,109 @@
         "may": []
       },
       "home-screen_tip": {}
+    }
+  },
+  "Launcher, Onboarding again": {
+    "like": "Launcher, its tips once welcomed",
+    "taps": [
+      "Tips",
+      "Show Onboarding Again"
+    ]
+  },
+  "Launcher, Onboarding again, at its Vault": {
+    "like": "Launcher, Onboarding again",
+    "taps": [
+      "Tips",
+      "Show Onboarding Again",
+      "Continue",
+      "Later",
+      "Continue",
+      "Continue"
+    ],
+    "wait": 1500,
+    "answers": {
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "target": "macos-aarch64",
+        "runtimeVersion": 6,
+        "network": "https://ptcau.app",
+        "shortcut": {
+          "keys": "alt+Space",
+          "default": "alt+Space"
+        },
+        "server": {
+          "key": "abc"
+        }
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "sign-in_devices": {
+        "devices": [
+          {
+            "kind": "assistant",
+            "name": "Claude"
+          }
+        ],
+        "passkeys": []
+      },
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "email": "sam@example.com"
+          }
+        ]
+      },
+      "vault_security": {
+        "readiness": "ready",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [],
+        "may": []
+      },
+      "encryption_key": {
+        "owner": "users/sam",
+        "device": null,
+        "check": null,
+        "slot": null,
+        "devices": [],
+        "asking": [],
+        "wrapped": null,
+        "access": [
+          {
+            "servers": [
+              {
+                "key": "abc"
+              }
+            ],
+            "missing": []
+          }
+        ]
+      },
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome",
+          "connect-ai",
+          "shortcut",
+          "own-server",
+          "vault",
+          "vault-unlock"
+        ]
+      }
     }
   }
 }
