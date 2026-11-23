@@ -378,9 +378,10 @@ defmodule OneCore.Servers do
   end
 
   # How long a server that's stopping to start again, to update, takes to be back, in milliseconds: it finishes what
-  # it took, then starts again, and connects to the edge as it does. Well within what an MCP client waits for an
+  # it took, then starts again, and connects to the edge as it does: 7 to 24 s for PTC's network server on 23 Nov,
+  # where 20 s left a call that waited for it failing a second before it was back. What an MCP client waits for an
   # answer, 30 seconds. One that isn't back by then may be verifying a build that doesn't start, which takes minutes.
-  @back 20_000
+  @back 30_000
 
   # How recently a server that isn't connected left for it to be coming back, in milliseconds: one whose connection
   # dropped, or that restarted without saying it was stopping, connects again within seconds, as the relay's own
