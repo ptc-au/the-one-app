@@ -52,6 +52,7 @@ const MUTANTS = {
   // From the reports and look-issues.
   "held-redraw": { bug: "what the finger holds still drawn again each third frame (L86)", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
   "surface-dropped": { bug: "a moving surface dropped and what's in it painted again each third frame", plays: [animation("clients/app/renderer/tests/gallery", "Card dragged along")] },
+  "rest-undrawn": { bug: "a layer carried along drawn from its picture half a pixel aside in a motion's last frame, left so at rest (the App Library after a wheel's spin, 23 Nov)", plays: [animation("apps/home-screen", "Launcher, five pages")] },
   "tile-squeezed": { bug: "a tile shown in part drawn from all of it, squeezed", plays: [checks("clients/app/renderer/tests/gallery", "Motion/Long list")] },
   "hit-layer": { bug: "what a moving layer draws taking a press where it rests, not where it's drawn", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Hit areas")] },
   "leaving-loop": { bug: "what's closed with a spinner in it never gone, its see-through scrim taking every press (Vault on Andre's Mac and ptcau.app in Chrome, 23 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Over the page/A sheet closed as something's under way")] },

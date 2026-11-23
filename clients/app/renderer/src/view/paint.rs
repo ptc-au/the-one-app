@@ -357,6 +357,9 @@ pub(super) struct Painter<'a> {
     pub(super) since: f64,
     pub(super) transitions: &'a mut transition::Transitions,
     pub(super) animating: bool,
+    /// It drew a layer from its picture moved by a fraction of a pixel or grown, as what it's in carried it along,
+    /// softer than it's drawn at rest (`paint_layer`).
+    pub(super) softened: bool,
     /// The window, where what's fixed is placed.
     pub(super) window: Bounds<f32>,
     /// What of it can show: the window, or in a surface the tiles it draws (`Painter::surface`), outside which no text

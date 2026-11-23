@@ -308,6 +308,7 @@ impl Screen {
             since: self.changed.take().unwrap_or(now).min(now),
             transitions: &mut self.transitions,
             animating: false,
+            softened: false,
             window,
             shows: window,
             turn: TransformationMatrix::unit(),
@@ -455,14 +456,14 @@ impl Screen {
         self.chrome.tip = self.tip.filter(|_| self.rail && !self.layer).map(|tip| painter.tip(tip, self.insets.right, line, self.chrome.pressing_tip));
         let Placing { placed, rects, tab_order, intersections, drag_regions, kept_regions, glass, modal, framed } = placing;
         (self.chrome.glass, self.chrome.drag_regions, self.chrome.kept_regions) = (glass, drag_regions, kept_regions);
-        Drawing { placed, tab_order, rects, animating: painter.animating, modal, wanted: painter.wanted, intersections, framed }
+        Drawing { placed, tab_order, rects, animating: painter.animating, softened: painter.softened, modal, wanted: painter.wanted, intersections, framed }
     }
 
     /// Keeps what the frame drew, for the pointer, the keyboard, the inspector and the window: where each frame's page
     /// is, the pictures to fetch, what's under the pointer and Tab's order. → where each node listening for
     /// `intersection` is near the window.
     fn keep(&mut self, drawn: Drawing, plan: &Plan) -> Vec<(Id, bool)> {
-        let Drawing { placed, mut tab_order, rects, animating, modal, wanted, intersections, framed } = drawn;
+        let Drawing { placed, mut tab_order, rects, animating, softened, modal, wanted, intersections, framed } = drawn;
         // Each frame's page is drawn in the room it had now from the next frame, if that's changed.
         for (id, rect) in framed {
             if let Some(child) = self.frames.get_mut(&id) {
@@ -531,7 +532,10 @@ impl Screen {
                 self.rects.entry(id).or_insert(rect);
             }
         }
-        self.animating = animating || moving || self.coasting();
+        // A frame that drew a layer carried along from its picture, moved by a fraction of a pixel or grown, is followed
+        // by one that draws it as it is, as Core Animation's last frame of an animation is its model's: once nothing
+        // moved, it stayed softer than drawn at rest (the App Library after a wheel's spin, 23 Nov). (Mutant: none.)
+        self.animating = animating || moving || self.coasting() || (softened && !crate::mutants::mutant("rest-undrawn"));
         intersections
     }
 
@@ -724,6 +728,7 @@ struct Drawing {
     tab_order: Vec<Id>,
     rects: Rects,
     animating: bool,
+    softened: bool,
     modal: Option<Id>,
     wanted: Vec<String>,
     intersections: Vec<(Id, bool)>,

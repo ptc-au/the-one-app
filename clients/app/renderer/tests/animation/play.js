@@ -8,7 +8,7 @@ import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./headless.js"
 import { finger, ios, moves, projected, selector, single, travel } from "./gesture.js"
 import { wordsApart } from "../rules.js"
-import { requests } from "./judges.js"
+import { requests, unlike as unlikeAfresh } from "./judges.js"
 import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
 
 
@@ -91,8 +91,11 @@ async function play(built, scene, name, motion, hz, folder) {
   const origin = motion.opensFrom && { op: "query", ...selector(motion.opensFrom) }
   const replay = { op: "replay", ...(motion.from ? selector(motion.from) : {}), ...(events ? { events } : { moves: stretches, lift }), hz, snap: true, ...(motion.follow ? { track: selector(motion.follow) } : {}), ...(motion.once ? { count: { ...selector(motion.once), includeHidden: true } } : {}), ...(motion.shows ? { shows: { ...selector(motion.shows), includeHidden: true } } : {}), ...(motion.holds ? { holds: { ...selector(motion.holds), includeHidden: true } } : {}), ...(motion.named ? { named: { ...selector(motion.named), includeHidden: true } } : {}), ...(motion.apart ? { apart: { ...selector(motion.apart), includeHidden: true } } : {}), ...(motion.frameMs ? { frame_ms: motion.frameMs } : {}), ...(ssh ? {} : { whole: true, nodes: true }), link: link(hz) }
   rmSync(join(folder, "frames"), { recursive: true, force: true })
-  const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), written(replay, folder)])
-  const answer = ran.answers.at(-1)
+  // Then, at rest, the frame it ends on is the one drawn afresh, with nothing kept and no surface (`fresh`): a surface
+  // drawn wrong only once something scrolled (a card's list's rows shown past its box, 23 Nov) passed every frame drawn
+  // whole, which draws from the same surfaces, and the scene's own fresh check, before the scroll.
+  const ran = await run(at, folder, { ...scene, reducedMotion: motion.reducedMotion, hz }, [{ op: "clock", step: 1000 }, ...taps, ...(origin ? [origin] : []), written(replay, folder), ...(ssh ? [] : [{ op: "fresh" }])])
+  const answer = ran.answers.at(ssh ? -1 : -2)
   if (ran.failed || !answer?.result) {
     process.exitCode = 1
     return { said: `  ${hz} Hz FAILS: ${answer?.error ?? ran.said.split("\n").at(-1)}` }
@@ -118,6 +121,8 @@ async function play(built, scene, name, motion, hz, folder) {
   // What fails it: anything it took out still drawn once it's settled, and glass it should keep blurred drawn plain.
   const failed = []
   if (leaving) failed.push(`${leaving} taken out still drawn going once it settled`)
+  const afresh = !ssh && unlikeAfresh(ran.answers.at(-1), folder)
+  if (afresh) failed.push(`at rest, ${afresh}`)
   // Every frame, drawn only where it changed on what was kept of the frames before, is the one drawn whole, within a
   // level: the frame drawn whole beside it as `frames/<n>-whole.png`.
   const unlike = frames.findIndex((frame) => frame.unlike_whole)

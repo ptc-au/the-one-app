@@ -18,7 +18,8 @@ impl Painter<'_> {
         // layer's; under any other than it was painted under, it's painted again, as a picture grown, or moved by a
         // fraction of a pixel, is softer than what it's of. Laid out elsewhere by whole device pixels (a scroll), only
         // its picture moves.
-        let whole = |by: f32| (by * self.scale - (by * self.scale).round()).abs() < 1e-3;
+        let scale = self.scale;
+        let whole = move |by: f32| (by * scale - (by * scale).round()).abs() < 1e-3;
         let carried = std::iter::successors(self.tree.parent(id), |at| self.tree.parent(*at)).any(|at| self.moving.contains(&at));
         let surfaced = match self.layers.get(&id) {
             Some(layer) if layer.key != key => Surfaced::Relaid,
@@ -49,6 +50,7 @@ impl Painter<'_> {
             at.x + k * (centre.x + translate.x - own * centre.x + own * moved.x) - grown * was.x,
             at.y + k * (centre.y + translate.y - own * centre.y + own * moved.y) - grown * was.y,
         );
+        self.softened |= carried && (grown != 1.0 || !whole(by.x) || !whole(by.y));
         let opacity = opacity * look.opacity;
         // Cross-dissolving to where it rests, with less motion, it's drawn where it was too, fading out as it fades in
         // here, as UIKit's cross-dissolve draws a snapshot of a view where it was, rather than taken out and brought
