@@ -171,7 +171,7 @@ defmodule Vault.SignIns do
     # their signing in says.
     item =
       Items.write!(call, db, name, Items.kept_by(call, app, name, service["hosts"]), :person, fn record ->
-        record |> kept_tokens(service, tokens) |> Map.put("status", nil) |> Map.update!("access", &Enum.uniq(&1 ++ [app]))
+        record |> Items.add_hosts(service["hosts"]) |> kept_tokens(service, tokens) |> Map.put("status", nil) |> Map.update!("access", &Enum.uniq(&1 ++ [app]))
       end)
 
     Access.in_step(call, db, app, true)
