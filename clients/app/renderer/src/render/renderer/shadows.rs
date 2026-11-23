@@ -7,6 +7,9 @@ pub(super) const TILE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm
 /// The widest a shadow's tile is, in device pixels; a wider one's shadow is worked out where it's drawn.
 const TILE_MOST: f32 = 2048.0;
 
+/// The most shadows' tiles a renderer keeps past a frame (`Renderer::draw_frame`).
+pub(super) const SHADOW_TILES: usize = 64;
+
 /// What tells a shadow's tile from another's: its blur, its corners and its box's size in the tile, to a quarter of a
 /// device pixel.
 pub(super) type TileKey = [u32; 7];
@@ -63,12 +66,9 @@ impl Renderer {
     }
 
     /// Draws a shadow's tile, `size`, from its box alone (`instance`, with the frame's `globals` and `gamma` of its
-    /// own), and keeps it, as `key`'s. A window's shadows are few and keep their tiles; past 64 they're made again.
+    /// own), and keeps it, as `key`'s.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_tile(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, instances: &wgpu::BindGroup, key: TileKey, (width, height): (u32, u32), globals: (u64, u64), gamma: (u64, u64), instance: (u64, u64)) {
-        if self.shadow_tiles.len() >= 64 {
-            self.shadow_tiles.clear();
-        }
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },

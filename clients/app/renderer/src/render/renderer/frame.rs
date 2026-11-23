@@ -292,10 +292,11 @@ impl Renderer {
         let drawn: std::collections::BTreeSet<usize> = planned.iter().flat_map(|planned| planned.batches.iter().copied()).collect();
         let shadows = drawn.into_iter().filter_map(|at| if let PrimitiveBatch::Shadows(shadows) = &batches[at] { Some(*shadows) } else { None });
         let in_tiles: Vec<&Scene> = rastering.iter().flat_map(|(_, tiles)| tiles.iter().map(|tile| &*tile.scene)).collect();
+        let mut used: std::collections::HashSet<TileKey> = Default::default();
         for shadows in shadows.chain(in_tiles.iter().map(|scene| &scene.shadows[..])) {
             for shadow in shadows.iter() {
                 let Some((key, blur, radii, tile)) = tiled(shadow) else { continue };
-                if self.shadow_tiles.contains_key(&key) || tiles.iter().any(|(planned, ..)| *planned == key) {
+                if !used.insert(key) || self.shadow_tiles.contains_key(&key) {
                     continue;
                 }
                 let side = [(tile[0] + 6.0 * blur).ceil() as u32, (tile[1] + 6.0 * blur).ceil() as u32];
@@ -316,6 +317,12 @@ impl Renderer {
                 let instance = self.push_instances(std::slice::from_ref(&alone));
                 tiles.push((key, (side[0], side[1]), globals, instance));
             }
+        }
+        // A window's shadows are few and keep their tiles; past `SHADOW_TILES`, those this frame doesn't draw are let go
+        // before its own are made, never as they're made: let go among them, a shadow whose tile went was worked out where
+        // it's drawn, a level from its tile's 8 bits, and its dither flipped (Welcome's cross-fades, 120 Hz).
+        if self.shadow_tiles.len() + tiles.len() > SHADOW_TILES {
+            self.shadow_tiles.retain(|key, _| used.contains(key));
         }
         // What a batch's instances bind is as much as the largest needs, from its offset, so one bind group serves all.
         let largest = instances

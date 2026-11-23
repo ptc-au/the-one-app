@@ -23,7 +23,7 @@ mod target;
 use blur::Blur;
 use params::{GammaParams, GlobalParams, gamma_ratios};
 pub(crate) use pipelines::Pipelines;
-use shadows::{TileKey, tiled};
+use shadows::{SHADOW_TILES, TileKey, tiled};
 use stamps::Stamps;
 use target::{Image, Target};
 

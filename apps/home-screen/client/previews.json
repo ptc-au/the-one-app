@@ -3586,6 +3586,24 @@
           "role": "tab",
           "name": "Multiplayer"
         }
+      },
+      "Secure chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Secure"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Secure"
+        }
       }
     }
   },
@@ -3599,6 +3617,24 @@
     ],
     "wait": 4000,
     "motions": {
+      "Automate anything chosen": {
+        "from": {
+          "role": "tab",
+          "name": "Automate anything"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "tab",
+          "name": "Automate anything"
+        }
+      },
       "Create your own apps chosen": {
         "from": {
           "role": "tab",
