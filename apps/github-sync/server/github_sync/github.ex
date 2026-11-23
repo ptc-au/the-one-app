@@ -55,9 +55,6 @@ defmodule GitHubSync.GitHub do
     request(call, "POST", "/orgs/#{org}/repos", %{name: name, private: private}, {:token, token})["full_name"]
   end
 
-  @doc "Deletes the repo `full` on GitHub, as the app (GitHub's \"Delete a repository\", with Administration: write)."
-  def delete(call, token, full), do: request(call, "DELETE", "/repos/#{full}", nil, {:token, token})
-
   @doc "The pull request from `branch` that's open on `full`, or one opened from it, with `title` and `body`."
   def pull_request(call, token, full, branch, title, body) do
     [owner, _] = String.split(full, "/")

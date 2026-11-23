@@ -22,7 +22,6 @@ GitHub Sync keeps each repo its GitHub App is installed on in the network's Git 
 - Who pushes is Git Repos' sharing, as for any repo: GitHub Sync adds no rules of its own, and nobody needs a GitHub
   account.
 - `repos` says which repos sync and when each last did, as its page in Settings shows. `sync` syncs them now.
-- `remove` deletes a synced repo on GitHub, for good, and puts its copy here in Recently Deleted. Do it only when asked.
 - `connect` is done once, by the network's owner: it takes the code GitHub's manifest flow sends back once the
   GitHub App is made, and keeps the app's private key in the network's Vault. Then the app is installed on the
   organisation, for the repos that should sync.

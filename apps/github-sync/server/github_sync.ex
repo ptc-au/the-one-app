@@ -109,17 +109,6 @@ defmodule GitHubSync do
         outputs: synced
       },
       %{
-        name: "remove",
-        description:
-          "Deletes a synced repo on GitHub, for good, and puts its copy in the network in Recently Deleted. Only the network's owners remove one",
-        inputs: %{
-          type: "object",
-          properties: %{repo: %{type: "string", description: "The repo in the network, as `repos` names it"}},
-          required: ["repo"]
-        },
-        outputs: %{type: "object", properties: %{github: %{type: "string"}, repo: %{type: "string"}}, required: ["github", "repo"]}
-      },
-      %{
         name: "sync",
         task_support: :optional,
         description: "Brings every synced repo up to date with GitHub now, as it's done each minute",
@@ -169,17 +158,6 @@ defmodule GitHubSync do
     token = token(call, app)
     full = GitHub.create(call, token, app["org"], name, Map.get(inputs, "private", true))
     synced(call, token, full)
-  end
-
-  def call("remove", %{"repo" => repo}, call) do
-    if not Call.owns?(%{call | subject: "network"}),
-      do: raise(OneCore.Call.Refused, "Only the network's owners remove a repo from GitHub.")
-
-    %{"github" => full} = record(call, repo) || raise(OneCore.Call.Refused, "#{repo} doesn't sync with GitHub.")
-    GitHub.delete(call, token(call, connected(call)), full)
-    Artifact.remove(call.own, "repos/" <> repo)
-    Call.tool(call, "git-repos", "remove", %{"repo" => repo})
-    %{github: full, repo: repo}
   end
 
   def call("sync", _inputs, call) do
