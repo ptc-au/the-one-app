@@ -28,6 +28,7 @@ import { createScreens } from "./screens.ts"
 import { createPaging } from "./paging.ts"
 import { Carried, createCarry } from "./carry.tsx"
 import { Welcome } from "./welcome.tsx"
+import { ConnectAI } from "./connect.tsx"
 import { computer, OwnServer } from "./own-server.tsx"
 import { OpenFromAnywhere } from "./open-from-anywhere.tsx"
 import { shortcut } from "./shortcut.tsx"
@@ -41,12 +42,20 @@ const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVers
 /// Which the Vault's step is, Set Up or Unlock, while either is still to be seen, asked again as each step goes on: the
 /// one before may have made this computer a server that's waiting for its person's key.
 const vaultNeed = createMemo(() => (["vault", "vault-unlock"].some((tip) => tips()?.includes(tip) === false) ? vaultStep() : undefined))
+/// Whether an AI already uses the network as whoever's looking: an assistant let in (Claude, ChatGPT), or `one` run in a
+/// terminal, as a coding agent runs it (`command`), among their devices. Where that can't be asked, it's taken as one
+/// that does, so Connect your AI is never in the way.
+const assisted = createMemo(() =>
+  json<{ devices: { kind: string; command?: string | null }[] }>("sign-in_devices").then(({ devices }) => devices.some((device) => device.kind === "assistant" || !!device.command), () => true),
+)
 /// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, and the devices it's
-/// for: Welcome on every one that draws it, Open from anywhere on a computer's app, whose launcher has a shortcut, Your own server on a computer's app that isn't one of the network's
+/// for: Welcome on every one that draws it, Connect your AI after it where no AI uses the network as them yet, Open from
+/// anywhere on a computer's app, whose launcher has a shortcut, Your own server on a computer's app that isn't one of the network's
 /// servers, and last the Vault's where it needs a passkey: Set Up Your Vault once, and Unlock Your Vault once, on the
 /// first device that can't open it (`vaultStep`).
 const steps = [
   { tip: "welcome", Step: Welcome, here: () => drawn() >= 6 },
+  { tip: "connect-ai", Step: ConnectAI, here: () => drawn() >= 6 && !assisted() },
   { tip: "shortcut", Step: OpenFromAnywhere, here: () => drawn() >= 6 && !!shortcut() },
   { tip: "own-server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
   { tip: "vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up" },

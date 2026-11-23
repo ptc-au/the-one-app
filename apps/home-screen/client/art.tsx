@@ -30,6 +30,13 @@ const art = styles({
   ink: (color: `#${string}`) => ({ color }),
   plainWords: (fontSize: number, fontWeight: number, lineHeight: number, letterSpacing: number) => ({ fontSize, fontWeight, lineHeight, letterSpacing }),
   paint: (fill: `#${string}` | "none", stroke: `#${string}` | "none", strokeWidth: number) => ({ fill, stroke, strokeWidth }),
+  shift: (translateX: number, translateY: number) => ({ translateX, translateY }),
+  zoom: (scale: number) => ({ scale }),
+  // A pointer gliding from one place to the next, and a part pressed, as a person's hand moves them.
+  glides: { transitionProperty: ["translateX", "translateY"], transition: tokens.motion.travel },
+  presses: { transitionProperty: ["scale"], transition: tokens.motion.quick },
+  // What shows partway through a picture fades and grows in, as a sheet does.
+  shows: { opacity: { default: 1, entering: 0 }, scale: { default: 1, entering: 0.96 }, transitionProperty: ["opacity", "scale"], transition: tokens.motion.settle },
   // What's absolute in a box is placed in it, as every part of a picture is placed in what it's in.
   placing: { position: "relative" },
   row: { flexDirection: "row", alignItems: "center" },
@@ -79,6 +86,11 @@ export type BoxProps = {
   z?: number
   turn?: number
   move?: Styles
+  /** Moved from where it's placed, gliding there as it changes (a pointer), and grown (a part pressed). */
+  shift?: [number, number]
+  zoom?: number
+  /** It fades in as it's first drawn, as what shows partway through a picture does. */
+  shows?: boolean
   delay?: number
   duration?: number
   style?: Styles
@@ -115,6 +127,9 @@ export const boxStyle = (props: BoxProps): Styles => [
   props.turn !== undefined && art.turn(props.turn),
   props.move,
   props.move && art.timing(props.delay ?? 0, props.duration ?? 400),
+  props.shift && [art.shift(...props.shift), art.glides],
+  props.zoom !== undefined && [art.zoom(props.zoom), art.presses],
+  props.shows && art.shows,
   props.style,
 ]
 

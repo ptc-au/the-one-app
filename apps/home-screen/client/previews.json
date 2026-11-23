@@ -916,7 +916,10 @@
   },
   "Launcher, two networks on the computer": {
     "like": "Launcher on a computer",
-    "size": [1040, 721],
+    "size": [
+      1040,
+      721
+    ],
     "answers": {
       "one/client": {
         "device": "Mac",
@@ -3270,13 +3273,256 @@
     ],
     "wait": 4000
   },
-  "Vault, set up": {"like": "Home, two pages", "size": [900, 560], "answers": {"home-screen_tips": {"seen": ["own-server", "pull-home", "welcome"]}, "sign-in_network": {"name": "The PTC App", "icon": null, "logo": null}, "encryption_key": {"owner": "users/sam", "device": null, "check": null, "slot": null, "devices": [], "asking": [], "wrapped": null, "access": []}, "sign-in_people": {"people": [{"who": "users/sam", "called": "Sam", "email": "sam@example.com"}]}, "vault_security": {"readiness": "not_set_up", "owner": "users/sam", "holds": false, "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "devices": [], "asking": [], "artifact": "vault/users/sam", "epoch": 1, "servers": [], "may": []}, "one/client": {"device": "Mac", "build": "0.26.0", "theme": null, "mac": true, "target": "macos-aarch64", "runtimeVersion": 6}, "home-screen_tip": {"seen": ["pull-home", "welcome"]}}, "wait": 1000},
-  "Vault, unlock": {"like": "Vault, set up", "answers": {"vault_security": {"readiness": "device_lacks_key", "owner": "users/sam", "holds": false, "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "devices": [], "asking": [], "artifact": "vault/users/sam", "epoch": 1, "servers": ["s1"], "may": []}}},
-  "Vault, unlock, why not Google": {"like": "Vault, unlock", "taps": ["Why not just Sign in with Google?"], "answers": {}},
-  "Vault, a server waiting": {"like": "Vault, set up", "answers": {"vault_security": {"readiness": "ready", "owner": "users/sam", "holds": true, "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "devices": [], "asking": [], "artifact": "vault/users/sam", "epoch": 1, "servers": ["s1"], "may": []}, "encryption_key": {"owner": "users/sam", "device": null, "check": "c", "slot": "s", "devices": [], "asking": [], "wrapped": null, "access": [{"artifact": "vault/users/sam", "servers": [{"key": "s1", "name": "workspace"}], "missing": [{"key": "s2", "name": "Sam's Mac"}], "extra": [], "problems": ["Sam's Mac is waiting for your key."]}]}, "sign-in_people": {"people": [{"who": "users/sam", "called": "Sam", "email": null}]}}},
-  "Vault, set up, on a phone": {"like": "Vault, set up", "size": [390, 844], "answers": {"one/client": {"device": "iPhone", "build": "0.26.0", "theme": null, "mac": true, "target": "ios-aarch64", "runtimeVersion": 6}}},
-  "Vault, unlock, on a phone": {"like": "Vault, set up, on a phone", "answers": {"vault_security": {"readiness": "device_lacks_key", "owner": "users/sam", "holds": false, "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "devices": [], "asking": [], "artifact": "vault/users/sam", "epoch": 1, "servers": ["s1"], "may": []}}},
-  "Vault in the launcher": {"like": "Launcher on a computer", "answers": {"home-screen_tips": {"seen": ["own-server", "pull-home", "welcome"]}, "sign-in_network": {"name": "The PTC App", "icon": null, "logo": null}, "encryption_key": {"owner": "users/sam", "device": null, "check": null, "slot": null, "devices": [], "asking": [], "wrapped": null, "access": []}, "sign-in_people": {"people": [{"who": "users/sam", "called": "Sam", "email": "sam@example.com"}]}, "vault_security": {"readiness": "not_set_up", "owner": "users/sam", "holds": false, "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "devices": [], "asking": [], "artifact": "vault/users/sam", "epoch": 1, "servers": [], "may": []}, "home-screen_tip": {"seen": ["pull-home", "welcome"]}, "one/client": {"device": "Mac", "build": "0.26.0", "theme": null, "launcher": true, "mac": true, "runtimeVersion": 6}}, "wait": 1000},
+  "Vault, set up": {
+    "like": "Home, two pages",
+    "size": [
+      900,
+      560
+    ],
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "own-server",
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "encryption_key": {
+        "owner": "users/sam",
+        "device": null,
+        "check": null,
+        "slot": null,
+        "devices": [],
+        "asking": [],
+        "wrapped": null,
+        "access": []
+      },
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "email": "sam@example.com"
+          }
+        ]
+      },
+      "vault_security": {
+        "readiness": "not_set_up",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [],
+        "may": []
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "mac": true,
+        "target": "macos-aarch64",
+        "runtimeVersion": 6
+      },
+      "home-screen_tip": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      }
+    },
+    "wait": 1000
+  },
+  "Vault, unlock": {
+    "like": "Vault, set up",
+    "answers": {
+      "vault_security": {
+        "readiness": "device_lacks_key",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [
+          "s1"
+        ],
+        "may": []
+      }
+    }
+  },
+  "Vault, unlock, why not Google": {
+    "like": "Vault, unlock",
+    "taps": [
+      "Why not just Sign in with Google?"
+    ],
+    "answers": {}
+  },
+  "Vault, a server waiting": {
+    "like": "Vault, set up",
+    "answers": {
+      "vault_security": {
+        "readiness": "ready",
+        "owner": "users/sam",
+        "holds": true,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [
+          "s1"
+        ],
+        "may": []
+      },
+      "encryption_key": {
+        "owner": "users/sam",
+        "device": null,
+        "check": "c",
+        "slot": "s",
+        "devices": [],
+        "asking": [],
+        "wrapped": null,
+        "access": [
+          {
+            "artifact": "vault/users/sam",
+            "servers": [
+              {
+                "key": "s1",
+                "name": "workspace"
+              }
+            ],
+            "missing": [
+              {
+                "key": "s2",
+                "name": "Sam's Mac"
+              }
+            ],
+            "extra": [],
+            "problems": [
+              "Sam's Mac is waiting for your key."
+            ]
+          }
+        ]
+      },
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "email": null
+          }
+        ]
+      }
+    }
+  },
+  "Vault, set up, on a phone": {
+    "like": "Vault, set up",
+    "size": [
+      390,
+      844
+    ],
+    "answers": {
+      "one/client": {
+        "device": "iPhone",
+        "build": "0.26.0",
+        "theme": null,
+        "mac": true,
+        "target": "ios-aarch64",
+        "runtimeVersion": 6
+      }
+    }
+  },
+  "Vault, unlock, on a phone": {
+    "like": "Vault, set up, on a phone",
+    "answers": {
+      "vault_security": {
+        "readiness": "device_lacks_key",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [
+          "s1"
+        ],
+        "may": []
+      }
+    }
+  },
+  "Vault in the launcher": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "own-server",
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "encryption_key": {
+        "owner": "users/sam",
+        "device": null,
+        "check": null,
+        "slot": null,
+        "devices": [],
+        "asking": [],
+        "wrapped": null,
+        "access": []
+      },
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "email": "sam@example.com"
+          }
+        ]
+      },
+      "vault_security": {
+        "readiness": "not_set_up",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [],
+        "may": []
+      },
+      "home-screen_tip": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "runtimeVersion": 6
+      }
+    },
+    "wait": 1000
+  },
   "Launcher, its tips once welcomed": {
     "like": "Launcher on a computer",
     "answers": {
@@ -3615,5 +3861,129 @@
         }
       ]
     }
+  },
+  "Connect your AI": {
+    "like": "Home, two pages",
+    "size": [
+      900,
+      560
+    ],
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome",
+          "own-server",
+          "vault",
+          "vault-unlock"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "sign-in_devices": {
+        "devices": [],
+        "passkeys": []
+      },
+      "one/client": {
+        "device": "iPhone",
+        "build": "0.26.0",
+        "theme": null,
+        "settings": true,
+        "runtimeVersion": 6,
+        "network": "https://ptcau.app"
+      }
+    },
+    "wait": 5000
+  },
+  "Connect your AI, ChatGPT": {
+    "like": "Connect your AI",
+    "taps": [
+      {
+        "role": "button",
+        "name": "ChatGPT"
+      }
+    ],
+    "wait": 5000
+  },
+  "Connect your AI, Coding agent": {
+    "like": "Connect your AI",
+    "taps": [
+      {
+        "role": "button",
+        "name": "Coding agent"
+      }
+    ],
+    "wait": 5000
+  },
+  "Connect your AI on a phone": {
+    "like": "Connect your AI",
+    "size": [
+      390,
+      844
+    ],
+    "wait": 5000
+  },
+  "Connect your AI on a phone, ChatGPT": {
+    "like": "Connect your AI on a phone",
+    "taps": [
+      {
+        "role": "button",
+        "name": "ChatGPT"
+      }
+    ],
+    "wait": 5000
+  },
+  "Connect your AI on a phone, Coding agent": {
+    "like": "Connect your AI on a phone",
+    "taps": [
+      {
+        "role": "button",
+        "name": "Coding agent"
+      }
+    ],
+    "wait": 5000
+  },
+  "Connect your AI, an AI already connected": {
+    "like": "Connect your AI on a phone",
+    "answers": {
+      "sign-in_devices": {
+        "devices": [
+          {
+            "id": "a1",
+            "kind": "assistant",
+            "name": "Claude",
+            "added": "2026-11-20T00:00:00Z"
+          }
+        ],
+        "passkeys": []
+      }
+    },
+    "checks": {
+      "Someone whose AI already uses the network goes straight to their Home Screen": [
+        {
+          "expect": {
+            "gone": {
+              "role": "button",
+              "name": "Claude"
+            }
+          }
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Notes"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "Connect your AI, signing in": {
+    "like": "Connect your AI",
+    "wait": 7600
   }
 }
