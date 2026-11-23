@@ -1,5 +1,5 @@
 // The window's moves between its launcher and its apps, as a state machine (`moveMachine` is a child of the window's, `window-machine.js`).
-import { backHome, depth, front, layer, notes, reveal, showing, stack } from "./client.js"
+import { backHome, depth, front, layer, notes, opened, reveal, showing, stack } from "./client.js"
 import { covering, home } from "./gestures.js"
 /** @import { Rect, Shown, View } from "./host.js" */
 const { assign, fromCallback, setup } = XState
@@ -156,12 +156,13 @@ export const moveMachine = setup({
   },
   actions: {
     // The frame coming is seen and takes taps from the start, over or under the one going, and its page is told
-    // it's opened.
+    // it's opened. One a finger brings in (`grab`) isn't opened until it's let go there (`release`): a pull that
+    // springs back opened nothing, so how long opening it took isn't told.
     begin: assign(({ event }) => {
       const pulled = event.type === "grab" && event.home === true
       // Pulled home, it goes into the icon it came out of only where it came from the Home Screen.
       const grabbed = () => (pulled ? { to: showing(null), icon: depth === 1 ? stack[1].from : undefined } : { to: showing(stack[depth - 1].key), icon: stack[depth].from })
-      const show = /** @type {Extract<Shown, { type: "show" }>} */ (event.type === "grab" ? { ...grabbed(), back: true, tapped: performance.now() } : event)
+      const show = /** @type {Extract<Shown, { type: "show" }>} */ (event.type === "grab" ? { ...grabbed(), back: true } : event)
       const from = /** @type {View} */ (front)
       const { upper, ms, corner, parts } = moves(from, show.to, show.back, show.icon, pulled)
       show.to.frame.inert = false
@@ -210,6 +211,10 @@ export const moveMachine = setup({
       move.target = end ?? (Math.abs(velocity) > 1 ? (velocity > 0 ? 1 : 0) : Math.round(move.p))
       move.velocity = velocity
       const to = toward(move)
+      if (move.target === 1) {
+        to.tapped = performance.now()
+        opened(to)
+      }
       if (move.target === 1 && depth > 0 && to === showing(null)) backHome()
       else for (const step of [-1, 1]) if (stack[depth + step] && showing(stack[depth + step].key) === to) history.go(step)
     },

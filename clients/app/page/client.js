@@ -253,7 +253,7 @@ function show(at, tapped) {
 
 /// An app coming on screen: `tapped` is when its icon was tapped. Opened again, a stale page loads its new version as
 /// it opens, and a current one asks again what it shows.
-/** @param {View} view @param {number} tapped */
+/** @param {View} view @param {number} [tapped] */
 export function reveal(view, tapped) {
   view.tapped = tapped
   page(view, { type: "opened" })
