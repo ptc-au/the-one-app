@@ -678,7 +678,8 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
             Event::UserEvent(Told::Shortcut(asked)) => kept = shortcut::take(asked),
             Event::UserEvent(Told::Logo) => {
                 if let (Some(ring), Some(icon)) = (&ring, ring_icon(&home)) {
-                    let _ = ring.set_icon(Some(icon));
+                    // A Mac's is a template again, which `set_icon` alone would end.
+                    let _ = ring.set_icon_with_as_template(Some(icon), cfg!(target_os = "macos"));
                 }
             }
             // One chosen as it's recorded is chosen as if there were no pause, which is over once it's taken, and goes
