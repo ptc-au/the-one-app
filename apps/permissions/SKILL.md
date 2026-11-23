@@ -42,7 +42,7 @@ Its words:
   may: `share --artifact network --relation installer --who users/carol`, which only an owner writes or removes.
   `users --artifact network --relation installer` lists who may, owners among them; anyone in the network sees it.
 - `share` writes a tuple and `unshare` removes one, or finds it already gone. An owner or an editor shares with viewers and editors, and
-  only an owner adds an owner, a group's member or a parent. Whoever asks shares only what they may themselves,
+  only an owner adds an owner, a group's member or a parent. `unshare` refuses to remove the last owner of the network or of a group. Whoever asks shares only what they may themselves,
   whoever the call runs for. `shared` lists an artifact's tuples,
   and `check` says whether someone may reach it.
 - `forget` removes every tuple that names someone taken out of the network, so whoever joins by their name next

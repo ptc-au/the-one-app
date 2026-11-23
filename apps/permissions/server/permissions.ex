@@ -270,6 +270,7 @@ defmodule Permissions do
   def call("unshare", %{"artifact" => artifact, "relation" => relation, "who" => who}, call) do
     transaction(call, fn db ->
       shares!(db, call, artifact, relation)
+      keeps_an_owner!(db, artifact, relation, who)
       query(db, "delete from tuples where artifact = ? and relation = ? and who = ?", [artifact, relation, who])
       %{artifact: artifact, relation: relation, who: who}
     end)
@@ -405,6 +406,18 @@ defmodule Permissions do
     owner = relation in ["owner", "member", "installer", "parent"]
     reaches!(db, asking(call), if(owner, do: "owner", else: "editor"), artifact)
   end
+
+  # The network and a group are owned only by their owner tuples, so removing the last one leaves nobody who can
+  # change who owns it. Whatever is a user's, by its name, has an owner whatever its tuples say.
+  defp keeps_an_owner!(db, artifact, "owner", who) do
+    others = query(db, "select who from tuples where artifact = ? and relation = 'owner' and who != ?", [artifact, who])
+
+    if (artifact == "network" or String.match?(artifact, ~r{^groups/[^/]+$})) and others == [] and
+         query(db, "select 1 from tuples where artifact = ? and relation = 'owner' and who = ?", [artifact, who]) != [],
+       do: raise("#{who} is the last owner of #{artifact}. Make someone else its owner first.")
+  end
+
+  defp keeps_an_owner!(_db, _artifact, _relation, _who), do: :ok
 
   # Whoever asks: the call's actor, or whoever it runs for where nobody asked, as for a scheduled job.
   defp asking(call), do: call.actor || call.subject
