@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A widget from the app (Widgets.kt): 2x2 when it's added, resized to 4x2 or 4x4, and chosen as it's added and as
+     it's touched and held. Android draws it again every half an hour, the most it allows, and as the app opens. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:maxResizeWidth="530dp"
+    android:maxResizeHeight="530dp"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:configure="app.theone.client.WidgetChooser"
+    android:widgetFeatures="reconfigurable|configuration_optional"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:description="@string/widgets_description"
+    android:widgetCategory="home_screen" />

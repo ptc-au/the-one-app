@@ -189,16 +189,7 @@ pub extern "system" fn Java_app_theone_client_Notifications_wake<'local>(
     home: jni::objects::JString<'local>,
 ) {
     let started = Instant::now();
-    let mut given = || -> anyhow::Result<std::path::PathBuf> {
-        let application = env.call_method(&context, "getApplicationContext", "()Landroid/content/Context;", &[])?.l()?;
-        // Kept until the process ends, as what it gives native code has to be.
-        let application = env.new_global_ref(application)?;
-        let vm = env.get_java_vm()?.get_java_vm_pointer();
-        unsafe { ::client::started_without_window(vm.cast(), application.as_obj().as_raw().cast()) };
-        std::mem::forget(application);
-        Ok(String::from(env.get_string(&home)?).into())
-    };
-    let home = match given() {
+    let home = match without_window(&mut env, &context, &home) {
         Ok(home) => home,
         Err(error) => return eprintln!("the app's client couldn't start without its window: {error:#}"),
     };
@@ -218,6 +209,41 @@ pub extern "system" fn Java_app_theone_client_Notifications_wake<'local>(
         Ok(Err(error)) => eprintln!("the app's client couldn't start without its window: {error:#}"),
         Err(_) => eprintln!("the app's client didn't start without its window within 9 seconds"),
     }
+}
+
+/// The app's folder Android gave as `home`, once the app's Java VM and its application's context, from `context`, are
+/// kept for its native code, as its window would keep them: where its client starts without its window.
+#[cfg(target_os = "android")]
+fn without_window(env: &mut jni::JNIEnv, context: &jni::objects::JObject, home: &jni::objects::JString) -> anyhow::Result<std::path::PathBuf> {
+    let application = env.call_method(context, "getApplicationContext", "()Landroid/content/Context;", &[])?.l()?;
+    // Kept until the process ends, as what it gives native code has to be.
+    let application = env.new_global_ref(application)?;
+    let vm = env.get_java_vm()?.get_java_vm_pointer();
+    unsafe { ::client::started_without_window(vm.cast(), application.as_obj().as_raw().cast()) };
+    std::mem::forget(application);
+    Ok(String::from(env.get_string(home)?).into())
+}
+
+/// What a home-screen widget asks the network (`Widgets.kt`): `method` with `params` (JSON), through the app's client
+/// kept in `home`, started without its window where the app isn't open, and answered as `widgets::answer` says.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_theone_client_Widgets_request<'local>(
+    mut env: jni::JNIEnv<'local>,
+    _class: jni::objects::JClass<'local>,
+    context: jni::objects::JObject<'local>,
+    home: jni::objects::JString<'local>,
+    method: jni::objects::JString<'local>,
+    params: jni::objects::JString<'local>,
+) -> jni::sys::jstring {
+    let mut given = || -> anyhow::Result<(std::path::PathBuf, String, String)> {
+        Ok((without_window(&mut env, &context, &home)?, env.get_string(&method)?.into(), env.get_string(&params)?.into()))
+    };
+    let answer = match given() {
+        Ok((home, method, params)) => tauri::async_runtime::block_on(widgets::answer(open(home), &method, &params)),
+        Err(error) => json!({"error": format!("{error:#}")}),
+    };
+    env.new_string(answer.to_string()).map_or(std::ptr::null_mut(), |answer| answer.into_raw())
 }
 
 /// Has the window follow where the client is with its network as that moves (`State`), each move of which its page

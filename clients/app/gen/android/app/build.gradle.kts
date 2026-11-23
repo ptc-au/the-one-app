@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("rust")
     id("com.google.gms.google-services")
 }
@@ -47,6 +48,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
+        compose = true
     }
     // An app's native window, drawn by the renderer crate: its view, and Flutter's keyboard bridge.
     sourceSets["main"].java.srcDir("../../../renderer/android/src/main/java")
@@ -71,6 +73,9 @@ dependencies {
     // The app's own messaging service (Notifications.kt), at the version the push plugin brings.
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-messaging")
+    // The home-screen widgets (Widgets.kt): Jetpack's way to draw them in Compose, which Android otherwise takes only
+    // as RemoteViews.
+    implementation("androidx.glance:glance-appwidget:1.2.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

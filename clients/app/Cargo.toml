@@ -141,6 +141,8 @@ gtk = { version = "0.18", optional = true }
 # A push that wakes the phone starts the client without its window (`Java_app_theone_client_Notifications_wake`).
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
+# What its home-screen widgets ask the network (`Widgets.kt`).
+widgets = { path = "widgets" }
 
 # A phone's app is Tauri's: `custom-protocol` builds it with its page inside it, however it's built. A `one:` link
 # opens it at what it links to (`links`): what Spotlight, an App Shortcut or an Android shortcut opens. The opener

@@ -499,8 +499,9 @@ defmodule OneCore.App do
   - The tool is called with the `size` to draw, for whoever's Home Screen page it's on, and answers a layout: one
     part, which holds the rest. A part is a map that says which `part` it is, from this list, and nothing in a
     layout is ever markup. Its `outputs` say so: `%{type: "object", properties: %{part: %{type: "string"}},
-    required: ["part"]}`. Every client draws the same layout: the UI library's `Widget` on a Home Screen page, and a phone's
-    own home screen once it has widgets. A client asks again when something changed, and when the page is
+    required: ["part"]}`. Every client draws the same layout: the UI library's `Widget` on a Home Screen page, and an iPhone's
+    and an Android phone's own home screen, natively, where the person picks it, and it's asked again as often as the
+    phone allows. A client asks again when something changed, and when the page is
     returned to. A widget that shows what only time changes, such as a load, says `refresh` in its layout's root part:
     how many seconds until it's asked again, while it's in view.
   - `column` and `row` hold `parts`, with a `gap` between them in points if not the usual. Any part can say
