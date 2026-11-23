@@ -172,4 +172,19 @@ defmodule OneCore.Builds do
       {device, said}
     end
   end
+
+  @doc """
+  What each of `by`'s `devices` calls itself, as it said when it last connected (`seen/3`): `%{device => name}`, with
+  none for a device that hasn't said. It's what its person has called it since, where the name it signed in under
+  isn't.
+  """
+  def names(by, devices) do
+    reads = Bucket.read_all(Enum.map(devices, &"#{by}/devices/#{&1}"))
+
+    for {device, {:ok, info, _tag}} <- Enum.zip(devices, reads),
+        name = JSON.decode!(info)["name"],
+        is_binary(name) and name != "",
+        into: %{},
+        do: {device, name}
+  end
 end
