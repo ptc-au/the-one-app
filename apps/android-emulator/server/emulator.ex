@@ -55,6 +55,9 @@ defmodule AndroidEmulator.Emulator do
   @android "android-36"
   @tag "google_apis_playstore"
   @memory_mb 2048
+  # Its processors at most: it draws on them (SwiftShader), and with as many as the machine has, one phone kept a
+  # machine shared by many agents at load 85 (23 Nov).
+  @cores 4
   # The command-line tools Google publishes, to install the rest with, where the machine has no SDK.
   @cmdline_tools "13114758"
   # scrcpy's server, which a stream runs in the phone for its H.264 and its input, and the file's SHA-256.
@@ -262,7 +265,7 @@ defmodule AndroidEmulator.Emulator do
 
     emulator =
       [Path.join(sdk, "emulator/emulator"), "-avd", id, "-port", "#{port}", "-no-window", "-no-audio", "-no-boot-anim"] ++
-        ["-gpu", "swiftshader_indirect", "-accel", "on", "-memory", "#{@memory_mb}"] ++
+        ["-gpu", "swiftshader_indirect", "-accel", "on", "-memory", "#{@memory_mb}", "-cores", "#{@cores}"] ++
         if(saved, do: [], else: ["-no-snapshot-load"])
 
     # On Linux: in a network of its own, and in a scope of the user's systemd, so it outlives this server's
