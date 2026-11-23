@@ -53,8 +53,8 @@ export const whole = (error: unknown): string => {
   return `It threw ${what}${stack ? `, from:\n${stack}` : ""}`
 }
 
-/// `words({ back: "Zurück", cancel: "Abbrechen", close: "Schließen" })`: says the UI library's own words in the user's
-/// language, once, for every component on the page. A word the UI library doesn't say throws the words it does.
+// `words({ back: "Zurück", cancel: "Abbrechen", close: "Schließen" })`: says the UI library's own words in the user's
+// language, once, for every component on the page. A word the UI library doesn't say throws the words it does.
 export function words(theirs: Partial<Record<keyof typeof messages, string>>): void {
   for (const name in theirs) if (!(name in messages)) throw new Error(`The UI library has no word "${name}". It has: ${Object.keys(messages).join(", ")}`)
   setMessages((words) => void Object.assign(words, theirs))
