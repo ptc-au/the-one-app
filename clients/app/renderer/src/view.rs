@@ -182,6 +182,10 @@ pub struct Screen {
     /// window opens and as it changes, and the page is told it as an MCP App is, its host context's `safeAreaInsets`,
     /// which the UI library's `safe-top`, `safe-right`, `safe-bottom` and `safe-left` lengths are.
     pub insets: Edges<f32>,
+    /// Where its host says its title row has room for its page's top bar, from its start and from its end, as the
+    /// web's window page says over an app's frame where it puts its own Home button there (`titleBar` in its host
+    /// context): what a window that draws its own title says instead (`Chrome`), and else nothing (0).
+    pub title_bar: [u16; 2],
     /// The room its page has, and whether it asked for less motion, as the page was last told them with its insets
     /// (its host context's `containerDimensions` and `reducedMotion`). Its room is its window's from the start
     /// (`Windows::open`), which only the window knows: a phone's is its screen, whatever it was asked to be.
@@ -373,6 +377,7 @@ impl Screen {
             notice: None,
             visible: true,
             insets: Edges::default(),
+            title_bar: [0; 2],
             room: Size::default(),
             told: None,
             changed: None,

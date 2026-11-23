@@ -1,8 +1,8 @@
 // What the device keeps for itself that the window keeps clear of or follows: Colour Mode, the safe area and the keyboard, and the title bar.
 import { invoke, listen, setTheme } from "./host.js"
-import { icons, names } from "./apps.js"
+import { icons, launcher, names } from "./apps.js"
 import { post } from "./bridge.js"
-import { open, own } from "./client.js"
+import { baseKey, open, own, phone, windows } from "./client.js"
 import { byId } from "./util.js"
 
 /// Light or dark, as Colour Mode has it on this device, or as the device is.
@@ -45,7 +45,7 @@ export function insets(frame) {
 /// Each app is told again as the window turns or its frame moves.
 export function placed() {
   for (const view of open.values())
-    post(view, { method: "ui/notifications/host-context-changed", params: { safeAreaInsets: insets(view.frame), ...titleRow() } })
+    post(view, { method: "ui/notifications/host-context-changed", params: { safeAreaInsets: insets(view.frame), ...titleRow(view) } })
 }
 addEventListener("resize", placed)
 // The banner moves every frame down as it comes in.
@@ -66,11 +66,22 @@ visualViewport?.addEventListener("resize", keyboard)
 /// zoom). An app's own window has its title there, just after the window's controls: the app's icon and name
 /// (`appTitle`).
 export const titleBar = byId("title-bar")
+/// On a wider screen in a browser, where a pull of the line is the only other way home, an app's window has a Home
+/// button at the start of its title row (index.html's #home, which rail.js shows over it), as Andre asked on 23 Nov.
+/// A phone's and a computer's own app have none: a phone has its gestures, and a computer's windows the launcher's
+/// shortcut.
+const wide = matchMedia("(min-width: 48rem)")
+/** Whether `view` has the Home button. @param {import("./host.js").View} view */
+export const homes = (view) => !phone && !windows && Boolean(launcher) && wide.matches && view.key !== baseKey()
 /// Where the title row is over an app's page, which its top bar is: where in it the page's own may start, after the
-/// window's controls and title, and how far from its end, before the controls there. Nothing where the window
-/// has no title bar over its page.
-export function titleRow() {
-  if (titleBar.hidden) return {}
+/// window's controls and title, and how far from its end, before the controls there. Where the window has no title
+/// bar over its page, after the Home button where `view` has one (`homes`), and otherwise nothing (`null`).
+/** @param {import("./host.js").View} [view] */
+export function titleRow(view) {
+  if (titleBar.hidden) {
+    const home = byId("home")
+    return { titleBar: view && homes(view) ? { start: Math.round(home.offsetLeft + home.offsetWidth + 8), end: Math.round(home.offsetLeft) } : null }
+  }
   const style = getComputedStyle(document.documentElement)
   const px = (/** @type {string} */ name) => parseFloat(style.getPropertyValue(name)) || 0
   const title = byId("title-bar-app")

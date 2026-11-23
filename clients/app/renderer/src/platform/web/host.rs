@@ -230,6 +230,12 @@ pub fn message(message: JsValue) {
                         let edge = |name: &str| insets.get(name).and_then(Value::as_f64).unwrap_or_default() as f32;
                         screen.insets = crate::geometry::Edges { top: edge("top"), right: edge("right"), bottom: edge("bottom"), left: edge("left") };
                     }
+                    // Where its title row has room for its top bar, which the window page says beside its insets: its
+                    // Home button's, or none (`null`).
+                    if let Some(title_bar) = context.get("titleBar") {
+                        let edge = |name: &str| title_bar[name].as_f64().unwrap_or_default().clamp(0.0, f64::from(u16::MAX)) as u16;
+                        screen.title_bar = [edge("start"), edge("end")];
+                    }
                 }
                 screen.message(&message);
             });

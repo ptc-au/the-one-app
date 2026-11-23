@@ -6,7 +6,7 @@ impl Screen {
     /// The conditions its tokens' values vary by, as its window is now.
     pub(super) fn conditions(&self) -> Conditions {
         let insets = [self.insets.top, self.insets.right, self.insets.bottom, self.insets.left].map(|inset| inset.round().max(0.0) as u16);
-        let title_bar = [self.chrome.title_start, if self.chrome.title_end > 0 { self.chrome.title_end } else if self.chrome.title_start > 0 { 16 } else { 0 }];
+        let title_bar = if self.chrome.title_start > 0 { [self.chrome.title_start, if self.chrome.title_end > 0 { self.chrome.title_end } else { 16 }] } else { self.title_bar };
         let (phone, rem) = match self.text_size {
             Some(size) => (true, (size * 100.0).round() as u16),
             None => (false, Conditions::default().rem),

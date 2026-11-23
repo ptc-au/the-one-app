@@ -1,6 +1,7 @@
 // The rail's line, over an app, which a finger pulls in to go home.
 import { launcher } from "./apps.js"
-import { here, moving, on, showing, shown, windows } from "./client.js"
+import { homes } from "./chrome.js"
+import { backHome, here, moving, on, showing, shown, windows } from "./client.js"
 import { HELD } from "./move-machine.js"
 import { byId } from "./util.js"
 
@@ -9,6 +10,8 @@ import { byId } from "./util.js"
 /// the way while something of the app's is open over it (a sheet, a menu), as the device's back does. A computer has
 /// none: each app is a window of its own there, which the computer's own Dock or taskbar goes between.
 const line = byId("line")
+/// On a wider screen in a browser, the Home button over an app (index.html's #home), which goes home as Back does.
+const home = byId("home")
 
 /// Whether the rail's line shows: while the window shows its apps and has a Home Screen to go back to, over an app,
 /// at any of its screens, unless something is drawn over it, a sheet or a menu (`data-away`). Android is told where
@@ -26,6 +29,12 @@ export function rail() {
   const homed = Boolean(launcher) && !windows && now.hasTag("pages") && !now.matches("app_store")
   const lined = homed && here() !== null && !showing(here())?.layer
   line.toggleAttribute("data-away", !lined)
+  // On a wider screen in a browser, its Home button too, at the top of the app's frame (chrome.js's `homes`), whose
+  // top bar starts after it, as every app is told as it opens and as the window's width changes (`titleRow`).
+  const view = showing(here())
+  const button = lined && !!view && homes(view)
+  home.toggleAttribute("data-away", !button)
+  if (view && button) home.style.top = `${view.frame.offsetTop}px`
   // A line that went home under a finger comes back with its app.
   if (lined && !pull) line.toggleAttribute("data-pulled", false)
   const at = lined ? line.getBoundingClientRect() : undefined
@@ -34,6 +43,7 @@ export function rail() {
   excluded = edge
 }
 addEventListener("resize", rail)
+home.addEventListener("click", backHome)
 
 /// How far in, as a share of the window's width, past which a finger let go of the line goes home.
 const PULLED = 0.18

@@ -839,6 +839,40 @@ iframe[data-move] {
   opacity: 0;
   visibility: hidden;
 }
+/* The Home button (index.html's #home): round, the app's own Back and Forward pill's glass and size, in the middle of
+   the app's title row at its start, where rail.js puts its top. It goes as the line does, and while the line is pulled. */
+#home {
+  position: fixed;
+  z-index: 2;
+  inset-inline-start: calc(var(--safe-left) + var(--gutter));
+  margin-top: calc((var(--bar) - var(--control)) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control);
+  height: var(--control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--material-glass);
+  backdrop-filter: var(--material-glass);
+  box-shadow: var(--shadow-pill);
+  color: var(--secondary-label);
+  cursor: pointer;
+  transition:
+    opacity var(--move-settle) var(--ease-settle),
+    visibility var(--move-settle) allow-discrete;
+}
+@media (hover: hover) and (pointer: fine) {
+  #home:hover {
+    color: var(--label);
+  }
+}
+#home[data-away], #line[data-pulled] ~ #home {
+  opacity: 0;
+  visibility: hidden;
+}
 
 /* What the window shows of itself (index.html's #state and #page-problem), as the UI library's Steps, Status, Empty
    and Problem look. */

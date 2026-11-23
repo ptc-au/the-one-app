@@ -106,7 +106,7 @@ async function respond(view, method, params) {
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         deviceCapabilities: { touch: matchMedia("(pointer: coarse)").matches, hover: matchMedia("(hover: hover)").matches },
         safeAreaInsets: inFrame ? { top: 0, right: 0, bottom: 0, left: 0 } : insets(view.frame),
-        ...(!inFrame && titleRow()),
+        ...(!inFrame && titleRow(view)),
         // Whether the window names it above it, in its title bar (`titled`), so its first screen doesn't.
         titled: Boolean(own) && !titleBar.hidden && !inFrame,
         // Whether its network answers, which the window keeps it told of.
