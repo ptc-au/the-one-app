@@ -25,6 +25,11 @@ defmodule WebRTC do
   @impl true
   def icon, do: "icon.svg"
 
+  # It keeps nothing of anyone's and uses the Vault of whoever it's installed for, whose servers alone hold that key: so
+  # it runs on theirs, for whoever asks, as the network's own apps do.
+  @impl true
+  def own, do: :installed
+
   @impl true
   def requires, do: %{"core" => ">= 0.22.18", "vault" => "to use your Cloudflare TURN key"}
 
@@ -90,7 +95,7 @@ defmodule WebRTC do
     call = %{call | subject: call.installed}
 
     # Without it there's nothing to ask Cloudflare, and what a person reads says who can add it.
-    if not Enum.any?(Call.tool(call, "vault", "items", %{})["items"], &(&1["name"] == @item)),
+    if not Enum.any?(vault(call, "items", %{})["items"], &(&1["name"] == @item)),
       do: raise("Live video needs a Cloudflare TURN key, which the network's owners add in the Vault and switch on for WebRTC.")
 
     request = %{
@@ -101,10 +106,18 @@ defmodule WebRTC do
       "body" => JSON.encode!(%{ttl: @ttl})
     }
 
-    case Call.tool(call, "vault", "fetch", request) do
+    case vault(call, "fetch", request) do
       %{"status" => 201, "body" => body} -> %{"iceServers" => turn(JSON.decode!(body)["iceServers"])}
-      %{"status" => status} -> raise "Cloudflare refused the network's TURN key (#{status})."
+      %{"status" => status, "body" => body} -> raise "Cloudflare refused the network's TURN key (#{status}), so live video can't connect.\n\n#{body}"
     end
+  end
+
+  # A tool's error is what a person reads first, its first paragraph, and the rest is for support (`ui`'s `Problem`).
+  defp vault(call, tool, inputs) do
+    Call.tool(call, "vault", tool, inputs)
+  rescue
+    error in RuntimeError ->
+      reraise "Live video can't use the network's Cloudflare TURN key, which its owners can check in the Vault.\n\n#{error.message}", __STACKTRACE__
   end
 
   # TURN over UDP, over TCP, and over TLS on 443 where only that gets out: each a way to the same relay, which an end

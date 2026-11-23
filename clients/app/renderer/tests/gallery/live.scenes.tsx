@@ -8,7 +8,7 @@ const unkeyed = async ({ action }: ScreenInputs) => {
 
 /** A network whose key Cloudflare turned down. */
 const refused = async ({ action }: ScreenInputs) => {
-  if (action === "stream") throw new Error("Cloudflare refused the network's TURN key (401).")
+  if (action === "stream") throw new Error("Cloudflare refused the network's TURN key (401), so live video can't connect.\n\n" + '{"success":false,"errors":[{"code":10000,"message":"Authentication error"}]}')
   return { done: action }
 }
 
@@ -19,6 +19,7 @@ export default {
   },
   "Live screen/Key refused": {
     errors: ["Live video didn't connect: Cloudflare refused"],
+    taps: ["Show Details"],
     render: () => <LiveScreen label="The desktop" screen={refused} />,
   },
   "Live screen/Starting": () => (

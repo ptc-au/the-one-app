@@ -256,8 +256,8 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
           </View>
         </View>
       </Show>
-      {/* On a phone the view is small: a tap opens it full screen. */}
-      <Show when={touch() && !full()}>
+      {/* On a phone the view is small: a tap opens it full screen, unless it's showing a problem, whose buttons are tapped. */}
+      <Show when={touch() && !full() && !state().matches("failed")}>
         <Pressable onPress={toggle} style={look.fill} />
       </Show>
       {/* Full screen has no Escape, which is the screen's: it has its own way out. */}
