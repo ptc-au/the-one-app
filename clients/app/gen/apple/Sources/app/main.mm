@@ -8,6 +8,8 @@ int main(int argc, char * argv[]) {
 	NSString *group = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"AppGroup"];
 	NSURL *shared = group ? [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:group] : nil;
 	if (shared) setenv("ONE_HOME", shared.path.fileSystemRepresentation, 1);
+	// Its widgets are drawn again as it opens and as it's left (Widgets.swift).
+	[NSClassFromString(@"OneWidgets") performSelector:@selector(follow)];
 	ffi::start_app();
 	return 0;
 }

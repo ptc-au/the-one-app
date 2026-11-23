@@ -15,7 +15,7 @@
 # Its `app/`, as that repo's main has it on the remote, says the app's name, bundle identifier and the schemes and
 # hosts of its links, as Tauri's config says them (`tauri.conf.json`: `productName`, `identifier`,
 # `plugins.deep-link.mobile`), and its network's address (`address`), which goes in the app as its `network` file, read
-# as it starts (`bundled` in core/client). It's written in the app's and its notification extension's Info.plist, and
+# as it starts (`bundled` in core/client). It's written in the app's and its extensions' Info.plist (notifications and widgets), and
 # each is signed with the team's Apple Distribution identity, its App Store profile and that profile's entitlements,
 # with the network's hosts as its associated domains (`webcredentials:` for its passkeys, `applinks:` for the links
 # that open in it), by rcodesign. It's uploaded with the App Store Connect API key (`buildUploads`), and this ends once
@@ -194,6 +194,12 @@ profile() {
 }
 profile "$identifier" "$bundle/embedded.mobileprovision"
 profile "$identifier.notifications" "$bundle/PlugIns/Notifications.appex/embedded.mobileprovision"
+# Its widgets, where the network's App ID for them has its App Group, which only its owner puts on it, on the website,
+# and the profile was made after: without that, the app goes without them, as they couldn't read its client.
+widgets=$bundle/PlugIns/Widgets.appex
+if ! profile "$identifier.widgets" "$widgets/embedded.mobileprovision" || ! grep -qaF "group.$identifier" "$widgets/embedded.mobileprovision"; then
+  rm -rf "$widgets" && echo "It goes without its widgets: $identifier.widgets needs its App Group, then a profile made again"
+fi
 
 # The network's name, identifier, link schemes and address in the app, and each target's entitlements: its profile's,
 # less what's a wildcard there, which a signature can't hold (`keychain-access-groups`, `associated-domains`), with the
@@ -222,9 +228,13 @@ def app(info):
     wanted = list(dict.fromkeys(own + [scheme for scheme in schemes if scheme not in ("http", "https")]))
     info["CFBundleURLTypes"] = [{"CFBundleURLName": f"{identifier}.one", "CFBundleURLSchemes": wanted}]
 
-def extension(info):
-    info["CFBundleIdentifier"] = f"{identifier}.notifications"
-    info["AppGroup"] = f"group.{identifier}"
+def extension(name):
+    def change(info):
+        info["CFBundleIdentifier"] = f"{identifier}.{name}"
+        info["AppGroup"] = f"group.{identifier}"
+        if "productName" in config:
+            info["AppName"] = config["productName"]
+    return change
 
 def entitlements(target, name, domains):
     profile = (target / "embedded.mobileprovision").read_bytes()
@@ -237,10 +247,11 @@ def entitlements(target, name, domains):
     print(f"{target.name}: {json.dumps(granted)}")
 
 edit(bundle / "Info.plist", app)
-extension_bundle = bundle / "PlugIns" / "Notifications.appex"
-edit(extension_bundle / "Info.plist", extension)
 entitlements(bundle, "app.entitlements", domains)
-entitlements(extension_bundle, "notifications.entitlements", [])
+for extension_bundle in (bundle / "PlugIns").glob("*.appex"):
+    name = extension_bundle.stem.lower()
+    edit(extension_bundle / "Info.plist", extension(name))
+    entitlements(extension_bundle, f"{name}.entitlements", [])
 PYTHON
 
 # Signed by rcodesign, the one `mise.toml` names: the extension first, then the app around it.
@@ -251,7 +262,10 @@ sign() {
   "$rcodesign" sign --p12-file "$work/distribution.p12" --p12-password-file "$work/distribution.password" "$@" >"$work/signing" 2>&1 ||
     { cat "$work/signing" >&2 && return 1; }
 }
-sign --entitlements-xml-file "$work/notifications.entitlements" "$bundle/PlugIns/Notifications.appex"
+for extension in "$bundle"/PlugIns/*.appex; do
+  name=$(basename "$extension" .appex)
+  sign --entitlements-xml-file "$work/${name,,}.entitlements" "$extension"
+done
 sign --entitlements-xml-file "$work/app.entitlements" --exclude 'PlugIns/**' "$bundle"
 rm "$work/distribution.p12" "$work/distribution.password"
 (cd "$work" && python3 -I -m zipfile -c app.ipa Payload)

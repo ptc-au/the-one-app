@@ -1,5 +1,5 @@
 # The app is named by its build's identifier, ONE_IDENTIFIER, which `generate` reads from its Tauri config: the
-# app, its notification extension and the App Group they share. Its name under the icon is its build's, ONE_NAME, from
+# app, its notification and widget extensions and the App Group they share. Its name under the icon is its build's, ONE_NAME, from
 # the same config (`CFBundleDisplayName`, which iOS shows before the bundle's name).
 name: app
 options:
@@ -102,6 +102,7 @@ targets:
       groups: [app]
     dependencies:
       - target: Notifications
+      - target: Widgets
       - framework: libapp.a
         embed: false
       - sdk: CoreGraphics.framework
@@ -163,5 +164,57 @@ targets:
         DEVELOPMENT_TEAM: $(APPLE_DEVELOPMENT_TEAM)
         ARCHS: [arm64]
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+    postBuildScripts:
+      - *name-the-build
+  # The widgets apps show on a Home Screen page, on the iPhone's own (Widgets/Widgets.swift), which ask the network
+  # through the app's client in their App Group, as Rust builds it for them (`clients/app/widgets`).
+  Widgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Widgets
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: ${ONE_NAME}
+        # What's built says the build's number (Name the Build).
+        CFBundleShortVersionString: 1.0.0
+        CFBundleVersion: "1.0.0"
+        AppGroup: group.${ONE_IDENTIFIER}
+        # The app's name, as its widgets name it.
+        AppName: ${ONE_NAME}
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widgets/Widgets.entitlements
+      properties:
+        com.apple.security.application-groups: ["group.${ONE_IDENTIFIER}"]
+    settings:
+      base:
+        PRODUCT_NAME: Widgets
+        PRODUCT_BUNDLE_IDENTIFIER: ${ONE_IDENTIFIER}.widgets
+        DEVELOPMENT_TEAM: $(APPLE_DEVELOPMENT_TEAM)
+        ARCHS: [arm64]
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        SWIFT_OBJC_BRIDGING_HEADER: Widgets/widgets.h
+        LIBRARY_SEARCH_PATHS: $(DERIVED_FILE_DIR)
+        OTHER_LDFLAGS: -lwidgets
+    dependencies:
+      - sdk: Security.framework
+      - sdk: SystemConfiguration.framework
+    preBuildScripts:
+      # Rust's part, for the phone or the simulator, debug or release as the app's is, put where the extension links it.
+      - script: |
+          target=aarch64-apple-ios && [ "$PLATFORM_NAME" = iphonesimulator ] && target=aarch64-apple-ios-sim
+          profile=debug && [ "$CONFIGURATION" = release ] && profile=release
+          cd "${SRCROOT:?}/../../widgets"
+          cargo build --lib --target "$target" $([ $profile = release ] && echo --release)
+          mkdir -p "${DERIVED_FILE_DIR:?}"
+          cp "${CARGO_TARGET_DIR:-${SRCROOT:?}/../../../../target}/$target/$profile/libwidgets.a" "$DERIVED_FILE_DIR/"
+        name: Build Rust Code
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/libwidgets.a
     postBuildScripts:
       - *name-the-build

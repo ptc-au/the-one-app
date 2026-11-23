@@ -49,7 +49,9 @@ behind. `tooling/testflight` is how a build is finished; this is what it and the
   them, and Xcode's own developer services, which `xcodebuild -allowProvisioningUpdates -authenticationKeyPath ...`
   uses, refuse it (401). The owner does them on the website. The One App's group (`group.app.theone.client`) is on
   both its App IDs and in all four of their profiles, so its client is kept in the group and its notification
-  extension reads its key there. A profile made before a group is ticked has none, and is made again once it is.
+  extension reads its key there. A profile made before a group is ticked has none, and is made again once it is. Its
+  widget extension has an App ID of its own, `<identifier>.widgets`, which needs the same group and an App Store
+  profile made after, or `tooling/testflight` leaves the widgets out.
 - A development profile's `aps-environment` is `development` and an App Store one's `production`. The network's edge
   sends to one of APNs's two, the sandbox with `APNS_SANDBOX=1` (`apps/notifications/edge/README.md`), so a phone is
   woken only where its build matches it.
