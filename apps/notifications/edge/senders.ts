@@ -41,11 +41,12 @@ type Outcome = { gone?: boolean; failed?: string };
  * isn't, and what it said is still why a request failed.
  */
 async function said<Body>(response: Response): Promise<{ text: string; body: Partial<Body> }> {
-  const text = (await response.text()).slice(0, 300);
+  // Read whole, as Google's token comes in an answer longer than what's said of one.
+  const whole = await response.text();
   try {
-    return { text, body: JSON.parse(text) };
+    return { text: whole.slice(0, 300), body: JSON.parse(whole) };
   } catch {
-    return { text, body: {} };
+    return { text: whole.slice(0, 300), body: {} };
   }
 }
 
@@ -132,8 +133,9 @@ async function fcm(env: Keys, device: string, sealed?: string): Promise<Outcome>
       .sign(await importPKCS8(account.private_key, "RS256"));
     const grant = { grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion };
     const response = await fetch(at, { method: "POST", body: new URLSearchParams(grant) });
-    const { text, body: given } = await said<{ access_token: string; expires_in: number }>(response);
-    if (!given.access_token) throw new Error(`Google gave FCM no token: ${response.status} ${text}`);
+    const { body: given } = await said<{ access_token: string; expires_in: number; error: string; error_description: string }>(response);
+    // Only what Google says went wrong: its answer is the token itself when it gave one.
+    if (!given.access_token) throw new Error(`Google gave FCM no token: ${response.status} ${given.error ?? ""} ${given.error_description ?? ""}`.trim());
     return { token: given.access_token, lasts: (given.expires_in! - 300) * 1000 };
   });
   const message = sealed
