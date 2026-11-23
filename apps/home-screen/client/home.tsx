@@ -15,7 +15,7 @@
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
 import { Button, call, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, toast, View, viewport } from "ui"
 import { looks } from "./looks.ts"
-import { home, state, at, editing, launcher, windowWidth } from "./store.ts"
+import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
 import { json, type Owner, owners } from "./owners.ts"
 import { OpenCategory } from "./category.tsx"
 import { made } from "./library.tsx"
@@ -28,22 +28,33 @@ import { createScreens } from "./screens.ts"
 import { createPaging } from "./paging.ts"
 import { Carried, createCarry } from "./carry.tsx"
 import { Welcome } from "./welcome.tsx"
+import { computer, OwnServer } from "./own-server.tsx"
 
 /// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
 const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(({ seen }) => seen, () => undefined))
-/// Whether Welcome's been gone on from (true), or started again (false), here since `tips` was asked.
-const [continued, setContinued] = createSignal<boolean>()
-/// Whether Welcome shows: until they go on from it, on this device or another (the tip `welcome`, theirs). Where their
-/// tips can't be asked, it isn't shown: never in the way of their Home Screen.
-const welcoming = () => tips()?.includes("welcome") === false ? continued() !== true : continued() === false
-/// Whether they've been through Welcome, so the Home Screen's tips offer it again (pills.tsx).
-export const welcomed = () => !welcoming() && tips()?.includes("welcome") !== undefined
-/// Goes on from Welcome, showing the Home Screen at once and keeping that it's been seen behind it, or (`again`) starts
-/// it again from its first step, as the tip `welcome` set unseen has it.
-export const welcome = (again = false) => {
-  setContinued(!again)
-  call("home-screen_tip", { name: "welcome", seen: !again }).catch((error) => toast(error as Error))
+/// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, and the devices it's
+/// for: Welcome on every one, and Your own server on a computer's app that isn't one of the network's servers.
+const steps = [
+  { tip: "welcome", Step: Welcome, here: () => true },
+  { tip: "own-server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
+]
+/// Each step gone on from (true), or started again (false), here since `tips` was asked, by its tip.
+const [continued, setContinued] = createSignal<Record<string, boolean>>({})
+/// Whether a step shows: until they go on from it, on this device or another (its tip, theirs).
+const showing = (tip: string) => (tips()?.includes(tip) === false ? continued()[tip] !== true : continued()[tip] === false)
+/// The step shown: the first for this device that shows. Where their tips can't be asked, none is: never in the way of
+/// their Home Screen.
+const step = () => steps.find(({ tip, here }) => here() && showing(tip))
+/// Goes on from a step, showing the next, or the Home Screen, at once and keeping that it's been seen behind it, or
+/// (`again`) starts it again, as its tip set unseen has it.
+const go = (tip: string, again = false) => {
+  setContinued((done) => ({ ...done, [tip]: !again }))
+  call("home-screen_tip", { name: tip, seen: !again }).catch((error) => toast(error as Error))
 }
+/// Whether they've been through Welcome, so the Home Screen's tips offer it again (pills.tsx).
+export const welcomed = () => !showing("welcome") && tips() !== undefined
+/// Goes on from Welcome, or (`again`) starts it again from its first step, as the tip `welcome` set unseen has it.
+export const welcome = (again = false) => go("welcome", again)
 
 function HomeScreen(props: { owners: Owner[] }) {
   const layout = createScreens(props)
@@ -71,27 +82,28 @@ function HomeScreen(props: { owners: Owner[] }) {
     () => launcher(),
     (now) => (now ? keydown(launcherKeys({ move, open: openTarget, toggleLibrary, library, found: () => found().length })) : undefined),
   )
-  // Welcome first, once, until they go on from it (`welcoming`); in the launcher, in its card.
-  const onContinue = () => welcome()
+  // Onboarding first, each step once, until they go on from it (`step`); in the launcher, in its card.
   // In the launcher, its sheets are its card's, as Raycast's are its panel's: nothing's drawn outside its panes.
   return (
     <PresentationContext value={() => (launcher() ? cardRect() : undefined)}>
       <View
         style={[looks.root, looks.sized(windowWidth(), viewport().height)]}
       >
-        <Show when={welcoming()} fallback={<HomeScreenShown owners={props.owners} layout={layout} paging={paging} launching={launching} carrying={carrying} />}>
-          <Show when={launcher()} fallback={<Welcome width={viewport().width} height={viewport().height} onContinue={onContinue} />}>
-            <View style={[looks.surface, looks.at(cardRect().x, cardRect().y, cardRect().width, cardRect().height)]}>
-              <Welcome width={cardRect().width} height={cardRect().height} onContinue={onContinue} />
-            </View>
-          </Show>
+        <Show when={step()} keyed fallback={<HomeScreenShown owners={props.owners} layout={layout} paging={paging} launching={launching} carrying={carrying} />}>
+          {({ tip, Step }) => (
+            <Show when={launcher()} fallback={<Step width={viewport().width} height={viewport().height} onContinue={() => go(tip)} />}>
+              <View style={[looks.surface, looks.at(cardRect().x, cardRect().y, cardRect().width, cardRect().height)]}>
+                <Step width={cardRect().width} height={cardRect().height} onContinue={() => go(tip)} />
+              </View>
+            </Show>
+          )}
         </Show>
       </View>
     </PresentationContext>
   )
 }
 
-/// The Home Screen as it is once Welcome's been seen: its pages, or a computer's launcher, and what's open over them.
+/// The Home Screen as it is once onboarding's been seen: its pages, or a computer's launcher, and what's open over them.
 function HomeScreenShown(props: { owners: Owner[]; layout: ReturnType<typeof createScreens>; paging: ReturnType<typeof createPaging>; launching: ReturnType<typeof createLauncher>; carrying: ReturnType<typeof createCarry> }) {
   const { layout, paging, launching } = props
   const { editBar, editBarGoing, overview, overviewGoing } = layout

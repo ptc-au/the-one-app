@@ -3237,6 +3237,7 @@
       },
       "home-screen_tips": {
         "seen": [
+          "own-server",
           "pull-home",
           "welcome"
         ]
@@ -3292,5 +3293,118 @@
     "taps": [
       "Tips"
     ]
+  },
+  "Your own server": {
+    "like": "Home, two pages",
+    "size": [
+      900,
+      560
+    ],
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "target": "macos-aarch64",
+        "network": "https://ptcau.app"
+      }
+    },
+    "wait": 0,
+    "motions": {
+      "Switched off": {
+        "from": {
+          "role": "switch",
+          "name": "Run your own server"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 60
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "switch",
+          "name": "Run your own server"
+        }
+      }
+    }
+  },
+  "Your own server, asleep": {
+    "like": "Your own server",
+    "wait": 3500
+  },
+  "Your own server, off": {
+    "like": "Your own server",
+    "taps": [
+      {
+        "role": "switch",
+        "name": "Run your own server"
+      }
+    ],
+    "wait": 1000
+  },
+  "Your own server on Windows": {
+    "like": "Your own server",
+    "answers": {
+      "sign-in_network": {
+        "name": null,
+        "icon": null,
+        "logo": null
+      },
+      "one/client": {
+        "device": "Windows",
+        "build": "0.26.0",
+        "theme": null,
+        "target": "windows-x86_64",
+        "network": "https://one.example.com"
+      }
+    }
+  },
+  "Your own server in a narrow window": {
+    "like": "Your own server",
+    "size": [
+      480,
+      820
+    ],
+    "touch": false
+  },
+  "Your own server in the launcher": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "target": "macos-aarch64",
+        "network": "https://ptcau.app",
+        "launcher": true,
+        "mac": true
+      }
+    },
+    "wait": 0
   }
 }

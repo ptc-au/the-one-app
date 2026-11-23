@@ -45,9 +45,10 @@ export const [pins, setPins] = createSignal(false)
 /// the page dots at its foot, which changes size for the App Library and for what's found as it's typed (`Pair`).
 /// The arrow keys move a highlight over Home's apps and widgets (`leave` puts it away).
 export const [launcher, setLauncher] = createSignal(false)
-/// Its device, for the tips: its build's kind of machine (`target`), and whether it's a browser, which has no shortcut.
-export const [device, setDevice] = createSignal<{ target?: string; web?: boolean }>({})
-client().then(({ pinsShortcuts, launcher, target, web }) => (setPins(!!pinsShortcuts), setLauncher(!!launcher), setDevice({ target, web })), () => {})
+/// Its device, for the tips and onboarding: its build's kind of machine (`target`), whether it's a browser, which has
+/// no shortcut, its network's address, and whether it's one of the network's servers, or becoming one.
+export const [device, setDevice] = createSignal<{ target?: string; web?: boolean; network?: string; server?: boolean }>({})
+client().then(({ pinsShortcuts, launcher, target, web, network, server }) => (setPins(!!pinsShortcuts), setLauncher(!!launcher), setDevice({ target, web, network, server: !!server })), () => {})
 
 /// What's typed in the launcher's search, and which of what it found is chosen, which Return opens.
 export const [query, setQuery] = createSignal("")

@@ -3,7 +3,7 @@
 // does, each with a picture that plays as it's shown (slides.tsx), going on to the next every 6.5 s until one is
 // chosen, which stays. On a computer the four are rows beside a large picture, the one shown with its line and a line
 // filling under it as it plays; on a phone, the one shown is over the picture, with a dot for each under it. Continue
-// goes on to the Home Screen, for now: what comes after Welcome goes where it goes.
+// goes on to onboarding's next step for this device (home.tsx), or the Home Screen.
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Button, call, defineVars, type Element, Image, Pressable, safeArea, styles, Text, tokens, View } from "ui"
 import { Automate, Devices, Multiplayer, Secure } from "./slides.tsx"
