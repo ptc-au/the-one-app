@@ -470,6 +470,41 @@
       "More for Sam"
     ]
   },
+  "People & Groups, an owner looking at the network's first owner": {
+    "like": "People & Groups",
+    "answers": {
+      "sign-in_everyone": {
+        "people": [
+          {
+            "who": "users/alex",
+            "called": "Alex",
+            "joined": true
+          },
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "joined": true,
+            "first_owner": true
+          }
+        ]
+      },
+      "permissions_shared": {
+        "tuples": [
+          {
+            "relation": "owner",
+            "who": "users/alex"
+          },
+          {
+            "relation": "owner",
+            "who": "users/sam"
+          }
+        ]
+      }
+    },
+    "taps": [
+      "More for Sam"
+    ]
+  },
   "People & Groups, someone who isn't an owner": {
     "like": "People & Groups",
     "answers": {

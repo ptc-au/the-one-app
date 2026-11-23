@@ -79,9 +79,10 @@ defmodule SignIn do
                   who: %{type: "string", description: "users/<name>"},
                   called: %{type: ["string", "null"], description: "The name they go by"},
                   email: %{type: ["string", "null"]},
-                  joined: %{type: "boolean", description: "Whether they've joined, or are only invited"}
+                  joined: %{type: "boolean", description: "Whether they've joined, or are only invited"},
+                  first_owner: %{type: "boolean", description: "Whether they're the network's first owner, who stays an owner"}
                 },
-                required: ["who", "called", "email", "joined"]
+                required: ["who", "called", "email", "joined", "first_owner"]
               }
             }
           },
@@ -508,7 +509,8 @@ defmodule SignIn do
 
   def call("everyone", _inputs, call) do
     if not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
-    %{people: ask(%{ask: "everyone"})["people"]}
+    first = OneCore.User.first_owner()
+    %{people: for(person <- ask(%{ask: "everyone"})["people"], do: Map.put(person, "first_owner", person["who"] == first))}
   end
 
   # Whoever invites says who joins with no invitation, and any member sees it.

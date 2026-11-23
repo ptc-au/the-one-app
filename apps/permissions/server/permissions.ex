@@ -408,8 +408,12 @@ defmodule Permissions do
   end
 
   # The network and a group are owned only by their owner tuples, so removing the last one leaves nobody who can
-  # change who owns it. Whatever is a user's, by its name, has an owner whatever its tuples say.
+  # change who owns it. Whatever is a user's, by its name, has an owner whatever its tuples say. The network's first
+  # owner is its owner whatever they say: the `owner` hook writes the tuple again each time the network is set up.
   defp keeps_an_owner!(db, artifact, "owner", who) do
+    if artifact == "network" and OneCore.User.first_owner?(who),
+      do: raise("#{who} is the network's first owner, and stays an owner: it's written again each time the network is set up.")
+
     others = query(db, "select who from tuples where artifact = ? and relation = 'owner' and who != ?", [artifact, who])
 
     if (artifact == "network" or String.match?(artifact, ~r{^groups/[^/]+$})) and others == [] and

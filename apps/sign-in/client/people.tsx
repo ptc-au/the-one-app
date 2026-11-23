@@ -16,6 +16,8 @@ interface Person {
   who: string
   called?: string
   joined?: boolean
+  /** The network's first owner, who stays an owner: Permissions writes their tuple again whenever the network is set up. */
+  first_owner?: boolean
 }
 
 /** A group, as `permissions_groups` answers it. */
@@ -68,7 +70,7 @@ async function change(tool: string, inputs: object, me?: string) {
 }
 
 /// Makes someone an owner of the network or a group, or stops them being one, once whoever's looking has said what
-/// that means. Nobody stops being the last owner: the menu doesn't offer it, and Permissions refuses it.
+/// that means. Nobody stops being the last owner, or the network's first: the menu doesn't offer it, and Permissions refuses it.
 async function own(artifact: string, of: string, who: string, owner: boolean, all: All) {
   const you = who === all.me
   const name = you ? "yourself" : all.named(who)
@@ -194,12 +196,12 @@ function NewGroup(props: { open: boolean; onClose: () => void; me: string }) {
 }
 
 /// Someone's row: what they go by, and what can be done to them, by whoever may: they change their own name, an owner
-/// takes someone else out, and makes anyone who has joined an owner, or not one, unless they're the last.
+/// takes someone else out, and makes anyone who has joined an owner, or not one, unless they're the last or the network's first.
 function PersonRow(props: { person: Person; all: All }) {
   const me = () => props.person.who === props.all.me
   const mayRemove = () => props.all.invites && !me()
   const owner = () => props.all.owners.includes(props.person.who)
-  const mayOwn = () => props.all.invites && !!props.person.joined && !(owner() && props.all.owners.length < 2)
+  const mayOwn = () => props.all.invites && !!props.person.joined && !(owner() && (props.person.first_owner || props.all.owners.length < 2))
   const name = () => props.all.named(props.person.who)
   return (
     <Row
