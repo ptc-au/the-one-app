@@ -56,8 +56,11 @@ is needed to see either. A change that makes a screen, or a state of one, adds i
 expectations of its own: the renderer's tests run over every one. Every change to how something looks runs, in
 `clients/app/renderer/tests`, after `bun build.js` in `core/ui`:
 
-    bun screenshot.js --release --out <scratch>/before <its folders>                 # on main
+    bun screenshot.js --release --out <scratch>/before <folders> | --all             # on main
     bun screenshot.js --release --out <scratch>/after --against <scratch>/before     # on your branch
+
+Main has changed nothing, so its pass names the folders your change draws (your branch's pass says which as it starts),
+or `--all`, which costs seconds where main's pictures are kept already.
 
 Without folders named, a pass (here and in animation.js) draws only the folders what changed since your branch left
 main can draw differently (`git diff` from their merge base, uncommitted too, `animation/changed.js`): every one for a
