@@ -490,24 +490,14 @@ defmodule OneCore.Apps.Lifecycle do
   end
 
   @doc """
-  The own artifacts that the app installed for `owner` as `name` keeps and nothing else reads, by their names, which go
-  to Recently Deleted with it and are removed for good with it: whoever it was installed for's, unless the same name
-  installed for everyone keeps each person's data apart (`OneCore.Apps.Calls.whose/3`), and so reads it for them now;
-  and where it keeps each person's apart, the own artifact of each user or group with something in theirs, which is
-  all that says who keeps something with it, and hasn't it installed for themselves.
+  The own artifact that the app installed for `owner` as `name` keeps, by its name, in a list of one or none: it goes to
+  Recently Deleted with it and is removed for good with it, unless the same name installed for everyone keeps each
+  person's data apart (`OneCore.Apps.Calls.whose/3`), and so reads it for them now. Only `owner`'s own is listed,
+  never another user's or group's, which are theirs and are read and removed by their own installs: a server acting
+  for `owner` may read that much, and no more.
   """
   def owns(owner, name) do
-    mine = if match?({_at, %Version{own: :subject}}, beyond(owner, name)), do: [], else: ["#{owner}/own/#{name}"]
-
-    theirs =
-      for folder <- Bucket.folders("users/") ++ Bucket.folders("groups/"),
-          who = String.trim_trailing(folder, "/"),
-          who != owner,
-          Bucket.list("#{who}/own/#{name}/") != [],
-          not Map.has_key?(Map.new(Apps.versions([who])), name),
-          do: "#{who}/own/#{name}"
-
-    mine ++ theirs
+    if match?({_at, %Version{own: :subject}}, beyond(owner, name)), do: [], else: ["#{owner}/own/#{name}"]
   end
 
   # What `owner` uses as `name` once theirs goes: the install of it further along whose apps they find (the network's),
