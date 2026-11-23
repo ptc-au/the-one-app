@@ -2278,7 +2278,7 @@
               },
               {
                 "part": "text",
-                "text": "2 of 5",
+                "text": "2 of 4",
                 "size": "sm",
                 "tone": "muted"
               }
@@ -2322,16 +2322,6 @@
             "tool": "set_dev_build",
             "inputs": {
               "device": "van-tv"
-            }
-          },
-          {
-            "part": "item",
-            "title": "Linux",
-            "subtitle": "Online",
-            "on": false,
-            "tool": "set_dev_build",
-            "inputs": {
-              "device": "linux"
             }
           }
         ]
@@ -2379,7 +2369,7 @@
               },
               {
                 "part": "text",
-                "text": "2 of 5",
+                "text": "2 of 4",
                 "size": "sm",
                 "tone": "muted"
               }
@@ -2423,16 +2413,6 @@
             "tool": "set_dev_build",
             "inputs": {
               "device": "van-tv"
-            }
-          },
-          {
-            "part": "item",
-            "title": "Linux",
-            "subtitle": "Online",
-            "on": false,
-            "tool": "set_dev_build",
-            "inputs": {
-              "device": "linux"
             }
           }
         ]

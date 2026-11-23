@@ -29,4 +29,5 @@ one: the network's one setting, which each person changes for their own devices.
 off, so a new one starts on. The Home Screen widget Dev Builds shows the same, a row to press for each device.
 `tooling/release client` reads it and builds only for the devices that are on, saying which targets it skipped and why;
 a device that's off keeps its build and gets the next release once it's on again. Servers and the edge always get every
-release.
+release, so a device that's one of the network's servers isn't one of these: its target's `one` is built whenever a
+server needs it, and it's no row to switch.

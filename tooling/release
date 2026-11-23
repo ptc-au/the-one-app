@@ -190,12 +190,17 @@ part=server
 [[ $(uname) != Linux ]] || exec > >(while IFS= read -r line; do printf '%4ds %s\n' "$SECONDS" "$line"; done) 2>&1
 
 # The devices that get dev builds (Software Update's `dev_builds`), each with the target `one builds` says it runs, as
-# `{devices: [{name, target}]}`; `skipped` says which targets nothing gets one for and why. A device that has said no
-# target has none to build.
+# `{devices: [{name, target}]}`: those that are on, and the network's servers' targets whatever their devices say,
+# since a server runs `one` too and gets every release (`device` is the device a server is on, `OneCore.Builds.say/1`),
+# so a server's own device is no one's to switch off. `skipped` says which targets nothing gets one for and why. A
+# device that has said no target has none to build.
 getting_dev_builds() {
   one software-update dev_builds | jq -c --argjson builds "${builds:-$(one builds)}" '
-    [.devices[] | . as $device | {name, on, target: ([$builds.devices[] | select(.device == $device.id) | .target][0])}] as $all
-    | [$all[] | select(.on and .target)] as $on
+    [.devices[] | . as $device
+     | {name, on, target: ([$builds.devices[] | select(.device == $device.id) | .target][0]),
+        server: any($builds.servers[]; .device == $device.id)}] as $devices
+    | ([$devices[] | select(.server | not)] + [$builds.servers[] | select(.target) | {name, on: true, target} | . + {server: true}]) as $all
+    | ([$all[] | select(.on and .target)] | unique_by(.target)) as $on
     | {devices: $on,
        skipped: ([$all[] | select(.on | not) | select(.target) | select(.target as $target | $on | map(.target) | index($target) | not)]
          | group_by(.target) | map({target: .[0].target, names: map(.name)}))}'

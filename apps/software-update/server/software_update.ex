@@ -11,11 +11,12 @@ defmodule SoftwareUpdate do
 
   It also keeps which of the network's devices get dev builds (`dev_builds`), as the network's one setting: every
   device is on until it's switched off, so a new one starts on. `tooling/release client` builds only for the devices
-  that are, and the Home Screen widget switches them.
+  that are, and the Home Screen widget switches them. A device that's one of the network's servers isn't one of them:
+  a server runs `one` too and gets every release, so it's nobody's to switch off, and it's no row.
   """
   @behaviour OneCore.App
   require Logger
-  alias OneCore.{Artifact, Call, Servers}
+  alias OneCore.{Artifact, Bucket, Call, Servers}
 
   @item "Cloudflare edge deploy"
 
@@ -65,7 +66,8 @@ defmodule SoftwareUpdate do
       %{
         name: "dev_builds",
         read_only: true,
-        description: "Lists your devices (Sign-In's), each with whether it gets dev builds. `tooling/release client` builds for those that do",
+        description:
+          "Lists your devices (Sign-In's), each with whether it gets dev builds. `tooling/release client` builds for those that do. A server's own device isn't among them: it gets every release, and isn't yours to switch off",
         inputs: %{type: "object", properties: %{}},
         outputs: devices
       },
@@ -140,10 +142,24 @@ defmodule SoftwareUpdate do
   defp seen(%{last_seen: at}), do: "Seen " <> Servers.ago(at)
   defp seen(_device), do: "Offline"
 
-  # Your devices that run the One App, by name: apps, not the assistants and browsers signed in beside them.
+  # Your devices that run the One App, by name: apps, not the assistants and browsers signed in beside them, and not
+  # a server's own, which `tooling/release` builds for whatever this says (`OneCore.Builds.say/1`).
   defp devices(call) do
-    for(%{"kind" => "app"} = device <- Call.tool(call, "sign-in", "devices", %{})["devices"], do: device)
+    servers = server_devices()
+
+    for(%{"kind" => "app"} = device <- Call.tool(call, "sign-in", "devices", %{})["devices"],
+        device["id"] not in servers,
+        do: device)
     |> Enum.sort_by(&String.downcase(&1["name"]))
+  end
+
+  # The devices the network's servers are on, each one's own `one` (`OneCore.Builds.say/1`), read as `one builds`
+  # reads them.
+  defp server_devices do
+    for {:ok, said, _tag} <- Bucket.read_all(for key <- Servers.all(), do: "servers/#{key}/build"),
+        device = JSON.decode!(said)["device"],
+        is_binary(device),
+        do: device
   end
 
   @impl true
