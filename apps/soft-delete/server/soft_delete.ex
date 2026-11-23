@@ -63,7 +63,7 @@ defmodule SoftDelete do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.32.107", "database" => "to keep what you deleted for 30 days"}
+  def requires, do: %{"core" => ">= 0.34.539", "database" => "to keep what you deleted for 30 days"}
 
   @impl true
   def hooks, do: ["uninstalled", "superseded", "settings.sections"]
@@ -461,7 +461,7 @@ defmodule SoftDelete do
       {:ok, record} = change(call, id, {:back, for(name <- record["artifacts"], not taken?(name), do: name)})
 
       for {name, n} <- Enum.with_index(record["artifacts"]), name in record["back"],
-          do: moved(Bucket.list(aside(record, id, n)), &(name <> "/" <> String.replace_prefix(&1, aside(record, id, n), "")))
+          do: Bucket.move(aside(record, id, n), name <> "/")
 
       unheard = notify(call, record, "purging")
 
@@ -524,7 +524,7 @@ defmodule SoftDelete do
   # What of an item was put back at its names to be purged goes aside again, as it is while it's deleted.
   defp put_aside(record, id) do
     for {name, n} <- Enum.with_index(record["artifacts"]), name in (record["back"] || []),
-        do: moved(Bucket.list(name <> "/"), &(aside(record, id, n) <> String.replace_prefix(&1, name <> "/", "")))
+        do: Bucket.move(name <> "/", aside(record, id, n))
   end
 
   defp failed(call, id, why, how) do
@@ -555,18 +555,14 @@ defmodule SoftDelete do
   end
 
   defp moved_aside(record, id) do
-    for {name, n} <- Enum.with_index(record["artifacts"]),
-        do: moved(Bucket.list(name <> "/"), &(aside(record, id, n) <> String.replace_prefix(&1, name <> "/", "")))
+    for {name, n} <- Enum.with_index(record["artifacts"]), do: Bucket.move(name <> "/", aside(record, id, n))
   end
 
   # Puts what's aside back where its record says, and then it's active: its record goes.
   defp back(call, id) do
     record = record(call, id)
 
-    for {name, n} <- Enum.with_index(record["artifacts"]) do
-      from = aside(record, id, n)
-      moved(Bucket.list(from), &(record["as"][name] <> "/" <> String.replace_prefix(&1, from, "")))
-    end
+    for {name, n} <- Enum.with_index(record["artifacts"]), do: Bucket.move(aside(record, id, n), record["as"][name] <> "/")
 
     relisted(record["artifacts"])
     Artifact.remove(call.own, "items/" <> id)
@@ -587,27 +583,6 @@ defmodule SoftDelete do
     {:ok, JSON.decode!(written)}
   catch
     {__MODULE__, why} -> {:error, why}
-  end
-
-  # Each blob, as it is in the bucket, to where `to` says, and then removed from where it was. One that's there already
-  # is left if it's the same, as when a move cut short is finished.
-  defp moved(blobs, to) do
-    copied =
-      Task.async_stream(
-        blobs,
-        fn blob ->
-          with {:ok, data, _tag} <- Bucket.read(blob),
-               :exists <- Bucket.write(to.(blob), data),
-               {:ok, other, _tag} when other != data <- Bucket.read(to.(blob)),
-               do: "#{to.(blob)} is there already, and isn't the same",
-               else: (_ -> nil)
-        end,
-        max_concurrency: 16,
-        timeout: :infinity
-      )
-
-    with [why | _] <- for({:ok, why} when is_binary(why) <- copied, do: why), do: raise(why)
-    Task.async_stream(blobs, &Bucket.remove/1, max_concurrency: 16, timeout: :infinity) |> Stream.run()
   end
 
   # Whether something is at a name now.

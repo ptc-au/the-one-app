@@ -79,6 +79,33 @@ defmodule OneCore.Bucket do
   def size(key), do: bucket(:size, [key])
 
   @doc """
+  Moves every blob under the prefix `from` to the same names under `to`, both ending in `/`, byte for byte, and then
+  removes them from `from`. A blob there already at `to` is left if it's the same, as when a move that was cut short is
+  finished, and raises if it isn't, removing nothing.
+  """
+  def move(from, to) do
+    blobs = list(from)
+    at = &(to <> String.replace_prefix(&1, from, ""))
+
+    copied =
+      Task.async_stream(
+        blobs,
+        fn blob ->
+          with {:ok, data, _tag} <- read(blob),
+               :exists <- write(at.(blob), data),
+               {:ok, other, _tag} when other != data <- read(at.(blob)),
+               do: "#{at.(blob)} is there already, and isn't the same",
+               else: (_ -> nil)
+        end,
+        max_concurrency: 16,
+        timeout: :infinity
+      )
+
+    with [why | _] <- for({:ok, why} when is_binary(why) <- copied, do: why), do: raise(why)
+    Task.async_stream(blobs, &remove/1, max_concurrency: 16, timeout: :infinity) |> Stream.run()
+  end
+
+  @doc """
   A short-lived link to a blob, for something large: to read it, or to write it only if there's none at `key`.
   A server hands it to a client, which reads or writes the bucket with it and nothing else.
   """
