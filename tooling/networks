@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
-# The networks' repos, one per line: the repos in the home folder whose main, on the remote, has an `app/address`, as
-# every network's repo has. `tooling/release client` makes each one's iPhone app and installers from its repo.
+# The networks' repos, one per line: each git repo in the home folder whose main checkout, not a worktree, has an
+# `app/address` on origin/main. A repo is listed once, by its origin URL. `tooling/release client` makes each one's
+# iPhone app and installers from its repo.
+seen=$'\n'
 for repo in "$HOME"/*/; do
-  git -C "$repo" cat-file -e origin/main:app/address 2>/dev/null && echo "${repo%/}"
+  repo=${repo%/}
+  git_dir=$(git -C "$repo" rev-parse --git-dir 2>/dev/null) || continue
+  common_dir=$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null) || continue
+  # A worktree's git dir is under the main checkout's, so only the main checkout has the two the same.
+  [ "$(cd "$repo" && cd "$git_dir" && pwd -P)" = "$(cd "$repo" && cd "$common_dir" && pwd -P)" ] || continue
+  git -C "$repo" cat-file -e origin/main:app/address 2>/dev/null || continue
+  url=$(git -C "$repo" config --get remote.origin.url 2>/dev/null) || continue
+  case $seen in *$'\n'"$url"$'\n'*) continue;; esac
+  seen="$seen$url"$'\n'
+  echo "$repo"
 done
 exit 0
