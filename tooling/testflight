@@ -273,14 +273,21 @@ rm "$work/distribution.p12" "$work/distribution.password"
 echo "Uploading $number ($build) as $identifier"
 ipa=$work/app.ipa
 # Apple's 409 says a build of that number is there already, which another release's upload of it made as this one
-# began: it's taken, as it is when it's found before.
+# began: it's taken, as it is when it's found before. Its body names that version, which `/v1/builds` doesn't list
+# while the other release's upload is still being processed, and doesn't for minutes (23 Nov: 11 min after its upload,
+# 15 before its build: TestFlight's latest was the one before, so the 409 was taken as a failure).
 upload=$(asc /v1/buildUploads POST "$(jq -nc --arg app "$app" --arg number "$number" '{data: {type: "buildUploads",
   attributes: {cfBundleShortVersionString: $number, cfBundleVersion: $number, platform: "IOS"},
   relationships: {app: {data: {type: "apps", id: $app}}}}}')" 2>"$work/upload.error") || {
   cat "$work/upload.error" >&2
   if grep -q 'said 409' "$work/upload.error"; then
-    latest=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-version&limit=1&fields%5Bbuilds%5D=version" | jq -r '.data[0].attributes.version // empty')
-    ((${latest%%.*} < number)) || { echo "TestFlight has $latest, which has $build's changes" && exit 0; }
+    previous=$(sed -n 's/.*"previousBundleVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$work/upload.error" | head -1)
+    # One whose body named none, which it always does, is asked of the builds Apple has.
+    [[ -n $previous ]] ||
+      previous=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-version&limit=1&fields%5Bbuilds%5D=version" | jq -r '.data[0].attributes.version // empty')
+    if [[ -n $previous ]] && ((${previous%%.*} >= number)); then
+      echo "TestFlight has $previous or is taking it, which has $build's changes" && exit 0
+    fi
   fi
   exit 1
 }
