@@ -32,8 +32,9 @@ defmodule Vault do
   #
   # and back as they're undone: the last server taken off is no_server again, this device's key revoked is
   # device_lacks_key. A device that lacks the key still adds and uses items (a secret is encrypted for the servers,
-  # not with the key); only showing the recovery key needs it. Every step is Unlock with Passkey, on the network's
-  # sign-in page (`sign-in`'s `unlock_with_passkey`).
+  # not with the key); only showing the recovery key needs it. A browser or an assistant can't hold it (`encryption`
+  # names no device for it), so it's ready once a server opens the Vault. Every step is Unlock with Passkey, on the
+  # network's sign-in page (`sign-in`'s `unlock_with_passkey`).
   @readiness ~w(not_set_up no_server device_lacks_key ready)
 
   # The most of an answer's body that a tool answers with, in bytes.
@@ -1037,7 +1038,7 @@ defmodule Vault do
     cond do
       key["check"] == nil -> "not_set_up"
       servers == [] -> "no_server"
-      key["slot"] == nil -> "device_lacks_key"
+      key["device"] != nil and key["slot"] == nil -> "device_lacks_key"
       true -> "ready"
     end
   end

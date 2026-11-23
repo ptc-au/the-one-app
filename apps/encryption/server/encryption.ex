@@ -25,7 +25,8 @@ defmodule Encryption do
     do: %{
       "core" => ">= 0.34.174",
       "database" => "to keep when it last checked who holds your keys",
-      "telemetry" => "to raise an alert while a server that acts for you is waiting for your key"
+      "telemetry" => "to raise an alert while a server that acts for you is waiting for your key",
+      "sign-in" => "to tell a device that can hold your key, an app's, from a browser or an assistant, which can't"
     }
 
   # Whether each server that should hold what's encrypted for someone does, said to Telemetry (`check`).
@@ -345,7 +346,7 @@ defmodule Encryption do
           type: "object",
           properties: %{
             owner: %{type: "string", description: "Whose key"},
-            device: %{type: ["string", "null"], description: "The device asked about"},
+            device: %{type: ["string", "null"], description: "The device asked about: none for a browser or an assistant, which can't hold a key"},
             check: %{type: ["string", "null"], description: "What tells the key from another, once there's one"},
             slot: %{
               type: ["string", "null"],
@@ -435,6 +436,7 @@ defmodule Encryption do
   @impl true
   def call("key", inputs, call) do
     key = key(call)
+    inputs = Map.update(inputs, "device", nil, &holder(call, &1))
     held = for {device, %{"name" => name}} <- devices(key, "devices/"), do: %{device: device, name: name}
     asking = for {device, %{"name" => name}} <- devices(key, "asking/"), do: %{device: device, name: name}
 
@@ -513,6 +515,7 @@ defmodule Encryption do
 
   def call("ask", %{"device" => device} = inputs, call) do
     key = key(call)
+    if holder(call, device) == nil, do: raise("A browser can't hold your key. Use the app on your phone or computer for that.")
     if not (device =~ ~r/^[0-9a-f]{64}$/), do: raise("A device is named by its key.")
     Artifact.write(key, "asking/" <> device, JSON.encode!(%{name: inputs["name"] || "A device"}))
     %{device: device}
@@ -525,6 +528,16 @@ defmodule Encryption do
     if not (device =~ ~r/^[0-9a-f]{64}$/), do: raise("A device is named by its key.")
     for prefix <- ["devices/", "asking/"], do: Artifact.remove(key, prefix <> device)
     %{device: device}
+  end
+
+  # The device a call names, where it can hold a key: any but the one it came from over the web, unless that's an
+  # app's, proved by its signature. A browser or an assistant is named there by a hash of its session or token
+  # (`apps/sign-in/edge/auth.ts`), which is no key anything can be encrypted to, so it holds none.
+  defp holder(call, device) do
+    case Call.client(call) do
+      %{"web" => true, "device" => ^device} -> if Call.app(call, "sign-in").device(call)["kind"] == "app", do: device
+      _ -> device
+    end
   end
 
   # Where an owner's key is kept, encrypted to each of their devices. It's theirs alone: nobody asks for a user.

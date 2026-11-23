@@ -241,6 +241,8 @@ function Tile(props: { item: Item }) {
 
 /// Whether this Vault is kept with its person's own key, which their passkeys unlock: a group's or the network's isn't.
 const own = () => security().owner.startsWith("users/")
+/// Whether this device can hold the key: a browser can't, so `vault_security` names no device for it.
+const holder = () => security().device != null
 
 /// Unlock with Passkey, every step of a Vault's readiness: the network's sign-in page, in the device's browser, makes
 /// its person's key if there's none, lets this device hold it, and hands it to the servers waiting for it, once the
@@ -248,8 +250,8 @@ const own = () => security().owner.startsWith("users/")
 /// servers by the key of whoever owns it. Coming back, the Vault shows what changed.
 async function unlockWithPasskey() {
   try {
-    if (own()) await call("encryption_ask", {})
-    const link = await call("sign-in_unlock_with_passkey", own() ? { device: security().device } : { scope: whose() })
+    if (own() && holder()) await call("encryption_ask", {})
+    const link = await call("sign-in_unlock_with_passkey", own() ? { device: security().device ?? undefined } : { scope: whose() })
     await opening(JSON.parse(link).link)
   } catch (error) {
     toast(error as Error)
@@ -704,28 +706,33 @@ function SecurityScreen() {
       <Show when={security().readiness !== "not_set_up"}>
         <Section heading="Trusted Devices">
           <List>
-            <Row heading="This Device" text={security().holds ? "Holds the key" : "Doesn't hold the key"} />
+            <Show when={holder()}>
+              <Row heading="This Device" text={security().holds ? "Holds the key" : "Doesn't hold the key"} />
+            </Show>
             <For each={others()}>{(device) => <Row heading={device.name} text="Holds the key" />}</For>
           </List>
         </Section>
-        <Show
-          when={security().holds}
-          fallback={
-            <Section heading="Trust This Device">
+        {/* A browser can't hold the key, so it's trusted by none of these, nor shows the recovery key. */}
+        <Show when={holder()}>
+          <Show
+            when={security().holds}
+            fallback={
+              <Section heading="Trust This Device">
+                <List>
+                  <Show when={own()}>
+                    <Row heading="Unlock with Passkey" text="Use a passkey that unlocks your key" onPress={unlockWithPasskey} />
+                  </Show>
+                  <Row heading="Use Recovery Key" text="Type the key you wrote down" onPress={() => useRecoveryKey({ subject: whose() }).then(again)} />
+                </List>
+              </Section>
+            }
+          >
+            <Section heading="Recovery Key">
               <List>
-                <Show when={own()}>
-                  <Row heading="Unlock with Passkey" text="Use a passkey that unlocks your key" onPress={unlockWithPasskey} />
-                </Show>
-                <Row heading="Use Recovery Key" text="Type the key you wrote down" onPress={() => useRecoveryKey({ subject: whose() }).then(again)} />
+                <Row heading="Show Recovery Key" text="For when every device is gone" onPress={() => showRecoveryKey({ subject: whose() })} />
               </List>
             </Section>
-          }
-        >
-          <Section heading="Recovery Key">
-            <List>
-              <Row heading="Show Recovery Key" text="For when every device is gone" onPress={() => showRecoveryKey({ subject: whose() })} />
-            </List>
-          </Section>
+          </Show>
         </Show>
         <Section heading="Servers">
           <Text style={look.note}>{`The servers that run ${whom()} apps open ${whom()} Vault, once your passkey hands them its key.`}</Text>

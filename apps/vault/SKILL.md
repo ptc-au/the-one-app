@@ -20,7 +20,7 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
 
 - `security` says how ready the Vault is, first of all: `not_set_up` (no key yet), `no_server` (no server opens it,
   so it keeps nothing), `device_lacks_key` (it works, but this device doesn't hold the key, so can't show the
-  recovery key) or `ready`; and the devices holding its person's key, those asking to, and the servers that open it.
+  recovery key; a browser or an assistant never can, so it's `ready` without) or `ready`; and the devices holding its person's key, those asking to, and the servers that open it.
 - `list` shows what's there: each item's `kind` (`password`, `account` or `app_item`, an app's type), its fields, a
   secret one without its value, its websites (`hosts`), its `access` (`agents` and the apps switched on for it), its
   `status` and its `artifact`; every request kept, with its `state`; the apps that use the Vault, by name and title;

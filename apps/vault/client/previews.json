@@ -399,6 +399,36 @@
       "sign-in_encrypt_for_passkeys": {}
     }
   },
+  "Security in a browser": {
+    "like": "Security",
+    "taps": [
+      "Security"
+    ],
+    "answers": {
+      "vault_security": {
+        "readiness": "ready",
+        "owner": "users/alex",
+        "holds": false,
+        "device": null,
+        "devices": [
+          {
+            "device": "d1",
+            "name": "Alex's Laptop"
+          }
+        ],
+        "asking": [],
+        "servers": [
+          "s1"
+        ],
+        "may": [
+          {
+            "key": "s1",
+            "name": "Home Server"
+          }
+        ]
+      }
+    }
+  },
   "Not set up": {
     "answers": {
       "vault_security": {
