@@ -3985,5 +3985,97 @@
   "Connect your AI, signing in": {
     "like": "Connect your AI",
     "wait": 7600
+  },
+  "Onboarding, Welcome then Connect your AI": {
+    "like": "Home, two pages",
+    "size": [
+      390,
+      844
+    ],
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "own-server",
+          "shortcut",
+          "vault",
+          "vault-unlock"
+        ]
+      },
+      "home-screen_tip": {
+        "seen": []
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "sign-in_devices": {
+        "devices": [],
+        "passkeys": []
+      },
+      "one/client": {
+        "device": "iPhone",
+        "build": "0.26.0",
+        "theme": null,
+        "settings": true,
+        "runtimeVersion": 6,
+        "network": "https://ptcau.app"
+      }
+    },
+    "checks": {
+      "Welcome, then Connect your AI, then the Home Screen": [
+        {
+          "expect": {
+            "shown": {
+              "role": "tab",
+              "name": "Secure"
+            }
+          }
+        },
+        {
+          "role": "button",
+          "name": "Continue"
+        },
+        {
+          "wait": 600
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "ChatGPT"
+            }
+          }
+        },
+        {
+          "role": "button",
+          "name": "ChatGPT"
+        },
+        {
+          "wait": 400
+        },
+        {
+          "expect": {
+            "text": "Create as a plugin"
+          }
+        },
+        {
+          "role": "button",
+          "name": "Later"
+        },
+        {
+          "wait": 600
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Notes"
+            }
+          }
+        }
+      ]
+    }
   }
 }
