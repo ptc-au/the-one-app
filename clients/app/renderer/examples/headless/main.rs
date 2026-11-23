@@ -2,7 +2,7 @@
 //!
 //!     cargo run -p renderer --example headless --features fake -- <page's built folder> <out.png> <out.json> \
 //!       [--ui core/ui/dist/client] [--answers answers.json] [--size 480x360] [--scale 2] [--dark] [--requests <file>|-]
-//!       [--safe-area <top>,<right>,<bottom>,<left>] [--touch] [--reduced-motion] [--panel <corner>] [--measure] [--seed <n>]
+//!       [--safe-area <top>,<right>,<bottom>,<left>] [--touch] [--reduced-motion] [--panel <corner>] [--title <name>] [--measure] [--seed <n>]
 //!       [--latency <ms> [--cached <tool>,…]] [--slower <times>] [--memory <GB>] [--time-zone <IANA name>] [--hz <n>]
 //!
 //! It runs the module the folder's `index.html` loads, as `bun app.js` built it, with the UI library a native host
@@ -30,6 +30,9 @@
 //! opens, before its page is given it, as a launcher opened again on its app's new version is: what its page
 //! puts on the system's glass is a window of its own, each drawn by a renderer of its own where the panel arranges it,
 //! over the system's glass, a flat grey here, and its picture is theirs put together.
+//! `--title` opens it as a computer's app window is, with a title row (give it its height as `--safe-area`'s top, 52 as
+//! the app's): the app's name drawn in it, a gap after the system's buttons the window says it has, which the fake
+//! platform's are a Mac's traffic lights, where current macOS lays them out (the `window` request says both).
 //! `--seed` makes it adversarial, the same way each time for the same seed, as GPUI's randomized executor is: one
 //! refresh in five comes late (up to three in a row), what a person does comes a moment after what came before, as
 //! things are on their way somewhere, a click is held from 30 ms to a quarter of a second, one batch in four of
@@ -275,6 +278,10 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
     // A phone's, as an iPhone's host says its person's text size: its body text's 17 pt, which the `phone` tokens are made for.
     screen.text_size = touch.then_some(17.0);
     screen.panel = panel.map(|corner| renderer::Panel { corner, fill: false, whole: false });
+    // Its app's name in its title row, as an app's window has it, starting where the app's starts it with no window
+    // buttons to measure (clients/app/src/native `BAR`).
+    let title = flag("--title");
+    screen.title = title.clone().map(|name| renderer::Title { icon: None, name, start: 12.0 });
     // A picture its page names by its path (Settings' `updates.svg`) is one of its files, read as an app's window
     // fetches it from its app's (`OneCore.Entrypoint` serves them as deployed), a `data:` address, or none where it
     // isn't there.
@@ -317,7 +324,7 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
     // With a seed, adversarial as a busy device and a person are: refreshes late, input as things move.
     windows.seed(seed);
     // A page that opens another app over it is a phone's Home Screen, its root window.
-    let options = WindowOptions { title: "screenshot".into(), app_id: "screenshot".into(), size: Size { width: Pixels(width), height: Pixels(height) }, tag: json!({}), panel, places: None, frame: None, root: opening.is_some(), icon: None, owner: None, snapshot: None, title_row: false };
+    let options = WindowOptions { title: "screenshot".into(), app_id: "screenshot".into(), size: Size { width: Pixels(width), height: Pixels(height) }, tag: json!({}), panel, places: None, frame: None, root: opening.is_some(), icon: None, owner: None, snapshot: None, title_row: title.is_some() };
     let said = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let saying = said.clone();
     // Why its page crashed, if it did, which fails the run: a page never dies quietly.

@@ -44,6 +44,8 @@
 // control's mark 3:1, nothing over anything else, rows' end controls in a column, a readable column in the middle,
 // nothing cut short with room beside it, a date or a size never broken, nothing past a rounded clip), and first, the
 // colours its styles give words against what they're drawn on (lint-tokens.js): a rule broken fails it, saying where.
+// An app's scene on a computer is drawn again as a Mac's app window, `mac.png` (`onAMac`): its title row's title and
+// whatever its page puts in that row start clear of the traffic lights, where current macOS puts them.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -576,6 +578,44 @@ async function windowed(drawn, scene, folder) {
   return { picture: join(folder, "window.png") }
 }
 
+/// A Mac's app window's title row, as the app opens one (clients/app/src/native `BAR`), and how far after the traffic
+/// lights what's in it starts at least: about the 9 points between the lights themselves, nearer than which it reads
+/// as on top of them (Settings' title, 2 points after the zoom button on macOS 27, 23 Nov).
+const TITLE_ROW = 52
+const LIGHTS_CLEAR = 8
+
+/// An app's scene on a computer drawn natively again as a Mac's app window has it, `mac.png`: its app's name in a title
+/// row, after the traffic lights the fake platform's window says it has where current macOS puts them. Neither its
+/// title nor anything of its page in that row (its top bar's words and controls, the `?` at its end) starts before
+/// they end and a gap. A phone's, a panel's (the launcher's) and a component's, drawn in another app's window, have
+/// none. → what's wrong, a line each.
+async function onAMac(drawn, scene, folder, app) {
+  if (app === "gallery" || drawn.missing || scene.touch || panel(scene).length || scene.page.startsWith(COMPONENTS)) return []
+  const lines = drawn.requests.split("\n")
+  writeFileSync(join(folder, "mac-requests.jsonl"), [...lines, JSON.stringify({ v: 1, id: lines.length + 1, op: "window" })].join("\n"))
+  const [at, , , ...rest] = drawn.asked
+  const flags = rest.flatMap((arg, n) => (arg === "--measure" || ["--safe-area", "--requests"].includes(arg) || ["--safe-area", "--requests"].includes(rest[n - 1]) ? [] : [arg]))
+  const name = app.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")
+  const asked = [at, join(folder, "mac.png"), join(folder, "mac.json"), ...flags, "--requests", join(folder, "mac-requests.jsonl"), "--safe-area", `${TITLE_ROW},0,0,0`, "--title", name]
+  const run = await keptRun(asked, [join(folder, "mac.png"), join(folder, "mac.json")])
+  const said = answered(run.stdout)
+  const window = said.at(-1)?.result
+  if (run.exitCode !== 0 || !window) return [`it drew nothing: ${stopped(run.exitCode) ?? run.stderr.trim().split("\n").at(-1)}`]
+  if (window.lights == null) return ["its window said nothing of its traffic lights"]
+  const clear = window.lights + LIGHTS_CLEAR
+  const wrong = []
+  if (!window.title) wrong.push("its title wasn't drawn")
+  else if (window.title.x < clear) wrong.push(`its title starts at x ${window.title.x}, ${Math.round(clear - window.title.x)} pt short of ${LIGHTS_CLEAR} pt after the traffic lights, which end at ${window.lights}`)
+  const nodes = said.findLast((answer) => answer.result?.nodes)?.result.nodes ?? []
+  for (const node of nodes) {
+    const { rect } = node
+    if (!rect || !(node.opacity > 0) || !(node.seen > 0) || !(node.kind === "text" || node.actions) || rect.width >= scene.size[0] - 1) continue
+    if (rect.y < TITLE_ROW && rect.y + rect.height > 0 && rect.x < clear && rect.x + rect.width > 0)
+      wrong.push(`"${node.name ?? node.role ?? node.kind}" is drawn in the title row from x ${Math.round(rect.x)}, ${Math.round(clear - rect.x)} pt short of ${LIGHTS_CLEAR} pt after the traffic lights, which end at ${window.lights}`)
+  }
+  return wrong
+}
+
 const insets = ([top, right, bottom, left]) => ({ top, right, bottom, left })
 /// What a phone draws over a window's words and controls (the headless renderer's `query` of every node, at rest): each drawn under
 /// its status bar, or under its home indicator unless it's in what scrolls, which goes under it as UIKit's scroll views'
@@ -916,6 +956,7 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
       said.push(`  breaks a rule: ${line}`)
       process.exitCode = 1
     }
+    for (const line of await onAMac(drawn, scene, folder, name)) said.push(failing(`  on a Mac: ${line}`))
     // A scene the headless renderer errored on fails the run, where one a host too old for the UI library can't draw only says so.
     if (drawn.missing) said.push(drawn.error ? failing(`  native: ${drawn.missing}`) : `  native: ${drawn.missing}`)
     if (drawn.measured) said.push(`  native: ${timings(drawn.measured)}`)

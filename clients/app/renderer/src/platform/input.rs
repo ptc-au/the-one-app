@@ -266,7 +266,7 @@ pub(crate) enum Input {
     FullScreen(bool),
     /// Where its system's window buttons end, a Mac's traffic lights (the right edge of the zoom button), in its
     /// points, as it measured them as they were laid out.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "macos", feature = "fake")), allow(dead_code))]
     Lights(f32),
     Close,
     Moved(crate::geometry::Point<f32>),

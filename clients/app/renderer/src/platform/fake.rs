@@ -88,6 +88,12 @@ fn placed(menu: &crate::view::TextMenu, width: f32) -> crate::geometry::Bounds<f
     crate::geometry::Bounds { origin: crate::geometry::point(x, y), size }
 }
 
+/// Where a Mac's traffic lights end in a window with a title row, which its title starts a gap after: the zoom
+/// button's right edge as `mac::window::place_lights` lays them out on current macOS (27, measured 23 Nov: 14-point
+/// lights 23 apart, the first moved 20 in, as PTC's Settings window had them), further in than the guess the title
+/// once started after, 20 apart.
+const LIGHTS: f32 = 80.0;
+
 /// How often a refresh comes late where the display is adversarial, a frame dropped, as a busy device's are: one in
 /// five, and never more than three in a row.
 const LATE: u64 = 5;
@@ -344,6 +350,11 @@ impl Display {
             Some(screen) if options.panel.is_none() => screen,
             _ => options.size,
         };
+        // A computer's window with a title row has a Mac's traffic lights at its start, which it measures as it lays
+        // them out, as `mac::window` does as it opens.
+        if options.title_row && options.panel.is_none() && self.phone.get().is_none() {
+            self.push(id, Input::Lights(LIGHTS));
+        }
         Ok(NativeWindow { id, size: Cell::new(Size { width: device(size.width.0), height: device(size.height.0) }), scale: self.scale, slid: Cell::new(0.0), moved: Cell::new(super::rail::Moved::STILL), shown: Cell::new(false), seen: Cell::new(false) })
     }
 

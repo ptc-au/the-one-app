@@ -117,6 +117,10 @@ impl Screen {
                     "paused": self.js.clock().paused(),
                     "failed": self.failed,
                     "focused": self.focus.focused,
+                    // Its title row's title, its icon and name, as it was last drawn, and where its system's own
+                    // buttons end in the row (a Mac's traffic lights), which nothing in the row may be drawn over.
+                    "title": self.chrome.title.map(|title| json!({"x": title.origin.x, "y": title.origin.y, "width": title.size.width, "height": title.size.height})),
+                    "lights": self.lights,
                     "leaving": self.tree.going().count(),
                     "moving": self.transitions.moving().len() - self.transitions.repeating(),
                     "repeating": self.transitions.repeating(),

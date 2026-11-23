@@ -423,8 +423,14 @@ impl Screen {
         }
         self.chrome.buttons = buttons;
         let after_buttons = (!starts.is_empty()).then(|| EDGE_GAP + starts.len() as f32 * (BUTTON + 8.0));
-        let after_lights = self.lights.map(|end| end + EDGE_GAP);
-        let title = self.title.as_ref().map(|title| painter.title(title, edge.or(after_buttons).or(after_lights).unwrap_or(title.start), self.insets.top));
+        // Mutant: the title starts where it would with no traffic lights measured (78102fce8's bug).
+        let after_lights = self.lights.filter(|_| !crate::mutants::mutant("title-on-lights")).map(|end| end + EDGE_GAP);
+        let title = self.title.as_ref().map(|title| {
+            let start = edge.or(after_buttons).or(after_lights).unwrap_or(title.start);
+            (start, painter.title(title, start, self.insets.top))
+        });
+        self.chrome.title = title.map(|(start, end)| Bounds { origin: point(start, 0.0), size: Size { width: end - start, height: self.insets.top } });
+        let title = title.map(|(_, end)| end);
         // The page's top bar starts after it, and ends before the buttons at the end, which it's laid out again for
         // once either moves.
         let start = title.map_or(0, |end| (end + 12.0).ceil() as u16);

@@ -635,12 +635,13 @@ struct Editing {
     overlay: Option<text_selection::Overlay>,
 }
 
-/// What the window draws of its own over its page, as it was last drawn: where its page's top bar starts in its title
-/// row, after its title (0 for a window with none); where its page asked for the system's own material, which a
+/// What the window draws of its own over its page, as it was last drawn: where its title is, its icon and name, and
+/// where its page's top bar starts in its title row, after it (0 for a window with none); where its page asked for the system's own material, which a
 /// panel's host puts under it; where its page says a press moves the window, and where in that it doesn't
 /// (`appRegion`); and where its notice's action is, and whether it's pressed.
 #[derive(Default)]
 struct Chrome {
+    title: Option<Bounds<f32>>,
     title_start: u16,
     title_end: u16,
     buttons: Vec<(WindowButton, Bounds<f32>)>,
