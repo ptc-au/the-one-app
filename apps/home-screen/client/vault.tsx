@@ -5,7 +5,7 @@
 // device asks for the key, then the network's sign-in page, in the device's browser, makes it, lets this device hold
 // it and hands it to every server waiting for it, with one passkey. Coming back, the picture shows it done, the lock
 // shut on the Vault or opened off it, and the button goes on. Later goes on without it: Vault in Settings still asks.
-import { createEffect, createMemo, createSignal, For, onCleanup, refresh, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, isPending, onCleanup, refresh, Show } from "solid-js"
 import { Button, call, changed, client, defineVars, type Element, Icon, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
 import { Box, circle, Panel, type Part, rect, Shape, Words } from "./art.tsx"
 import { amazon, google, microsoft, stripe } from "./slides.tsx"
@@ -262,16 +262,26 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
       : `Your Vault holds your saved passwords and accounts. ${google() ? "Google signed you in" : "You signed in"}, but only your passkey can unlock it on this device.`
 
   // Vault's own Unlock with Passkey (accounts.tsx): this device asks for the key, then the sign-in page, in the device's
-  // browser, makes it if there's none, lets this device hold it and hands it to the servers waiting for it.
+  // browser, makes it if there's none, lets this device hold it and hands it to the servers waiting for it. The ask and
+  // the link are asked at once, and the page reads who's asking only once its passkey is used.
+  const [starting, setStarting] = createSignal(false)
+  const [asked, setAsked] = createSignal(false)
   const unlock = async () => {
+    setStarting(true)
     try {
-      const { device } = await json<Security>("vault_security")
-      if (device) await call("encryption_ask", {})
-      await opening((await json<{ link: string }>("sign-in_unlock_with_passkey", device ? { device } : {})).link)
+      const { device } = security()
+      const [, { link }] = await Promise.all([device ? call("encryption_ask", {}) : undefined, json<{ link: string }>("sign-in_unlock_with_passkey", device ? { device } : {})])
+      setAsked(true)
+      await opening(link)
     } catch (error) {
       toast(error as Error)
+    } finally {
+      setStarting(false)
     }
   }
+  // Unlocking, as its button says, while it opens the page, and once it's been opened, while what it did is asked
+  // again, as it is the moment its person comes back and as the server says it changed, until it's done.
+  const unlocking = () => !done() && (starting() || (asked() && (isPending(security) || isPending(key))))
 
   const wide = () => props.width >= 600
 
@@ -341,8 +351,8 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
             <Show when={wide()}>
               <Button variant="ghost" onPress={props.onContinue}>Later</Button>
             </Show>
-            <Button shape={wide() ? undefined : "capsule"} onPress={unlock} style={wide() ? look.grow : look.stretch}>
-              {setUp() ? "Set Up Passkey" : "Unlock with Passkey"}
+            <Button shape={wide() ? undefined : "capsule"} loading={unlocking()} onPress={unlock} style={wide() ? look.grow : look.stretch}>
+              {unlocking() ? (setUp() ? "Setting Up…" : "Unlocking…") : setUp() ? "Set Up Passkey" : "Unlock with Passkey"}
             </Button>
             <Show when={!wide()}>
               <Button variant="ghost" shape="capsule" onPress={props.onContinue} style={look.stretch}>Later</Button>
