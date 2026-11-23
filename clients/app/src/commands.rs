@@ -27,7 +27,7 @@ pub(crate) async fn apps(subject: Option<String>) -> Result<Value, String> {
 /// Answers what a view asks, in MCP's words: the result of `method`.
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) async fn request(view: String, method: String, params: Value) -> Result<Value, String> {
-    views()?.subscription(&view).request(&method, params).await.map_err(|error| error.to_string())
+    views()?.subscription(&view).request(&method, params).await.map_err(|error| format!("{error:#}"))
 }
 
 /// Asks again for what a view was answered: its user returned to it.
