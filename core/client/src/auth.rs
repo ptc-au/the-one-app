@@ -326,8 +326,8 @@ impl NetworkConfig {
     /// device it is (`store_token`). Gives whether the device is someone's. One that's nobody's drops its token,
     /// which nothing takes now, and keeps whose it was and what it kept for them: the edge's word alone takes
     /// nothing else from it, and what it kept goes only once someone else signs in on it.
-    async fn admit(&mut self, key: &SecretKey, home: &Path) -> Result<bool> {
-        let ask = json!({"jsonrpc": "2.0", "id": 1, "method": "one/token", "params": {"build": device_info()}});
+    async fn admit(&mut self, key: &SecretKey, home: &Path, command: Option<&str>) -> Result<bool> {
+        let ask = json!({"jsonrpc": "2.0", "id": 1, "method": "one/token", "params": {"build": device_info(command)}});
         let mcp = format!("{}/mcp", self.address.trim_end_matches('/'));
         let (_, response) = ask_edge(&mcp, key, "application/json", ask.to_string()).await?;
         if response["error"]["code"] == NOBODY {
@@ -410,7 +410,7 @@ pub(crate) async fn sessions(client: std::sync::Weak<Client>) {
                 }
             }
             State::SignedIn { .. } => {
-                // A network on one machine has no token to renew. Renewing says which build this is (`device_info`),
+                // A network on one machine has no token to renew. Renewing says which build this is and its command (`device_info`),
                 // which its network keeps as the device's one record of it: so it's renewed as it starts and each
                 // time it's back online, as well as before it ends, and the device's record is the program that last
                 // started or came back, not one that last renewed up to half an hour before.
@@ -479,7 +479,7 @@ impl Client {
     pub(crate) async fn admit(&self, from: &State, why: Option<NotApproved>) -> Duration {
         let _one = self.admitting.lock().await;
         let Some(mut config) = self.config().filter(|_| self.state.borrow().same_session(from)) else { return AGAIN };
-        let failed = match config.admit(&self.key, &self.home).await {
+        let failed = match config.admit(&self.key, &self.home, self.terminal()).await {
             Ok(true) => match self.relink(&config).await {
                 Ok(()) => {
                     // Its address answered, which says nothing of whether its servers talk with it.
@@ -525,7 +525,7 @@ impl Client {
         let Some(mut config) = self.config() else { return AGAIN };
         // No server takes a token that has ended, so that's asked at the address straight away.
         let given = match config.ends() > SystemTime::now() {
-            true => self.request("one/token", json!({"build": device_info()})).await.ok(),
+            true => self.request("one/token", json!({"build": device_info(self.terminal())})).await.ok(),
             false => None,
         };
         let Some(given) = given else { return self.admit(now, None).await };

@@ -65,9 +65,10 @@ pub static PROTOCOL: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
 });
 
 /// What a device says of itself as it asks for its token, which the network keeps so a list of its devices says
-/// which build each is: its build, the protocols it speaks, its kind of machine and its name.
-fn device_info() -> Value {
-    json!({"build": BUILD, "protocol": *PROTOCOL, "target": target(), "name": name()})
+/// which build each is: its build, the protocols it speaks, its kind of machine and its name, and the `command` that
+/// ran it if a terminal did (`Client::terminal`), which a device let in before the network asked for it says here.
+fn device_info(command: Option<&str>) -> Value {
+    json!({"build": BUILD, "protocol": *PROTOCOL, "target": target(), "name": name(), "command": command})
 }
 
 /// What an app's native code does on the device itself, when a server acting for the device's person asks: a call of
