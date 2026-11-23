@@ -1,8 +1,9 @@
 // People & Groups: everyone in the network and whoever's invited and hasn't joined yet, then the groups whoever's
-// looking is in, and who's in each. Whoever may invite makes a link someone joins by, shared the device's way, and
-// takes someone out; each person changes the name they go by here, from their own row. Anyone makes a group, which
-// has a Home Screen of its own that its members see, and its owners add someone in the network to it and take members
-// out. Groups are each person's own, so they're asked for as the person, wherever the app was opened.
+// looking is in, and who's in each. Whoever may invite makes a link someone joins by, shared the device's way, takes
+// someone out, and makes someone an owner or stops them being one; each person changes the name they go by here, from
+// their own row. Anyone makes a group, which has a Home Screen of its own that its members see, and its owners add
+// someone in the network to it, take members out, and make them owners too. Groups are each person's own, so they're
+// asked for as the person, wherever the app was opened.
 import { createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
 import { Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Skeleton, Split, styles, toast, tokens, View } from "ui"
 
@@ -64,6 +65,18 @@ async function change(tool: string, inputs: object, me?: string) {
   } finally {
     refresh(all)
   }
+}
+
+/// Makes someone an owner of the network or a group, or stops them being one, once whoever's looking has said what
+/// that means. Nobody stops being the last owner: the menu doesn't offer it, and Permissions refuses it.
+async function own(artifact: string, of: string, who: string, owner: boolean, all: All) {
+  const you = who === all.me
+  const name = you ? "yourself" : all.named(who)
+  const means = `An owner can change anything in ${of}, including who's an owner.`
+  const question = owner
+    ? { heading: `Remove ${name} as an owner?`, text: `${you ? "You" : "They"} will no longer be able to change anything in ${of}. ${means}`, action: "Remove as Owner", destructive: true }
+    : { heading: `Make ${name} an owner?`, text: means, action: "Make Owner" }
+  if (await confirm(question)) change(owner ? "permissions_unshare" : "permissions_share", { artifact, relation: "owner", who }, all.me)
 }
 
 /// Takes someone out, or ends an invitation, once whoever's looking has said so.
@@ -181,23 +194,28 @@ function NewGroup(props: { open: boolean; onClose: () => void; me: string }) {
 }
 
 /// Someone's row: what they go by, and what can be done to them, by whoever may: they change their own name, an owner
-/// takes someone else out.
+/// takes someone else out, and makes anyone who has joined an owner, or not one, unless they're the last.
 function PersonRow(props: { person: Person; all: All }) {
   const me = () => props.person.who === props.all.me
   const mayRemove = () => props.all.invites && !me()
+  const owner = () => props.all.owners.includes(props.person.who)
+  const mayOwn = () => props.all.invites && !!props.person.joined && !(owner() && props.all.owners.length < 2)
   const name = () => props.all.named(props.person.who)
   return (
     <Row
       heading={name()}
       text={about(props.person, props.all) || undefined}
       end={
-        <Show when={me() || mayRemove()}>
-          <Menu.Root onSelect={(value) => (value === "rename" ? setNaming(true) : remove(props.person, props.all))}>
+        <Show when={me() || mayRemove() || mayOwn()}>
+          <Menu.Root onSelect={(value) => (value === "rename" ? setNaming(true) : value === "owner" ? own("network", "the network", props.person.who, owner(), props.all) : remove(props.person, props.all))}>
             <Menu.Trigger aria-label={`More for ${name()}`} />
             <Menu.Positioner>
               <Menu.Content>
                 <Show when={me()}>
                   <Menu.Item value="rename">Change Name</Menu.Item>
+                </Show>
+                <Show when={mayOwn()}>
+                  <Menu.Item value="owner">{owner() ? "Remove as Owner" : "Make Owner"}</Menu.Item>
                 </Show>
                 <Show when={mayRemove()}>
                   <Menu.Item value="remove" destructive>
@@ -213,9 +231,9 @@ function PersonRow(props: { person: Person; all: All }) {
   )
 }
 
-/// A group: who's in it, each to take out, and someone in the network to add.
+/// A group: who's in it, each to take out or make an owner, or not one, and someone in the network to add.
 function GroupScreen(props: { group: Group; all: All }) {
-  // Its owners add and take out.
+  // Its owners add, take out and make owners.
   const owns = () => props.group.owners.includes(props.all.me)
   const remove = async (member: string) => {
     if (await confirm({ heading: `Remove ${props.all.named(member)} from ${props.group.called}?`, text: "They stop seeing its Home Screen and what's the group's.", action: "Remove", destructive: true }))
@@ -225,19 +243,34 @@ function GroupScreen(props: { group: Group; all: All }) {
     <Screen heading={props.group.called} back action={<Show when={owns()}><Button variant="outline" onPress={() => setAdding("member")}>Add Member</Button></Show>}>
       <Section heading="Members">
         <List each={props.group.members}>
-          {(member) => (
-            <Row
-              heading={props.all.named(member())}
-              text={props.group.owners.includes(member()) ? "Owner" : undefined}
-              end={
-                <Show when={owns() && member() !== props.all.me}>
-                  <Button variant="ghost" size="icon" aria-label={`Remove ${props.all.named(member())}`} onPress={() => remove(member())}>
-                    <Icon name="trash" />
-                  </Button>
-                </Show>
-              }
-            />
-          )}
+          {(member) => {
+            const owner = () => props.group.owners.includes(member())
+            const mayOwn = () => owns() && !(owner() && props.group.owners.length < 2)
+            const mayRemove = () => owns() && member() !== props.all.me
+            return (
+              <Row
+                heading={props.all.named(member())}
+                text={owner() ? "Owner" : undefined}
+                end={
+                  <Show when={mayOwn() || mayRemove()}>
+                    <Menu.Root onSelect={(value) => (value === "owner" ? own(props.group.group, `the ${props.group.called} group`, member(), owner(), props.all) : remove(member()))}>
+                      <Menu.Trigger aria-label={`More for ${props.all.named(member())}`} />
+                      <Menu.Positioner>
+                        <Menu.Content>
+                          <Show when={mayOwn()}>
+                            <Menu.Item value="owner">{owner() ? "Remove as Owner" : "Make Owner"}</Menu.Item>
+                          </Show>
+                          <Show when={mayRemove()}>
+                            <Menu.Item value="remove" destructive>{`Remove ${props.all.named(member())}`}</Menu.Item>
+                          </Show>
+                        </Menu.Content>
+                      </Menu.Positioner>
+                    </Menu.Root>
+                  </Show>
+                }
+              />
+            )
+          }}
         </List>
       </Section>
     </Screen>

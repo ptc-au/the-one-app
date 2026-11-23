@@ -428,6 +428,63 @@
       "Family"
     ]
   },
+  "People & Groups, an owner looking at someone who isn't one": {
+    "like": "People & Groups",
+    "taps": [
+      "More for Sam"
+    ]
+  },
+  "People & Groups, asking to make someone an owner": {
+    "like": "People & Groups",
+    "taps": [
+      "More for Sam",
+      "Make Owner"
+    ]
+  },
+  "People & Groups, an owner looking at another owner": {
+    "like": "People & Groups",
+    "answers": {
+      "permissions_shared": {
+        "tuples": [
+          {
+            "relation": "owner",
+            "who": "users/alex"
+          },
+          {
+            "relation": "owner",
+            "who": "users/sam"
+          }
+        ]
+      }
+    },
+    "taps": [
+      "More for Sam"
+    ]
+  },
+  "People & Groups, someone who isn't an owner": {
+    "like": "People & Groups",
+    "answers": {
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "joined": true
+          }
+        ]
+      }
+    },
+    "taps": [
+      "More for Sam"
+    ]
+  },
+  "Group, an owner looking at a member": {
+    "like": "People & Groups",
+    "taps": [
+      "Family",
+      "More for Sam"
+    ]
+  },
   "Invite": {
     "like": "Group",
     "taps": [
