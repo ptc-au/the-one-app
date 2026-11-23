@@ -5,7 +5,9 @@
 //! (`shortcut.lock`, which it holds while it runs, its identifier in it), and the others wait on its lock, so the
 //! next takes it the moment it quits, as the program after an update takes it from the one before. Pressed, it shows
 //! the launcher of the network used last, which the one that has it tells over that app's channel (`toggle`), or
-//! its own where that one isn't running.
+//! its own where that one isn't running. Their launchers switch between them too (`networks`, `switch`), each
+//! showing every network's running as tabs over its search, by the logo each keeps beside where it listens
+//! (`apps/<identifier>.png`, its network's `/Logo.png`).
 //!
 //! It's ⌥Space on a Mac, as Raycast suggests, which macOS leaves free (Spotlight is ⌘Space, the input source ⌃Space);
 //! on Windows and Linux Alt+Space is the window menu's, and Super+Space the input source's, so it's Super+Alt+Space
@@ -49,6 +51,12 @@ pub(super) fn begin(home: &Path) {
     if let Err(error) = std::fs::create_dir_all(folder.join("apps")).and_then(|()| std::fs::write(folder.join("apps").join(::client::identifier()), listens.to_string())) {
         eprintln!("this app can't say where it listens to the computer's other apps ({}): {error}", folder.display());
     }
+    crate::spawn(async {
+        crate::signed_in().await;
+        if let Err(error) = keep_logo().await {
+            eprintln!("this app's network's logo isn't beside the computer's other apps: {error:#}");
+        }
+    });
     std::thread::spawn(|| {
         let taken = std::fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(shared().join("shortcut.lock")).and_then(|mut lock| {
             lock.lock()?;
@@ -64,6 +72,46 @@ pub(super) fn begin(home: &Path) {
             Err(error) => eprintln!("the launcher's shortcut couldn't be shared with the computer's other apps: {error}"),
         }
     });
+}
+
+/// Keeps this app's network's logo, as its pages draw it (`/Logo.png`), beside where it listens, for the switcher.
+async fn keep_logo() -> anyhow::Result<()> {
+    let address = crate::views().map_err(anyhow::Error::msg)?.client.address().ok_or_else(|| anyhow::anyhow!("this client has no network's address"))?;
+    let logo = ::client::web()?.get(format!("{}/Logo.png", address.trim_end_matches('/'))).send().await?.error_for_status()?.bytes().await?;
+    std::fs::write(shared().join("apps").join(format!("{}.png", ::client::identifier())), logo)?;
+    Ok(())
+}
+
+/// Every network's app running on this computer, this one too, by name, as its launcher's switcher shows them: each
+/// one's `identifier`, `name`, `logo` (a `data:` address) and whether it's this one (`current`).
+pub(crate) fn networks() -> Value {
+    use data_encoding::BASE64;
+    let apps = shared().join("apps");
+    let mut running: Vec<Value> = std::fs::read_dir(&apps)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let identifier = entry.file_name().into_string().ok().filter(|name| !name.ends_with(".png"))?;
+            let said: Value = serde_json::from_str(&std::fs::read_to_string(entry.path()).ok()?).ok()?;
+            let current = identifier == ::client::identifier();
+            // One that's quit, or was uninstalled, isn't listening.
+            (current || ask(said["address"].as_str()?, &json!({})).is_ok()).then_some(())?;
+            let logo = std::fs::read(apps.join(format!("{identifier}.png"))).ok().map(|logo| format!("data:image/png;base64,{}", BASE64.encode(&logo)));
+            Some(json!({"identifier": identifier, "name": said["name"], "logo": logo, "current": current}))
+        })
+        .collect();
+    running.sort_by(|one, other| one["name"].as_str().cmp(&other["name"].as_str()));
+    json!(running)
+}
+
+/// Shows the launcher of the network's app `identifier` in place of this one's, as its person chose its tab or its
+/// key (⌘2), which that app is told over its channel.
+pub(crate) fn switch(identifier: &str) -> Result<Value, String> {
+    let address = address(identifier).ok_or_else(|| format!("No app on this computer is {identifier}."))?;
+    ask(&address, &json!({"again": {"link": null}})).map_err(|error| format!("{identifier} didn't answer: {error}"))?;
+    tell(Told::Hide(false));
+    Ok(json!({}))
 }
 
 /// The shortcut's keys as the computer keeps them, or the default: empty for none.

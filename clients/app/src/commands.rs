@@ -41,7 +41,7 @@ pub(crate) async fn refresh(view: String) -> Result<(), String> {
 /// of machine, as builds are named, its server's key, if it's a server, and whether a phone is woken by its
 /// notifications (`notifications::Push`), whether it opens its own Settings page for the app (`settings`, an iPhone's;
 /// Android's is opened by its activity), whether its person turned Computer Use on, on a phone that has it, on a
-/// computer the launcher's shortcut (`computer::shortcut_now`), and the runtime version its renderer draws
+/// computer the launcher's shortcut (`computer::shortcut_now`) and every network's app running there (`networks`), and the runtime version its renderer draws
 /// (`renderer::RUNTIME_VERSION`), which a page that needs a newer one asks of it.
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) fn client() -> Result<Value, String> {
@@ -57,8 +57,17 @@ pub(crate) fn client() -> Result<Value, String> {
         "computerUse": computer_use_client::phone(),
         "login": login(),
         "shortcut": shortcut(),
+        "networks": networks(),
         "runtimeVersion": renderer::RUNTIME_VERSION,
     }))
+}
+
+/// Every network's app running on this computer (`computer::networks`); null on a phone, which runs one.
+fn networks() -> Value {
+    #[cfg(not(mobile))]
+    return crate::computer::networks();
+    #[cfg(mobile)]
+    Value::Null
 }
 
 /// The launcher's shortcut, on a computer; null on a phone, which has none.

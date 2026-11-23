@@ -641,6 +641,9 @@ export type Client = {
   /** A computer's launcher's shortcut, in global-hotkey's words (`alt+Space`, `shift+control+KeyK`): what it is now,
    * null while it has none, and what it is where its person hasn't chosen one; null on a phone. */
   shortcut?: { keys: string | null; default: string } | null
+  /** Every network's app running on this computer, this one too (`current`), by name, as a launcher switches between
+   * them: each one's identifier, name and logo (a `data:` address, or null); null on a phone. */
+  networks?: { identifier: string; name: string; logo: string | null; current: boolean }[] | null
   theme: "light" | "dark" | null
   pinsShortcuts?: boolean
   settings?: boolean
@@ -668,6 +671,8 @@ export type ClientChange = {
   shortcut?: string | null
   /** Lets go of the launcher's shortcut while another is recorded, so pressing it records it, or takes it again. */
   shortcutPaused?: boolean
+  /** Another network's app on this computer shows its launcher in this one's place, by its identifier. */
+  network?: string
   update?: boolean
   push?: boolean
   settings?: "accessibility" | "app"

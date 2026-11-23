@@ -23,7 +23,7 @@ use crate::native::Instead;
 use crate::{hosts, notifications};
 
 mod shortcut;
-pub(crate) use shortcut::{change as change_shortcut, now as shortcut_now, pause as pause_shortcut};
+pub(crate) use shortcut::{change as change_shortcut, networks, now as shortcut_now, pause as pause_shortcut, switch};
 
 /// The launcher's width and tallest height, in points: Raycast's panel's width, its search bar, two of a phone's pages
 /// side by side with their six rows, near a phone's size (`measure` in the Home Screen's layout.ts), and the room its
