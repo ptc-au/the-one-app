@@ -5,7 +5,6 @@
 //   where it is: home { owner, screen } | library
 //     step(screen): Home's screenfuls, then the App Library
 //     step(owner): on Home only.   list ─pick─► another owner: on Home only
-//   list ─order─► ordering (Edit Order's sheet) ─dismiss─► nothing
 //   open ─► category (App Library), as now
 //   holding (an app in the App Library) ─lift─► editing.dragging, with Home brought forward on the last owner
 //   editing.dragging: over (rested a moment at a place) · flip(page ±1) · flip(owner ±1) · stack · drop ─► still | asking | refused
@@ -177,11 +176,9 @@ export type Event =
   | { type: "go"; screen: number }
   /** A link to one of the screenfuls (`one:home-screen#library`): there at once, whatever was open. */
   | { type: "link"; screen: number }
-  /** The owner switcher's list opened, an owner was picked from it, or it was dismissed; or Edit Order… was chosen
-   * from it, whose sheet is dismissed, Done or not. */
+  /** The owner switcher's list opened, an owner was picked from it, or it was dismissed. */
   | { type: "list" }
   | { type: "pick"; owner: number }
-  | { type: "order" }
   | { type: "dismiss" }
   /** A category was tapped in the App Library, or closed. */
   | { type: "open"; category: string }
@@ -468,12 +465,7 @@ export const machine = setup({
       on: {
         dismiss: "nothing",
         pick: { target: "nothing", actions: ["pick", "glide"] },
-        order: "ordering",
       },
-    },
-    // Edit Order's sheet, over Home, which the keys moving Home leave alone while it's open.
-    ordering: {
-      on: { dismiss: "nothing" },
     },
     // A category opened over the App Library, as an iPhone's. It's open the moment it's tapped and closed the moment
     // it's told, as a finger changes its mind: how it grows out of its place and shrinks back into it is the

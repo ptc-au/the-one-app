@@ -118,13 +118,15 @@ function EditOrder(props: { open: boolean; onClose: () => void }) {
 /// owners move. While pages are edited, + and Done are either side of it, and it opens nothing.
 export function OwnerPill(props: { owners: Owner[] }) {
   const shown = () => at().owner
+  // Edit Order's sheet, over Home: its own, as what's open over the page is a layer's, not the machine's, and it takes
+  // every key while it's up.
+  const [ordering, setOrdering] = createSignal(false)
   return (
     <>
     <Menu.Root
       open={state().matches("listing")}
-      // The machine as it is now, not as last drawn: Edit Order… has just moved it on as the menu closes.
       onOpenChange={(open) => (open ? home.getSnapshot().matches("nothing") && home.send({ type: "list" }) : home.getSnapshot().matches("listing") && home.send({ type: "dismiss" }))}
-      onSelect={(value) => home.send(value === "order" ? { type: "order" } : { type: "pick", owner: Number(value) })}
+      onSelect={(value) => (value === "order" ? setOrdering(true) : home.send({ type: "pick", owner: Number(value) }))}
     >
       <View style={[looks.pill, looks.glass, looks.ownerPill]}>
         <Menu.Trigger variant="ghost" shape="capsule" aria-label={props.owners[shown()]?.name}>
@@ -164,7 +166,7 @@ export function OwnerPill(props: { owners: Owner[] }) {
         </Menu.Content>
       </Menu.Positioner>
     </Menu.Root>
-    <EditOrder open={state().matches("ordering")} onClose={() => state().matches("ordering") && home.send({ type: "dismiss" })} />
+    <EditOrder open={ordering()} onClose={() => setOrdering(false)} />
     </>
   )
 }
