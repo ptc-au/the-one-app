@@ -64,6 +64,7 @@ const inPairs = (code: string) =>
 /// it asks, such as a `Field` for their name, goes in it, above the button.
 export function SignIn(props: {
   mark?: string | JSX.Element
+  markDark?: string
   heading?: JSX.Element
   button?: JSX.Element
   quiet?: boolean
@@ -110,7 +111,7 @@ export function SignIn(props: {
     >
       {/* Drawn afresh as it changes, as a picture's address may give way to what draws one (a consent page's logos). */}
       <Show when={props.mark} keyed>
-        {(mark) => (typeof mark === "string" ? <Image src={mark} alt="" style={look.mark} /> : mark)}
+        {(mark) => (typeof mark === "string" ? <Image src={mark} srcDark={props.markDark} alt="" style={look.mark} /> : mark)}
       </Show>
       <Text role="heading" aria-level={1} style={look.heading}>
         {props.heading}

@@ -185,6 +185,8 @@ export declare function Text(props: TextProps): Element
 
 export type ImageProps = Pick<Semantics, "aria-hidden"> & {
   src: string
+  /** The picture where the window is dark, as HTML's `<source media="(prefers-color-scheme: dark)">` is. */
+  srcDark?: string
   alt: string
   style?: Styles
 }

@@ -44,9 +44,9 @@ impl Painter<'_> {
     /// out, unscaled, and put in the atlas on the frame that's decoded, so the frame it first shows on uploads nothing
     /// (a category's icons as it opened, 4.4 ms of a mid laptop's WebGPU frame). One that's broken (not found, or that
     /// failed to decode every time it was tried) fills its box in a quiet grey, as a browser marks a broken image, never
-    /// nothing.
+    /// nothing. Where the window is dark it's its `srcDark`, where it has one.
     pub(in crate::view) fn paint_image(&mut self, node: &Node, content: Bounds<f32>, transform: Transform, radii: Corners<f32>, opacity: f32, mask: ContentMask<f32>) {
-        let Some(src) = node.str("src") else { return };
+        let Some(src) = node.str("srcDark").filter(|_| self.conditions.dark).or_else(|| node.str("src")) else { return };
         if opacity <= 0.0 {
             let fetched = self.fetched;
             if let Some(src) = Some(src).filter(|src| src.starts_with("data:")).or_else(|| fetched.get(src)?.as_deref())

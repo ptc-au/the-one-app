@@ -84,7 +84,8 @@ const text = primitive("text")
 export const Text: typeof Page.Text = (props) => text(renamed(props, ["onPress", "tabIndex", "style"], { style: (it) => focusable(it, true), onClick: (it) => it.onPress, tabindex: (it) => it.tabIndex }))
 
 /// `<Image src="icon.svg" alt="" style={look.icon} />`: a picture, from a `data:` address or the app's
-/// own files, named by `alt`, scaled to fit its box.
+/// own files, named by `alt`, scaled to fit its box. `srcDark` is the one where the window is dark, as a `<picture>`'s
+/// `<source media="(prefers-color-scheme: dark)">` is.
 export const Image: typeof Page.Image = primitive("image")
 
 /** The `viewBox` of the `Svg` a path is in. */
