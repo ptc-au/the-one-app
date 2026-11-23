@@ -97,12 +97,22 @@ impl Windows {
         if self.display.ticks() {
             self.display.tick(now() + self.display.refresh() + std::time::Duration::from_secs_f64(self.display.late_ms() / 1000.0));
         }
-        for id in self.display.summoned() {
+        let summoned = self.display.summoned();
+        for &id in &summoned {
             let Some(window) = self.windows.get_mut(&id) else { continue };
             let parts = window.parts.len();
             let drawn = window.renderer.as_mut().is_some_and(|renderer| (0..parts).filter_map(|at| renderer.read(at)).any(|(_, _, rgba)| rgba.chunks_exact(4).any(|pixel| pixel[3] > 0)));
             if !drawn {
                 self.display.wrong(format!("{} was put on the screen with nothing drawn on it", window.title));
+            }
+        }
+        // By the refresh after it's summoned, it shows a frame it presented on the screen: one presented before it was
+        // there isn't shown on a Mac, where a launcher summoned as the app started, drawn first and then ordered in with
+        // nothing changed, showed nothing until its page changed (23 Nov).
+        for id in self.display.due(summoned) {
+            let Some(window) = self.windows.get(&id) else { continue };
+            if window.on_screen() && !self.display.seen(&window.parts[0].native) {
+                self.display.wrong(format!("{} was put on the screen and presented nothing there by the next refresh", window.title));
             }
         }
     }

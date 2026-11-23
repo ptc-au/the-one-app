@@ -65,6 +65,8 @@ static WAKE: Mutex<Option<Wake>> = Mutex::new(None);
 /// Whether the system is dark, as the views last said, and whether that's changed since the windows were told.
 static DARK: AtomicBool = AtomicBool::new(false);
 static APPEARANCE_CHANGED: AtomicBool = AtomicBool::new(false);
+/// Whether the app was active when last asked (`with_windows`): iOS launches it inactive, drawing before it shows it.
+static ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// The windows' thread: the main thread, once the app has handed tao's event loop over (`attach`).
 pub fn start() -> anyhow::Result<super::Native> {
@@ -252,7 +254,17 @@ fn with_windows<R>(f: impl FnOnce(&mut Windows) -> R) -> Option<R> {
         // In the background, where iOS launches the app for a Shortcut or it goes, Metal refuses its GPU work
         // (`Windows::background`): iOS's own word on where it is, asked each turn.
         if let Some(main) = MainThreadMarker::new() {
-            windows.background(UIApplication::sharedApplication(main).applicationState() == UIApplicationState::Background);
+            let state = UIApplication::sharedApplication(main).applicationState();
+            windows.background(state == UIApplicationState::Background);
+            // Active, as it first shows and as it's back, what it presented while it wasn't is drawn again where it
+            // shows: as it launches, inactive, iOS doesn't show what it presents yet.
+            let active = state == UIApplicationState::Active;
+            if active && !ACTIVE.swap(true, Ordering::Relaxed) {
+                windows.active();
+            }
+            if !active {
+                ACTIVE.store(false, Ordering::Relaxed);
+            }
         }
         if APPEARANCE_CHANGED.swap(false, Ordering::Relaxed) {
             for window in windows.windows.values_mut() {

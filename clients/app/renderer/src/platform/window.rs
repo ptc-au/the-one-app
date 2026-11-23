@@ -52,6 +52,15 @@ impl Window {
         self.shown && !self.hidden && (!self.panel || self.visible)
     }
 
+    /// It came on the screen just now: its next frame is drawn whole and presented, though nothing it shows changed, as
+    /// what the system shows of it may not be what it presented last (`Renderer::shown`).
+    pub(super) fn came_on_screen(&mut self) {
+        self.unshown = true;
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.shown();
+        }
+    }
+
     /// Paints what it shows while it has no page: its loading state while its page is still to come (`pending`), its
     /// spinner turning, never an empty window (a phone's first start showed black for 5 s and more as its page was
     /// read, 21 Nov); or why it didn't open.
@@ -141,6 +150,10 @@ impl Window {
             display.arrange(&placed, &mut draw);
         } else {
             draw();
+        }
+        #[cfg(feature = "fake")]
+        if drawn == Draw::Presented {
+            display.presented(&self.parts[0].native);
         }
         drawn
     }

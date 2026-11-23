@@ -20,6 +20,7 @@ impl Windows {
         }
         window.visible = true;
         window.dirty = true;
+        window.came_on_screen();
         window.summoned = Some(asked);
         if let Ok(screen) = &mut window.screen {
             screen.shown(true);
@@ -78,7 +79,8 @@ impl Windows {
             self.display.put_away(&window.parts[0].native, false);
         } else {
             // Drawn as it shows, though nothing it shows changed: its images went as it was hidden.
-            (window.dirty, window.unshown) = (true, true);
+            window.dirty = true;
+            window.came_on_screen();
             self.display.show(&window.parts[0].native);
         }
     }

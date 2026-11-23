@@ -61,6 +61,8 @@ pub struct Display {
     /// moving now, whose pointer is the system's until it's let go, as a Mac's window drag and X11's move have it.
     rows: RefCell<std::collections::HashMap<WindowId, crate::view::TitleRow>>,
     moving: Cell<Option<WindowId>>,
+    /// The panels summoned at the refresh before, checked at this one (`due`).
+    due: RefCell<Vec<WindowId>>,
 }
 
 /// Answers on their way to a page, each with when it comes on the page's clock.
@@ -115,6 +117,9 @@ pub struct NativeWindow {
     /// compositor shows it (`Windows::screen`).
     moved: Cell<super::rail::Moved>,
     shown: Cell<bool>,
+    /// Whether it's presented a frame since it came on the screen: what it presented before isn't shown then, as a
+    /// Mac's window ordered in and an iPhone app's as iOS first shows it don't (`presented`).
+    seen: Cell<bool>,
 }
 
 /// A window as `Display::arrange` places it.
@@ -195,6 +200,7 @@ impl Display {
             answers: RefCell::default(),
             rows: RefCell::default(),
             moving: Cell::default(),
+            due: RefCell::default(),
         }
     }
 
@@ -338,22 +344,41 @@ impl Display {
             Some(screen) if options.panel.is_none() => screen,
             _ => options.size,
         };
-        Ok(NativeWindow { id, size: Cell::new(Size { width: device(size.width.0), height: device(size.height.0) }), scale: self.scale, slid: Cell::new(0.0), moved: Cell::new(super::rail::Moved::STILL), shown: Cell::new(false) })
+        Ok(NativeWindow { id, size: Cell::new(Size { width: device(size.width.0), height: device(size.height.0) }), scale: self.scale, slid: Cell::new(0.0), moved: Cell::new(super::rail::Moved::STILL), shown: Cell::new(false), seen: Cell::new(false) })
     }
 
     /// A part of a panel's: a window of its own for each pane of the system's glass its page asks for, as on a Mac.
     pub fn open_part(&self, parent: &NativeWindow, _: usize) -> anyhow::Result<NativeWindow> {
-        Ok(NativeWindow { id: parent.id, size: Cell::new(Size { width: DevicePixels(1), height: DevicePixels(1) }), scale: self.scale, slid: Cell::new(0.0), moved: Cell::new(super::rail::Moved::STILL), shown: Cell::new(true) })
+        Ok(NativeWindow { id: parent.id, size: Cell::new(Size { width: DevicePixels(1), height: DevicePixels(1) }), scale: self.scale, slid: Cell::new(0.0), moved: Cell::new(super::rail::Moved::STILL), shown: Cell::new(true), seen: Cell::new(true) })
     }
 
     pub fn summon(&self, window: &NativeWindow, _: &super::Places, _: Size<Pixels>) {
         window.shown.set(true);
+        window.seen.set(false);
         self.summoned.borrow_mut().push(window.id);
     }
 
     /// The panels put on the screen since it was last asked.
     pub(crate) fn summoned(&self) -> Vec<WindowId> {
         self.summoned.take()
+    }
+
+    /// Window `window` presented a frame (`platform::Window::arrange`), which shows where it's on the screen.
+    pub(crate) fn presented(&self, window: &NativeWindow) {
+        if window.shown.get() {
+            window.seen.set(true);
+        }
+    }
+
+    /// Whether `window` has shown a frame since it came on the screen (`presented`).
+    pub(crate) fn seen(&self, window: &NativeWindow) -> bool {
+        window.seen.get()
+    }
+
+    /// The panels summoned a refresh ago, which must show a frame presented since by now (`Windows::tick`), and those
+    /// summoned since, which are checked at the next.
+    pub(crate) fn due(&self, summoned: Vec<WindowId>) -> Vec<WindowId> {
+        self.due.replace(summoned)
     }
 
     /// Something the display showed that it mustn't have, once however often it showed it.
@@ -379,7 +404,9 @@ impl Display {
     pub fn attach(&self, _: &NativeWindow, _: &NativeWindow) {}
 
     pub fn show(&self, window: &NativeWindow) {
-        window.shown.set(true);
+        if !window.shown.replace(true) {
+            window.seen.set(false);
+        }
     }
 
     pub fn close(&self, _: &NativeWindow) {}

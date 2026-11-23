@@ -272,6 +272,15 @@ impl Windows {
         }
     }
 
+    /// The app is active, as a phone's is once its system shows it (UIKit's `didBecomeActive`): each window on the
+    /// screen is drawn again, whole, as what it presented before may not show (`Window::came_on_screen`).
+    pub fn active(&mut self) {
+        for window in self.windows.values_mut().filter(|window| window.on_screen()) {
+            window.dirty = true;
+            window.came_on_screen();
+        }
+    }
+
     /// What draws a window's `parts`, where its first has a surface to draw on yet, the app isn't in the background,
     /// and the pipelines it draws with are compiled: until they are, it has none, so the windows' thread never waits
     /// for them, and is given one as they are (`compiled`).

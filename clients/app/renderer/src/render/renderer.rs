@@ -306,6 +306,16 @@ impl Renderer {
         self.targets[at].resize(&self.device, extent(size));
     }
 
+    /// Its window has come on the screen (summoned, shown, or its app active again): what the system shows of it isn't
+    /// known to be the frame it last presented, which it may have presented while it wasn't there (a launcher's
+    /// first frame, drawn as it was summoned as the app started and before it was ordered in; an iPhone app's first
+    /// frames, before iOS shows it), and which a Mac's and an iPhone's window don't show then. So its next frame is drawn whole and presented, never judged unchanged (`Draw::Unchanged`).
+    pub fn shown(&mut self) {
+        for target in &mut self.targets {
+            target.previous = None;
+        }
+    }
+
     /// Its window is going from the screen: it lets go of what it lets go of when idle (`idle`), and of its surface's
     /// images (three, each the window's size) on Windows and an iPhone, configured as small as a surface is until its
     /// next frame configures it at its window's size again, as a resize does: a DirectComposition swap chain and a
