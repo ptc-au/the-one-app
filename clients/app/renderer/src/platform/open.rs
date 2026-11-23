@@ -118,6 +118,7 @@ impl Windows {
                 pending,
                 when_unused: Vec::new(),
                 title_row: options.title_row,
+                lights: None,
                 title: options.title,
                 scene: Default::default(),
                 dirty: true,

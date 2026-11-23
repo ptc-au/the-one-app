@@ -19,8 +19,9 @@ pub type Asked = Box<dyn FnMut(Value, Appearance) -> Option<Value>>;
 pub struct Title {
     pub icon: Option<String>,
     pub name: String,
-    /// How far in from the window's start it begins, in the band its top inset keeps clear, past a Mac's traffic
-    /// lights; full screen, where the Mac hides them, it begins at the window's edge (`Screen::full_screen`).
+    /// How far in from the window's start it begins, in the band its top inset keeps clear, where there are no
+    /// system buttons to measure: a Mac's traffic lights it starts after (`Screen::lights`), and full screen, where
+    /// it hides them, at the window's edge (`Screen::full_screen`).
     pub start: f32,
 }
 

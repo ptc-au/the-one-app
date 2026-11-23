@@ -266,7 +266,9 @@ impl Display {
             window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
             window.setTabbingMode(NSWindowTabbingMode::Disallowed);
             if options.panel.is_none() {
-                unsafe { place_lights(&window) };
+                if let Some(end) = unsafe { place_lights(&window) } {
+                    shared.send(Input::Lights(end));
+                }
                 window.setContentMinSize(NSSize::new(crate::platform::SMALLEST.width.0.into(), crate::platform::SMALLEST.height.0.into()));
             }
             window.setAcceptsMouseMovedEvents(true);
@@ -946,12 +948,14 @@ const LIGHTS: (f64, f64) = (20.0, 52.0);
 
 /// Puts `window`'s traffic lights where a unified toolbar has them (`LIGHTS`): their title bar container and the view
 /// the lights are in as tall as that row, at the window's top, and each light in the row's middle, as far apart as
-/// AppKit put them, which is where the title beside them is centred.
-unsafe fn place_lights(window: &NSWindow) {
+/// AppKit put them, which is where the title beside them is centred. → where they end in the window, the right edge of
+/// the zoom button as it's now laid out, which the title starts a gap after (`Input::Lights`): measured, as each macOS
+/// puts them a little differently.
+unsafe fn place_lights(window: &NSWindow) -> Option<f32> {
     unsafe {
         let buttons: [*mut AnyObject; 3] = [0usize, 1, 2].map(|button| msg_send![window, standardWindowButton: button]);
         if buttons.iter().any(|button| button.is_null()) {
-            return;
+            return None;
         }
         let first: NSRect = msg_send![buttons[0], frame];
         let second: NSRect = msg_send![buttons[1], frame];
@@ -974,6 +978,10 @@ unsafe fn place_lights(window: &NSWindow) {
             origin.origin.y = (LIGHTS.1 - origin.size.height) / 2.0;
             let () = msg_send![button, setFrameOrigin: origin.origin];
         }
+        let zoom = buttons[2];
+        let bounds: NSRect = msg_send![zoom, bounds];
+        let in_window: NSRect = msg_send![zoom, convertRect: bounds, toView: std::ptr::null_mut::<AnyObject>()];
+        Some((in_window.origin.x + in_window.size.width) as f32)
     }
 }
 
@@ -1132,7 +1140,9 @@ define_class!(
         #[unsafe(method(windowDidResize:))]
         fn window_did_resize(&self, notification: &NSNotification) {
             if let Some(window) = notification.object().and_then(|object| object.downcast::<NSWindow>().ok()) {
-                unsafe { place_lights(&window) };
+                if let Some(end) = unsafe { place_lights(&window) } {
+                    self.ivars().send(Input::Lights(end));
+                }
             }
         }
     }

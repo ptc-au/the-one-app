@@ -419,7 +419,8 @@ impl Screen {
         }
         self.chrome.buttons = buttons;
         let after_buttons = (!starts.is_empty()).then(|| EDGE_GAP + starts.len() as f32 * (BUTTON + 8.0));
-        let title = self.title.as_ref().map(|title| painter.title(title, edge.or(after_buttons).unwrap_or(title.start), self.insets.top));
+        let after_lights = self.lights.map(|end| end + EDGE_GAP);
+        let title = self.title.as_ref().map(|title| painter.title(title, edge.or(after_buttons).or(after_lights).unwrap_or(title.start), self.insets.top));
         // The page's top bar starts after it, and ends before the buttons at the end, which it's laid out again for
         // once either moves.
         let start = title.map_or(0, |end| (end + 12.0).ceil() as u16);

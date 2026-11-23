@@ -726,12 +726,10 @@ async fn frame(window: Arc<OnceLock<WindowId>>, node: renderer::tree::Id, src: &
 }
 
 /// The row at a window's top that its title is in, with its page's top bar after it (a unified toolbar), 52
-/// points, as macOS's System Settings and Raycast have it, and where the title starts in it: on a Mac 8 points
-/// after its traffic lights over the page, three of 14 points, 20 apart, from 20 points in, as AppKit puts them in a
-/// unified toolbar; elsewhere the same height, under the window's own frame.
-#[cfg(target_os = "macos")]
-const BAR: (f64, f64) = (52.0, 20.0 + 2.0 * 20.0 + 14.0 + 8.0);
-#[cfg(all(not(mobile), not(target_os = "macos")))]
+/// points, as macOS's System Settings and Raycast have it, and where the title starts in it where there are no
+/// window buttons to measure: a Mac's window measures its traffic lights and starts it a gap after them
+/// (`renderer::Screen::lights`); elsewhere it's under the window's own frame.
+#[cfg(not(mobile))]
 const BAR: (f64, f64) = (52.0, 12.0);
 /// A phone's window has none: the activity keeps the page clear of the system's bars (`MainActivity`).
 #[cfg(mobile)]

@@ -433,6 +433,7 @@ impl Windows {
                         // Under what covers it, painted only where some of it shows: a computer's title row, above its
                         // canvas; under its snapshot, or a canvas over all of it, it's left until it's revealed, as
                         // it was before it showed, so what it asks for as it's laid out is for its real layout.
+                        screen.lights = window.lights;
                         if !matches!(window.cover, Cover::Over(_)) || (window.picture.is_none() && screen.title.is_some()) {
                             changed = screen.paint(Some(time), room, scale, &mut self.text, &self.atlas, &mut window.scene);
                         }

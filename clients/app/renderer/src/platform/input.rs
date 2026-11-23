@@ -80,11 +80,16 @@ impl Windows {
                 }
                 return;
             }
+            // Told before its page is there, as its window opens.
+            Input::Lights(end) => {
+                window.lights = Some(end);
+                return;
+            }
             _ => {}
         }
         let Ok(screen) = &mut window.screen else { return };
         match input {
-            Input::Resized(_) | Input::Surface | Input::SurfaceLost | Input::Touch(..) => {}
+            Input::Resized(_) | Input::Surface | Input::SurfaceLost | Input::Lights(_) | Input::Touch(..) => {}
             Input::Expose => {}
             // The system went light or dark: so do its own parts of the window, where its Colour Mode says nothing.
             Input::FullScreen(full) => screen.full_screen = full,
@@ -259,6 +264,10 @@ pub(crate) enum Input {
     /// It went full screen, or came out of it.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     FullScreen(bool),
+    /// Where its system's window buttons end, a Mac's traffic lights (the right edge of the zoom button), in its
+    /// points, as it measured them as they were laid out.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Lights(f32),
     Close,
     Moved(crate::geometry::Point<f32>),
     /// A finger, as a phone's screen says it, in the window's points (`Windows::touch`).

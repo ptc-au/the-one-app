@@ -345,6 +345,9 @@ struct Window {
     /// page has it as it's attached.
     when_unused: Vec<Box<dyn FnOnce() + Send>>,
     title_row: bool,
+    /// Where its system's window buttons end, in its points, as its window measured them (`Input::Lights`): a Mac's
+    /// traffic lights, which its title starts after.
+    lights: Option<f32>,
     title: String,
     scene: crate::render::scene::Scene,
     /// Whether what it shows changed, and so is drawn on the loop's turn, and whether something on it moves by

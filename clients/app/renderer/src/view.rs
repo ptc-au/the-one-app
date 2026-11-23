@@ -164,6 +164,9 @@ pub struct Screen {
     window_button: Option<WindowButton>,
     /// Its window is full screen, where a Mac hides its traffic lights, so its title starts at its edge.
     pub full_screen: bool,
+    /// Where its window's system buttons end, a Mac's traffic lights, as the window measured them: its title starts
+    /// a gap after, where it has them, and else at `Title::start`.
+    pub lights: Option<f32>,
     /// The system's menu for text a secondary click asked for, until its window shows it.
     text_menu: Option<TextMenu>,
     /// Its window is a panel, whose background the host draws, under its page's.
@@ -362,6 +365,7 @@ impl Screen {
             page: 0,
             title: None,
             full_screen: false,
+            lights: None,
             text_menu: None,
             window_buttons: (Vec::new(), Vec::new()),
             window_button: None,
