@@ -114,6 +114,19 @@ pub(crate) async fn update() -> Result<String, String> {
     Ok(message)
 }
 
+/// Android's activity says whether the app's window is on screen, as it starts and stops (`MainActivity`). As it first
+/// starts, the app hasn't opened yet, and its page says so once it has.
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_theone_client_MainActivity_visible(_env: jni::JNIEnv, _activity: jni::objects::JObject, on_screen: jni::sys::jboolean) {
+    if crate::opened_views().is_none() {
+        return;
+    }
+    spawn(async move {
+        let _ = visible(on_screen != 0).await;
+    });
+}
+
 /// Says whether the Home Screen's window is on screen. While one is, its views ask again when something changed, and
 /// as one's back, if something changed while none was.
 #[cfg(mobile)]

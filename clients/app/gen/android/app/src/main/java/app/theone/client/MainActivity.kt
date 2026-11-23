@@ -86,6 +86,23 @@ class MainActivity : TauriActivity() {
     exits.maxOfOrNull { it.timestamp }?.let { kept.edit().putLong("told", it).apply() }
   }
 
+  /**
+   * The app's Rust is told whether its window is on screen, as Android starts and stops it (`visible` in commands.rs),
+   * so what waits for it to be off screen, a new page or a new build of the app, goes ahead: its page's own say didn't
+   * reach the client on Android (23 Nov, a downloaded update waited with the app in the background).
+   */
+  override fun onStart() {
+    super.onStart()
+    visible(true)
+  }
+
+  override fun onStop() {
+    visible(false)
+    super.onStop()
+  }
+
+  private external fun visible(onScreen: Boolean)
+
   /** Whether a key pressed now comes here, as a remote's does: Computer Use presses keys here as one (`ComputerUse.kt`). */
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
