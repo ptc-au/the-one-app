@@ -27,6 +27,19 @@ import type { Relay } from "./worker.ts";
  * itself then takes is its tool's.
  */
 const REACH = 5_000;
+/**
+ * How long a call waits for a server that's coming back, as `OneCore.Servers.back/1` has servers wait, with the same rule
+ * for one that is (`coming`): a server restarting onto a build takes 7 to 24 s to be back (PTC, 23 Nov), and what an MCP
+ * client waits for an answer is 30 seconds.
+ */
+const BACK = 30_000;
+/** How recently a server that isn't connected left for it to be coming back, in milliseconds (`OneCore.Servers`' `@left`). */
+const LEFT = 60_000;
+/** Whether a server whose presence is `here` is starting, stopping, or left within `LEFT`: it's coming back. */
+const coming = (here: Presence | null) =>
+  here?.server_daemon_status === "starting" ||
+  here?.server_daemon_status === "stopping" ||
+  (here?.connected === false && here.last_seen !== undefined && Date.now() - here.last_seen < LEFT);
 /** MCP's ping, which a server answers at once, whoever asks. */
 const MCP_PING = JSON.stringify({ jsonrpc: "2.0", id: 0, method: "ping" });
 /** The protocols the edge speaks, from `oldest` to `newest`. */
@@ -102,7 +115,11 @@ export async function forward(env: Env, servers: string[], message: string): Pro
     said({ "one.servers": servers.length }, `None of its ${servers.length} servers speaks a protocol the edge's ${named(SPEAKS)} does: ${servers.map((server) => `${server.slice(0, 8)} ${named(protocols[server])}`).join(", ")}`);
     return null;
   }
-  const here = await presence(env, talking);
+  let here = await presence(env, talking);
+  // None of them ready where one is coming back has the call wait for it: a network with one server answers through
+  // its restart, as its servers' own calls do (`OneCore.Servers.back/1`).
+  const back = talking.filter((server) => coming(here[server]));
+  if (back.length && !talking.some((server) => here[server]?.server_ready !== false)) here = { ...here, ...(await presence(env, back, BACK)) };
   servers = talking.filter((server) => here[server]?.server_ready !== false);
   if (!servers.length) {
     said({ "one.servers": talking.length }, `None of its ${talking.length} servers is ready: ${talking.map((server) => `${server.slice(0, 8)} ${here[server]?.server_ready_reason}`).join(", ")}`);
@@ -129,10 +146,13 @@ export async function notify(env: Env, message: string): Promise<void> {
   await relay(env, (relay) => relay.fetch("https://relay/notify", { method: "POST", body: message }));
 }
 
-/** Whether each of `keys`, servers' and devices', is here (`Presence`), or `null` for one never seen. */
-export async function presence(env: Env, keys: string[]): Promise<Record<string, Presence | null>> {
+/**
+ * Whether each of `keys`, servers' and devices', is here (`Presence`), or `null` for one never seen: as the relay says
+ * it once one of them is ready, or after `within` milliseconds (0 is now).
+ */
+export async function presence(env: Env, keys: string[], within = 0): Promise<Record<string, Presence | null>> {
   // Disposed of once it's copied, so the relay's call ends as it answers. Its own keys are copied, not its disposer.
-  using presence = await relay(env, (relay) => relay.presence(keys));
+  using presence = await relay(env, (relay) => relay.ready(keys, within));
   return Object.fromEntries(Object.entries(presence));
 }
 

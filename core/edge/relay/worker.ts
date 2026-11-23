@@ -241,7 +241,7 @@ export class Relay extends DurableObject<RelayEnv> {
    */
   async report(key: string, version: string, protocol: Protocol | undefined, status?: ServerStatus, update?: Reported) {
     await this.ctx.storage.put({ [`version ${key}`]: version, [`protocol ${key}`]: protocol ?? null, ...(status && { [`presence ${key}`]: status }) });
-    if (status) this.notify(SEEN);
+    if (status) this.seen();
     if (update) await this.updated({ reported: { key, ...update } });
     return (await this.presence([key]))[key];
   }
@@ -289,6 +289,38 @@ export class Relay extends DurableObject<RelayEnv> {
   /** The build each of `keys` that's a server said it is, by its key, leaving out one that never said. */
   async versions(keys: string[]): Promise<Record<string, string>> {
     return Object.fromEntries([...(await this.ctx.storage.get<string>(keys.map((key) => `version ${key}`)))].map(([at, version]) => [at.slice(8), version]));
+  }
+
+  /** Who's waiting for a server to come or go (`ready`), each woken as one does (`seen`). */
+  waiting = new Set<() => void>();
+
+  /** A server came, went or said what it is: every server is told, and whoever waits for one to be ready looks again. */
+  seen() {
+    this.notify(SEEN);
+    for (const wake of this.waiting) wake();
+  }
+
+  /**
+   * Gives `presence` of `keys` once one of them is ready, or after `within` milliseconds, as a call to a network
+   * whose server is restarting waits for it to be back (`relay.ts`'s `forward`). With none, it's `presence` now.
+   * Waiting here costs the object its time awake, which a restart is the only reason to.
+   */
+  async ready(keys: string[], within: number) {
+    const until = Date.now() + within;
+    for (;;) {
+      const here = await this.presence(keys);
+      const left = until - Date.now();
+      if (left <= 0 || keys.some((key) => here[key]?.server_ready)) return here;
+      await new Promise<void>((resolve) => {
+        const wake = () => {
+          clearTimeout(timer);
+          this.waiting.delete(wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, left);
+        this.waiting.add(wake);
+      });
+    }
   }
 
   /** Whether each of `keys` is here, as the relay's `presence` says. */
@@ -340,7 +372,7 @@ export class Relay extends DurableObject<RelayEnv> {
     if (here === was) return;
     await this.ctx.storage.put({ [`here ${device}`]: here, ...(!here && { [`seen ${device}`]: at }) });
     if (!server) return;
-    this.notify(SEEN);
+    this.seen();
     await this.updated({ seen: device });
   }
 
