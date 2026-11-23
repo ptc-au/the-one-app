@@ -137,6 +137,17 @@ defmodule Encryption do
   @doc "Where the artifacts encrypted for `owner` are listed: an empty blob each, named by the artifact."
   def index(owner), do: %Artifact{prefix: "#{owner}/made/encryption/encrypted/"}
 
+  @doc """
+  Lists an artifact with what's encrypted for its owner (`access/1`), where `server` should hold its keys, as one that
+  acts for its owner and so writes their blobs, whether or not it holds them yet; once, as it's first used or looked at.
+  """
+  def known(name, server) do
+    index = index(User.owner(name))
+
+    if server in should(name) and Artifact.read(index, name) == :absent,
+      do: Artifact.write(index, name, "")
+  end
+
   # Whether the artifact's owner chose a server: a relation tuple names it as an `editor`, which the apps that
   # decide `reach` say. One Core keeps their answer, so a call asks once.
   defp chosen(call, artifact, server) do
@@ -157,7 +168,10 @@ defmodule Encryption do
   that act for whose it is (`should/1`),
   each with what its machine is called.
   """
-  def unlocked_on(%Call{} = _call, %Artifact{} = artifact) do
+  def unlocked_on(%Call{} = call, %Artifact{} = artifact) do
+    # Known from the first look, so the passkey that first makes its owner's key hands its keys too, before any call of it.
+    known(Artifact.name(artifact), call.server)
+
     Map.merge(
       %{
         artifact: Artifact.name(artifact),
