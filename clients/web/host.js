@@ -4,6 +4,7 @@
 // commands by the same names, less what a browser can't do, which each says.
 
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping"
+import { linkOf } from "../app/page/path.js"
 
 /** @import { Commands } from "../app/page/host.js" */
 
@@ -524,18 +525,21 @@ const commands = {
   /// Where this browser is with its network, as the app's client says a device's session (`State` in core/client):
   /// signed in here, or sent to sign in, and whether its network answers. A browser keeps nothing of a network's, so
   /// with its address not answering it's still opening, and asks again by itself (`tryAgain`).
-  /// What the address it was opened at links to (`/?open=<one: link>`, as a request's link in Vault leads here) is
-  /// opened once it's signed in: it's kept in this tab while its person signs in, and the address forgets it.
+  /// Where the address it was opened at is, an app's place (`/settings/vault/accounts?request=4`, as `pathOf` makes
+  /// it), is opened once it's signed in, as a link to it (`settings#vault/accounts&request=4`): it's kept in this tab
+  /// while its person signs in, and the address goes back to the Home Screen's, which the app's own is pushed over
+  /// (`go` in client.js), so Back goes home. A request's link in Vault still leads to `/?open=<one: link>`, as a
+  /// phone's app follows it there (clients/app/src/mobile.rs), until phones read a path.
   async start() {
     const asked = opening
     if (!(await webgpu)) {
       location.replace("/unsupported")
       return new Promise(() => {})
     }
-    const linked = new URLSearchParams(location.search).get("open")
+    const linked = new URLSearchParams(location.search).get("open") ?? linkOf(location.pathname, location.search)
     if (linked) {
       sessionStorage.setItem(OPEN, linked)
-      history.replaceState(null, "", location.pathname)
+      history.replaceState(null, "", "/")
     }
     // Signed in when it last opened, it opens as it was while its network says whether it still is.
     if (!kept.apps) await asked
@@ -651,6 +655,10 @@ export const address = (view) => {
 /// What an app's frame may do. Its address is this page's, so it's given an origin of its own, which reaches
 /// nothing here: not this page, not another app, and not what this browser is signed in with.
 export const sandbox = "allow-scripts allow-forms"
+
+/// The window's address says where it is (`pathOf`), as a web app's does, so going back and forward moves through
+/// it, loading it again opens the same place, and a copied address opens it for whoever may see it.
+export const addressed = true
 
 /// An app's page updated under it asks its person to reload it while it's on screen ("Updated · Reload"), as a web
 /// app in a browser offers its update.

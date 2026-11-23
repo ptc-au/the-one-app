@@ -3,6 +3,12 @@
  * most (`<file>.br` beside it: the renderer's WebAssembly, `clients/web/renderer/build.js`), goes as it's kept to a
  * browser that takes Brotli, where Cloudflare would compress it again as it sends, at a lower level: 1.1 MB, not 1.4.
  */
+/** Whether a browser is going to a page, which isn't a file the client has where it's an app's place in it
+ * (`/settings/vault`, as `pathOf` in clients/app/page/path.js makes it): the client's page answers it. */
+export const browsing = (request: Request) => request.method === "GET" && request.headers.get("sec-fetch-dest") === "document";
+/** The client's page, for a page a browser goes to. */
+export const page = (request: Request, env: Env) => env.ASSETS.fetch(new Request(new URL("/", request.url), request));
+
 /** What a kept file is, by its extension. */
 const TYPES: Record<string, string> = { wasm: "application/wasm", js: "text/javascript" };
 
@@ -20,6 +26,7 @@ export default {
         return new Response(kept.body, { headers, encodeBody: "manual" });
       }
     }
-    return env.ASSETS.fetch(request);
+    const answer = await env.ASSETS.fetch(request);
+    return answer.status === 404 && browsing(request) ? page(request, env) : answer;
   },
 } satisfies ExportedHandler<Env>;

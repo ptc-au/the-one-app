@@ -12,6 +12,7 @@ export declare const address: Address
 export declare const sandbox: string
 /** Whether a page whose app was updated under it asks its person to reload it ("Updated · Reload"), as a web app in a browser does, or loads again by itself once it isn't in use, as a desktop app or a phone's does. */
 export declare const asksToReload: boolean
+export declare const addressed: boolean
 /** A web address an app opens. */
 export declare const openLink: (url: string) => void
 /** Plays a haptic an app asked for (`one/haptic`), where the device has them on. */

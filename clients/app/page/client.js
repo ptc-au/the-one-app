@@ -8,9 +8,10 @@
 // The launcher is an app too, which reaches this client from a server as every app's does: the app in the category
 // `launcher`, which a network has exactly one of. It's the one this page shows first, under every other, and it
 // opens the rest (`one/open`).
-import { address, asksToReload, invoke, listen, sandbox } from "./host.js"
+import { address, addressed, asksToReload, invoke, listen, sandbox } from "./host.js"
 import { appStore, files, first, launcher, list, listed, names, needs, settings } from "./apps.js"
 import { post } from "./bridge.js"
+import { pathOf } from "./path.js"
 import { chosen, dress, heardTheme, titled } from "./chrome.js"
 import { draw } from "./draw.js"
 import { gestures } from "./gestures.js"
@@ -199,7 +200,7 @@ export function backHome() {
 /// The entry the window is on becomes the launcher's, as the app it showed is gone, or as the page loaded again on
 /// an app's entry.
 function restart() {
-  history.replaceState(null, "")
+  history.replaceState(null, "", addressed ? "/" : undefined)
   stack = [{ key: null, at: stack[depth]?.at ?? history.length - 1 }]
   depth = 0
 }
@@ -352,11 +353,11 @@ export function go(link, subject, behind, from) {
   // leads out of the app however soon it's pressed.
   if (here() !== next.key) {
     depth += 1
-    history.pushState(depth, "")
+    history.pushState(depth, "", addressed ? pathOf(link) : undefined)
     // It goes back into the icon it came out of, or slides out if it came from none.
     stack.splice(depth, Infinity, { key: next.key, at: history.length - 1, from })
     rail()
-  }
+  } else if (addressed && fragment) history.replaceState(depth, "", pathOf(link))
   on({ type: "show", to: next, back: false, icon: from, tapped })
   return true
 }

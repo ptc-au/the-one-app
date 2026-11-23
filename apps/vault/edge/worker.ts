@@ -4,7 +4,9 @@
 // tokens and keeps them in their Vault: this part holds nothing, and a code alone redeems nothing, since only the
 // server holds what proves who asked for it (PKCE), and only the browser its link was opened in (`/vault/start`)
 // finishes it. A request for a key's link (`/vault/request?id=`) opens it in the
-// Vault, by the web client's link to an app's place (`/?open=<one: link>`), as the app on a device opens it.
+// Vault, by the web client's link to an app's place (`/?open=<one: link>`), as the app on a device opens it: a phone's
+// app follows this to read where it leads (clients/app/src/mobile.rs), so it stays until phones read the web client's
+// path for it (`pathOf` in clients/app/page/path.js).
 import { env } from "cloudflare:workers";
 
 declare global {

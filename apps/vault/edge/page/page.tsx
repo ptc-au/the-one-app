@@ -61,6 +61,13 @@ async function again() {
 const back = (began?: Began) => (began && "agent" in began ? began.agent : began && "cli" in began ? "your terminal" : undefined)
 /// An app's screen, by its app, and how its button names it.
 const screen = (began?: Began) => (began && "screen" in began ? began.screen : undefined)
+/// Where the web client has the place a link names (`settings#vault/accounts&request=4` at
+/// `/settings/vault/accounts?request=4`), as its address says it (`pathOf` in clients/app/page/path.js).
+const path = (link: string) => {
+  const [page, fragment = ""] = link.split("#", 2)
+  const [place, ...said] = fragment.split("&")
+  return `/${[page.split("/")[0], ...place.split("/").filter(Boolean)].map(encodeURIComponent).join("/")}${said.length ? `?${said.join("&")}` : ""}`
+}
 /// An app's name, as its button says it, from a link to it (`settings#vault/accounts` is Settings).
 const titled = (app: string) => app[0].toUpperCase() + app.split("#")[0].slice(1)
 /// "Gmail, Google Calendar and Google Drive".
@@ -79,9 +86,9 @@ render(() => {
       status={ended() ? undefined : "Adding your account…"}
       problem={status() !== "cancelled" ? ended()?.problem : undefined}
       button={status() === "ok" ? app() && `Open ${titled(app()!)}` : began() && "Try Again"}
-      onSignIn={status() === "ok" && app() ? () => location.assign(`/?open=${encodeURIComponent(app()!)}`) : again}
+      onSignIn={status() === "ok" && app() ? () => location.assign(path(app()!)) : again}
       stop={status() !== "ok" && app() ? `Open ${titled(app()!)}` : undefined}
-      onStop={() => location.assign(`/?open=${encodeURIComponent(app()!)}`)}
+      onStop={() => location.assign(path(app()!))}
     >
       <Show when={status() === "ok"}>
         <View style={look.connected} role="group">
