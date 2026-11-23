@@ -104,11 +104,12 @@ const moves = styles({
 })
 const downs = [moves.down0, moves.down1, moves.down2, moves.down3]
 
-/// Each desktop's wallpaper, as the mockup paints it.
+/// Each desktop's wallpaper, in the mockup's colours, each one gradient: the renderer draws a radial gradient that fades
+/// to transparent over another with a ring at its edge, and leaves a corner dark in dark mode (23 Nov).
 const wallpaper: Record<Os, string> = {
-  mac: "radial-gradient(90% 80% at 20% 10%, #f6c9a8, #f6c9a800 60%), radial-gradient(90% 90% at 90% 90%, #6d7cf2, #6d7cf200 65%), linear-gradient(160deg, #e8a3b8, #8b8ff0)",
+  mac: "linear-gradient(160deg, #f6c9a8, #e8a3b8 35%, #a596ee 70%, #6d7cf2)",
   windows: "radial-gradient(60% 70% at 50% 70%, #a9d6ff, #3f8cf0 30%, #1546b8 62%, #0a2466)",
-  linux: "radial-gradient(80% 80% at 80% 100%, #f08a5d, #f08a5d00 60%), linear-gradient(160deg, #4b1d63, #9b3c74 60%, #e2754f)",
+  linux: "linear-gradient(160deg, #4b1d63, #9b3c74 55%, #e2754f 85%, #f08a5d)",
 }
 /// The apps in the dock or the taskbar, and on the launcher's pages, as the mockup colours them.
 const docked = ["linear-gradient(#5ac8fa, #007aff)", "linear-gradient(#ffd60a, #ff9f0a)", "linear-gradient(#ffffff, #d1d1d6)", "linear-gradient(#34c759, #248a3d)", "linear-gradient(#ff6482, #ff2d55)", "linear-gradient(#8e8e93, #48484a)"]
