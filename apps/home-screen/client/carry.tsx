@@ -1,11 +1,11 @@
 import { createEffect, createMemo, createSignal, Show, untrack } from "solid-js"
 import { haptic, type Pressed, type Rect, reducedMotion, View } from "ui"
 import { glide, spring, thrower } from "./pager.ts"
-import { at as gridAt, cell as cellOf, PILLS, CARD_TOP } from "./layout.ts"
+import { at as gridAt, cell as cellOf, PILLS } from "./layout.ts"
 import { carries, type Drop, type Held, nearest, shown } from "./machine.ts"
 import { type Entrypoint, type Widget as WidgetItem } from "./types.ts"
 import { looks } from "./looks.ts"
-import { home, state, launcher, room, laidPage, quietFor, finger, setLanding } from "./store.ts"
+import { cardTop, home, state, launcher, room, laidPage, quietFor, finger, setLanding } from "./store.ts"
 import { type Owner, owners, draft, installedFor } from "./owners.ts"
 import { Card, Count, Tile } from "./tiles.tsx"
 import { type Screens } from "./screens.ts"
@@ -57,7 +57,7 @@ export function createCarry(props: { owners: Owner[] }, layout: Screens, paging:
         moves.add(event)
         const [x, y] = [event.clientX, event.clientY]
         // The pages' edges: the window's, or the launcher's card's, inside its pills.
-        const area = untrack(launcher) ? { left: cardLeft(), right: cardLeft() + card().width, top: CARD_TOP + PILLS, bottom: CARD_TOP + card().height - PILLS } : { left: 0, right: pitch(), top: 0, bottom: height() }
+        const area = untrack(launcher) ? { left: cardLeft(), right: cardLeft() + card().width, top: cardTop() + PILLS, bottom: cardTop() + card().height - PILLS } : { left: 0, right: pitch(), top: 0, bottom: height() }
         const now = x < area.left + 28 ? "left" : x > area.right - 28 ? "right" : y < area.top + 36 ? "up" : y > area.bottom - 36 ? "down" : ""
         if (now !== side) {
           clearTimeout(edge)

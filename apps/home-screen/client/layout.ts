@@ -86,7 +86,7 @@ export const card = (room: Room) => ({ width: room.width, height: PILLS + room.h
 
 /// What a launcher's page asks its panel to be: its search and its card, one above the other, as much as they take and
 /// no more, so its host centres them on the screen as one.
-export const group = (room: Room) => ({ width: Math.max(SEARCH, card(room).width), height: SEARCH_HEIGHT + GAP + card(room).height })
+export const group = (room: Room, top = 0) => ({ width: Math.max(SEARCH, card(room).width), height: top + SEARCH_HEIGHT + GAP + card(room).height })
 
 /** A page as it's laid out, before it's drawn larger: its size, what's kept clear inside it, and its grid's tracks. */
 export interface Page {
@@ -163,3 +163,6 @@ export function lefts(room: Room, laid: Page, count: number) {
 
 /// Where the launcher's card's top is, under its search.
 export const CARD_TOP = SEARCH_HEIGHT + GAP
+/// How much room the network switcher takes over the search, where there's more than one network's app on the
+/// computer: a segmented control's height and the gap under it.
+export const SWITCHER = 36 + GAP

@@ -206,6 +206,12 @@ export const looks = styles({
   editBar: { position: "absolute", zIndex: 7, flexDirection: "row", alignItems: "center", justifyContent: "space-between", pointerEvents: "none" },
   editBarPad: (paddingInline: number) => ({ paddingInline }),
   // The launcher's search and what it found.
+  // The networks' switcher, centred over the search, each tab's logo a little square before its name, and its key
+  // after it, quieter, as Safari's tabs and Raycast's actions show theirs.
+  switcherRow: { position: "absolute", zIndex: 11, flexDirection: "row", justifyContent: "center" },
+  switcher: { position: "relative", padding: tokens.grid[0.5], borderRadius: tokens.radius.medium },
+  switcherLogo: { width: sizes.switcherLogo, height: sizes.switcherLogo, borderRadius: tokens.radius.small },
+  switcherKey: { color: tokens.colour.secondaryLabel },
   launcherSearch: { flexGrow: 1, flexDirection: "row", alignItems: "center", paddingInline: sizes.searchInline },
   heading: { font: tokens.type.caption, color: tokens.colour.secondaryLabel, paddingInline: tokens.grid[1] },
   results: { gap: tokens.grid[3] },

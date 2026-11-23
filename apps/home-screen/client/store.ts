@@ -2,8 +2,8 @@
 // which kind of device this is, and what a finger is doing.
 import { createMemo, createSignal } from "solid-js"
 import { createActor } from "xstate"
-import { client, type Pressed, viewport } from "ui"
-import { measure, page as pageOf, type Room } from "./layout.ts"
+import { type Client, client, type Pressed, viewport } from "ui"
+import { CARD_TOP, measure, page as pageOf, type Room, SWITCHER } from "./layout.ts"
 import { type At, type Editing, machine } from "./machine.ts"
 
 /// The one machine, and its snapshot as one signal.
@@ -47,8 +47,18 @@ export const [pins, setPins] = createSignal(false)
 export const [launcher, setLauncher] = createSignal(false)
 /// Its device, for the tips and onboarding: its build's kind of machine (`target`), whether it's a browser, which has
 /// no shortcut, its network's address, and whether it's one of the network's servers, or becoming one.
-export const [device, setDevice] = createSignal<{ target?: string; web?: boolean; network?: string; server?: boolean }>({})
-client().then(({ pinsShortcuts, launcher, target, web, network, server }) => (setPins(!!pinsShortcuts), setLauncher(!!launcher), setDevice({ target, web, network, server: !!server })), () => {})
+export const [device, setDevice] = createSignal<{ target?: string; web?: boolean; network?: string; server?: boolean; mac?: boolean }>({})
+client().then(({ pinsShortcuts, launcher, target, web, network, server, mac }) => (setPins(!!pinsShortcuts), setLauncher(!!launcher), setDevice({ target, web, network, server: !!server, mac: !!mac })), () => {})
+
+/// Every network's app running on this computer, which the launcher switches between, over its search, where there's
+/// more than one (the One App and the PTC App), each by its logo and name and its key (⌘1, ⌘2); asked each time the
+/// launcher's shown, as one may have started or quit (`askNetworks`).
+export type Network = NonNullable<Client["networks"]>[number]
+export const [networks, setNetworks] = createSignal<Network[]>([])
+export const askNetworks = () => client().then((now) => setNetworks(now.networks ?? []), () => {})
+/// How far down the launcher's search is, under the switcher where it shows, and its card under that.
+export const switcherTop = () => (networks().length > 1 ? SWITCHER : 0)
+export const cardTop = () => CARD_TOP + switcherTop()
 
 /// What's typed in the launcher's search, and which of what it found is chosen, which Return opens.
 export const [query, setQuery] = createSignal("")

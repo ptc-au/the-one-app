@@ -1,11 +1,11 @@
 // The computer's launcher: its keys, its search floating over its card, and what the search found.
 import { createEffect, createMemo, createSignal, For, Show, untrack } from "solid-js"
-import { Button, ScrollView, Empty, Icon, type Keyed, leave, reducedMotion, sizeChanged, Text, TextInput, View, viewport, visible } from "ui"
-import { along as alongOf, cell as cellOf, group, INSET, OVERHANG, PAGE, PILLS, SEARCH, SEARCH_HEIGHT, CARD_TOP, TURN, TURN_INSET, TURN_ROOM } from "./layout.ts"
+import { Button, client, ScrollView, Empty, Icon, Image, type Keyed, leave, reducedMotion, sizeChanged, Tabs, Text, TextInput, toast, View, viewport, visible } from "ui"
+import { along as alongOf, cell as cellOf, group, INSET, OVERHANG, PAGE, PILLS, SEARCH, SEARCH_HEIGHT, TURN, TURN_INSET, TURN_ROOM } from "./layout.ts"
 import { type At, type Placed } from "./machine.ts"
 import { type Item, type Listed } from "./types.ts"
 import { looks } from "./looks.ts"
-import { home, state, at, screensOf, editingNow, editingOwner, launcher, query, setQuery, chosenResult, setChosenResult, type Selected, selected, setSelected, room, laidPage } from "./store.ts"
+import { home, state, at, screensOf, editingNow, editingOwner, launcher, query, setQuery, chosenResult, setChosenResult, type Selected, selected, setSelected, room, laidPage, networks, askNetworks, switcherTop, cardTop, device } from "./store.ts"
 import { type Owner, badgeOf, findAll, type From, launch, opens, press, opener } from "./owners.ts"
 import { Card, Tile } from "./tiles.tsx"
 import { type Cell, HomePage } from "./pages.tsx"
@@ -42,6 +42,14 @@ const rowOf = (from: number, by: -1 | 1, count: number) => {
 /// Library, then puts the launcher away; with something typed, Left and Right choose among what's found, Up and Down a row above or below, Return opens
 /// the one chosen, and Escape empties the search.
 export const launcherKeys = (props: { move: (key: string) => boolean; open: () => void; toggleLibrary: () => void; library: () => boolean; found: () => number }) => (event: Keyed) => {
+  // ⌘1, ⌘2 (Ctrl on Windows and Linux) switch to the network of that tab, as Safari's and Slack's do.
+  const command = device().mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+  const tab = command && !event.altKey && !event.shiftKey ? networks()[Number(event.key) - 1] : undefined
+  if (tab) {
+    event.preventDefault()
+    if (!tab.current) switchTo(tab.identifier)
+    return
+  }
   if (event.altKey || event.metaKey || event.ctrlKey) return
   const typed = !!query().trim()
   // What's open over it (a category, a held app's menu, the owners' list) has Escape and the arrows itself.
@@ -62,6 +70,39 @@ export const launcherKeys = (props: { move: (key: string) => boolean; open: () =
     event.preventDefault()
     setChosenResult((now) => (along ? Math.max(0, Math.min(props.found() - 1, now + along)) : rowOf(now, vertical, props.found())))
   }
+}
+
+/// How tall the switcher's pane is, a pane of glass of its own as the search is, as a Mac's see-through launcher
+/// draws only its panes.
+const SWITCHER_HEIGHT = 36
+
+/// Shows the launcher of another network's app on this computer in this one's place.
+const switchTo = (identifier: string) => void client({ network: identifier }).catch((error: Error) => toast(error.message))
+
+/// The networks' switcher, over the search, where there's more than one network's app on the computer: a tab for
+/// each, its logo, name and key, the one this is chosen; choosing another shows its launcher in this one's place, as
+/// a Mac's or a PC's own apps are switched between, the search and the card staying where they are.
+export function NetworkSwitcher() {
+  const key = (at: number) => `${device().mac ? "⌘" : "Ctrl "}${at + 1}`
+  return (
+    <View style={[looks.switcherRow, looks.at(0, 0, viewport().width, SWITCHER_HEIGHT)]}>
+      <View style={[looks.surface, looks.switcher]}>
+      <Tabs.Root value={networks().find((network) => network.current)?.identifier} onValueChange={(identifier: string) => switchTo(identifier)}>
+        <Tabs.List>
+          <For each={networks()}>
+            {(network, at) => (
+              <Tabs.Trigger value={network.identifier} icon={network.logo ? <Image src={network.logo} alt="" style={looks.switcherLogo} /> : undefined}>
+                {`${network.name}  `}
+                <Text style={looks.switcherKey}>{key(at())}</Text>
+              </Tabs.Trigger>
+            )}
+          </For>
+          <Tabs.Indicator />
+        </Tabs.List>
+      </Tabs.Root>
+      </View>
+    </View>
+  )
 }
 
 /// The launcher's search, floating over its card: bare and large, with the keyboard as the launcher's summoned, and
@@ -163,10 +204,10 @@ export function createLauncher(props: { owners: Owner[] }, layout: Screens, pagi
   const showing = () => (query().trim() ? "search" : library() ? "library" : "home")
   /// What was typed, kept a moment as it's emptied, while what it found fades.
   const [words] = lingering(() => query().trim() && query(), 400)
-  const cardRect = () => ({ x: cardLeft(), y: CARD_TOP, width: card().width, height: card().height })
+  const cardRect = () => ({ x: cardLeft(), y: cardTop(), width: card().width, height: card().height })
   // The launcher's panel: its search and its card, as large as they are, which never changes; its host centres it.
   createEffect(
-    () => launcher() && group(room()),
+    () => launcher() && group(room(), switcherTop()),
     (size) => {
       if (size) void sizeChanged({ width: Math.ceil(size.width), height: Math.ceil(size.height) })
     },
@@ -193,6 +234,11 @@ export function createLauncher(props: { owners: Owner[] }, layout: Screens, pagi
       const cells = ordered(home.getSnapshot().context.at)
       if (!cells.some((cell) => same(cell, untrack(selected)))) choose(first(cells))
     },
+  )
+  // Shown, it asks which networks' apps are running on the computer, as one may have started or quit since.
+  createEffect(
+    () => launcher() && visible(),
+    (shown) => void (shown && askNetworks()),
   )
   // Put away, the launcher is where it was if it's back within 90 seconds, what was typed too; after that it forgets
   // it and comes back to Home's first page, as Raycast's Pop to Root Search does.
@@ -339,10 +385,13 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
   }
   return (
     <>
-        <View style={[looks.surface, looks.search, looks.at((viewport().width - SEARCH) / 2, 0, SEARCH, SEARCH_HEIGHT)]}>
+        <Show when={switcherTop()}>
+          <NetworkSwitcher />
+        </Show>
+        <View style={[looks.surface, looks.search, looks.at((viewport().width - SEARCH) / 2, switcherTop(), SEARCH, SEARCH_HEIGHT)]}>
           <LauncherSearch />
         </View>
-        <View onWheel={wheel} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={[looks.surface, looks.card, looks.at(0, CARD_TOP, card().width, card().height), looks.shifted(cardLeft())]}>
+        <View onWheel={wheel} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)} style={[looks.surface, looks.card, looks.at(0, cardTop(), card().width, card().height), looks.shifted(cardLeft())]}>
           {/* Home's pages and the App Library after them, in one strip the host drags along as a trackpad's fingers or
               the pointer go (`along`) and slides to where they're going by its spring, as an iPhone's are. */}
           <View {...along} style={[looks.cover, slides() && looks.paging, looks.shifted(-across()), looks.opacity(opacity())]}>

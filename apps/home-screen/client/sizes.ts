@@ -12,4 +12,5 @@ export const sizes = defineVars({
   foundHeight: 88,
   ownerName: 144,
   searchInline: 18,
+  switcherLogo: 16,
 })
