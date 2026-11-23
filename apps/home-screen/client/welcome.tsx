@@ -1,5 +1,5 @@
 // Welcome: the first step of onboarding, shown once per person, on whichever device they open first after signing
-// in, before their Home Screen (`welcomed`, kept with their pages). Their network's logo and name, then four things it
+// in, before their Home Screen (the tip `welcome`, kept with their pages), where their device's renderer draws it. Their network's logo and name, then four things it
 // does, each with a picture that plays as it's shown (slides.tsx), going on to the next every 6.5 s until one is
 // chosen, which stays. On a computer the four are rows beside a large picture, the one shown with its line and a line
 // filling under it as it plays; on a phone, the one shown is over the picture, with a dot for each under it. Continue
@@ -90,11 +90,15 @@ const look = styles({
   go: { alignSelf: "stretch" },
 })
 
-/// The network's name as Welcome says it, "the PTC App": its own, or the One App's.
-const named = createMemo(() =>
+/// The network as Welcome shows it: its name ("The PTC App") and its logo, light and dark, as data where it has one
+/// of its own, which a native window draws (only an app's own files load there), or else the One App's.
+export const network = createMemo(() =>
   call("sign-in_network").then(
-    (answer) => ((JSON.parse(answer) as { name?: string | null }).name ?? "The One App").replace(/^The /, "the "),
-    () => "the One App",
+    (answer) => {
+      const { name, mark } = JSON.parse(answer) as { name?: string | null; mark?: { light?: string; dark?: string } | null }
+      return { name: name ?? "The One App", light: mark?.light ?? "one-app.png", dark: mark?.dark ?? "one-app.png" }
+    },
+    () => ({ name: "The One App", light: "one-app.png", dark: "one-app.png" }),
   ),
 )
 
@@ -123,9 +127,9 @@ export function Welcome(props: { width: number; height: number; onContinue: () =
 
   const Mark = (mark: { phone?: boolean }) => (
     <View style={mark.phone ? look.brandPhone : look.brand}>
-      <Image src="/Logo.png" srcDark="/Logo-dark.png" alt="" style={mark.phone ? look.markPhone : look.mark} />
+      <Image src={network().light} srcDark={network().dark} alt="" style={mark.phone ? look.markPhone : look.mark} />
       <Text role="heading" aria-level={1} style={mark.phone ? look.titlePhone : look.title}>
-        {named()}
+        {network().name}
       </Text>
     </View>
   )

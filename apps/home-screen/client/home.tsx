@@ -13,7 +13,7 @@
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, call, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, toast, View, viewport } from "ui"
+import { Button, call, client, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, toast, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
 import { json, type Owner, owners } from "./owners.ts"
@@ -32,10 +32,13 @@ import { computer, OwnServer } from "./own-server.tsx"
 
 /// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
 const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(({ seen }) => seen, () => undefined))
+/// The runtime version this device's renderer draws: Welcome's pictures need 6 (CSS's own values and keyframes that
+/// end), which a device on an older build doesn't draw, so it isn't shown there until it's updated.
+const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVersion ?? 0, () => 0))
 /// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, and the devices it's
-/// for: Welcome on every one, and Your own server on a computer's app that isn't one of the network's servers.
+/// for: Welcome on every one that draws it, and Your own server on a computer's app that isn't one of the network's servers.
 const steps = [
-  { tip: "welcome", Step: Welcome, here: () => true },
+  { tip: "welcome", Step: Welcome, here: () => drawn() >= 6 },
   { tip: "own-server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
 ]
 /// Each step gone on from (true), or started again (false), here since `tips` was asked, by its tip.

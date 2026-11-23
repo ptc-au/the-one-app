@@ -2561,10 +2561,37 @@
     "like": "App Library",
     "checks": {
       "An app's menu closed, its category's names come back": [
-        { "press": { "role": "button", "name": "Mail", "nth": 3 }, "hold": 800 },
-        { "expect": { "shown": { "role": "menuitem", "name": "Remove App" } } },
-        { "key": "Escape" },
-        { "expect": { "drawn": { "of": { "role": "text", "name": "Chat", "nth": 3 }, "opacity": 1 } } }
+        {
+          "press": {
+            "role": "button",
+            "name": "Mail",
+            "nth": 3
+          },
+          "hold": 800
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "menuitem",
+              "name": "Remove App"
+            }
+          }
+        },
+        {
+          "key": "Escape"
+        },
+        {
+          "expect": {
+            "drawn": {
+              "of": {
+                "role": "text",
+                "name": "Chat",
+                "nth": 3
+              },
+              "opacity": 1
+            }
+          }
+        }
       ]
     },
     "size": [
@@ -2710,16 +2737,55 @@
     "touch": true,
     "checks": {
       "A category opened and closed, then its pages swiped, keeps its names and its icons in its square": [
-        { "role": "group", "name": "Utilities" },
-        { "wait": 800 },
-        { "back": true },
-        { "wait": 800 },
-        { "expect": { "drawn": { "of": { "role": "text", "name": "Clock", "nth": 3 }, "opacity": 1 } } },
-        { "trace": "traces/finger-swipe-right.json" },
-        { "wait": 800 },
-        { "trace": "traces/finger-swipe-left.json" },
-        { "wait": 800 },
-        { "expect": { "drawn": { "of": { "role": "text", "name": "Clock", "nth": 3 }, "opacity": 1 } } }
+        {
+          "role": "group",
+          "name": "Utilities"
+        },
+        {
+          "wait": 800
+        },
+        {
+          "back": true
+        },
+        {
+          "wait": 800
+        },
+        {
+          "expect": {
+            "drawn": {
+              "of": {
+                "role": "text",
+                "name": "Clock",
+                "nth": 3
+              },
+              "opacity": 1
+            }
+          }
+        },
+        {
+          "trace": "traces/finger-swipe-right.json"
+        },
+        {
+          "wait": 800
+        },
+        {
+          "trace": "traces/finger-swipe-left.json"
+        },
+        {
+          "wait": 800
+        },
+        {
+          "expect": {
+            "drawn": {
+              "of": {
+                "role": "text",
+                "name": "Clock",
+                "nth": 3
+              },
+              "opacity": 1
+            }
+          }
+        }
       ]
     }
   },
@@ -3001,7 +3067,19 @@
       "Tips"
     ],
     "motions": {
-      "Swiped to the next tip": { "from": { "x": 200, "y": 630 }, "gesture": { "swipe": [-200, 0], "speed": 800 } }
+      "Swiped to the next tip": {
+        "from": {
+          "x": 200,
+          "y": 630
+        },
+        "gesture": {
+          "swipe": [
+            -200,
+            0
+          ],
+          "speed": 800
+        }
+      }
     },
     "checks": {
       "a press on what's around the sheet closes it": [
@@ -3056,6 +3134,13 @@
         "name": "The PTC App",
         "icon": null,
         "logo": null
+      },
+      "one/client": {
+        "device": "iPhone",
+        "build": "0.26.0",
+        "theme": null,
+        "settings": true,
+        "runtimeVersion": 6
       }
     },
     "wait": 0,
@@ -3214,6 +3299,14 @@
         "name": "The PTC App",
         "icon": null,
         "logo": null
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.26.0",
+        "theme": null,
+        "launcher": true,
+        "mac": true,
+        "runtimeVersion": 6
       }
     },
     "taps": [
@@ -3233,7 +3326,8 @@
         "theme": null,
         "launcher": true,
         "mac": true,
-        "target": "macos-aarch64"
+        "target": "macos-aarch64",
+        "runtimeVersion": 6
       },
       "home-screen_tips": {
         "seen": [
@@ -3406,5 +3500,36 @@
       }
     },
     "wait": 0
+  },
+  "Welcome, on a device that draws an older runtime": {
+    "like": "Welcome on a phone",
+    "answers": {
+      "one/client": {
+        "device": "iPhone",
+        "build": "0.26.0",
+        "theme": null,
+        "settings": true
+      }
+    },
+    "checks": {
+      "It isn't shown where its pictures can't be drawn: the Home Screen is": [
+        {
+          "expect": {
+            "gone": {
+              "role": "tab",
+              "name": "Secure"
+            }
+          }
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "Notes"
+            }
+          }
+        }
+      ]
+    }
   }
 }
