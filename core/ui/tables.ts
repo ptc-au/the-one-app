@@ -161,9 +161,9 @@ const longhands: Record<string, string[]> = {
 }
 
 /** Properties whose numbers aren't pixels. */
-const numbers = ["flexGrow", "flexShrink", "opacity", "zIndex", "aspectRatio", "scale", "strokeWidth", "lineClamp", "transitionDelay"]
+const numbers = ["flexGrow", "flexShrink", "opacity", "zIndex", "aspectRatio", "scale", "strokeWidth", "lineClamp", "transitionDelay", "fontWeight", "animationDuration", "animationDelay", "animationIterationCount"]
 /** Properties whose values are tokens, or made of several things, which a dynamic style can't take as a value. */
-const fixed = ["font", "gridTemplateColumns", "gridColumn", "boxShadow", "backdropFilter", "transitionProperty", "transition", "animationName", "animation", "lineClamp", "willChange"]
+const fixed = ["font", "gridTemplateColumns", "gridColumn", "backdropFilter", "transitionProperty", "transition", "animationName", "animation", "lineClamp", "willChange"]
 
 /** A value as a token's reference, a token's negative's, or itself, with those in it as references too (a grid's
  * `{ fill: tokens.grid[20] }`). */

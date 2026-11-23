@@ -23,7 +23,10 @@
 
 /** The runtime version: what the host's side of the renderer is, which a host says it has, an entrypoint names
  * (`runtime_version`), and the tables say they need. 3 made each mutation and event a direct call, 4 added
- * `intersection`, 5 an app's own tokens (`Styles.tokens`) and the values of a dynamic style (`Dynamic`). */
+ * `intersection`, 5 an app's own tokens (`Styles.tokens`) and the values of a dynamic style (`Dynamic`). A host of 6 draws CSS's own
+ * values where a token isn't the point (`fontSize`, `boxShadow`'s text, `backgroundImage`) and keyframes that start
+ * once drawn and end (`animationDelay` and the rest), which a host of 5 leaves out; the tables say 6 once every host
+ * has it. */
 export const RUNTIME_VERSION = 5
 
 /** A node, as the host knows it. `0` is the root, which the host makes: an app's window, or its frame. */
@@ -538,13 +541,24 @@ export interface Properties {
   borderTopEndRadius: Ref | 0
   borderBottomStartRadius: Ref | 0
   borderBottomEndRadius: Ref | 0
-  boxShadow: Ref | "none"
+  /** A shadow token, or CSS's own, as React Native takes it: `0 10px 30px #00000024, inset 0 0 0 1px #3a3a3c`. */
+  boxShadow: Ref | "none" | string
+  /** A gradient over its background, as CSS's `background-image` and React Native's `experimental_backgroundImage`:
+   * `linear-gradient(145deg, #ffb340, #ff6a2b 55%, #f2384b)`, `radial-gradient(120% 90% at 50% 100%, …)` or
+   * `radial-gradient(closest-side, …)`, each colour hex, `rgba()` or `transparent`. */
+  backgroundImage: string
   /** A material token: what's behind it shows through, blurred, under its background. */
   backdropFilter: Ref | "none"
   /** A type style token: size, line height, weight, tracking and figures together. */
   font: Ref
   fontFamily: Ref
-  fontWeight: Ref
+  /** A weight token, or a number (650), as React Native takes one. */
+  fontWeight: Ref | number
+  /** Its size, the height of its lines and the room between its letters, in pixels, as React Native's, over its type
+   * style's; a size alone keeps its lines as tall for it as they were. */
+  fontSize: number
+  lineHeight: number
+  letterSpacing: number
   textAlign: "start" | "center" | "end"
   /** At most so many lines, the last cut with "…". */
   lineClamp: number
@@ -570,6 +584,14 @@ export interface Properties {
    * `{ from: { translateX: "-100%" }, to: { translateX: "100%" } }`). */
   animationName: "spin" | "pulse" | "none" | Keyframes
   animation: Ref
+  /** CSS's longhands, as Reanimated's CSS animations name them: how long a time through takes and how long after
+   * it's first drawn it starts, in milliseconds; how many times it goes through (once where a duration is said, else
+   * endlessly); whether it shows its first keyframe while it waits and keeps its last once done; and its easing. */
+  animationDuration: number
+  animationDelay: number
+  animationIterationCount: number | "infinite"
+  animationFillMode: "none" | "forwards" | "backwards" | "both"
+  animationTimingFunction: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | [x1: number, y1: number, x2: number, y2: number]
   /** What of it is about to move, grow or fade (`translateX`, `translateY`, `scale`, `opacity`), as CSS's
    * `will-change`: drawn ahead as a layer of its own, which then only moves (`view::Layer`). */
   willChange: (keyof Properties)[]

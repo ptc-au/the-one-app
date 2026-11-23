@@ -358,6 +358,11 @@ pub(crate) struct Transitions {
     arrived: Vec<Id>,
     /// The nodes moving by their keyframes (`Look::animation`), which are styled again each frame they're drawn.
     animated: HashSet<Id>,
+    /// When each node's keyframes started, on the screen's clock, and what they were: new ones start again, as CSS's
+    /// animation does when its name changes.
+    started: HashMap<Id, (f64, crate::style::Animation)>,
+    /// The nodes going through keyframes a number of times, which end: on their way, as a transition is.
+    playing: HashSet<Id>,
     /// Where each node that moves as it's laid out again (`layout`) was laid out last, in the window, unscrolled, and
     /// each such node on its way from where it was to there; and where what shares a place (`layoutId`) was last laid
     /// out, by what and in which frame.
@@ -542,22 +547,57 @@ impl Transitions {
     pub fn animate(&mut self, id: Id, computed: &mut Computed, now: f64, conditions: crate::tokens::Conditions) {
         let Some(animation) = computed.look.animation.clone() else {
             self.animated.remove(&id);
+            self.playing.remove(&id);
+            self.started.remove(&id);
             return;
         };
-        self.animated.insert(id);
-        let part = ((now % f64::from(animation.duration)) / f64::from(animation.duration)) as f32;
+        let started = match self.started.get(&id) {
+            Some((at, was)) if *was == animation => *at,
+            _ => {
+                self.started.insert(id, (now, animation.clone()));
+                now
+            }
+        };
+        // Where it is through its times: before its delay, waiting, and past its last, done, as CSS's are, and with
+        // less motion a time through that ends is at its end at once, as `prefers-reduced-motion` has it.
+        let duration = f64::from(animation.duration);
+        let through = (now - started - f64::from(animation.delay)) / duration;
+        let ends = animation.iterations.is_finite();
+        let through = if ends && conditions.reduced_motion { f64::from(animation.iterations) } else { through };
+        let (part, shown) = if through < 0.0 {
+            (0.0, animation.backwards)
+        } else if ends && through >= f64::from(animation.iterations) {
+            let last = f64::from(animation.iterations);
+            (if last > 0.0 && last.fract() == 0.0 { 1.0 } else { last.fract() as f32 }, animation.forwards)
+        } else {
+            ((through % 1.0) as f32, true)
+        };
+        if ends && through >= f64::from(animation.iterations) {
+            self.animated.remove(&id);
+            self.playing.remove(&id);
+        } else {
+            self.animated.insert(id);
+            if ends {
+                self.playing.insert(id);
+            }
+        }
+        if !shown {
+            return;
+        }
         let frames: Vec<(f32, Computed)> = animation.frames.iter().map(|(at, style)| (*at, crate::style::compute(&[serde_json::Value::Object(style.clone())], Default::default(), conditions))).collect();
         for (property, _) in PROPERTIES {
-            let Some(own) = get(computed, property) else { continue };
             let mut stops: Vec<(f32, Value)> = animation.frames.iter().zip(&frames).filter(|((_, style), _)| style.contains_key(property)).filter_map(|((at, _), (_, frame))| Some((*at, get(frame, property)?))).collect();
             if stops.is_empty() {
                 continue;
             }
+            // Where a keyframe at its start or its end leaves it out, it's the node's own there, or, where that's
+            // `auto` (a height left to its content), the keyframe nearest.
+            let own = get(computed, property);
             if stops.first().is_none_or(|(at, _)| *at > 0.0) {
-                stops.insert(0, (0.0, own.clone()));
+                stops.insert(0, (0.0, own.clone().unwrap_or_else(|| stops[0].1.clone())));
             }
             if stops.last().is_none_or(|(at, _)| *at < 1.0) {
-                stops.push((1.0, own));
+                stops.push((1.0, own.unwrap_or_else(|| stops[stops.len() - 1].1.clone())));
             }
             let after = stops.iter().position(|(at, _)| *at > part).unwrap_or(stops.len() - 1).max(1);
             let ((from, a), (to, b)) = (&stops[after - 1], &stops[after]);
@@ -680,6 +720,8 @@ impl Transitions {
         self.laid.remove(&id);
         self.flips.remove(&id);
         self.animated.remove(&id);
+        self.playing.remove(&id);
+        self.started.remove(&id);
         self.ending.remove(&id);
         self.arriving.remove(&id);
         if self.drawn.remove(&id) {
@@ -692,7 +734,7 @@ impl Transitions {
 
     /// Whether something's on its way somewhere it'll arrive at: what moves but a loop (`animation`), which never does.
     pub fn arriving(&self) -> bool {
-        !self.moving.is_empty() || !self.dragged.is_empty() || !self.flips.is_empty()
+        !self.moving.is_empty() || !self.dragged.is_empty() || !self.flips.is_empty() || !self.playing.is_empty()
     }
 
     /// The nodes with something on its way, which are styled again each frame until it's arrived.
@@ -708,7 +750,7 @@ impl Transitions {
     }
 
     fn on_the_way(&self) -> impl Iterator<Item = Id> + '_ {
-        self.moving.keys().map(|(id, _)| *id).chain(self.dragged.keys().copied()).chain(self.flips.keys().copied())
+        self.moving.keys().map(|(id, _)| *id).chain(self.dragged.keys().copied()).chain(self.flips.keys().copied()).chain(self.playing.iter().copied())
     }
 
     /// The nodes moving at `now` only by their own move, growth and fade (`translateX`, `translateY`, `scale`,

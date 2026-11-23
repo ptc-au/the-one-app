@@ -218,6 +218,9 @@ impl Painter<'_> {
                 });
             }
             self.fill(bounds, mask, look.background.unwrap_or_default(), scaled(look.borders), look.border_color, radii, look.dashed, opacity);
+            if let Some(gradient) = &look.background_image {
+                self.paint_gradient(gradient, bounds, radii, text.color, opacity, mask);
+            }
             for shadow in look.shadows.iter().rev().filter(|shadow| shadow.inset) {
                 self.shadow(shadow, bounds, radii, transform.scale, mask, opacity);
             }

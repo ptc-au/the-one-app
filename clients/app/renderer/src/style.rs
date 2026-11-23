@@ -29,6 +29,8 @@ use crate::tree::Node;
 #[derive(Clone, Debug)]
 pub struct Look {
     pub background: Option<Hsla>,
+    /// A gradient over its background (`backgroundImage`, CSS's `linear-gradient()` or `radial-gradient()`).
+    pub background_image: Option<crate::css::Gradient>,
     pub border_color: Hsla,
     pub borders: Edges<f32>,
     pub dashed: bool,
@@ -77,6 +79,13 @@ pub struct Animation {
     pub frames: Vec<(f32, Map<String, Value>)>,
     pub duration: f32,
     pub easing: [f32; 4],
+    /// How long after it's first drawn it starts, in milliseconds (`animationDelay`), how many times it goes through
+    /// (`animationIterationCount`, endless unless it says), and whether it shows its first keyframe while it waits and
+    /// keeps its last once it's done (`animationFillMode`'s `backwards` and `forwards`, `both` for each), as CSS's.
+    pub delay: f32,
+    pub iterations: f32,
+    pub backwards: bool,
+    pub forwards: bool,
 }
 
 impl Animation {
@@ -104,7 +113,7 @@ impl Animation {
             }
             _ => return None,
         };
-        Some(Animation { frames, duration: duration.max(1.0), easing })
+        Some(Animation { frames, duration: duration.max(1.0), easing, delay: 0.0, iterations: f32::INFINITY, backwards: false, forwards: false })
     }
 }
 
@@ -136,6 +145,7 @@ impl Default for Look {
     fn default() -> Look {
         Look {
             background: None,
+            background_image: None,
             border_color: Hsla::default(),
             borders: Edges::default(),
             dashed: false,
@@ -308,6 +318,11 @@ pub struct Transition {
 pub(crate) struct TextChange {
     style: Option<TextStyle>,
     weight: Option<u16>,
+    /// Its size, the height of its lines and the room between its letters, in pixels, as React Native's `fontSize`,
+    /// `lineHeight` and `letterSpacing`, over its type style's.
+    size: Option<f32>,
+    line_height: Option<f32>,
+    letter_spacing: Option<f32>,
     mono: Option<bool>,
     pub(crate) color: Option<Hsla>,
     align: Option<f32>,
@@ -328,6 +343,17 @@ impl Text {
         }
         if let Some(weight) = change.weight {
             out.style.weight = weight;
+        }
+        if let Some(size) = change.size.filter(|size| *size > 0.0) {
+            // Its lines as tall for its size as they were, as CSS's unitless line height is, unless it says.
+            out.style.line_height = (out.style.line_height / out.style.size.max(1.0) * size).round();
+            out.style.size = size;
+        }
+        if let Some(line_height) = change.line_height {
+            out.style.line_height = line_height;
+        }
+        if let Some(spacing) = change.letter_spacing {
+            out.style.tracking = spacing / out.style.size.max(1.0);
         }
         if let Some(mono) = change.mono {
             out.style.mono = mono;
@@ -453,6 +479,26 @@ fn align_content(word: &str) -> Option<AlignContent> {
         "space-between" => AlignContent::SPACE_BETWEEN,
         "space-around" => AlignContent::SPACE_AROUND,
         "space-evenly" => AlignContent::SPACE_EVENLY,
+        _ => return None,
+    })
+}
+
+/// An `animationTimingFunction`: CSS's `linear`, `ease`, `ease-in`, `ease-out` or `ease-in-out`, or a cubic
+/// Bézier's two points, `[x1, y1, x2, y2]`.
+fn timing(value: Option<&Value>) -> Option<[f32; 4]> {
+    Some(match value? {
+        Value::String(word) => match word.as_str() {
+            "linear" => [0.0, 0.0, 1.0, 1.0],
+            "ease" => [0.25, 0.1, 0.25, 1.0],
+            "ease-in" => [0.42, 0.0, 1.0, 1.0],
+            "ease-out" => [0.0, 0.0, 0.58, 1.0],
+            "ease-in-out" => [0.42, 0.0, 0.58, 1.0],
+            _ => return None,
+        },
+        Value::Array(points) => {
+            let point = |at: usize| points.get(at).and_then(Value::as_f64).map(|point| point as f32);
+            [point(0)?, point(1)?, point(2)?, point(3)?]
+        }
         _ => return None,
     })
 }
@@ -595,6 +641,7 @@ fn computed(style: &Map<String, Value>, conditions: Conditions) -> Computed {
     };
     let look = Look {
         background: get("backgroundColor").and_then(|value| ref_colour(value, conditions)),
+        background_image: word("backgroundImage").and_then(crate::css::Gradient::of),
         border_color: get("borderColor").and_then(|value| ref_colour(value, conditions)).unwrap_or_default(),
         borders,
         dashed: word("borderStyle") == Some("dashed"),
@@ -604,7 +651,11 @@ fn computed(style: &Map<String, Value>, conditions: Conditions) -> Computed {
             bottom_right: radius("borderBottomEndRadius").unwrap_or(Radius::Px(0.0)),
             bottom_left: radius("borderBottomStartRadius").unwrap_or(Radius::Px(0.0)),
         },
-        shadows: get("boxShadow").and_then(token_of).map(|(token, _)| table().shadows(token, conditions)).unwrap_or_default(),
+        shadows: match get("boxShadow") {
+            // CSS's own, as React Native takes it: `0 10px 30px rgba(0,0,0,.14), inset 0 0 0 1px #3a3a3c`.
+            Some(Value::String(shadows)) => crate::css::shadows(shadows),
+            shadow => shadow.and_then(token_of).map(|(token, _)| table().shadows(token, conditions)).unwrap_or_default(),
+        },
         material: get("backdropFilter").and_then(token_of).and_then(|(token, _)| table().material(token, conditions)),
         opacity: number("opacity").unwrap_or(1.0),
         clips,
@@ -633,7 +684,23 @@ fn computed(style: &Map<String, Value>, conditions: Conditions) -> Computed {
         stroke_width: number("strokeWidth").unwrap_or(1.0),
         animation: get("animationName").and_then(|name| {
             let motion = get("animation").and_then(token_of).and_then(|(token, _)| table().motion(token, conditions));
-            Animation::of(name, motion.map_or(1000.0, |motion| motion.duration), motion.map_or([0.0, 0.0, 1.0, 1.0], |motion| motion.easing))
+            let duration = number("animationDuration").or(motion.map(|motion| motion.duration)).unwrap_or(1000.0);
+            let easing = timing(get("animationTimingFunction")).or(motion.map(|motion| motion.easing)).unwrap_or([0.0, 0.0, 1.0, 1.0]);
+            let fill = word("animationFillMode").unwrap_or("none");
+            let iterations = match get("animationIterationCount") {
+                Some(Value::Number(count)) => count.as_f64().unwrap_or(1.0) as f32,
+                Some(_) => f32::INFINITY,
+                // A token's motion is a loop (a spinner), as it always was; CSS's own pace goes through once.
+                None if number("animationDuration").is_some() => 1.0,
+                None => f32::INFINITY,
+            };
+            Animation::of(name, duration, easing).map(|animation| Animation {
+                delay: number("animationDelay").unwrap_or(0.0).max(0.0),
+                iterations: iterations.max(0.0),
+                backwards: matches!(fill, "backwards" | "both"),
+                forwards: matches!(fill, "forwards" | "both"),
+                ..animation
+            })
         }),
     };
 
@@ -647,7 +714,14 @@ fn computed(style: &Map<String, Value>, conditions: Conditions) -> Computed {
     });
     let text = TextChange {
         style: type_style,
-        weight: get("fontWeight").and_then(token_of).and_then(|(token, _)| table().weight(token, conditions)).map(|weight| weight.round() as u16),
+        weight: match get("fontWeight") {
+            // A number, as React Native and CSS take one: 650.
+            Some(Value::Number(weight)) => weight.as_f64().map(|weight| weight.round() as u16),
+            weight => weight.and_then(token_of).and_then(|(token, _)| table().weight(token, conditions)).map(|weight| weight.round() as u16),
+        },
+        size: length("fontSize"),
+        line_height: length("lineHeight"),
+        letter_spacing: length("letterSpacing"),
         mono: get("fontFamily").and_then(token_of).and_then(|(token, _)| table().monospace(token, conditions)),
         color: get("color").and_then(|value| ref_colour(value, conditions)),
         align: match word("textAlign") {

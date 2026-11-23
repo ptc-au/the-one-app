@@ -88,12 +88,21 @@ export interface Look {
   borderTopEndRadius: Radius
   borderBottomStartRadius: Radius
   borderBottomEndRadius: Radius
-  boxShadow: Of<"shadow"> | "none"
+  /** A shadow token, or CSS's own as data has it, in a dynamic style: `0 10px 30px #00000024`. */
+  boxShadow: Of<"shadow"> | "none" | string
+  /** A gradient, as CSS's `background-image`: `linear-gradient(…)` or `radial-gradient(…)`, its colours hex,
+   * `rgba()` or `transparent`. */
+  backgroundImage: string
   backdropFilter: Of<"material"> | "none"
   /** A type style: size, line height, weight, tracking and figures together. */
   font: Of<"type">
   fontFamily: Of<"font">
-  fontWeight: Of<"weight">
+  fontWeight: Of<"weight"> | number
+  /** A size, line height and letter spacing in pixels, over the type style's, as React Native's: a picture's words at
+   * the size it draws them, in a dynamic style. */
+  fontSize: Length
+  lineHeight: Length
+  letterSpacing: Length
   textAlign: Properties["textAlign"]
   lineClamp: number
   whiteSpace: Properties["whiteSpace"]
@@ -120,6 +129,13 @@ export interface Look {
   /** `spin`, `pulse`, or keyframes, as CSS's `@keyframes`: a style by where each is (`from`, `50%`, `to`). */
   animationName: "spin" | "pulse" | "none" | { [at in "from" | "to" | `${number}%`]?: { [P in keyof Look]?: Look[P] } }
   animation: Of<"motion">
+  /** CSS's animation longhands (Reanimated's names): a time through's length and the wait before it, in milliseconds,
+   * how many times, what shows before and after, and its easing. With a duration it goes through once. */
+  animationDuration: number
+  animationDelay: number
+  animationIterationCount: number | "infinite"
+  animationFillMode: "none" | "forwards" | "backwards" | "both"
+  animationTimingFunction: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | readonly [number, number, number, number]
   /** What of it is about to move, grow or fade, as CSS's `will-change`: a host draws it ahead, as a layer of its
    * own, so it moves from the first frame without being drawn then. Only for what's about to, as it holds memory. */
   willChange: (keyof Properties)[]
