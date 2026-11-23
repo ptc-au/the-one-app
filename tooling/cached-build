@@ -37,19 +37,33 @@ if ! kept; then
       *) cargo=(cargo build) ;;
     esac
     # Its program, as Cargo says it built it: the last of its own crate's (an example comes after its library).
-    program=$(nice -n 10 "${cargo[@]}" -p "$(cargo metadata --locked -q --no-deps --format-version 1 |
+    messages=$(nice -n 10 "${cargo[@]}" -p "$(cargo metadata --locked -q --no-deps --format-version 1 |
       jq -r --arg manifest "$root/$folder/Cargo.toml" '.packages[] | select(.manifest_path == $manifest) | .name')" \
-      -j "${CARGO_BUILD_JOBS:-4}" --message-format json-render-diagnostics "$@" |
-      jq -r --arg manifest "$root/$folder/Cargo.toml" 'select(.reason == "compiler-artifact" and .manifest_path == $manifest and .target.kind != ["custom-build"])
-        | .executable // (.filenames[] | select(test("\\.(rlib|rmeta)$") | not))' | tail -1)
-    # Cargo's dep-info, beside its program: `<program>: <file> <file>…`, a space in a name escaped, where a folder is
-    # every file in it (a build script's `rerun-if-changed`). What a build script made (its `OUT_DIR`) is made from the
-    # rest.
+      -j "${CARGO_BUILD_JOBS:-4}" --message-format json-render-diagnostics "$@")
+    program=$(jq -r --arg manifest "$root/$folder/Cargo.toml" 'select(.reason == "compiler-artifact" and .manifest_path == $manifest and .target.kind != ["custom-build"])
+        | .executable // (.filenames[] | select(test("\\.(rlib|rmeta)$") | not))' <<<"$messages" | tail -1)
+    # Cargo's dep-info for what it built: `<program>.d`, and `deps/<crate>-<hash>.d` for each crate of ours it built with.
+    # A program Cargo links out of `deps` gets the whole build's list in the first, build scripts' `rerun-if-changed` and
+    # every crate's files in it; a Windows executable is built where it lands (the path to its PDB isn't hashed), where
+    # that `.d` is rustc's own, the program's files alone — its library's are in the `deps` one beside it.
     name=$(basename "$program") && depinfo=$(dirname "$program")/${name%.*}.d
     built=$(realpath -m --relative-to="$root" "${CARGO_TARGET_DIR:-$root/target}")
-    inputs=$(sed -e 's/^[^:]*: //' -e 's/\\ /\x00/g' "$depinfo" | tr ' ' '\n' | tr '\0' ' ' | grep -v '^$' |
-      xargs -d '\n' realpath -ms --relative-to="$root" | grep -v "^$built/" | xargs -d '\n' -I{} find {} -type f | LC_ALL=C sort -u)
-    if grep -q '^\.\./' <<<"$inputs"; then
+    profile=$(dirname "$depinfo") && [[ -d $profile/deps ]] || profile=$(dirname "$profile")
+    depinfos=("$depinfo")
+    for crate in $(jq -r --arg root "$root/" 'select(.reason == "compiler-artifact" and (.manifest_path | startswith($root)))
+        | .target.name' <<<"$messages" | LC_ALL=C sort -u); do
+      for file in "$profile/deps/$crate"-*.d; do [[ -e $file ]] && depinfos+=("$file"); done
+    done
+    # What they list: `<program>: <file> <file>…`, a space in a name escaped, and a rule a file (`file:`), whose target
+    # isn't one; a folder is every file in it (a build script's `rerun-if-changed`), and `#` starts rustc's note of the
+    # environment it read. What a build script made (its `OUT_DIR`) is made from the rest, and a file no longer there
+    # isn't read.
+    inputs=$(cat "${depinfos[@]}" | sed -e '/^#/d' -e 's/\\ /\x00/g' | tr '\n' ' ' | tr ' ' '\n' | tr '\0' ' ' |
+      sed -e '/^$/d' -e '/:$/d' -e '/^\\$/d' | xargs -r -d '\n' realpath -ms --relative-to="$root" |
+      awk -v built="$built/" 'index($0, built) != 1' | while read -r file; do [[ -e $file ]] && echo "$file"; done |
+      xargs -r -d '\n' -I{} find {} -type f | LC_ALL=C sort -u)
+    # Nothing it read, or a file outside the repo: it can't be checked, so it's this worktree's.
+    if [[ -z $inputs ]] || grep -q '^\.\./' <<<"$inputs"; then
       echo "$program"
       exit
     fi
