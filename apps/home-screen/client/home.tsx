@@ -13,7 +13,7 @@
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
 import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, call, client, connection, covers, haptic, keydown, PresentationContext, Problem, render, Screen, Status, toast, View, viewport } from "ui"
+import { Button, call, client, connection, covers, type Element, haptic, keydown, PresentationContext, Problem, render, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
 import { json, type Owner, owners } from "./owners.ts"
@@ -48,20 +48,21 @@ const vaultNeed = createMemo(() => (["vault", "vault-unlock"].some((tip) => tips
 const assisted = createMemo(() =>
   json<{ devices: { kind: string; command?: string | null }[] }>("sign-in_devices").then(({ devices }) => devices.some((device) => device.kind === "assistant" || !!device.command), () => true),
 )
-/// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, and the devices it's
-/// for: Welcome on every one that draws it, Connect your AI after it where no AI uses the network as them yet, Open from
+/// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, its name in the progress
+/// over it, and the devices it's for: Welcome on every one that draws it, Connect your AI after it where no AI uses the network as them yet, Open from
 /// anywhere on a computer's app, whose launcher has a shortcut, Your own server on a computer's app that isn't one of the network's
 /// servers, and last the Vault's where it needs a passkey: Set Up Your Vault once, and Unlock Your Vault once, on the
 /// first device that can't open it (`vaultStep`).
 const steps = [
-  { tip: "welcome", Step: Welcome, here: () => drawn() >= 6 },
-  { tip: "connect-ai", Step: ConnectAI, here: () => drawn() >= 6 && !assisted() },
-  { tip: "shortcut", Step: OpenFromAnywhere, here: () => drawn() >= 6 && !!shortcut() },
-  { tip: "own-server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
-  { tip: "vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up" },
-  { tip: "vault-unlock", Step: (size: StepProps) => <VaultStep kind="unlock" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "unlock" },
+  { tip: "welcome", name: "Welcome", Step: Welcome, here: () => drawn() >= 6 },
+  { tip: "connect-ai", name: "Connect your AI", Step: ConnectAI, here: () => drawn() >= 6 && !assisted() },
+  { tip: "shortcut", name: "Open from anywhere", Step: OpenFromAnywhere, here: () => drawn() >= 6 && !!shortcut() },
+  { tip: "own-server", name: "Your own server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
+  { tip: "vault", name: "Vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up" },
+  { tip: "vault-unlock", name: "Vault", Step: (size: StepProps) => <VaultStep kind="unlock" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "unlock" },
 ]
-type StepProps = { width: number; height: number; onContinue: () => void }
+type StepProps = { width: number; height: number; onContinue: () => void; progress?: Element }
+type Step = (typeof steps)[number]
 /// Each step gone on from (true), or started again (false), here since `tips` was asked, by its tip.
 const [continued, setContinued] = createSignal<Record<string, boolean>>({})
 /// Whether a step shows: until they go on from it, on this device or another (its tip, theirs).
@@ -69,6 +70,9 @@ const showing = (tip: string) => (tips()?.includes(tip) === false ? continued()[
 /// The step shown: the first for this device that shows. Where their tips can't be asked, none is: never in the way of
 /// their Home Screen.
 const step = () => steps.find(({ tip, here }) => here() && showing(tip))
+/// The steps this device shows, which the progress counts: each for it still to be seen as `tips` was asked, or gone on
+/// from or started again here since. One seen on another device before isn't one of them.
+const counted = () => steps.filter(({ tip, here }) => here() && (tips()?.includes(tip) === false || continued()[tip] !== undefined))
 /// Goes on from a step, showing the next, or the Home Screen, at once and keeping that it's been seen behind it, or
 /// (`again`) starts it again, as its tip set unseen has it.
 const go = (tip: string, again = false) => {
@@ -115,16 +119,43 @@ function HomeScreen(props: { owners: Owner[] }) {
         style={[looks.root, looks.sized(windowWidth(), viewport().height)]}
       >
         <Show when={step()} keyed fallback={<HomeScreenShown owners={props.owners} layout={layout} paging={paging} launching={launching} carrying={carrying} />}>
-          {({ tip, Step }) => (
-            <Show when={launcher()} fallback={<Step width={viewport().width} height={viewport().height} onContinue={() => go(tip)} />}>
+          {(shown) => (
+            <Show when={launcher()} fallback={<Onboarding step={shown} width={viewport().width} height={viewport().height} />}>
               <View style={[looks.surface, looks.at(cardRect().x, cardRect().y, cardRect().width, cardRect().height)]}>
-                <Step width={cardRect().width} height={cardRect().height} onContinue={() => go(tip)} />
+                <Onboarding step={shown} width={cardRect().width} height={cardRect().height} />
               </View>
             </Show>
           )}
         </Show>
       </View>
     </PresentationContext>
+  )
+}
+
+/// How tall the progress over a step laid out wide is: its row, and room above it.
+const PROGRESS = 44
+const look = styles({
+  column: { flexDirection: "column" },
+  progress: (height: number) => ({ height, justifyContent: "flex-end", paddingInline: tokens.grid[6] }),
+})
+
+/// A step of onboarding, `width` by `height`, with where it is among the steps this device shows (`counted`), where
+/// there's more than one: their names in a row over it where it's laid out wide, as a computer's is, and as dots over
+/// its title where it's narrow, as a phone's is (its `progress`), whose title names it.
+function Onboarding(props: { step: Step; width: number; height: number }) {
+  const among = () => counted()
+  const at = () => among().indexOf(props.step)
+  const shows = () => among().length > 1 && at() >= 0
+  const progress = (dots: boolean) => <Stepper steps={among().map(({ name }) => name)} at={at()} dots={dots} />
+  const Step = props.step.Step
+  const onContinue = () => go(props.step.tip)
+  return (
+    <Show when={shows() && props.width >= 600} fallback={<Step width={props.width} height={props.height} onContinue={onContinue} progress={shows() ? progress(true) : undefined} />}>
+      <View style={look.column}>
+        <View style={look.progress(PROGRESS)}>{progress(false)}</View>
+        <Step width={props.width} height={props.height - PROGRESS} onContinue={onContinue} />
+      </View>
+    </Show>
   )
 }
 

@@ -4340,5 +4340,107 @@
         }
       ]
     }
+  },
+  "Onboarding progress in the launcher": {
+    "like": "Open from anywhere in the launcher",
+    "taps": [
+      {
+        "role": "button",
+        "name": "Continue"
+      }
+    ],
+    "wait": 2000,
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "vault-unlock"
+        ]
+      },
+      "home-screen_tip": {},
+      "encryption_key": {
+        "owner": "users/sam",
+        "device": null,
+        "check": null,
+        "slot": null,
+        "devices": [],
+        "asking": [],
+        "wrapped": null,
+        "access": []
+      },
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "email": "sam@example.com"
+          }
+        ]
+      },
+      "vault_security": {
+        "readiness": "not_set_up",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [],
+        "may": []
+      }
+    }
+  },
+  "Onboarding progress on a phone": {
+    "like": "Connect your AI on a phone",
+    "taps": [
+      {
+        "role": "button",
+        "name": "Continue"
+      }
+    ],
+    "wait": 1000,
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "own-server",
+          "shortcut",
+          "vault-unlock"
+        ]
+      },
+      "encryption_key": {
+        "owner": "users/sam",
+        "device": null,
+        "check": null,
+        "slot": null,
+        "devices": [],
+        "asking": [],
+        "wrapped": null,
+        "access": []
+      },
+      "sign-in_people": {
+        "people": [
+          {
+            "who": "users/sam",
+            "called": "Sam",
+            "email": "sam@example.com"
+          }
+        ]
+      },
+      "vault_security": {
+        "readiness": "not_set_up",
+        "owner": "users/sam",
+        "holds": false,
+        "device": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "devices": [],
+        "asking": [],
+        "artifact": "vault/users/sam",
+        "epoch": 1,
+        "servers": [],
+        "may": []
+      },
+      "home-screen_tip": {}
+    }
   }
 }

@@ -262,7 +262,7 @@ function Drawing(props: { on: boolean; awake: boolean; name: string; host: strin
 
 /// Your own server, in `width` by `height`. `onContinue` goes on, once this computer's begun becoming a server if its
 /// switch is on.
-export function OwnServer(props: { width: number; height: number; onContinue: () => void }) {
+export function OwnServer(props: { width: number; height: number; onContinue: () => void; progress?: Element }) {
   const [on, setOn] = createSignal(true)
   const [awake, setAwake] = createSignal(true)
   // Awake, then asleep, and so on, while it's on and motion's allowed; with it switched, from awake again.
@@ -379,6 +379,7 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
           const inner = width - 32
           return (
             <View style={look.narrow(width)}>
+              {props.progress}
               <Heading narrow />
               <Picture width={inner} height={Math.round((inner * 3.4) / 4)} />
               <Body />

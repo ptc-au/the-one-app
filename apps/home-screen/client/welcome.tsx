@@ -100,8 +100,8 @@ export const network = createMemo(() =>
 )
 
 /// Welcome, in `width` by `height`, with `inset` kept clear at its top and bottom (a phone's status bar and home
-/// indicator). `onContinue` goes on.
-export function Welcome(props: { width: number; height: number; onContinue: () => void }) {
+/// indicator). `onContinue` goes on. `progress` is where it is among onboarding's steps, over its title where it's narrow.
+export function Welcome(props: { width: number; height: number; onContinue: () => void; progress?: Element }) {
   const [shown, setShown] = createSignal(0)
   // How many times each has been shown, so it plays again from its start each time it is.
   const [runs, setRuns] = createSignal([1, 0, 0, 0])
@@ -161,6 +161,7 @@ export function Welcome(props: { width: number; height: number; onContinue: () =
           const inner = width - 32
           return (
             <View style={look.phone(width, safeArea().top + 20, safeArea().bottom + 18)}>
+              {props.progress}
               <Mark phone />
               <View style={look.heading}>
                 <Text style={look.headingTitle}>{items[shown()].title}</Text>

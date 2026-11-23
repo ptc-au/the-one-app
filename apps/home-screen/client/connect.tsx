@@ -109,7 +109,7 @@ const network = createMemo(() => client().then(({ network }) => network))
 
 /// Connect your AI, in `width` by `height`, for the network Welcome names (its name and logo). `onContinue` goes on,
 /// whether by Continue or Later.
-export function ConnectAI(props: { width: number; height: number; onContinue: () => void }) {
+export function ConnectAI(props: { width: number; height: number; onContinue: () => void; progress?: Element }) {
   const [chosen, setChosen] = createSignal<Choice>("claude")
   const [runs, setRuns] = createSignal(1)
   const [copied, setCopied] = createSignal<string>()
@@ -305,6 +305,7 @@ export function ConnectAI(props: { width: number; height: number; onContinue: ()
             // Taller than a phone's window with a choice open, it scrolls, as an iPhone's screen does.
             <ScrollView style={look.scroll(props.width, props.height)}>
               <View style={look.phone(width, safeArea().top + 20, safeArea().bottom + 16)}>
+                {props.progress}
                 <Mark phone />
                 <Panel width={inner} height={Math.round((inner * 3.4) / 4)} />
                 <Rows />

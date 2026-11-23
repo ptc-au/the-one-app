@@ -54,6 +54,7 @@ export { History, Screen, Section, Shelf, Split } from "./styled-components/scre
 export { LiveScreen } from "./styled-components/live-screen.tsx"
 export { Menu } from "./styled-components/menu.tsx"
 export { ActionBar, ActionPanel, Keys, type Action } from "./styled-components/actions.tsx"
+export { Stepper } from "./styled-components/stepper.tsx"
 export { Tabs } from "./styled-components/tabs.tsx"
 export { Tips, type Tip } from "./styled-components/tips.tsx"
 export { Empty, Problem, Skeleton, Status, Steps } from "./styled-components/states.tsx"

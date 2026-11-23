@@ -4,7 +4,7 @@
 // it, where the shortcut is pressed and the launcher springs in over the window, again and again, from its start each
 // time the shortcut changes. One shortcut opens the launcher of every network's app on the computer.
 import { createSignal, For, Show } from "solid-js"
-import { Button, defineVars, Image, reducedMotion, styles, Text, tokens, View } from "ui"
+import { Button, defineVars, type Element, Image, reducedMotion, styles, Text, tokens, View } from "ui"
 import { Box, circle, Panel, Shape, Words } from "./art.tsx"
 import { labels, type Os, os, shortcut, ShortcutControl, WindowsKey } from "./shortcut.tsx"
 import { network } from "./welcome.tsx"
@@ -278,7 +278,7 @@ export function Desktop(props: { os: Os; keys: string }) {
 }
 
 /// Open from anywhere, in `width` by `height`. `onContinue` goes on.
-export function OpenFromAnywhere(props: { width: number; height: number; onContinue: () => void }) {
+export function OpenFromAnywhere(props: { width: number; height: number; onContinue: () => void; progress?: Element }) {
   // Played again from its start each time the shortcut changes.
   const [plays, setPlays] = createSignal(1)
   const keys = () => shortcut()?.keys ?? shortcut()?.default ?? ""
@@ -317,6 +317,7 @@ export function OpenFromAnywhere(props: { width: number; height: number; onConti
           const inner = width - 32
           return (
             <View style={look.narrow(width)}>
+              {props.progress}
               <Heading narrow />
               <Picture width={inner} height={Math.round((inner * 3.4) / 4)} />
               <Control />

@@ -6,7 +6,7 @@
 // it and hands it to every server waiting for it, with one passkey. Coming back, the picture shows it done, the lock
 // shut on the Vault or opened off it, and the button goes on. Later goes on without it: Vault in Settings still asks.
 import { createEffect, createMemo, createSignal, For, onCleanup, refresh, Show } from "solid-js"
-import { Button, call, changed, client, defineVars, Icon, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
+import { Button, call, changed, client, defineVars, type Element, Icon, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
 import { Box, circle, Panel, type Part, rect, Shape, Words } from "./art.tsx"
 import { amazon, google, microsoft, stripe } from "./slides.tsx"
 import { network } from "./welcome.tsx"
@@ -219,7 +219,8 @@ function Vault(props: { x: number; locked?: boolean; cleared?: boolean }) {
 }
 
 /// The step, in `width` by `height`. `kind` is which, as `vaultStep` said; `onContinue` goes on, done or Later.
-export function VaultStep(props: { kind: VaultStepKind; width: number; height: number; onContinue: () => void }) {
+/// `progress` is where it is among onboarding's steps, over its title where it's narrow.
+export function VaultStep(props: { kind: VaultStepKind; width: number; height: number; onContinue: () => void; progress?: Element }) {
   const security = createMemo(() => json<Security>("vault_security"))
   const key = createMemo(() => json<Key>("encryption_key"))
   const again = () => [security, key].forEach(refresh)
@@ -414,6 +415,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
           return (
             <ScrollView style={look.scroll(props.width, props.height)}>
               <View style={look.phone(width, safeArea().top + 20, safeArea().bottom + 18)}>
+                {props.progress}
                 <Brand phone />
                 <Picture width={inner} height={Math.round((inner * 3.4) / 4)} />
                 <Body />

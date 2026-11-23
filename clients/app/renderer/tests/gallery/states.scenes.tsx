@@ -1,4 +1,4 @@
-import { Button, Empty, Problem, type Scenes, Skeleton, Status, Steps, styles, tokens, View } from "ui"
+import { Button, Empty, Problem, type Scenes, Skeleton, Status, Stepper, Steps, styles, tokens, View } from "ui"
 
 const look = styles({ column: { gap: tokens.grid[4] } })
 
@@ -13,6 +13,18 @@ export default {
       <Skeleton rows={2} />
     </View>
   ),
+  // Where someone is in a flow they go through: its steps named in a row on a computer, dots on a phone.
+  "States/Stepper": () => (
+    <View style={look.column}>
+      <Stepper steps={["Welcome", "Connect your AI", "Open from anywhere", "Your own server", "Set Up Your Vault"]} at={2} />
+      <Stepper steps={["Welcome", "Open from anywhere", "Your own server"]} at={0} />
+      <Stepper steps={["Welcome", "Connect your AI", "Open from anywhere", "Your own server", "Set Up Your Vault"]} at={2} dots />
+    </View>
+  ),
+  "States/Stepper, narrow": {
+    size: [390, 400],
+    render: () => <Stepper steps={["Welcome", "Connect your AI", "Open from anywhere", "Your own server", "Set Up Your Vault"]} at={4} />,
+  },
   // Where a computer's window is wider than a column, loading is in the column's middle, as the states are and as the
   // rows that replace it will be.
   "States/Loading on a computer": {

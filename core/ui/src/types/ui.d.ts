@@ -367,6 +367,7 @@ export declare function Skeleton(props: { rows?: number }): Element
 export declare function Problem(props: { heading: Element; text?: Element | Error; action?: Element; warn?: boolean }): Element
 export declare function Status(props: { heading: Element; text?: Element; over?: boolean }): Element
 export declare function Steps(props: { steps: Element[]; at: number; text?: Element }): Element
+export declare function Stepper(props: { steps: Element[]; at: number; dots?: boolean }): Element
 /** The one screen someone signs in on: whose it is, a heading, what they compare or are warned of, and one button. */
 export declare function SignIn(props: {
   mark?: string | Element
