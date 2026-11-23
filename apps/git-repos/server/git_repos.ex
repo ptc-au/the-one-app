@@ -106,7 +106,7 @@ defmodule GitRepos do
         name: "list",
         read_only: true,
         description:
-          "Every repo you may read, the latest pushed first: its name, whose it is, who can see it, its description and main language, when it was last pushed, and whether you push to it",
+          "Every repo you may read, the latest pushed first: its name, whose it is, who can see it, its description, when it was last pushed, and whether you push to it",
         inputs: only.(%{}, []),
         outputs: only.(
           %{
@@ -128,7 +128,6 @@ defmodule GitRepos do
                     },
                     group: %{type: ["string", "null"], description: "What the group or groups it's visible to are called, for `group`"},
                     description: %{type: ["string", "null"], description: "Its README's first line of words, if it has a README"},
-                    language: %{type: ["string", "null"], description: "The language most of its code is in, by its files' extensions"},
                     pushed: ms.("When it was last pushed"),
                     pushes: %{type: "boolean", description: "Whether you push to it"},
                     clone: clone
@@ -975,11 +974,10 @@ defmodule GitRepos do
   def address(%Artifact{} = repo), do: address(Artifact.name(repo))
   def address(name), do: "one::" <> name
 
-  # A repo in the list: whose it is, who can see it, and what's kept of what's in it (`about`).
+  # A repo in the list: whose it is, who can see it, and its description.
   defp listed(call, name, stored, command, called) do
     whose = whose(name)
     {visibility, group} = visibility(call, name, whose, called)
-    about = about(call, name, stored)
 
     %{
       repo: name,
@@ -988,8 +986,7 @@ defmodule GitRepos do
       name: name |> String.split("/") |> List.last(),
       visibility: visibility,
       group: group,
-      description: about["description"],
-      language: about["language"],
+      description: described(call, name, stored),
       pushed: stored["pushed"],
       pushes: Call.reaches?(call, name, "editor"),
       clone: address(name)
@@ -1057,36 +1054,33 @@ defmodule GitRepos do
     end
   end
 
-  # What a repo is, for the list, kept in its entry in the index for as long as it's not pushed to: its README's first
-  # line of words, and the language most of its files are in.
-  defp about(_call, _name, %{"about" => %{"at" => at} = about, "pushed" => at}), do: about
+  # A repo's description for the list: its README's first line of words, read once for each push and kept in the repo's entry in
+  # the index.
+  defp described(_call, _name, %{"described" => %{"at" => at, "text" => text}, "pushed" => at}), do: text
 
-  defp about(call, name, stored) do
+  defp described(call, name, stored) do
     {folder, state} = read(call, name)
-    head = state["head"]
+    head = "refs/heads/" <> state["head"]
+    text = if Map.has_key?(state["refs"], head), do: description(folder, head)
 
-    about =
-      if Map.has_key?(state["refs"], "refs/heads/" <> head) do
-        files =
-          for entry <- String.split(Mirror.git!(folder, ["ls-tree", "-r", "-z", "-l", "refs/heads/" <> head]), "\0", trim: true),
-              [about, path] <- [String.split(entry, "\t", parts: 2)],
-              [_mode, "blob", sha, size] <- [String.split(about, ~r/ +/)],
-              do: {path, sha, String.to_integer(size)}
+    Artifact.update(index(), "index/" <> name, fn data ->
+      data && JSON.encode!(data |> JSON.decode!() |> Map.delete("about") |> Map.put("described", %{"at" => stored["pushed"], "text" => text}))
+    end)
 
-        %{"description" => description(folder, files), "language" => language(files)}
-      else
-        %{}
-      end
-
-    about = Map.put(about, "at", stored["pushed"])
-    Artifact.update(index(), "index/" <> name, fn data -> data && JSON.encode!(Map.put(JSON.decode!(data), "about", about)) end)
-    about
+    text
   end
 
   # The first line of words of the repo's README: not its title if there's a line of words after it, nor a badge, a
   # picture, a rule or a table.
-  defp description(folder, files) do
-    with {_, sha, size} when size < @shown <- Enum.find(files, fn {path, _, _} -> path =~ ~r/^readme(\.(md|markdown|txt))?$/i end) do
+  defp description(folder, head) do
+    readme =
+      for entry <- String.split(Mirror.git!(folder, ["ls-tree", "-z", "-l", head]), "\0", trim: true),
+          [about, file] <- [String.split(entry, "\t", parts: 2)],
+          [_mode, "blob", sha, size] <- [String.split(about, ~r/ +/)],
+          file =~ ~r/^readme(\.(md|markdown|txt))?$/i and String.to_integer(size) < @shown,
+          do: sha
+
+    with [sha | _] <- readme do
       lines = for line <- lines(Mirror.git!(folder, ["cat-file", "blob", sha])), line = String.trim(line), line != "", do: line
       prose = Enum.find(lines, &(not String.starts_with?(&1, ~w(# ![ [! < ``` --- | ===))))
       line = prose || List.first(lines)
@@ -1094,34 +1088,6 @@ defmodule GitRepos do
     else
       _ -> nil
     end
-  end
-
-  @code %{
-    "ts" => "TypeScript", "tsx" => "TypeScript", "js" => "JavaScript", "jsx" => "JavaScript", "mjs" => "JavaScript",
-    "cjs" => "JavaScript", "ex" => "Elixir", "exs" => "Elixir", "heex" => "Elixir", "rs" => "Rust", "py" => "Python",
-    "go" => "Go", "rb" => "Ruby", "java" => "Java", "kt" => "Kotlin", "swift" => "Swift", "c" => "C", "h" => "C",
-    "cc" => "C++", "cpp" => "C++", "hpp" => "C++", "cs" => "C#", "php" => "PHP", "sh" => "Shell", "bash" => "Shell",
-    "css" => "CSS", "scss" => "CSS", "html" => "HTML", "sql" => "SQL", "dart" => "Dart", "lua" => "Lua", "zig" => "Zig",
-    "nix" => "Nix", "wasm" => "WebAssembly"
-  }
-  # What isn't code only counts where a repo has none: a notes repo is Markdown.
-  @prose %{"md" => "Markdown", "markdown" => "Markdown", "txt" => "Text", "json" => "JSON", "yml" => "YAML", "yaml" => "YAML", "toml" => "TOML"}
-
-  # The language most of a repo's bytes are in, by its files' extensions.
-  defp language(files) do
-    count = fn languages ->
-      files
-      |> Enum.flat_map(fn {path, _sha, size} -> List.wrap(languages[path |> Path.extname() |> String.trim_leading(".") |> String.downcase()]) |> Enum.map(&{&1, size}) end)
-      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-      |> Enum.map(fn {language, sizes} -> {language, Enum.sum(sizes)} end)
-    end
-
-    case count.(@code) do
-      [] -> count.(@prose)
-      code -> code
-    end
-    |> Enum.max_by(&elem(&1, 1), fn -> nil end)
-    |> then(&(&1 && elem(&1, 0)))
   end
 
   defp lines(text), do: String.split(text, "\n", trim: true)

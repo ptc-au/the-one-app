@@ -42,7 +42,6 @@ interface Listed {
   visibility: "private" | "everyone" | "group"
   group: string | null
   description: string | null
-  language: string | null
   pushed: number
 }
 const repos = createMemo(() => json<{ repos: Listed[] }>("git-repos_list").then(({ repos }) => repos))
@@ -140,10 +139,9 @@ const look = styles({
   initials: { font: tokens.type.small, fontWeight: tokens.weight.semibold },
   owner: { fontWeight: tokens.weight.regular, color: tokens.colour.secondaryLabel },
   name: { fontWeight: tokens.weight.semibold },
+  status: { alignItems: "flex-end", gap: tokens.grid[1] },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: tokens.grid[3] },
   visible: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
-  language: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
-  dot: { width: tokens.grid[2], height: tokens.grid[2], borderRadius: tokens.radius.full },
-  pushed: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", columnGap: tokens.grid[2.5], rowGap: tokens.grid[1] },
   lock: { width: tokens.length.icon, height: tokens.length.icon, flexShrink: 0, color: tokens.colour.secondaryLabel },
   chips: { gap: tokens.grid[2] },
   chip: { flexShrink: 0, height: tokens.length.control, paddingInline: tokens.grid[4], alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.full, backgroundColor: tokens.colour.quinaryLabel, color: tokens.colour.label },
@@ -155,12 +153,6 @@ const look = styles({
   orange: { backgroundColor: tokens.colour.orangeTint, color: tokens.colour.label },
   magenta: { backgroundColor: tokens.colour.magentaTint, color: tokens.colour.label },
   red: { backgroundColor: tokens.colour.redTint, color: tokens.colour.label },
-  blueDot: { backgroundColor: tokens.colour.blue },
-  greenDot: { backgroundColor: tokens.colour.green },
-  purpleDot: { backgroundColor: tokens.colour.purple },
-  orangeDot: { backgroundColor: tokens.colour.orange },
-  magentaDot: { backgroundColor: tokens.colour.magenta },
-  redDot: { backgroundColor: tokens.colour.red },
 })
 
 /// The name a new repo may have.
@@ -278,7 +270,6 @@ const me = createMemo(() => mine())
 /// A person, a group or the network by a colour of its own, from its name, as an avatar is: the same one wherever it shows.
 const hue = (name: string) => [...name].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 6
 const fills = [look.blue, look.green, look.purple, look.orange, look.magenta, look.red]
-const dots = [look.blueDot, look.greenDot, look.purpleDot, look.orangeDot, look.magentaDot, look.redDot]
 
 /// An owner's mark as GitHub's avatars are: a person's is round, with their initials; a group's is square, and so is the network's.
 function Avatar(props: { owner: string; whose: string }) {
@@ -309,23 +300,11 @@ function Visible(props: { repo: Listed }) {
   )
 }
 
-/// A repo's language, with a dot of its colour.
-function Language(props: { language: string }) {
+/// What a repo is besides its name and words: who can see it, and when it was last pushed to.
+function Status(props: { repo: Listed; wide: boolean }) {
   return (
-    <View style={look.language}>
-      <View style={[look.dot, dots[hue(props.language)]]} />
-      <Text style={look.quiet}>{props.language}</Text>
-    </View>
-  )
-}
-
-/// What a repo is besides its name, in a line under its words (a row's `action` is under them in a narrow room, beside them
-/// in a wide one): who can see it, its main language, and when it was last pushed to.
-function About(props: { repo: Listed }) {
-  return (
-    <View style={look.pushed}>
+    <View style={[look.status, !props.wide && look.statusRow]}>
       <Visible repo={props.repo} />
-      <Show when={props.repo.language}>{(language) => <Language language={language()} />}</Show>
       <Text style={look.quiet}>{props.repo.pushed ? `Pushed ${since(props.repo.pushed, "narrow")}` : "Empty"}</Text>
     </View>
   )
@@ -368,6 +347,7 @@ function Views(props: { counts: Record<string, number> }) {
 }
 
 function GitRepos() {
+  const wide = () => viewport().width >= 768
   const yours = (repo: Listed) => repo.whose === me()
   const found = () => {
     const words = query().trim().toLowerCase()
@@ -395,7 +375,8 @@ function GitRepos() {
                   </>
                 }
                 text={repo().description ?? undefined}
-                action={<About repo={repo()} />}
+                end={wide() ? <Status repo={repo()} wide={wide()} /> : undefined}
+                action={wide() ? undefined : <Status repo={repo()} wide={wide()} />}
                 current={repo().repo === open()}
                 onPress={() => go(() => (setAt({ tab: "code", path: "" }), setRef(), setOpen(repo().repo)))}
               />

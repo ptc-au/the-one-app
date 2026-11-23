@@ -24,7 +24,7 @@ git-remote-one`, or on Windows `mklink /H git-remote-one.exe one.exe`.
 - `create --name notes` makes an empty repo, yours, or a group's with `ONE_SUBJECT=groups/<name>`. Then push to it from a
   repo you have: `git remote add origin one::users/alice/made/git-repos/notes` and `git push -u origin main`.
 - `list` lists every repo you may read, with who can see it (`private`, `everyone` or a `group`), its description (its
-  README's first line) and its main language. `branches`, `tree`, `file`, `log` and `commit` read one without cloning it:
+  README's first line). `branches`, `tree`, `file`, `log` and `commit` read one without cloning it:
   a folder or a file at a ref, the history, one commit's diff.
 - Who reads and who pushes is sharing, as for anything: `permissions share --artifact <repo> --relation viewer` (reads
   and clones, and opens pull requests) or `editor` (pushes, and merges pull requests). A group's members push to its
