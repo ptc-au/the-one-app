@@ -37,19 +37,6 @@ defmodule SignIn do
   require Logger
   alias OneCore.{Artifact, Builds, Call, Edge}
 
-  # Where each of the network's apps is downloaded from, by kind of device (`PLATFORMS` in `edge/auth.ts`).
-  @downloads %{
-    type: "object",
-    description:
-      "Each kind of device's app as an https:// link: the installer itself, or for an iPhone its TestFlight invitation. An empty object for none",
-    properties:
-      Map.new(
-        ~w(mac mac-intel windows linux-appimage linux-deb android iphone),
-        &{&1, %{type: "string", format: "uri"}}
-      ),
-    additionalProperties: false
-  }
-
   @impl true
   def tools do
     none = %{type: "object", properties: %{}}
@@ -120,11 +107,9 @@ defmodule SignIn do
         name: "network",
         description: """
         Says the network's name, icon and logo, as its sign-in page and its web app show them and as its own apps are
-        finished with, and where its apps are downloaded from, or, given `name`, `icon`, `logo` or `downloads`, makes
-        them those. Its icon is on a tile of its own, as a Home Screen, a tab and its apps show it; its logo is its mark
-        alone, as its sign-in page draws it, one for a light page and one for a dark (either alone shows on both).
-        Without them, it's the One App's. Its downloads are what its download page, <address>/download, offers, which
-        anyone opens without signing in: each kind of device's link, every one given at once, and the web app for the rest
+        finished with, or, given `name`, `icon` or `logo`, makes them those. Its icon is on a tile of its own, as a Home
+        Screen, a tab and its apps show it; its logo is its mark alone, as its sign-in page draws it, one for a light
+        page and one for a dark (either alone shows on both). Without them, it's the One App's
         """,
         inputs: %{
           type: "object",
@@ -138,8 +123,7 @@ defmodule SignIn do
                 light: %{type: "string", description: "Its mark as a light page shows it"},
                 dark: %{type: "string", description: "Its mark as a dark page shows it"}
               }
-            },
-            downloads: @downloads
+            }
           }
         },
         outputs: %{
@@ -151,8 +135,7 @@ defmodule SignIn do
               type: ["object", "null"],
               description: "Where its logo is, for a light page and a dark, if it has one of its own",
               properties: %{light: %{type: "string"}, dark: %{type: "string"}}
-            },
-            downloads: @downloads
+            }
           },
           required: ["name", "icon"]
         }
@@ -492,7 +475,7 @@ defmodule SignIn do
 
   # Whoever invites names the network, and any member sees what it's called.
   def call("network", inputs, call) do
-    given = Map.take(inputs, ["name", "icon", "logo", "downloads"])
+    given = Map.take(inputs, ["name", "icon", "logo"])
 
     if given == %{} do
       if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
@@ -500,7 +483,7 @@ defmodule SignIn do
       Call.reach(call, Artifact.name(call.own), "editor")
     end
 
-    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo", "downloads"])
+    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo"])
   end
 
   # Whoever invites takes out, and nobody takes themselves out. Only an owner takes out an owner, as only a super

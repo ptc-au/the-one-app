@@ -796,19 +796,11 @@ async function domains(): Promise<string[]> {
  * for a light page and one for a dark, either of which shows on both where it's alone. Each picture is a square PNG,
  * as base64, with its size, and is the One App's where there's none.
  */
-export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: { light?: Picture; dark?: Picture } | null; downloads: Downloads }> {
-  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo', 'downloads')").all<{ name: string; value: string }>();
+export async function network(): Promise<{ name: string | null; icon: Picture | null; logo: { light?: Picture; dark?: Picture } | null }> {
+  const { results } = await env.DB.prepare("select name, value from setting where name in ('name', 'icon', 'logo')").all<{ name: string; value: string }>();
   const kept = Object.fromEntries(results.map(({ name, value }) => [name, JSON.parse(value)]));
-  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null, downloads: kept.downloads ?? {} };
+  return { name: kept.name ?? null, icon: kept.icon ?? null, logo: kept.logo ?? null };
 }
-
-/**
- * Where each of the network's own apps is downloaded from, as its owner said (`network`), which its download page
- * offers (`download.ts`), as Mattermost's "App Download Link" settings are: by kind of device, each a link that
- * gets the installer itself, or the TestFlight invitation for an iPhone's.
- */
-export const PLATFORMS = ["mac", "mac-intel", "windows", "linux-appimage", "linux-deb", "android", "iphone"] as const;
-export type Downloads = Partial<Record<(typeof PLATFORMS)[number], string>>;
 
 /** A square PNG, as base64, with its size. */
 type Picture = { png: string; size: number };
@@ -897,8 +889,6 @@ export interface Ask {
   /** With `network`: the network's logo, its mark with no tile, as square PNGs as base64 for a light page and a dark one
    * (`{ light, dark }`, either alone shown on both), or null for the One App's. */
   logo?: unknown;
-  /** With `network`: where each of its apps is downloaded from, by kind of device (`PLATFORMS`), null for none. */
-  downloads?: unknown;
 }
 
 export async function asked(auth: Auth, origin: string, { ask, who: name, building, ...about }: Ask) {
@@ -923,8 +913,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     }
     return { domains: await domains() };
   }
-  // The network's name, icon, logo and downloads, as its owner says: given any, it's that from then on, and null is the
-  // One App's (none, for downloads).
+  // The network's name, icon and logo, as its owner says: given any, it's that from then on, and null is the One App's.
   if (ask === "network") {
     const set = (name: string, value: unknown) =>
       value === null
@@ -952,14 +941,8 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       if (wrong) return { error: wrong };
       await set("logo", Object.keys(logo).length ? logo : null);
     }
-    if (about.downloads !== undefined) {
-      const given = Object.entries((about.downloads ?? {}) as Record<string, unknown>).filter(([, link]) => link != null);
-      const wrong = given.find(([platform, link]) => !PLATFORMS.includes(platform as never) || !URL.canParse(String(link)) || new URL(String(link)).protocol !== "https:");
-      if (wrong) return { error: `${wrong[0]}: a download is one of ${PLATFORMS.join(", ")}, with an https:// link.` };
-      await set("downloads", given.length ? Object.fromEntries(given.map(([platform, link]) => [platform, String(link)])) : null);
-    }
-    const { name, icon, logo, downloads } = await network();
-    return { name, icon: icon && `${origin}/apple-touch-icon.png`, logo: logo && { light: `${origin}/Logo.png`, dark: `${origin}/Logo-dark.png` }, downloads };
+    const { name, icon, logo } = await network();
+    return { name, icon: icon && `${origin}/apple-touch-icon.png`, logo: logo && { light: `${origin}/Logo.png`, dark: `${origin}/Logo-dark.png` } };
   }
   // Everyone who has joined, and everyone invited who hasn't yet, with the name each goes by.
   if (ask === "everyone") {

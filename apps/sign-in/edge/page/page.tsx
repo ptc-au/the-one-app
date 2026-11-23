@@ -61,6 +61,9 @@ const look = styles({
 const auth = createAuthClient({ basePath: "/sign-in/auth", plugins: [passkeyClient(), deviceAuthorizationClient()] })
 const opened = new URLSearchParams(location.hash.slice(1))
 const params = new URLSearchParams(location.search)
+/// Where someone goes once they're signed in: the page of this network's that sent them here to sign in first
+/// (`callbackURL`, as Better Auth names it), or their Home Screen.
+const home = /^\/(?!\/)/.test(params.get("callbackURL") ?? "") ? params.get("callbackURL")! : "/"
 /// Whether the network signs people in with Google (`/social-providers` in `edge/auth.ts`).
 const [google, setGoogle] = createSignal(false)
 fetch("/sign-in/auth/social-providers")
@@ -254,7 +257,7 @@ async function withGoogle() {
   back.searchParams.delete("error_description")
   const { error } = await auth.signIn.social({
     provider: "google",
-    callbackURL: flow.flow === "join" || flow.flow === "signIn" ? "/" : back.href,
+    callbackURL: flow.flow === "join" ? "/" : flow.flow === "signIn" ? home : back.href,
     errorCallbackURL: back.href,
     ...(flow.flow === "join" && { additionalData: { invite: flow.invite, called: called().trim() } }),
   })
@@ -486,7 +489,7 @@ async function signIn() {
     return location.replace(url)
   }
   // Signed in, someone is shown their Home Screen: this browser has the app too, the web client.
-  if (flow.flow !== "device") return location.replace("/")
+  if (flow.flow !== "device") return location.replace(flow.flow === "signIn" ? home : "/")
   await claim()
 }
 
