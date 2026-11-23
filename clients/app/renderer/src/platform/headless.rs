@@ -426,7 +426,9 @@ impl Windows {
             // host's timer fires at its time or after, never before, so it's woken a whole microsecond on: the clock's
             // ms land a few ns either side of an `Instant` counted in a refresh's whole ns, and woken a hair early, the
             // loop drew nothing, its frame held till the next wake (a category opening in the App Library at 60 Hz).
-            let woke = self.due().map(|due| (due.as_secs_f64() * 1e6).ceil() / 1000.0).filter(|due| *due > 0.0);
+            // The microsecond is the clock's, not the wait's: rounded up from whenever the loop last turned, the same
+            // time was woken at 1016.666673 ms or 1016.667006 by whether a list's last frame came a refresh sooner.
+            let woke = self.due().map(|due| ((now + due.as_secs_f64() * 1000.0) * 1000.0).ceil() / 1000.0 - now).filter(|due| *due > 0.0);
             // A refresh a hair past the end, as a driver's own refresh, `1000 / hz` ms, is a hair short of the
             // display's (a `Duration`, whole nanoseconds), is the one it ends on, where it was never shown.
             let next = tick.into_iter().chain(timer).chain(woke).chain(busy).reduce(f64::min).filter(|next| *next <= left + 0.001);
