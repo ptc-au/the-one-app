@@ -54,6 +54,20 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 command -v mix >/dev/null || exec mise exec -C "$root" -- "$0" "$@"
 cd "$root"
 
+# A release is batch work, so it runs with the weight of the machine's other batch work (CPU weight 10, as the headless
+# renderers' `headless.slice`) and within the cores of `tooling/cached-build`'s `-j`, CARGO_BUILD_JOBS (4): the slice
+# every release on the machine shares has them as a quota, which holds however many threads a compile starts. Cargo's
+# jobs don't: rustc's LLVM threads aren't counted by them under sccache (16 busy per compile, 36 for two releases at
+# once, measured on 23 Nov; at 06:00 two took the machine's load to 235). sccache runs the compiler in its server, so
+# the release has a server of its own (a port apart from the default), started in this scope, or its compiles would
+# run in the cgroup of whoever started the machine's.
+if [[ -z ${ONE_RELEASE_SCOPE:-} ]] && command -v systemd-run >/dev/null; then
+  jobs=${CARGO_BUILD_JOBS:-4}
+  systemctl --user set-property --runtime release.slice CPUWeight=10 "CPUQuota=$((jobs * 100))%"
+  exec env ONE_RELEASE_SCOPE=1 CARGO_BUILD_JOBS="$jobs" SCCACHE_SERVER_PORT=4227 \
+    systemd-run --user --scope --quiet --slice=release.slice nice -n 10 "$0" "$@"
+fi
+
 usage="tooling/release [server] [client] [--dry-run], or tooling/release <name>..."
 dry= wanted=()
 for arg in "$@"; do
