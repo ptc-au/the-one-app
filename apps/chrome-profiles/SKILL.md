@@ -12,9 +12,8 @@ A profile, like Personal or Work, is a whole Chrome profile of your person's: wh
 its settings and extensions, kept encrypted in their own Vault. `open` starts a Chrome browser on a copy of it,
 already signed in as them; then use Chrome's tools with its session, as with any browser.
 
-- `list` shows the profiles: each one's name, the pages it visited last and the extensions installed in it, as it
-  was last saved, when that was, and whether your person is updating it. Never what's signed in itself: nobody
-  reads that back, you included.
+- `list` shows the profiles: each one's name, when it was last saved, and whether your person is updating it. Never
+  what's in one, its history or what's signed in: nobody reads that back, you included.
 - `open` takes the `profile`, a `session` and what it's for. Once you're done, `save` with the `profile` and its
   `session` saves the browser back to the profile (sites renew their sign-ins as they're used) and closes it;
   `discard` closes it without saving. Say `save: false` for a throwaway, where nothing you do should stay, and

@@ -10,9 +10,8 @@ defmodule ChromeProfiles do
   Containers' `upload` and `download`, a chunk at a time, so a profile of any size is saved and never passes through
   a tool's result. Nor through a hook, which has seconds: a browser starts from a link to it that `chrome.starting`
   hands Chrome, and it's saved by `save`, which quits the browser's Chrome (Chrome's `quit`), sends what it packed,
-  then closes it, and says each step as it goes. Nothing answers with a profile or its key. Beside it the item keeps when it was last saved, and
-  what it shows of itself, read from the profile as it's saved: the pages it visited last, from its History, and the
-  extensions installed in it, from its Extensions and Preferences, each with its name and icon.
+  then closes it, and says each step as it goes. Nothing answers with a profile or its key. Beside it the item keeps when it was last saved: nothing of what's in the
+  profile is read out of it, so nothing lists its history or extensions.
 
   Which browser is on which profile is a note in its person's own artifact of the app's, `browsers/<session>`, written as
   `open` or `update` opens it: Chrome hands a browser that's starting the note's profile, and refuses to close it
@@ -42,49 +41,6 @@ defmodule ChromeProfiles do
   @lost_minutes 10
   @profile %{type: "string", description: "the profile, by its name, like Personal or Work"}
   @browser %{type: "string", description: "a browser you opened on it, by its session; default the one your person is updating it in"}
-  # What a profile shows of itself, read from it in its container once Chrome has quit, as it's saved, into @shown as
-  # JSON: the 50 pages it visited last, from its History (Chrome counts in microseconds since 1601), and the
-  # extensions installed in it, those its Preferences name that are in its Extensions, with their names (a name a
-  # manifest gives as __MSG_<key>__ is in its default locale's messages) and icons, 32 px or the nearest larger.
-  @shown "/tmp/profile.json"
-  @show ~S"""
-  cd /tmp && rm -f history.* && cp /root/.chromium/Default/History history.db 2>/dev/null
-  cp /root/.chromium/Default/History-wal history.db-wal 2>/dev/null
-  sqlite3 -json history.db "select url, title, last_visit_time / 1000 - 11644473600000 as visited from urls where url like 'http%' and hidden = 0 order by last_visit_time desc limit 50" > history.json 2>/dev/null
-  node - > profile.json <<'JS'
-  const fs = require("fs")
-  const at = "/root/.chromium/Default"
-  const json = (file) => { try { return JSON.parse(fs.readFileSync(file, "utf8")) } catch { return undefined } }
-  const settings = { ...json(`${at}/Preferences`)?.extensions?.settings, ...json(`${at}/Secure Preferences`)?.extensions?.settings }
-  const extensions = []
-  for (const [id, setting] of Object.entries(settings)) {
-    const folder = `${at}/Extensions/${setting.path}`
-    const manifest = typeof setting.path === "string" && json(`${folder}/manifest.json`)
-    if (!manifest) continue
-    let name = String(manifest.name ?? id)
-    const message = name.match(/^__MSG_(.+)__$/)
-    if (message) {
-      const messages = json(`${folder}/_locales/${manifest.default_locale ?? "en"}/messages.json`) ?? {}
-      const key = Object.keys(messages).find((key) => key.toLowerCase() === message[1].toLowerCase())
-      name = messages[key]?.message ?? name
-    }
-    const icons = manifest.icons ?? {}
-    const sizes = Object.keys(icons).map(Number).sort((a, b) => a - b)
-    const size = sizes.find((size) => size >= 32) ?? sizes.at(-1)
-    const file = size && `${folder}/${icons[size]}`.replace(/\/+/g, "/")
-    let icon = null
-    if (file && fs.existsSync(file) && fs.statSync(file).size < 65536)
-      icon = `data:image/${file.endsWith(".svg") ? "svg+xml" : "png"};base64,${fs.readFileSync(file).toString("base64")}`
-    extensions.push({ id, name, icon })
-  }
-  extensions.sort((a, b) => a.name.localeCompare(b.name))
-  console.log(JSON.stringify({ history: json("/tmp/history.json") ?? [], extensions }))
-  JS
-  status=$?
-  rm -f history.*
-  exit $status
-  """
-
   # An update's states, by the state it's in and what happens, as the moduledoc says. `update` is `update` on a
   # browser that's ready, `start` on any other, and `expire` is `save_updates`.
   @steps %{
@@ -138,7 +94,7 @@ defmodule ChromeProfiles do
         name: "list",
         read_only: true,
         description:
-          "Your profiles: each one's name, the pages it visited last and the extensions installed in it, as it was last saved, when that was (ms since 1970), and, while your person is updating it, its browser's session and when that ends. Never what's signed in itself.",
+          "Your profiles: each one's name, when it was last saved (ms since 1970), and, while your person is updating it, its browser's session and when that ends. Never what's in it: not what's signed in, nor its history.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{
           type: "object",
@@ -149,32 +105,6 @@ defmodule ChromeProfiles do
                 type: "object",
                 properties: %{
                   profile: %{type: "string"},
-                  history: %{
-                    type: "array",
-                    description: "The pages it visited last, as it was last saved, newest first",
-                    items: %{
-                      type: "object",
-                      properties: %{
-                        url: %{type: "string"},
-                        title: %{type: "string"},
-                        visited: %{type: "integer", description: "When, in milliseconds since 1970"}
-                      },
-                      required: ["url", "title", "visited"]
-                    }
-                  },
-                  extensions: %{
-                    type: "array",
-                    description: "The extensions installed in it, as it was last saved",
-                    items: %{
-                      type: "object",
-                      properties: %{
-                        id: %{type: "string"},
-                        name: %{type: "string"},
-                        icon: %{type: ["string", "null"], description: "A data: address"}
-                      },
-                      required: ["id", "name", "icon"]
-                    }
-                  },
                   saved: %{type: ["integer", "null"], description: "When it was last saved, in milliseconds since 1970"},
                   updating: %{
                     type: ["object", "null"],
@@ -190,7 +120,7 @@ defmodule ChromeProfiles do
                     required: ["session", "until", "state", "why"]
                   }
                 },
-                required: ["profile", "history", "extensions", "saved", "updating"]
+                required: ["profile", "saved", "updating"]
               }
             }
           },
@@ -312,8 +242,6 @@ defmodule ChromeProfiles do
         # One never saved has nothing to show yet.
         %{
           profile: name,
-          history: JSON.decode!(fields["history"] || "[]"),
-          extensions: JSON.decode!(fields["extensions"] || "[]"),
           saved: if(fields["saved"] in [nil, ""], do: nil, else: String.to_integer(fields["saved"])),
           updating: updating[name]
         }
@@ -484,23 +412,13 @@ defmodule ChromeProfiles do
   end
 
   # Saves a profile from its browser, saying each stage as it goes: Chrome quit and the user data dir packed, then sent
-  # as its contents in the Vault, which keeps the last save until this one is whole, then when it was saved and what
-  # it shows of itself.
+  # as its contents in the Vault, which keeps the last save until this one is whole, then when it was saved.
   defp save(call, name, session) do
     stage(call, session, "Quitting Chrome")
     %{"container" => container, "user_data" => tarball, "size" => size} = Call.tool(call, "chrome", "quit", %{"session" => session})
     stage(call, session, "Saving #{Float.round(size / 1_000_000, 1)} MB to your Vault")
     vault(call).write_contents(call, @item <> name, "profile", &upload(call, container, tarball, &1)["size"])
-    stage(call, session, "Reading its history and extensions")
-    ran = Call.tool(call, "containers", "exec", %{"container" => container, "command" => @show, "timeout" => 60})
-    if ran["exit"] != 0, do: raise("Couldn't read its history and extensions: #{String.trim(ran["stderr"])}")
-    shown = JSON.decode!(Call.tool(call, "containers", "read_file", %{"container" => container, "path" => @shown})["text"])
-
-    vault(call).keep(call, @item <> name, %{
-      "saved" => Integer.to_string(System.system_time(:millisecond)),
-      "history" => JSON.encode!(shown["history"]),
-      "extensions" => JSON.encode!(shown["extensions"])
-    })
+    vault(call).keep(call, @item <> name, %{"saved" => Integer.to_string(System.system_time(:millisecond))})
   end
 
   # Containers' `upload` of a profile's tarball, in a container, by what the Vault hands over.

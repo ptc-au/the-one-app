@@ -1,20 +1,17 @@
-// A Chrome profile, as the Vault draws it beside its list (the item type `vault.types` gives): the extensions installed
-// in it and the pages it visited last, as it was last saved, and updating it yourself: its browser, drawn here, which
-// you click and type on as you would Chrome, then save. `Summary` is its row's line in the Vault's list.
+// A Chrome profile, as the Vault draws it beside its list (the item type `vault.types` gives): updating it yourself,
+// its browser drawn here, which you click and type on as you would Chrome, then save. `Summary` is its row's line in
+// the Vault's list.
 import { createEffect, createMemo, createSignal, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, confirm, Empty, Field, Image, Input, List, LiveScreen, Problem, Row, Screen, Section, Sheet, since, Status, Steps, styles, Text, toast, tokens, View } from "ui"
+import { Button, call, changed, confirm, Field, Input, List, LiveScreen, Problem, Row, Screen, Section, Sheet, since, Status, Steps, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   note: { color: tokens.colour.secondaryLabel },
   buttons: { flexDirection: "row", gap: tokens.grid[2] },
-  extension: { width: tokens.grid[6], height: tokens.grid[6] },
 })
 
 /** A profile, as `chrome-profiles_list` answers it. */
 interface Profile {
   profile: string
-  history: { url: string; title: string; visited: number }[]
-  extensions: { id: string; name: string; icon: string | null }[]
   saved?: number
   updating?: { session: string; until: number; state: State; stage?: string; why?: string }
 }
@@ -36,9 +33,6 @@ const time = (at: number) => {
   const date = new Date(at)
   return `${date.getHours() % 12 || 12}:${String(date.getMinutes()).padStart(2, "0")} ${date.getHours() < 12 ? "am" : "pm"}`
 }
-/// A page's site, as its address bar shows it: "github.com".
-const site = (url: string) => url.match(/^[a-z][a-z\d+.-]*:\/\/(?:[^/?#@]*@)?(?:www\.)?([^/?#:]*)/i)?.[1] ?? url
-
 /// The profile, as `chrome-profiles_list` answers it now, asked again whenever something changed.
 function useProfile(props: Props) {
   const profiles = createMemo(() => call("chrome-profiles_list", {}, { subject: props.subject }).then((text): Profile[] => JSON.parse(text).profiles))
@@ -46,15 +40,14 @@ function useProfile(props: Props) {
   return () => profiles().find((p) => p.profile === props.item)
 }
 
-/// Its row's line in the Vault: what it's doing while it's being updated, else the site it was on last and when it
-/// was saved.
+/// Its row's line in the Vault: what it's doing while it's being updated, else when it was saved.
 export function Summary(props: Props) {
   const profile = useProfile(props)
   const line = () => {
     const p = profile()
     if (!p) return ""
     if (p.updating) return SAYS[p.updating.state]
-    return [p.history[0] && site(p.history[0].url), p.saved ? `Saved ${since(p.saved)}` : "Not saved yet"].filter(Boolean).join(" · ")
+    return p.saved ? `Saved ${since(p.saved)}` : "Not saved yet"
   }
   return <>{line()}</>
 }
@@ -174,7 +167,7 @@ function Rename(props: Props & { asking: boolean; done: () => void }) {
   )
 }
 
-/// The profile: updating it, then what it was last saved with.
+/// The profile: updating it.
 export default function ChromeProfile(props: Props) {
   const profile = useProfile(props)
   const [asking, setAsking] = createSignal(false)
@@ -193,20 +186,6 @@ export default function ChromeProfile(props: Props) {
             <List>
               <Row heading="Rename…" onPress={() => setAsking(true)} />
             </List>
-            <Section heading="Extensions">
-              <Show when={p().extensions.length} fallback={<Empty>No extensions.</Empty>}>
-                <List each={p().extensions} keyed={(e) => e.id}>
-                  {(e) => <Row start={e().icon ? <Image src={e().icon!} alt="" style={look.extension} /> : undefined} heading={e().name} />}
-                </List>
-              </Show>
-            </Section>
-            <Section heading="History">
-              <Show when={p().history.length} fallback={<Empty>{p().saved ? "Nothing visited yet." : "Not saved yet."}</Empty>}>
-                <List each={p().history} keyed={(h) => `${h.url} ${h.visited}`}>
-                  {(h) => <Row heading={h().title || site(h().url)} text={`${site(h().url)} · ${since(h().visited)}`} />}
-                </List>
-              </Show>
-            </Section>
             <List>
               <Row heading="Delete Profile…" destructive onPress={remove} />
             </List>
