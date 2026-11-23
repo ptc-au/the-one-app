@@ -2,7 +2,8 @@
 // update is ready for it, and is updated here; its page says its build under About. The servers take each
 // build by themselves, as the network's update says (`core/edge/updater/updater.ts`), which Software Update heads
 // them with, in Apple's words: up to date, updating, waiting for a quiet moment (Update Now), or failed (Try Again).
-// This device becomes a server and stops being one; a server's services are switched on and off; and a device is
+// A computer becomes a server and stops being one by the switch at the top ("Run your own server on this Mac"), the
+// one Onboarding's Your own server says is here; a server's services are switched on and off; and a device is
 // taken out, or this one signs out. Each server says whether it's ready, active and running, or why not, and an
 // update it's taking as it moves on (`OneCore.Release`). This device becoming a server, or stopping being one, says
 // each stage.
@@ -218,6 +219,14 @@ const [working, setWorking] = createSignal<string>()
 /// Whether this device is becoming a server (`true`) or stopping being one (`false`), while it is.
 const [serving, setServing] = createSignal<boolean>()
 
+/// Makes this computer a server of its person's, or with `now` false, no longer one: the switch here, and Onboarding's
+/// Your own server's (apps/home-screen/client/own-server.tsx).
+async function serve(now: boolean) {
+  setServing(now)
+  await doing(() => client({ serve: now }).then(({ message }) => toast(message)))
+  setServing()
+}
+
 /// What `does` does to `thing`, shown on its button while it's under way.
 const press = (thing: Thing, does: (thing: Thing) => Promise<unknown>) => async () => {
   setWorking(thing.id)
@@ -249,11 +258,6 @@ type All = Awaited<ReturnType<typeof mine>>
 function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
   const thing = () => props.thing
   const server = () => (thing().kind ? props.all.servers.find((server) => server.here && thing().here) : thing())
-  const serve = async (now: boolean) => {
-    setServing(now)
-    await doing(() => client({ serve: now }).then(({ message }) => toast(message)))
-    setServing()
-  }
   // A service that runs on some systems only shows on servers of those, and where it's on, so it can be switched off.
   // One that runs by itself shows where it does, and where its machine can't, with what it lacks.
   const runnable = () =>
@@ -289,19 +293,10 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
       <Show when={!thing().kind && thing().server_membership && thing().server_ready_reason === "stopped"}>
         <Problem warn heading="This server isn't running" text={thing().last_seen ? `It was last seen ${seen(thing().last_seen!)}.` : "It hasn't been seen yet."} />
       </Show>
-      <Show when={(thing().behind && thing().here) || (thing().here && thing().kind === "app")}>
+      <Show when={thing().behind && thing().here}>
         <Section heading="Options">
           <List>
-            <Show when={thing().behind && thing().here}>
-              <Row heading="Update ready" action={<Button variant="outline" loading={working() === thing().id} onPress={press(thing(), update)}>Update</Button>} />
-            </Show>
-            <Show when={thing().here && thing().kind === "app"}>
-              <Row
-                heading="Server"
-                text={serving() === undefined ? "Runs your apps from this device whenever it's on." : <><Spinner /> {serving() ? "Starting…" : "Stopping…"}</>}
-                end={<Switch aria-label="Server" value={serving() ?? !!props.all.here.server} disabled={serving() !== undefined} onValueChange={serve} />}
-              />
-            </Show>
+            <Row heading="Update ready" action={<Button variant="outline" loading={working() === thing().id} onPress={press(thing(), update)}>Update</Button>} />
           </List>
         </Section>
       </Show>
@@ -370,6 +365,10 @@ const called = (thing: Thing) => (thing.command ? `${thing.command} CLI on ${thi
 /// What kind of thing a device is, as About says it.
 const kinds = { app: "the One App", assistant: "Assistant", browser: "Browser", server: "Server" }
 
+/// What this device is called where it's a computer whose app runs a server, by its build's target (`macos-aarch64`):
+/// "this Mac", "this PC" or "this computer". A phone and a browser are none.
+const computer = (target?: string) => ({ macos: "this Mac", windows: "this PC", linux: "this computer" } as Record<string, string>)[target?.split("-")[0] ?? ""]
+
 /// A build's target, `macos-aarch64`, as npm names its system: `darwin`.
 const system = (target?: string) => ({ linux: "linux", macos: "darwin", windows: "win32" })[target?.split("-")[0] as "linux"]
 
@@ -398,6 +397,17 @@ function Things(props: { all: All; groups?: Groups }) {
   return (
     <Split open={!!opened()} onClose={() => setOpen()} pick="Pick a device to see it." detail={<Show when={opened()}><Detail thing={opened()!} all={props.all} groups={props.groups} /></Show>}>
       <Screen heading="Devices" back>
+        <Show when={computer(props.all.here.target)}>
+          {(here) => (
+            <List>
+              <Row
+                heading={`Run your own server on ${here()}`}
+                text={serving() === undefined ? "Only runs your own apps and data, never anyone else's." : <><Spinner /> {serving() ? "Starting…" : "Stopping…"}</>}
+                end={<Switch aria-label="Run your own server" value={serving() ?? !!props.all.here.server} disabled={serving() !== undefined} onValueChange={serve} />}
+              />
+            </List>
+          )}
+        </Show>
         <Section heading="Your Devices">
           <Show when={props.all.devices.length} fallback={<Empty>No devices yet.</Empty>}>
             <List each={props.all.devices} keyed={(device) => device.id}>{row}</List>

@@ -504,6 +504,32 @@
     "like": "Server",
     "component": "ai"
   },
+  "Devices on a Mac": {
+    "like": "Devices",
+    "answers": {
+      "one/client": {
+        "device": "dev1",
+        "network": "https://network.example.com",
+        "build": "0.12.0+aaaa111",
+        "target": "macos-aarch64"
+      }
+    }
+  },
+  "Devices on a Mac that's a server": {
+    "like": "Devices",
+    "answers": {
+      "one/client": {
+        "device": "dev1",
+        "network": "https://network.example.com",
+        "build": "0.12.0+aaaa111",
+        "target": "macos-aarch64",
+        "server": {
+          "key": "srv1",
+          "server_membership": "active"
+        }
+      }
+    }
+  },
   "Devices, on a phone": {
     "like": "Devices",
     "touch": true,
