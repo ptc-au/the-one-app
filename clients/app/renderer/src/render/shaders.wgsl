@@ -752,15 +752,17 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     // This is not always an accurate signed distance:
     // * The rounded portions with varying border width use an approximation of
     //   nearest-point-on-ellipse.
-    // * When it is quickly known to be outside the edge, -1.0 is used.
+    // * Where it's past the straight border's inner edge, near a corner, it's as far in as that edge: the corner's
+    //   inner edge is no nearer, and meets it where the corner starts. A fixed -1.0 there drew a pixel where a corner
+    //   meets its edge as all border or as half, as float noise put it either side, 36 levels apart, so a page moved
+    //   by whole pixels wasn't drawn the same ("Connect your AI"'s Cancel, 23 Nov).
     var inner_sdf = 0.0;
     if (corner_center_to_point.x <= 0 || corner_center_to_point.y <= 0) {
         // Fast paths for straight borders.
         inner_sdf = -max(straight_border_inner_corner_to_point.x,
                          straight_border_inner_corner_to_point.y);
     } else if (is_beyond_inner_straight_border) {
-        // Fast path for points that must be outside the inner edge.
-        inner_sdf = -1.0;
+        inner_sdf = -max(straight_border_inner_corner_to_point.x, straight_border_inner_corner_to_point.y);
     } else if (reduced_border.x == reduced_border.y) {
         // Fast path for circular inner edge.
         inner_sdf = -(outer_sdf + reduced_border.x);
