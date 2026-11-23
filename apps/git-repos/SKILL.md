@@ -38,5 +38,9 @@ repo `merge`s one, which fast-forwards the branch it's for or merges it, or `clo
 close it too. A pull request that doesn't merge cleanly says which files conflict: fetch the branch it's for, merge it
 into yours, and push the pull_request again. `git fetch origin refs/pull/fix-typo` fetches one to look at.
 
+A repo's owner, or the network's owner, moves it to another owner with `permissions transfer` (Transfer… in a repo's
+menu): `--artifact users/alice/made/git-repos/notes --to users/bob`. It keeps its history, its shares and its links, and
+its old address says where it went. Moved to someone by anyone but the network's owner, it waits for them to accept it.
+
 `remove` puts a repo you own in Recently Deleted, gone for everyone until `restore` brings it back as it was, beside
 a repo made at its name since as `notes-2`, which it answers with. After 30 days it's purged for good. The tool `git` is what `git-remote-one` calls; don't call it yourself.

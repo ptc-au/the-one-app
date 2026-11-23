@@ -40,7 +40,7 @@ defmodule GitRepos do
   def own, do: :installed
 
   @impl true
-  def hooks, do: ["soft-delete.moved"]
+  def hooks, do: ["soft-delete.moved", "permissions.transferred"]
 
   # A repo kept in step with another host, as GitHub Sync keeps one with GitHub, has its say on each change before
   # it's kept, as a git server's pre-receive hook has: there, the change goes to the host first.
@@ -345,6 +345,16 @@ defmodule GitRepos do
     nil
   end
 
+  # A repo moved to another owner is listed at its new name, with what was kept of it.
+  def hook("permissions.transferred", %{"artifact" => name, "to" => to}, _call) do
+    with true <- name =~ @repo, {:ok, data, _tag} <- Artifact.read(index(), "index/" <> name) do
+      Artifact.update(index(), "index/" <> to, fn _ -> data end)
+      Artifact.remove(index(), "index/" <> name)
+    end
+
+    nil
+  end
+
   @impl true
   def call("create", %{"name" => name}, call) do
     if not (name =~ ~r/^[a-z0-9][a-z0-9_-]{0,63}$/),
@@ -626,14 +636,14 @@ defmodule GitRepos do
     {type, result} =
       case String.split(path, "?", parts: 2) do
         ["info/refs", "service=git-receive-pack"] ->
-          {_folder, state} = Mirror.sync(process, repo)
+          {_folder, state} = synced(call, process, repo)
           Wire.advertise(state)
 
         ["git-receive-pack"] ->
           receive_pack(call, writable(call, repo), process, body)
 
         [service | _] when service in ["info/refs", "git-upload-pack"] ->
-          {folder, _state} = Mirror.sync(process, repo)
+          {folder, _state} = synced(call, process, repo)
           Wire.upload_pack(folder, path, body, inputs["protocol"], inputs["encoding"])
 
         _ ->
@@ -823,7 +833,7 @@ defmodule GitRepos do
   # The repo as a viewer, its mirror brought up to date: its folder and `repo.json`.
   defp read(call, name) do
     repo = reach!(call, name)
-    Mirror.sync(Mirror.of(call, repo), repo)
+    synced(call, Mirror.of(call, repo), repo)
   end
 
   # Whoever only reads a repo still opens pull requests on it and closes their own, which this app keeps in the
@@ -835,6 +845,20 @@ defmodule GitRepos do
   end
 
   defp writable(_call, repo), do: repo
+
+  # `Mirror.sync/2`, and where a repo that isn't there went, if it was moved to another owner (`permissions transfer`): its old
+  # address says so.
+  defp synced(call, process, repo) do
+    Mirror.sync(process, repo)
+  rescue
+    error ->
+      name = Artifact.name(repo)
+
+      case Call.tool(call, "permissions", "moved", %{"artifact" => name}) do
+        %{"now" => now} when is_binary(now) -> reraise "#{name} was moved to #{now}. Clone it from there.", __STACKTRACE__
+        _ -> reraise error, __STACKTRACE__
+      end
+  end
 
   defp reach!(call, name) do
     repo!(name)

@@ -41,6 +41,17 @@ const [open, setOpen] = createSignal<string>()
 const [at, setAt] = createSignal<At>({ tab: "code", path: "" })
 const [ref, setRef] = createSignal<string>()
 const [adding, setAdding] = createSignal(false)
+/// The repo being moved to someone else, by its name.
+const [moving, setMoving] = createSignal<string>()
+
+/// A transfer waiting to be accepted, as `permissions_transfers` lists it.
+interface Transfer {
+  artifact: string
+  to: string
+  by: string
+}
+const transfers = createMemo(() => json<{ transfers: Transfer[] }>("permissions_transfers").then(({ transfers }) => transfers.filter((one) => one.artifact.includes("/made/git-repos/"))))
+changed(() => refresh(transfers))
 
 /// Who something is, as its name's last part: users/alice is alice.
 const short = (name: unknown) => String(name ?? "").split("/").pop()!
@@ -147,9 +158,86 @@ function NewRepo() {
 /// Who's asking, for the name of a repo they just made.
 const mine = async () => (await json<{ people: { who: string }[] }>("sign-in_people")).people[0].who
 
+/// Moves a repo to a person, a group or the network, as GitHub's Transfer ownership does. Whoever it's moved to accepts it
+/// first, unless the network's owner moves it.
+function MoveRepo() {
+  const choices = createMemo(() => {
+    const repo = moving()
+    if (!repo) return []
+    return Promise.all([json<{ members: string[] }>("permissions_members", { of: "network" }), json<{ groups: { group: string; called?: string }[] }>("permissions_groups"), mine()]).then(([{ members }, { groups }, me]) => {
+      const whose = repo.split("/made/")[0]
+      const people = members.filter((who) => who !== me && who !== whose).map((who) => ({ value: who, label: short(who) }))
+      const mine = groups.filter((one) => one.group !== whose).map((one) => ({ value: one.group, label: `${one.called ?? short(one.group)} (group)` }))
+      return [...people, ...mine, ...(whose === "network" ? [] : [{ value: "network", label: "Everyone (the network)" }])]
+    })
+  })
+  const [picked, setPicked] = createSignal<string>()
+  const to = () => picked() ?? choices()[0]?.value
+  const send = async () => {
+    const repo = moving()
+    if (!repo || !to()) return
+    const result = await does("permissions_transfer", { artifact: repo, to: to() })
+    if (!result) return
+    const moved = JSON.parse(String(result)) as { now: string; state: string }
+    setMoving()
+    setPicked()
+    if (moved.state === "waiting") {
+      toast(`Waiting for ${short(moved.now.split("/made/")[0])} to accept it.`)
+    } else {
+      setOpen()
+      toast(`Moved to ${short(moved.now.split("/made/")[0])}.`)
+    }
+  }
+  return (
+    <Sheet heading={`Move ${short(moving())}`} open={!!moving()} onClose={() => setMoving()}>
+      <Loading>
+        <Field label="Move to" hint="Its history, who else reads it and its old address go with it. Whoever it's moved to accepts it first, unless you own the network.">
+          <Select.Root items={choices()} value={to()} onValueChange={setPicked} />
+        </Field>
+      </Loading>
+      <Button onPress={send}>Move</Button>
+    </Sheet>
+  )
+}
+
+/// Moves waiting for someone: to accept or decline, and the ones asked for, to take back.
+function Waiting() {
+  const answer = async (tool: "permissions_accept" | "permissions_decline", one: Transfer) => {
+    if (await does(tool, { artifact: one.artifact })) refresh(transfers)
+  }
+  return (
+    <Show when={transfers().length}>
+      <Section heading="Waiting">
+        <List each={transfers()}>
+          {(one) => (
+            <Row
+              heading={short(one().artifact)}
+              text={`${one().by === me() ? `Waiting for ${short(one().to)} to accept it` : `${short(one().by)} wants to move it to ${short(one().to)}`}`}
+              action={
+                <View style={look.actions}>
+                  <Show when={one().by !== me()}>
+                    <Button variant="secondary" onPress={() => answer("permissions_accept", one())}>
+                      Accept
+                    </Button>
+                  </Show>
+                  <Button variant="ghost" onPress={() => answer("permissions_decline", one())}>
+                    {one().by === me() ? "Take Back" : "Decline"}
+                  </Button>
+                </View>
+              }
+            />
+          )}
+        </List>
+      </Section>
+    </Show>
+  )
+}
+const me = createMemo(() => mine())
+
 function GitRepos() {
   return (
     <Screen heading="Git Repos" action={<Button onPress={() => setAdding(true)}>New</Button>}>
+      <Waiting />
       <Show when={repos().length} fallback={<Empty>No repos yet.</Empty>}>
         <List each={repos()}>
           {(repo) => (
@@ -193,10 +281,11 @@ function Repo(props: { repo: string }) {
         <View style={look.actions}>
           <Button onPress={clone}>Clone</Button>
           <Show when={about().owns}>
-            <Menu.Root onSelect={(value) => value === "remove" && remove()}>
+            <Menu.Root onSelect={(value) => (value === "move" ? setMoving(props.repo) : value === "remove" && remove())}>
               <Menu.Trigger />
               <Menu.Positioner>
                 <Menu.Content>
+                  <Menu.Item value="move">Transfer…</Menu.Item>
                   <Menu.Item value="remove" destructive>
                     Remove Repo
                   </Menu.Item>
@@ -664,6 +753,7 @@ function App() {
         <GitRepos />
       </Split>
       <NewRepo />
+      <MoveRepo />
     </>
   )
 }

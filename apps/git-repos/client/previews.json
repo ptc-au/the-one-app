@@ -152,6 +152,16 @@
             "who": "users/sam"
           }
         ]
+      },
+      "permissions_transfers": {
+        "transfers": []
+      },
+      "permissions_members": {
+        "members": [
+          "users/alex",
+          "users/jo",
+          "users/sam"
+        ]
       }
     }
   },
@@ -160,6 +170,9 @@
     "answers": {
       "git-repos_list": {
         "repos": []
+      },
+      "permissions_transfers": {
+        "transfers": []
       }
     }
   },
@@ -208,10 +221,47 @@
     "answers": {
       "git-repos_list": {
         "$error": "Couldn't reach the server"
+      },
+      "permissions_transfers": {
+        "transfers": []
       }
     },
     "errors": [
       "Couldn't reach the server"
+    ]
+  },
+  "Waiting": {
+    "like": "Repos",
+    "answers": {
+      "permissions_transfers": {
+        "transfers": [
+          {
+            "artifact": "users/alex/made/git-repos/trips",
+            "to": "users/sam",
+            "now": "users/sam/made/git-repos/trips",
+            "state": "waiting",
+            "by": "users/alex"
+          },
+          {
+            "artifact": "users/sam/made/git-repos/scratch",
+            "to": "users/jo",
+            "now": "users/jo/made/git-repos/scratch",
+            "state": "waiting",
+            "by": "users/sam"
+          }
+        ]
+      }
+    }
+  },
+  "Transfer": {
+    "like": "Code",
+    "taps": [
+      "notes",
+      {
+        "role": "button",
+        "name": "More"
+      },
+      "Transfer…"
     ]
   }
 }
