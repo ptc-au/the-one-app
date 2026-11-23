@@ -68,7 +68,7 @@ defmodule OneCore.Tools.Definitions do
     properties: %{
       state: %{type: "string", enum: ["available", "updating", "failed", "unchecked"]},
       stage: %{type: ["string", "null"], enum: ["fetching", "building", "starting", nil]},
-      commit: %{type: "string", description: "The newer commit at its git source"},
+      commit: %{type: ["string", "null"], description: "The newer commit at its git source: null where it's unchecked"},
       commits: %{
         type: "array",
         description: "The commits since the version running, newest first: read what changed before Update",
@@ -82,7 +82,7 @@ defmodule OneCore.Tools.Definitions do
           }
         }
       },
-      why: %{type: ["string", "null"], description: "Why it failed"}
+      why: %{type: ["string", "null"], description: "Why it failed, or why it's unchecked"}
     },
     required: ["state"]
   }
