@@ -324,6 +324,10 @@ export declare function ListStyle(props: { value: "plain" | "insetGrouped" | "si
 export declare function Row(props: {
   heading?: Element
   text?: Element
+  /** Beside the heading, on its line. */
+  badge?: Element
+  /** One small grey line under the text. */
+  meta?: Element
   start?: Element
   end?: Element
   /** Pressed, with where it's drawn; Return in a listbox opens it with none. As React Native's `onPress`. */

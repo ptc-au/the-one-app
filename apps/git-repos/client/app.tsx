@@ -139,8 +139,6 @@ const look = styles({
   initials: { font: tokens.type.small, fontWeight: tokens.weight.semibold },
   owner: { fontWeight: tokens.weight.regular, color: tokens.colour.secondaryLabel },
   name: { fontWeight: tokens.weight.semibold },
-  status: { alignItems: "flex-end", gap: tokens.grid[1] },
-  statusRow: { flexDirection: "row", alignItems: "center", gap: tokens.grid[3] },
   visible: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
   lock: { width: tokens.length.icon, height: tokens.length.icon, flexShrink: 0, color: tokens.colour.secondaryLabel },
   chips: { gap: tokens.grid[2] },
@@ -300,16 +298,6 @@ function Visible(props: { repo: Listed }) {
   )
 }
 
-/// What a repo is besides its name and words: who can see it, and when it was last pushed to.
-function Status(props: { repo: Listed; wide: boolean }) {
-  return (
-    <View style={[look.status, !props.wide && look.statusRow]}>
-      <Visible repo={props.repo} />
-      <Text style={look.quiet}>{props.repo.pushed ? `Pushed ${since(props.repo.pushed, "narrow")}` : "Empty"}</Text>
-    </View>
-  )
-}
-
 /// Which repos are shown: all, those that are yours, or those shared with you.
 const [view, setView] = createSignal("all")
 const [query, setQuery] = createSignal("")
@@ -347,7 +335,6 @@ function Views(props: { counts: Record<string, number> }) {
 }
 
 function GitRepos() {
-  const wide = () => viewport().width >= 768
   const yours = (repo: Listed) => repo.whose === me()
   const found = () => {
     const words = query().trim().toLowerCase()
@@ -374,9 +361,9 @@ function GitRepos() {
                     <Text style={look.name}>{repo().name}</Text>
                   </>
                 }
+                badge={<Visible repo={repo()} />}
                 text={repo().description ?? undefined}
-                end={wide() ? <Status repo={repo()} wide={wide()} /> : undefined}
-                action={wide() ? undefined : <Status repo={repo()} wide={wide()} />}
+                meta={repo().pushed ? `Pushed ${since(repo().pushed)}` : "Empty"}
                 current={repo().repo === open()}
                 onPress={() => go(() => (setAt({ tab: "code", path: "" }), setRef(), setOpen(repo().repo)))}
               />

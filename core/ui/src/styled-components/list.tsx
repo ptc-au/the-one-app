@@ -98,6 +98,10 @@ const look = styles({
   flatText: { flexShrink: 1, minWidth: 0, lineClamp: 1 },
   // With its grey words under it, the heading has the row's width and two lines.
   underHeading: { flexShrink: 1, maxWidth: "100%", lineClamp: 2 },
+  // A heading's badge on its line, which wraps under a heading that fills it.
+  titleLine: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: tokens.grid[2], rowGap: tokens.grid[1] },
+  badged: { flexShrink: 0 },
+  meta: { font: tokens.type.caption, color: tokens.colour.secondaryLabel, lineClamp: 1, paddingTop: tokens.grid[0.5] },
   start: { flexShrink: 0 },
   end: { flexShrink: 0, maxWidth: "50%", color: tokens.colour.secondaryLabel, textAlign: "end" },
   control: { flexShrink: 0, minWidth: tokens.length.control, justifyContent: "center", alignItems: "center", paddingStart: tokens.grid[1] },
@@ -298,6 +302,8 @@ const SHOWN = 88
 type RowProps = {
   heading?: JSX.Element
   text?: JSX.Element
+  badge?: JSX.Element
+  meta?: JSX.Element
   start?: JSX.Element
   end?: JSX.Element
   /** What pressing it does, as React Native's `onPress`. */
@@ -310,6 +316,9 @@ type RowProps = {
 
 /// `<Row heading="Remove Device…" destructive onPress={remove} />` is a row that does something destructive, its
 /// heading red, as iOS's Settings has one at the foot of a page.
+/// `<Row heading="sam/notes" badge={<Badge variant="outline">Private</Badge>} text="Packing lists" meta="Pushed 2m ago" />`: a row
+/// as GitHub's and iOS's are, a stack of lines: its heading with a `badge` after it on the same line (under it where the
+/// heading leaves no room), its `text`, then a `meta` line of one small grey line, which `end` and `action` never squeeze.
 /// `<Row heading="Coffee with Sam" text="Meals · 12 Nov" />`: one thing in a list: its `heading`, up to two grey lines
 /// of `text`, what it starts with (`start`, an icon) and what it ends with (`end`: an amount, a switch). With
 /// `onPress` the whole row is pressed and opens in place. `current` marks the one that's open beside the list, in a
@@ -358,7 +367,8 @@ export function Row(props: RowProps): JSX.Element {
   // Raycast's subtitle is; elsewhere they're under it, wrapping to a second line before they're cut, as iOS's
   // subtitle cells are, so what they say (a state, who, why) isn't what's cut.
   const flat = () => !touch() && style === "plain"
-  const beside = () => flat() && room() >= ROOMY
+  const stacked = () => !!props.badge || !!props.meta
+  const beside = () => flat() && room() >= ROOMY && !stacked()
   const grouped = () => !touch() && style === "insetGrouped"
   const sidebar = () => !touch() && style === "sidebar"
   // Under a finger in a narrow room an action goes under the words, which keep the row's width, never beside them.
@@ -366,12 +376,23 @@ export function Row(props: RowProps): JSX.Element {
   // A row that opens something says so with a chevron, as iOS's Settings does, but not in a computer's sidebar, whose
   // rows open beside it, or a plain list's.
   const opens = () => !!props.onPress && style !== "plain" && (touch() || style === "insetGrouped") && !props.destructive
+  const title = () => (
+    <Text style={[look.heading, flat() && !stacked() && look.flatHeading, !beside() && look.underHeading, style !== "plain" && look.groupedHeading, grouped() && look.groupedSize, sidebar() && look.sidebarSize, props.destructive && look.destructive]}>{heading()}</Text>
+  )
   const inside = () => (
     <>
       <Show when={props.start}>{(start) => <View style={look.start}>{start()}</View>}</Show>
       <View style={[look.words, beside() && look.flatWords]}>
-        <Text style={[look.heading, flat() && look.flatHeading, !beside() && look.underHeading, style !== "plain" && look.groupedHeading, grouped() && look.groupedSize, sidebar() && look.sidebarSize, props.destructive && look.destructive]}>{heading()}</Text>
+        <Show when={props.badge} fallback={title()}>
+          {(badge) => (
+            <View style={look.titleLine}>
+              {title()}
+              <View style={look.badged}>{badge()}</View>
+            </View>
+          )}
+        </Show>
         <Show when={props.text}>{(text) => <Text style={[look.text, beside() && look.flatText, style !== "plain" && !touch() && look.groupedText]}>{text()}</Text>}</Show>
+        <Show when={props.meta}>{(meta) => <Text style={look.meta}>{meta()}</Text>}</Show>
       </View>
       <Show when={props.end}>{(end) => <View style={look.end}>{end()}</View>}</Show>
       <Show when={opens()}>

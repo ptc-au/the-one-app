@@ -156,6 +156,24 @@ export default {
     },
   },
   "Lists/Sections under a finger": { touch: true, render: Sections },
+  "Lists/Rows with a badge and a meta line under a finger": {
+    touch: true,
+    render: () => (
+      <List>
+        <Row heading="sam/notes" badge={<Badge variant="outline">Private</Badge>} text="Packing lists and plans for the trips we take" meta="Pushed 2 minutes ago" onPress={() => {}} />
+        <Row heading="ptc-systems/systems-dashboard" badge={<Badge variant="outline">PTC Systems</Badge>} text="One place to see how every system is doing" meta="Pushed 2 hours ago" onPress={() => {}} />
+        <Row heading="family/recipes" badge={<Badge variant="outline">Family</Badge>} meta="Pushed 40 days ago" onPress={() => {}} />
+      </List>
+    ),
+  },
+  "Lists/Rows with a badge and a meta line on a computer": {
+    render: () => (
+      <List>
+        <Row heading="sam/notes" badge={<Badge variant="outline">Private</Badge>} text="Packing lists and plans for the trips we take" meta="Pushed 2 minutes ago" onPress={() => {}} />
+        <Row heading="family/recipes" badge={<Badge variant="outline">Family</Badge>} meta="Pushed 40 days ago" onPress={() => {}} />
+      </List>
+    ),
+  },
   "Lists/Rows": () => (
     <List>
       <Row heading="A row" text="Its grey line, which says up to two lines of what it says before it's cut off at the end" onPress={() => {}} />
