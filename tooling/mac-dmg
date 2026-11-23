@@ -30,8 +30,15 @@ said=$("$root/tooling/mac-app" "$network" "$work/stage/app.app" | tail -1)
 name=$(python3 -I -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleName"])' "$work/stage/app.app/Contents/Info.plist")
 mv "$work/stage/app.app" "$work/stage/$name.app"
 
-# Apple notarises only a program signed with the hardened runtime, and a secure timestamp, which rcodesign adds.
+# The API key, an Admin's, whose .p8 is in 1Password, as rcodesign reads it.
+op document get "PTC Builds App Store Connect API key (key R49QVKSHMK)" --vault ptc-nosudo >"$work/key.p8"
+"$rcodesign" encode-app-store-connect-api-key -o "$work/key.json" 2dac44a7-07fb-45f2-85a8-e7f63345f838 R49QVKSHMK "$work/key.p8" >/dev/null
+notarised() { "$rcodesign" notary-submit --api-key-file "$work/key.json" --wait --max-wait-seconds 1800 --staple "$1" >&2; }
+
+# Apple notarises only a program signed with the hardened runtime, and a secure timestamp, which rcodesign adds. The
+# app and the image each have their ticket stapled, so a Mac that's offline opens either.
 "$root/tooling/developer-id-sign" --code-signature-flags runtime "$work/stage/$name.app"
+notarised "$work/stage/$name.app"
 
 size=$(($(du -sm "$work/stage" | cut -f1) * 12 / 10 + 10))
 truncate -s "${size}M" "$work/volume"
@@ -40,10 +47,6 @@ mkfs.hfsplus -v "$name" "$work/volume" >/dev/null
 "$libdmg/build/hfs/hfsplus" "$work/volume" symlink /Applications /Applications >/dev/null
 "$libdmg/build/dmg/dmg" build "$work/volume" "$work/installer.dmg" >/dev/null
 "$root/tooling/developer-id-sign" "$work/installer.dmg"
-
-# The API key, an Admin's, whose .p8 is in 1Password, as rcodesign reads it.
-op document get "PTC Builds App Store Connect API key (key R49QVKSHMK)" --vault ptc-nosudo >"$work/key.p8"
-"$rcodesign" encode-app-store-connect-api-key -o "$work/key.json" 2dac44a7-07fb-45f2-85a8-e7f63345f838 R49QVKSHMK "$work/key.p8" >/dev/null
-"$rcodesign" notary-submit --api-key-file "$work/key.json" --wait --max-wait-seconds 1800 --staple "$work/installer.dmg" >&2
+notarised "$work/installer.dmg"
 mv "$work/installer.dmg" "$out"
 echo "${said##*, }"
