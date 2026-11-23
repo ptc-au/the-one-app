@@ -20,12 +20,8 @@ git -C "$network" archive origin/main app | tar -x -C "$work"
 config=$(cat "$work/app/tauri.conf.json")
 name=$(jq -r '.productName // "The One App"' <<<"$config")
 address=$(<"$work/app/address")
-home=
-for client in "$HOME/.local/share/app.theone.client" "$HOME"/*/client; do
-  [[ $(jq -r .address "$client/network" 2>/dev/null) != "$address" ]] || home=$client
-done
-[[ -n $home ]] || { echo "This machine has no client of $address" >&2 && exit 1; }
-export ONE_HOME=$home
+ONE_HOME=$("$root/tooling/client-home" "$network") || exit 1
+export ONE_HOME
 published=$(one software-update installers)
 # The core's latest build of `$2` for a kind of machine `$1`, as every network's devices take it (`core/edge/updater/core.ts`).
 latest() { curl -fsSL "https://github.com/ptc-au/the-one-app/releases/download/builds/$1.json" | jq -e ".[\"$2\"]"; }

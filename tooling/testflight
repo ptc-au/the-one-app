@@ -6,6 +6,12 @@
 #
 #     tooling/testflight <the network's repo>
 #
+# Its external testers, a network's own people, get a build only at a milestone: `tooling/testflight --milestone <the
+# network's repo>` takes the newest build there, once Apple has processed it, to the app's external group, submits it
+# to Apple's beta review, which that group's testers take it after, turns on the group's public link, and sets it as
+# the network's download page's TestFlight link (the Downloads app's `set_testflight_link`, as this machine's client of
+# that network, `tooling/client-home`). Only a build's own review is asked for, so a milestone is the only time one is.
+#
 # Its `app/`, as that repo's main has it on the remote, says the app's name, bundle identifier and the schemes and
 # hosts of its links, as Tauri's config says them (`tauri.conf.json`: `productName`, `identifier`,
 # `plugins.deep-link.mobile`), and its network's address (`address`), which goes in the app as its `network` file, read
@@ -31,7 +37,9 @@ team=X96JC3HCV7
 key_id=R49QVKSHMK
 issuer=2dac44a7-07fb-45f2-85a8-e7f63345f838
 
-[[ -d ${1:-} ]] || { echo "tooling/testflight <the network's repo>" >&2 && exit 1; }
+milestone=
+[[ ${1:-} != --milestone ]] || { milestone=1 && shift; }
+[[ -d ${1:-} ]] || { echo "tooling/testflight [--milestone] <the network's repo>" >&2 && exit 1; }
 network=$(cd "$1" && pwd)
 cd "$(dirname "$0")/.."
 [[ $(uname) != Linux ]] || exec > >(while IFS= read -r line; do printf '%4ds %s\n' "$SECONDS" "$line"; done) 2>&1
@@ -66,6 +74,35 @@ identifier=$(jq -r '.identifier // empty' "$config")
 identifier=${identifier:-$(jq -r .identifier clients/app/tauri.conf.json)}
 app=$(asc "/v1/apps?filter%5BbundleId%5D=$identifier" | jq -r '.data[0].id // empty')
 [[ -n $app ]] || { echo "App Store Connect has no app $identifier: its owner makes it on the website." >&2 && exit 1; }
+
+if [[ -n $milestone ]]; then
+  # The newest build, once Apple has processed it.
+  until build=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-uploadedDate&limit=1&fields%5Bbuilds%5D=version,processingState" | jq -c '.data[0] // empty') &&
+    [[ -n $build && $(jq -r .attributes.processingState <<<"$build") != PROCESSING ]]; do
+    sleep 15
+  done
+  [[ $(jq -r .attributes.processingState <<<"$build") == VALID ]] || { echo "Apple didn't take $(jq -r .attributes.version <<<"$build")" >&2 && exit 1; }
+  version=$(jq -r .attributes.version <<<"$build") build=$(jq -r .id <<<"$build")
+  external=$(asc "/v1/apps/$app/betaGroups?limit=200" | jq -c '[.data[] | select(.attributes.isInternalGroup | not)]')
+  [[ $(jq length <<<"$external") == 1 ]] || { echo "App Store Connect has $(jq length <<<"$external") external groups for $identifier, not one: $(jq -r '[.[].attributes.name] | join(", ")' <<<"$external")" >&2 && exit 1; }
+  group=$(jq -r '.[0].id' <<<"$external")
+  asc "/v1/betaGroups/$group/relationships/builds" POST "$(jq -nc --arg build "$build" '{data: [{type: "builds", id: $build}]}')" >/dev/null
+  # A build already submitted, which Apple says as it's asked again, is left as it is.
+  if asc "/v1/builds/$build/betaAppReviewSubmission" | jq -e .data >/dev/null; then
+    echo "$version is in $(jq -r '.[0].attributes.name' <<<"$external")'s beta review already"
+  else
+    asc /v1/betaAppReviewSubmissions POST "$(jq -nc --arg build "$build" '{data: {type: "betaAppReviewSubmissions",
+      attributes: {}, relationships: {build: {data: {type: "builds", id: $build}}}}}')" >/dev/null
+    echo "$version is submitted to beta review for $(jq -r '.[0].attributes.name' <<<"$external")"
+  fi
+  link=$(asc "/v1/betaGroups/$group" PATCH "$(jq -nc --arg group "$group" '{data: {type: "betaGroups", id: $group, attributes: {publicLinkEnabled: true}}}')" | jq -r .data.attributes.publicLink)
+  home=$(tooling/client-home "$network")
+  [[ $(ONE_HOME=$home one downloads list | tail -1 | jq -r .testflight) == "$link" ]] ||
+    ONE_HOME=$home one downloads set_testflight_link --link "$link" >/dev/null
+  echo "The download page's TestFlight link is $link"
+  exit 0
+fi
+
 build=$(tooling/version)
 number=${build#*+} && number=${number%%.*}
 commit=$(git rev-parse HEAD)

@@ -94,6 +94,12 @@ API key (App Store Connect's `buildUploads`), with no Mac. Apple processes it by
 nothing waits for: then the internal group "The One App" has the build (`hasAccessToAllBuilds`) and its testers take
 it automatically. App Store Connect's `processingState` says where it is, and Apple emails if it rejects it.
 
+A network's own people (the PTC team, in its external group "PTC staff") get a build only at a milestone, through the
+group's public link, which the network's download page offers: `tooling/testflight --milestone <the network's repo>`
+(Andre, 23 Nov). It takes the newest build there, adds it to the external group, submits it to Apple's beta review,
+which takes a day or so, turns on the group's public link and sets it as the download page's. A release never does it:
+each build's review is its own.
+
 ## Memory
 
 An iPhone counts the app's GPU memory as its own (footprint's "IOAccelerator (graphics)" and "IOSurface"); the

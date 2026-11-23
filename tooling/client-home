@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# The folder of this machine's client of a network, by the address its repo's main says (`app/address`): the default
+# folder, or a `client` folder in the home folder, as `tooling/installers` and `tooling/testflight --milestone` act as it.
+#
+#     ONE_HOME=$(tooling/client-home <the network's repo>) one ...
+set -euo pipefail
+[[ -d ${1:-} ]] || { echo "tooling/client-home <the network's repo>" >&2 && exit 1; }
+address=$(git -C "$1" show origin/main:app/address)
+for client in "$HOME/.local/share/app.theone.client" "$HOME"/*/client; do
+  if [[ $(jq -r .address "$client/network" 2>/dev/null) == "$address" ]]; then echo "$client" && exit 0; fi
+done
+echo "This machine has no client of $address" >&2 && exit 1
