@@ -18,15 +18,36 @@ git -C "$network" fetch -q origin main
 config=$(git -C "$network" show origin/main:app/tauri.conf.json)
 name=$(jq -r '.productName // "The One App"' <<<"$config")
 published=$(one software-update installers)
-latest() { curl -fsSL "https://github.com/ptc-au/the-one-app/releases/download/builds/$1.json" | jq -er "$2.build"; }
+# The core's latest build of `$2` for a kind of machine `$1`, as every network's devices take it (`core/edge/updater/core.ts`).
+latest() { curl -fsSL "https://github.com/ptc-au/the-one-app/releases/download/builds/$1.json" | jq -e ".[\"$2\"]"; }
+# It downloaded, checked against its SHA-256 and unpacked, in `$2`.
+fetched() {
+  curl -fsSL -o "$2.gz" "$(jq -r .link.url <<<"$1")"
+  sha256sum -c --quiet <<<"$(jq -r .sha256 <<<"$1")  $2.gz"
+  gunzip -c "$2.gz" >"$2"
+}
 has() { jq -e --arg platform "$1" --arg build "$2" 'any(.installers[]; .platform == $platform and .build == $build)' <<<"$published" >/dev/null; }
 
 # A Mac with Apple silicon: the app in a disk image, notarised (`tooling/mac-dmg`).
-build=$(latest macos-aarch64 .one)
+build=$(latest macos-aarch64 one | jq -r .build)
 if has mac "$build"; then
   echo "mac: $name.dmg is $build already"
 else
   build=$("$root/tooling/mac-dmg" "$network" "$work/$name.dmg" | tail -1)
   one software-update publish_installer --platform mac --name "$name.dmg" --build "$build" --file-from "$work/$name.dmg" >/dev/null
   echo "mac: published $name.dmg, $build"
+fi
+
+# Windows: the One App's installer (`clients/app/installer.nsi`), with the network's address beside the app. It isn't
+# signed until there's a certificate to sign Windows programs with (`tooling/release`), so SmartScreen asks first.
+one=$(latest windows-x86_64 one) build=$(jq -r .build <<<"$one")
+if has windows "$build"; then
+  echo "windows: $name Setup.exe is $build already"
+else
+  fetched "$one" "$work/one.exe"
+  git -C "$network" show origin/main:app/address | jq -Rc '{address: .}' >"$work/network"
+  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$work/one.exe" -DNETWORK="$work/network" -DOUTFILE="$work/$name Setup.exe" \
+    -DCOPYRIGHT="$(grep -m1 '^Copyright' "$root/LICENSE")" "$root/clients/app/installer.nsi"
+  one software-update publish_installer --platform windows --name "$name Setup.exe" --build "$build" --file-from "$work/$name Setup.exe" >/dev/null
+  echo "windows: published $name Setup.exe, $build"
 fi

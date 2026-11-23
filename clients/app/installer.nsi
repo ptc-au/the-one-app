@@ -4,7 +4,10 @@
 ; and in Settings > Apps, and opens it. From then on the app updates itself, by `one update`, as it does on Linux
 ; and a Mac.
 ;
-;     makensis -DVERSION=<x.y.z> -DPROGRAM=<one.exe> -DOUTFILE=<installer.exe> clients/app/installer.nsi
+;     makensis -DVERSION=<x.y.z> -DPROGRAM=<one.exe> -DOUTFILE=<installer.exe> [-DNETWORK=<network>] clients/app/installer.nsi
+;
+; A network's own installer (`tooling/installers`) is given its `network` file, its address, which it puts beside
+; `one.exe`, so the app opens on that network (`bundled` in core/client).
 !include MUI2.nsh
 !include LogicLib.nsh
 
@@ -58,6 +61,9 @@ Section
     Rename "$INSTDIR\one.exe" "$INSTDIR\one.$0.old"
   ${EndIf}
   File "/oname=one.exe" "${PROGRAM}"
+  !ifdef NETWORK
+    File "/oname=network" "${NETWORK}"
+  !endif
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   ; Beside the folder of the app's apps' shortcuts, which the app keeps (`clients/app/src/shortcuts.rs`).
@@ -96,6 +102,7 @@ Section Uninstall
   nsExec::Exec `powershell -NoProfile -NonInteractive -Command "$$d = '$INSTDIR'; $$p = [Environment]::GetEnvironmentVariable('Path', 'User'); [Environment]::SetEnvironmentVariable('Path', (($$p -split ';') | ? { $$_ -and $$_ -ne $$d }) -join ';', 'User')"`
   Delete /REBOOTOK "$INSTDIR\one.exe"
   Delete /REBOOTOK "$INSTDIR\one.*.old"
+  Delete "$INSTDIR\network"
   Delete "$INSTDIR\uninstall.exe"
   RMDir /REBOOTOK "$INSTDIR"
   DeleteRegKey HKCU "${UNINSTALL}"
