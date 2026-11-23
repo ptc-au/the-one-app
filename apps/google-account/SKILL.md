@@ -1,14 +1,14 @@
 ---
 name: google-account
-description: Read before signing a Google account in to Gmail, Google Calendar, Drive, Docs or Sheets, or out of one, and when one of those apps says an account needs signing in.
+description: Read before signing a Google account in to Gmail, Google Calendar, Drive, Docs, Sheets or Slides, or out of one, and when one of those apps says an account needs signing in.
 metadata:
   title: "Google Account"
   subtitle: "Sign in to Google once"
-  about: "Signs your Google accounts in to Gmail, Google Calendar, Drive, Docs and Sheets, and out again. Each account you add is yours alone."
+  about: "Signs your Google accounts in to Gmail, Google Calendar, Drive, Docs, Sheets and Slides, and out again. Each account you add is yours alone."
   category: Connectors
 ---
 
-Each Google app (gmail, google-calendar, google-drive, google-docs, google-sheets) uses its person's Google
+Each Google app (gmail, google-calendar, google-drive, google-docs, google-sheets, google-slides) uses its person's Google
 accounts through this one. `apps` lists the ones the person has.
 
 - A Google account is one item of their Vault, "Google <address>", which every Google app they have uses. It's

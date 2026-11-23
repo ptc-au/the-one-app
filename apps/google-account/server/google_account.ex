@@ -1,6 +1,6 @@
 defmodule GoogleAccount do
   @moduledoc """
-  What the Google apps (gmail, google-calendar, google-drive, google-docs and google-sheets) share: their person's
+  What the Google apps (gmail, google-calendar, google-drive, google-docs, google-sheets and google-slides) share: their person's
   Google accounts and Google's sign-in, and their calls to Google's APIs. A Google app calls `request`, which acts
   for the app that called it (its `caller`), which it names by its title.
 
@@ -23,7 +23,7 @@ defmodule GoogleAccount do
     "authorize" => "https://accounts.google.com/o/oauth2/v2/auth",
     "token" => "https://oauth2.googleapis.com/token",
     "hosts" =>
-      ~w(gmail.googleapis.com www.googleapis.com docs.googleapis.com sheets.googleapis.com openidconnect.googleapis.com),
+      ~w(gmail.googleapis.com www.googleapis.com docs.googleapis.com sheets.googleapis.com slides.googleapis.com openidconnect.googleapis.com),
     "client" => "Google client"
   }
   @userinfo "https://openidconnect.googleapis.com/v1/userinfo"
@@ -51,7 +51,7 @@ defmodule GoogleAccount do
         heading: "Google accounts",
         order: 4,
         text: """
-        If you sign a Google account in to this network's Gmail, Google Calendar, Google Drive, Google Docs or Google Sheets:
+        If you sign a Google account in to this network's Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets or Google Slides:
 
         - Your Google data is used only by those apps, to do what you, or an AI assistant you let act as you, ask of them, for you.
         - It isn't sold, shared with anyone else or used for advertising.
@@ -98,7 +98,7 @@ defmodule GoogleAccount do
         name: "apps",
         read_only: true,
         description:
-          "The Google apps you have (Gmail, Google Calendar, Drive, Docs, Sheets), each by the name its tools start with. Every one uses the accounts google-account_accounts lists.",
+          "The Google apps you have (Gmail, Google Calendar, Drive, Docs, Sheets, Slides), each by the name its tools start with. Every one uses the accounts google-account_accounts lists.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{
           type: "object",
