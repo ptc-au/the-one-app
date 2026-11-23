@@ -13,6 +13,8 @@ export interface Owner extends Pages {
   key: string
   subject?: string
   name: string
+  /** Whose picture it's shown by: the person's own `users/<name>` for yours, else its subject. */
+  avatar: string
 }
 
 /// The groups whose page was refused as not theirs, with the group list that still named them: the client answers a
@@ -28,7 +30,7 @@ export const answered = createMemo(async (was?: Owner[]) => {
   // An app with no screen of its own is listed only if it has a section in Settings, which opening it shows, as macOS
   // opens a menu-bar app's preferences: its own page, or a section of the sidebar (a device's page isn't about it).
   const sections = json<{ sections: { app: string; in: string }[] }>("settings_sections").then(({ sections }) => new Set(sections.filter((section) => section.in !== "device").map((section) => section.app)), () => new Set<string>())
-  const pages = (who: { subject?: string; name: string }) =>
+  const pages = (who: { subject?: string; name: string; avatar: string }) =>
     Promise.all([json<Pages>("home-screen_pages", {}, who.subject), sections]).then(([pages, has]): Owner => ({
       ...pages,
       ...who,
@@ -46,14 +48,15 @@ export const answered = createMemo(async (was?: Owner[]) => {
       groups
         .filter(({ group }) => !refused.groups.has(group))
         .map(({ group, called }) =>
-          pages({ subject: group, name: called }).catch((error: Error) => {
+          pages({ subject: group, name: called, avatar: group }).catch((error: Error) => {
             if (!String(error.cause ?? error.message).includes("isn't a member of")) throw error
             refused.groups.add(group)
           }),
         ),
     )
   })
-  const all = Promise.all([pages({ name: "You" }), pages({ subject: "network", name: "Everyone" }), theirs])
+  const you = json<{ people: { who: string }[] }>("sign-in_people").then(({ people }) => pages({ name: "You", avatar: people[0].who }))
+  const all = Promise.all([you, pages({ subject: "network", name: "Everyone", avatar: "network" }), theirs])
   return all.then(([yours, everyone, groupsPages]) => [yours, everyone, ...groupsPages.filter((owner) => owner !== undefined)], (error) => was ?? Promise.reject(error))
 })
 changed(() => refresh(answered))

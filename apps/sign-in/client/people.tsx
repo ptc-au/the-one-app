@@ -5,7 +5,7 @@
 // someone in the network to it, take members out, and make them owners too. Groups are each person's own, so they're
 // asked for as the person, wherever the app was opened.
 import { createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Skeleton, Split, styles, toast, tokens, View } from "ui"
+import { Avatar, Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Skeleton, Split, styles, toast, tokens, View } from "ui"
 
 const look = styles({
   form: { gap: tokens.length.gutter },
@@ -205,6 +205,7 @@ function PersonRow(props: { person: Person; all: All }) {
   const name = () => props.all.named(props.person.who)
   return (
     <Row
+      start={<Avatar subject={props.person.who} name={name()} />}
       heading={name()}
       text={about(props.person, props.all) || undefined}
       end={
@@ -251,6 +252,7 @@ function GroupScreen(props: { group: Group; all: All }) {
             const mayRemove = () => owns() && member() !== props.all.me
             return (
               <Row
+                start={<Avatar subject={member()} name={props.all.named(member())} />}
                 heading={props.all.named(member())}
                 text={owner() ? "Owner" : undefined}
                 end={
@@ -286,7 +288,7 @@ function AddMember(props: { all: All; group?: Group }) {
     <Sheet heading="Add Member" open={adding() === "member"} onClose={() => setAdding()}>
       <Show when={outside().length} fallback={<Empty>Everyone in the network is in it.</Empty>}>
         <List each={outside()} keyed={(person) => person.who}>
-          {(person) => <Row heading={props.all.named(person().who)} text={person().who.replace("users/", "")} onPress={() => (setAdding(), change("permissions_share", { artifact: opened()!, relation: "member", who: person().who }, props.all.me))} />}
+          {(person) => <Row start={<Avatar subject={person().who} name={props.all.named(person().who)} />} heading={props.all.named(person().who)} text={person().who.replace("users/", "")} onPress={() => (setAdding(), change("permissions_share", { artifact: opened()!, relation: "member", who: person().who }, props.all.me))} />}
         </List>
       </Show>
     </Sheet>
@@ -316,7 +318,7 @@ function UsersAndGroups(props: { all: All }) {
           <Section heading="Groups">
             <Show when={props.all.groups.length} fallback={<Empty>You're in no groups yet.</Empty>}>
               <List each={props.all.groups} keyed={({ group }) => group}>
-                {(group) => <Row heading={group().called} text={new Intl.ListFormat("en").format(group().members.map(props.all.named))} current={opened() === group().group} onPress={() => setOpened(group().group)} />}
+                {(group) => <Row start={<Avatar subject={group().group} name={group().called} />} heading={group().called} text={new Intl.ListFormat("en").format(group().members.map(props.all.named))} current={opened() === group().group} onPress={() => setOpened(group().group)} />}
               </List>
             </Show>
             <List>

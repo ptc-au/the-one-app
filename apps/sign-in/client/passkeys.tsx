@@ -6,7 +6,7 @@
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
 import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, client, confirm, date, List, open, Problem, Row, Screen, Section, Skeleton, toast, visible } from "ui"
+import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Skeleton, toast, upload, visible } from "ui"
 import { Remove } from "./mine.tsx"
 
 /** A passkey, as `sign-in_devices` answers it. */
@@ -32,6 +32,46 @@ interface Held {
   access?: { missing: { key: string; name: string | null }[] }[]
 }
 
+/// Sets the picture they're shown by to one they choose from their device, which is made square and small from its middle, or
+/// takes it away, which leaves Google's where signing in with Google gave one.
+async function choose(upload_: boolean) {
+  try {
+    if (upload_) {
+      const [file] = await pickFiles({ accept: ["image/*"] })
+      if (!file) return
+      await call("sign-in_picture", { upload: await upload(file) })
+    } else await call("sign-in_picture")
+  } catch (error) {
+    toast(error as Error)
+  }
+  refreshAvatars()
+  refresh(you)
+}
+
+/// Their picture, with how they came to have it, and a way to choose another, which wins over Google's.
+function Picture() {
+  const source = () => you().picture
+  return (
+    <Section heading="Picture">
+      <List>
+        <Row
+          start={<Avatar subject={you().who} name={you().called ?? undefined} size="large" />}
+          heading={you().called ?? "You"}
+          text={source() === "own" ? "The picture you chose." : source() === "google" ? "From your Google account. Choose one to use instead." : "Your initials. Choose a picture to be known by."}
+          action={
+            <>
+              <Button variant="secondary" onPress={() => choose(true)}>Choose Picture</Button>
+              <Show when={source() === "own"}>
+                <Button variant="ghost" onPress={() => choose(false)}>Remove</Button>
+              </Show>
+            </>
+          }
+        />
+      </List>
+    </Section>
+  )
+}
+
 /// The servers waiting for a key a passkey of this person's hands them: their own, and those of the network and the
 /// groups they own, whose keys are encrypted to theirs. One row each, by whose key it is.
 const waitingFor = createMemo(async () => {
@@ -43,7 +83,10 @@ const waitingFor = createMemo(async () => {
     .map((held) => ({ scope: held.owner === me.owner ? undefined : held.owner, servers: [...new Set((held.access ?? []).flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))] }))
     .filter((waiting) => waiting.servers.length)
 })
-const again = () => [mine, holds, waitingFor].forEach(refresh)
+/// Who they are here, and whose picture they're shown by: the one they set (`own`), Google's, or none.
+const you = createMemo(() => call("sign-in_people").then((text): { who: string; called: string | null; picture: "own" | "google" | null } => JSON.parse(text).people[0]))
+
+const again = () => [mine, holds, waitingFor, you].forEach(refresh)
 changed(again)
 // A passkey made or used in the browser says its key there, which nothing here hears of: it's looked at again as
 // this screen comes back.
@@ -155,6 +198,7 @@ export default function SignInAndSecurity() {
       <Show when={mine()}>
         {(all) => (
           <Screen heading="Sign In & Security" back action={all().passkeys.length ? opening() : undefined}>
+            <Picture />
             <Waiting />
             <Show
               when={all().passkeys.length}

@@ -4,7 +4,7 @@
 // component (`settings.sections`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
 // Vault draws an item type's. Updates and an app's page are Settings' own.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, link, List, ListStyle, Problem, render, Row, Screen, Search, Section, Skeleton, Split, styles, Switch, Text, toast, tokens, View, viewport } from "ui"
+import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, link, List, ListStyle, Problem, render, Row, Screen, Search, Section, Skeleton, Split, styles, Switch, Text, toast, tokens, View, viewport } from "ui"
 
 /** What an app adds to Settings, as `settings_sections` answers it. */
 interface Added {
@@ -87,15 +87,6 @@ const look = styles({
   /// A group's heading in another section's page: its app's icon and name.
   heading: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2] },
   small: { width: tokens.grid[4], height: tokens.grid[4] },
-  avatar: {
-    width: tokens.grid[8],
-    height: tokens.grid[8],
-    borderRadius: tokens.radius.full,
-    backgroundColor: tokens.colour.secondaryLabel,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  initials: { font: tokens.type.small, fontWeight: tokens.weight.semibold, color: tokens.colour.onAccent },
   /// Why an app can't be removed, under Remove App.
   why: { font: tokens.type.small, color: tokens.colour.secondaryLabel, paddingInline: tokens.grid[3] },
   muted: { color: tokens.colour.secondaryLabel },
@@ -118,14 +109,6 @@ const sidebar = (all: Added[]) =>
 function Tile(props: { icon: string | null; small?: boolean }) {
   return <Show when={props.icon}>{(icon) => <Image src={src(icon())} alt="" style={props.small ? look.small : look.icon} />}</Show>
 }
-
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => [...word][0]!.toUpperCase())
-    .join("")
 
 /// What the ? in the sidebar's bar says.
 const tips = [
@@ -160,11 +143,7 @@ function Sidebar(props: { shown?: string }) {
       <Show when={person() && !words()}>
         <List>
           <Row
-            start={
-              <View style={look.avatar}>
-                <Text style={look.initials}>{initials(me()?.called ?? "You")}</Text>
-              </View>
-            }
+            start={<Show when={me()}>{(you) => <Avatar subject={you().who} name={you().called ?? undefined} />}</Show>}
             heading={<Text style={look.personName}>{me()?.called ?? "You"}</Text>}
             text={person()!.name!}
             current={props.shown === person()!.id}

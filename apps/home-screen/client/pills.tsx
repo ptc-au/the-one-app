@@ -1,6 +1,6 @@
 // The pills: the owner's name, which opens the list of every owner, and the page dots with the App Library's glyph.
 import { createEffect, createSignal, For, Show, untrack } from "solid-js"
-import { Button, type Element, haptic, Icon, Menu, Pressable, type Pressed, ReorderList, Sheet, Text, type Tip, Tips, View } from "ui"
+import { Avatar, Button, type Element, haptic, Icon, Menu, Pressable, type Pressed, ReorderList, Sheet, Text, type Tip, Tips, View } from "ui"
 import { BAR, DOTS } from "./layout.ts"
 import { type Kind } from "./machine.ts"
 import { looks } from "./looks.ts"
@@ -131,7 +131,12 @@ export function OwnerPill(props: { owners: Owner[] }) {
       <View style={[looks.pill, looks.glass, looks.ownerPill]}>
         <Menu.Trigger variant="ghost" shape="capsule" aria-label={props.owners[shown()]?.name}>
           <View style={looks.ownerRow}>
-            <Roll count={props.owners.length} height={BAR - 8} row={(index) => <Text style={looks.ownerName}>{props.owners[index]?.name}</Text>} />
+            <Roll count={props.owners.length} height={BAR - 8} row={(index) => (
+              <View style={looks.ownerWho}>
+                <Show when={props.owners[index]}>{(owner) => <Avatar subject={owner().avatar} name={owner().name} size="small" />}</Show>
+                <Text style={looks.ownerName}>{props.owners[index]?.name}</Text>
+              </View>
+            )} />
             <View style={looks.caret}>
               <Icon name="caret-down" />
             </View>
@@ -149,6 +154,7 @@ export function OwnerPill(props: { owners: Owner[] }) {
                   <View style={looks.opacity(index() === shown() ? 1 : 0)}>
                     <Icon name="check" />
                   </View>
+                  <Avatar subject={owner().avatar} name={owner().name} size="small" />
                   <Text>{owner().name}</Text>
                 </View>
               </Menu.Item>
@@ -160,6 +166,7 @@ export function OwnerPill(props: { owners: Owner[] }) {
               <View style={looks.opacity(0)}>
                 <Icon name="check" />
               </View>
+              <View style={looks.ownerSpacer} />
               <Text>Edit Order…</Text>
             </View>
           </Menu.Item>
