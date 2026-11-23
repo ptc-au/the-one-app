@@ -443,13 +443,6 @@ mac_bundle_signed() {
 # this machine's Rust, so it's what `client_inputs` says it's built from.
 target=${CARGO_TARGET_DIR:-$root/target}
 
-# Signs a Windows program, with jsign, once there's a certificate to sign with: WINDOWS_SIGNING is jsign's options
-# naming it, as `--storetype TRUSTEDSIGNING --keystore <region>.codesigning.azure.net --storepass <token> --alias
-# <account>/<profile>` for Microsoft's Artifact Signing, or `--keystore <file>.pfx --storepass <password>` for a
-# certificate of one's own. Without one, it ships unsigned, and SmartScreen asks its person before it runs.
-signed() {
-  [[ -z ${WINDOWS_SIGNING:-} ]] || jsign $WINDOWS_SIGNING --tsaurl http://timestamp.acs.microsoft.com --tsmode RFC3161 "$1"
-}
 out=$target/builds/$build
 rm -rf "$out" && mkdir -p "$out"
 # cargo-xwin links its clang-cl again each time it starts, which two at once on a machine fail at, so it builds one
@@ -457,7 +450,7 @@ rm -rf "$out" && mkdir -p "$out"
 xwin=(flock -o "${XDG_CACHE_HOME:-$HOME/.cache}/cargo-xwin.lock" cargo xwin build --target x86_64-pc-windows-msvc)
 # Builds the client `$1`. Windows shows a program by its version resource and icon, as in Windows Firewall's prompt:
 # one's are the One App's. It's named there as its file is, one.exe. The app comes with its installer, made with NSIS,
-# the One App's by the same, and each is signed once it's what it ships as.
+# the One App's by the same, and each is signed once it's what it ships as (`tooling/windows-sign`).
 client() {
   local name=$1 file cargo program exe setup
   file=$(tr / - <<<"$name")
@@ -469,11 +462,11 @@ client() {
   esac
   echo "Building $name" && CARGO_TARGET_DIR=$target/clients/$file "${cargo[@]}" --release -p app &&
     mkdir "$out/$file.d" && cp "$target/clients/$file/$program" "$out/$file.d/" && exe=$out/$file.d/$(basename "$program") &&
-    { [[ $name != *windows-* ]] || { VERSION=${build%%+*} tooling/windows-name "$exe" && signed "$exe"; }; } &&
+    { [[ $name != *windows-* ]] || { VERSION=${build%%+*} tooling/windows-name "$exe" && tooling/windows-sign "$exe"; }; } &&
     { [[ $name != one/windows-* ]] || {
       setup=$out/one-setup-${name#*/}.exe &&
-        makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$exe" -DOUTFILE="$setup" -DCOPYRIGHT="$(grep -m1 '^Copyright' LICENSE)" clients/app/installer.nsi &&
-        signed "$setup" && client_inputs "${name#*/}" >"${setup%.exe}.inputs"
+        makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$exe" -DOUTFILE="$setup" -DSIGN="$root/tooling/windows-sign" \
+          -DCOPYRIGHT="$(grep -m1 '^Copyright' LICENSE)" clients/app/installer.nsi && client_inputs "${name#*/}" >"${setup%.exe}.inputs"
     }; } &&
     gzip -9 -c "$exe" >"$out/$file.gz" && rm -r "$out/$file.d" && { [[ $name != one/macos-* ]] || mac_bundle_signed "$out/$file.gz"; } &&
     client_inputs "${name#*/}" >"$out/$file.inputs" &&
@@ -608,7 +601,7 @@ for kind in "${servers[@]}"; do
   if [[ $kind == windows-* ]]; then
     erts=$(echo "$release"/erts-*/bin)
     mv "$erts/erl.exe" "$erts/one-server.exe"
-    DESCRIPTION="the One App server" tooling/windows-name "$erts/one-server.exe"
+    DESCRIPTION="the One App server" tooling/windows-name "$erts/one-server.exe" && tooling/windows-sign "$erts/one-server.exe"
   else
     "$objcopy" --strip-all "$(echo "$release"/erts-*/bin/beam.smp)"; fi
   # A Mac's VM is signed with the Developer ID, as `app.theone.server`.

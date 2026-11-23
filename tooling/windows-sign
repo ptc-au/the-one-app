@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Signs Windows programs with Authenticode, as Power to Change, with jsign, timestamped by Microsoft's RFC 3161 server,
+# so Windows' SmartScreen knows who they're from and doesn't warn before they run:
+#
+#     tooling/windows-sign <program.exe>...
+#
+# The certificate is Microsoft's Artifact Signing's, which keeps its key and makes a certificate that lasts three
+# days, so the timestamp is what keeps a signature good after. It signs in as the Vault's "Artifact Signing" item: the
+# Entra app (tenant_id, client_id, client_secret) with the Artifact Signing Certificate Profile Signer role, and the
+# account's endpoint, account and certificate profile. `one vault fetch` swaps the app's secret for a token that lasts
+# an hour, so the secret is never seen here. WINDOWS_SIGNING, jsign's own options naming a keystore of one's own
+# (`--keystore <file>.pfx --storepass <password>`), signs with that instead.
+#
+# Without either, it says in a line that it signed nothing, and the programs ship unsigned.
+set -euo pipefail
+item="Artifact Signing"
+if [[ -n ${WINDOWS_SIGNING:-} ]]; then
+  read -ra options <<<"$WINDOWS_SIGNING"
+else
+  fields=$(one vault list | jq -c --arg item "$item" 'first(.items[] | select(.name == $item) | [.fields[] | {(.name): .value}] | add) // empty')
+  [[ -n $fields ]] || { echo "Windows programs aren't signed: the Vault has no \"$item\" item yet." && exit 0; }
+  token=$(one vault fetch --item "$item" --method POST --url 'https://login.microsoftonline.com/{{tenant_id}}/oauth2/v2.0/token' \
+    --headers '{"content-type": "application/x-www-form-urlencoded"}' \
+    --body 'grant_type=client_credentials&client_id={{client_id}}&client_secret={{client_secret}}&scope=https%3A%2F%2Fcodesigning.azure.net%2F.default' |
+    jq -r '.body | fromjson? | .access_token // empty')
+  [[ -n $token ]] || { echo "Microsoft didn't give a token for the Vault's \"$item\" item." >&2 && exit 1; }
+  # jsign reads the token from the environment, so no other process sees it in its arguments.
+  export WINDOWS_SIGNING_TOKEN=$token
+  options=(--storetype TRUSTEDSIGNING --storepass env:WINDOWS_SIGNING_TOKEN
+    --keystore "$(jq -r '.endpoint | sub("^https://"; "") | rtrimstr("/")' <<<"$fields")"
+    --alias "$(jq -r '"\(.account)/\(.profile)"' <<<"$fields")")
+fi
+jsign=$(mise -C "$(dirname "$0")/.." which jsign.jar)
+exec java -jar "$jsign" "${options[@]}" --tsaurl http://timestamp.acs.microsoft.com --tsmode RFC3161 --quiet "$@"

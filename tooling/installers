@@ -38,15 +38,15 @@ else
   echo "mac: published $name.dmg, $build"
 fi
 
-# Windows: the One App's installer (`clients/app/installer.nsi`), with the network's address beside the app. It isn't
-# signed until there's a certificate to sign Windows programs with (`tooling/release`), so SmartScreen asks first.
+# Windows: the One App's installer (`clients/app/installer.nsi`), with the network's address beside the app, signed
+# with its uninstaller (`tooling/windows-sign`).
 one=$(latest windows-x86_64 one) build=$(jq -r .build <<<"$one")
 if has windows "$build"; then
   echo "windows: $name Setup.exe is $build already"
 else
   fetched "$one" "$work/one.exe"
   git -C "$network" show origin/main:app/address | jq -Rc '{address: .}' >"$work/network"
-  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$work/one.exe" -DNETWORK="$work/network" -DOUTFILE="$work/$name Setup.exe" \
+  makensis -V2 -DVERSION="${build%%+*}" -DPROGRAM="$work/one.exe" -DNETWORK="$work/network" -DOUTFILE="$work/$name Setup.exe" -DSIGN="$root/tooling/windows-sign" \
     -DCOPYRIGHT="$(grep -m1 '^Copyright' "$root/LICENSE")" "$root/clients/app/installer.nsi"
   one software-update publish_installer --platform windows --name "$name Setup.exe" --build "$build" --file-from "$work/$name Setup.exe" >/dev/null
   echo "windows: published $name Setup.exe, $build"

@@ -13,6 +13,8 @@ zig = "0.15.2"
 "github:microsoft/DirectXShaderCompiler" = "1.9.2609"
 # What signs a Mac's server and app with the owner's Developer ID (`tooling/release`), here.
 "github:indygreg/apple-platform-rs" = "0.29.0"
+# And what signs a Windows program and installer, as Power to Change (`tooling/windows-sign`), here: jsign, on Java.
+"github:ebourg/jsign" = { version = "7.6", asset_pattern = "jsign-7.6.jar", bin = "jsign.jar" }
 # What builds the web client's renderer (`clients/web/renderer`, `core/edge/edge.js`): wasm-bindgen, at the version
 # its crate pins, and binaryen's wasm-opt.
 "github:wasm-bindgen/wasm-bindgen" = "0.2.130"

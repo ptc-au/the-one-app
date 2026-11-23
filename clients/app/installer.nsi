@@ -4,8 +4,10 @@
 ; and in Settings > Apps, and opens it. From then on the app updates itself, by `one update`, as it does on Linux
 ; and a Mac.
 ;
-;     makensis -DVERSION=<x.y.z> -DPROGRAM=<one.exe> -DOUTFILE=<installer.exe> [-DNETWORK=<network>] clients/app/installer.nsi
+;     makensis -DVERSION=<x.y.z> -DPROGRAM=<one.exe> -DOUTFILE=<installer.exe> [-DNETWORK=<network>] [-DSIGN=<tooling/windows-sign>] clients/app/installer.nsi
 ;
+; Given SIGN, the program that signs Windows programs, the uninstaller it writes and the installer are signed with it
+; as NSIS makes them.
 ; A network's own installer (`tooling/installers`) is given its `network` file, its address, which it puts beside
 ; `one.exe`, so the app opens on that network (`bundled` in core/client).
 !include MUI2.nsh
@@ -18,6 +20,10 @@
 
 Name "${NAME}"
 OutFile "${OUTFILE}"
+!ifdef SIGN
+  !uninstfinalize '"${SIGN}" "%1"' = 0
+  !finalize '"${SIGN}" "%1"' = 0
+!endif
 Unicode true
 ManifestDPIAware true
 RequestExecutionLevel user
