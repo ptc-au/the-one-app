@@ -382,18 +382,24 @@ defmodule OneCore.Servers do
   # answer, 30 seconds. One that isn't back by then may be verifying a build that doesn't start, which takes minutes.
   @back 20_000
 
+  # How recently a server that isn't connected left for it to be coming back, in milliseconds: one whose connection
+  # dropped, or that restarted without saying it was stopping, connects again within seconds, as the relay's own
+  # `STARTING` and `STOPPING` have it (`core/edge/relay/worker.ts`).
+  @left 60_000
+
   @doc """
-  Waits for one of the servers whose keys are `keys` that's starting or stopping to be ready, for up to `@back`:
-  where none of the others answered, and what was asked is that one's to answer, as a service only it runs. Gives
-  its key, or `nil` if none is ready by then, or none of them was starting or stopping.
+  Waits for one of the servers whose keys are `keys` that's coming back to be ready, for up to `@back`: one starting
+  or stopping, or one that left within `@left`, where none of the others answered, and what was asked is that one's to
+  answer, as a service only it runs. A network with one server answers through its blip rather than saying none is on.
+  Gives its key, or `nil` if none is ready by then, or none of them was coming back.
   """
   def back(keys) do
-    coming = Enum.filter(keys, &(presence(&1)["server_daemon_status"] in ["starting", "stopping"]))
+    coming = Enum.filter(keys, &coming?(presence(&1)))
 
     if coming != [] do
       Registry.register(OneCore.Waiting, :seen, nil)
       names = Enum.map_join(coming, " or ", &(name(&1) || "a server"))
-      OneCore.Call.State.working(OneCore.Call.State.id(), :waiting, "Waiting for #{names} to start again")
+      OneCore.Call.State.working(OneCore.Call.State.id(), :waiting, "Waiting for #{names} to be back")
 
       try do
         await(coming, System.monotonic_time(:millisecond) + @back)
@@ -402,6 +408,10 @@ defmodule OneCore.Servers do
       end
     end
   end
+
+  defp coming?(%{"server_daemon_status" => status}) when status in ["starting", "stopping"], do: true
+  defp coming?(%{"connected" => false, "last_seen" => at}), do: System.system_time(:millisecond) - at < @left
+  defp coming?(_presence), do: false
 
   # Looks after each time a server came or went, until one of `keys` is ready, or `until`, and then once more at the
   # edge: one that said it may take less than it did is back without having come or gone.
