@@ -34,6 +34,17 @@ pub(crate) fn links(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// An Android app made for a network takes its network's links, as its manifest hands them to it (its app links, which
+/// `tooling/android-apk` puts in from the network's config): the deep-link plugin passes on only the links its config
+/// names, and the plain build's names only `one:`. An iPhone's is built with its network's config (`tooling/testflight`).
+#[cfg(target_os = "android")]
+pub(crate) fn network_links(context: &mut tauri::Context) {
+    let Some(host) = ::client::bundled_address().and_then(|address| Url::parse(&address).ok()?.host_str().map(str::to_owned)) else { return };
+    if let Some(Value::Array(mobile)) = context.config_mut().plugins.0.get_mut("deep-link").and_then(|config| config.get_mut("mobile")) {
+        mobile.push(json!({ "scheme": ["https"], "host": host, "appLink": true }));
+    }
+}
+
 /// Opens what `url` links to: a `one:` link says so itself, and one of the network's own pages leads there, as the
 /// network's edge sends it on to the web client's link to an app's place (`/?open=<one: link>`), as a request's link
 /// in Vault does (`apps/vault/edge/worker.ts`).

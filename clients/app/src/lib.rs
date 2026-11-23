@@ -71,6 +71,9 @@ pub fn run() {
 pub fn run() {
     use tauri::http::{Response, StatusCode, header};
     let started = Instant::now();
+    let mut context = tauri::generate_context!();
+    #[cfg(target_os = "android")]
+    network_links(&mut context);
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init()).plugin(tauri_plugin_deep_link::init()).plugin(notifications::plugin());
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_haptics::init());
@@ -143,6 +146,6 @@ pub fn run() {
             theme,
             report,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("the app starts");
 }

@@ -332,6 +332,12 @@ fn bundled() -> Result<Option<NetworkConfig>> {
     Ok(Some(serde_json::from_slice(&network).context("the app's own `network` isn't a network's address")?))
 }
 
+/// The address of the network an app was made for (`bundled`), which it knows before it opens its client: an Android
+/// app's own links are its network's.
+pub fn bundled_address() -> Option<String> {
+    bundled().ok().flatten().map(|config| config.address)
+}
+
 #[cfg(not(target_os = "android"))]
 fn bundled_file() -> Option<Vec<u8>> {
     let program = env::current_exe().ok()?.canonicalize().ok()?;
