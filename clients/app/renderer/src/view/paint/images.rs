@@ -44,7 +44,8 @@ impl Painter<'_> {
     /// out, unscaled, and put in the atlas on the frame that's decoded, so the frame it first shows on uploads nothing
     /// (a category's icons as it opened, 4.4 ms of a mid laptop's WebGPU frame). One that's broken (not found, or that
     /// failed to decode every time it was tried) fills its box in a quiet grey, as a browser marks a broken image, never
-    /// nothing. Where the window is dark it's its `srcDark`, where it has one.
+    /// nothing; one that says nothing (`alt=""`, as a logo beside its name) is nothing then, as a browser draws it. Where
+    /// the window is dark it's its `srcDark`, where it has one.
     pub(in crate::view) fn paint_image(&mut self, node: &Node, content: Bounds<f32>, transform: Transform, radii: Corners<f32>, opacity: f32, mask: ContentMask<f32>) {
         let Some(src) = node.str("srcDark").filter(|_| self.conditions.dark).or_else(|| node.str("src")) else { return };
         if opacity <= 0.0 {
@@ -60,7 +61,12 @@ impl Painter<'_> {
             }
             return;
         }
-        let broken = |painter: &mut Self| painter.quad(content, mask, colour_token("quinary-label", painter.conditions), Edges::default(), Hsla::default(), radii, false, opacity);
+        let says = node.str("alt").is_some_and(|alt| !alt.is_empty());
+        let broken = |painter: &mut Self| {
+            if says {
+                painter.quad(content, mask, colour_token("quinary-label", painter.conditions), Edges::default(), Hsla::default(), radii, false, opacity);
+            }
+        };
         // One by an address is drawn once its window has fetched it, as a `data:` address.
         let src = match self.fetched.get(src) {
             _ if src.starts_with("data:") => src,

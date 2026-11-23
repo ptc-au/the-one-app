@@ -44,11 +44,14 @@ export default {
     ),
   },
   "Images/Slow to decode": () => <Image src={blurred} alt="" style={look.large(358, 268)} />,
-  // A picture whose bytes aren't one, beside one that is: tried again, then shown broken, never as nothing.
+  // A picture whose bytes aren't one, beside one that is: tried again, then shown broken, never as nothing. One that
+  // says nothing (`alt=""`, only how a page looks) is nothing once it's broken, as a browser draws it: the last box is
+  // empty.
   "Images/Broken": () => (
     <View style={look.row}>
       <Image src={tile("G", "oklch(0.55 0.13 110)")} alt="" style={look.tile} />
       <Image src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAAA" alt="A broken picture" style={look.tile} />
+      <Image src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAAA" alt="" style={look.tile} />
     </View>
   ),
 } satisfies Scenes
