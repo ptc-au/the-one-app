@@ -19,4 +19,4 @@ takes).
 It needs the item `Cloudflare TURN` in the Vault of whoever it's installed for (the network's, most often): `key_id`
 (not secret) and `api_token`, a TURN key's id and secret from Cloudflare (Realtime › TURN, or the API's
 `/accounts/<id>/calls/turn_keys`), with `rtc.live.cloudflare.com` its site, switched on for `webrtc`. Ask for it
-with `vault_request`; never in the chat. Without it, a live view falls back to screenshots and says why.
+with `vault_request` and `app: webrtc`, which puts it in that Vault; never in the chat. Without it, a live view says so, and that its owners add it.

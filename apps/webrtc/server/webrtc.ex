@@ -86,6 +86,13 @@ defmodule WebRTC do
   end
 
   def call("ice_servers", _inputs, call) do
+    # The key is whoever this is installed for's, the network's most often, which every member uses.
+    call = %{call | subject: call.installed}
+
+    # Without it there's nothing to ask Cloudflare, and what a person reads says who can add it.
+    if not Enum.any?(Call.tool(call, "vault", "items", %{})["items"], &(&1["name"] == @item)),
+      do: raise("Live video needs a Cloudflare TURN key, which the network's owners add in the Vault and switch on for WebRTC.")
+
     request = %{
       "item" => @item,
       "method" => "POST",
@@ -94,10 +101,9 @@ defmodule WebRTC do
       "body" => JSON.encode!(%{ttl: @ttl})
     }
 
-    # The key is whoever this is installed for's, the network's most often, which every member uses.
-    case Call.tool(%{call | subject: call.installed}, "vault", "fetch", request) do
+    case Call.tool(call, "vault", "fetch", request) do
       %{"status" => 201, "body" => body} -> %{"iceServers" => turn(JSON.decode!(body)["iceServers"])}
-      %{"status" => status, "body" => body} -> raise "Cloudflare refused TURN credentials (#{status}): #{body}"
+      %{"status" => status} -> raise "Cloudflare refused the network's TURN key (#{status})."
     end
   end
 

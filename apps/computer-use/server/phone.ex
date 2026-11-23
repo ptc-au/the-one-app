@@ -49,7 +49,7 @@ defmodule ComputerUse.Phone do
     {screens, Map.new(failed, fn {device, why} -> {(asleep(call, device, kept) || %{})["name"] || device, why} end)}
   end
 
-  def use(_call, _phone, "stream", _inputs), do: raise("A phone's screen has no live video yet: it's shown a picture at a time.")
+  def use(_call, _phone, "stream", _inputs), do: raise("A phone's screen has no live video yet.")
 
   def use(call, phone, action, inputs) do
     if not may?(call, phone), do: raise("You may not use that phone's screen: only its person and the network's owner may.")

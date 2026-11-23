@@ -68,19 +68,17 @@
       "The server isn't answering"
     ]
   },
-  "A running simulator (live picture left out)": {
+  "A running simulator (no live video)": {
     "like": "Simulators",
     "taps": [
       "iphone-1"
     ],
-    "wait": 6000,
     "errors": [
-      "Live video didn't connect",
-      "The screen gave no picture either"
+      "Live video didn't connect: Cloudflare refused"
     ],
     "answers": {
       "iphone-simulator_screen": {
-        "$error": "Couldn't stream its screen"
+        "$error": "Cloudflare refused the network's TURN key (401)."
       }
     }
   },
