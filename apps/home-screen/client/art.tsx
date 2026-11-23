@@ -1,7 +1,34 @@
 // What Welcome's pictures are drawn with: boxes and words on an art board 440 by 330, each placed, sized, filled and
 // moved as the picture says, by the values it gives (each a dynamic style's, as a picture's are data), and shapes
 // (`Shape`), as an SVG's paths. Every picture is real UI, drawn by the renderer as any page is.
-import { type Element, Image, Path, styles, type Styles, Svg, Text, tokens, View } from "ui"
+import { type Element, illustration, Image, Path, styles, type Styles, Svg, Text, tokens, View } from "ui"
+
+/** The colours the drawing kit draws with: the people, the app they make's icon and its glyphs, and the pointers. */
+const drawn = illustration("Welcome's pictures' drawing kit: four people, the made-up app's icon and the white of its glyphs, and the pointers, each in its own colours, drawn the same in light and dark.", {
+  sarahSkin: "#f2c7a5",
+  sarahHair: "#7a3e1d",
+  sarahShirt: "#e8467c",
+  sarahGround: "#fde2ea",
+  jamesSkin: "#8d5a3b",
+  jamesHair: "#1b1b1b",
+  jamesShirt: "#2f7cf6",
+  jamesGround: "#dbe8ff",
+  priyaSkin: "#c98e63",
+  priyaHair: "#1c1410",
+  priyaShirt: "#16a34a",
+  priyaGround: "#dcf5e4",
+  miaSkin: "#f5d0b5",
+  miaHair: "#2a1a12",
+  miaShirt: "#a855f7",
+  miaGround: "#f1e6ff",
+  ink: "#1d1d1f",
+  appIconGradient: "linear-gradient(145deg, #ffb340, #ff6a2b 55%, #f2384b)",
+  appIconSheen: "inset 0 0.5px 0 #ffffff80",
+  glyph: "#ffffff",
+  pointerBody: "#ffffff",
+  pointerEdge: "#ffffff",
+  pointerOutline: "#000000",
+})
 
 const art = styles({
   absolute: { position: "absolute" },
@@ -144,7 +171,7 @@ export const Words = (props: BoxProps & { size: number; weight?: number; ink?: `
       // On the picture's own ground, in its text's colour, light or dark; on what's drawn, in the colour it's given.
       props.onPanel
         ? art.plainWords(props.size, props.weight ?? 400, props.leading ?? Math.round(props.size * 1.25 * 10) / 10, props.spacing ?? 0)
-        : art.words(props.size, props.weight ?? 400, props.ink ?? "#1d1d1f", props.leading ?? Math.round(props.size * 1.25 * 10) / 10, props.spacing ?? 0),
+        : art.words(props.size, props.weight ?? 400, props.ink ?? drawn.ink, props.leading ?? Math.round(props.size * 1.25 * 10) / 10, props.spacing ?? 0),
       !props.wraps && art.line,
       props.mono && art.mono,
       props.centred && art.centred,
@@ -178,10 +205,10 @@ export const rect = (x: number, y: number, w: number, h: number, r = 0) =>
 
 /** The people in the pictures, drawn, not initials: skin, hair, shirt, background and how their hair is. */
 export const people = {
-  sarah: ["#f2c7a5", "#7a3e1d", "#e8467c", "#fde2ea", "long"],
-  james: ["#8d5a3b", "#1b1b1b", "#2f7cf6", "#dbe8ff", "short"],
-  priya: ["#c98e63", "#1c1410", "#16a34a", "#dcf5e4", "bun"],
-  mia: ["#f5d0b5", "#2a1a12", "#a855f7", "#f1e6ff", "bun"],
+  sarah: [drawn.sarahSkin, drawn.sarahHair, drawn.sarahShirt, drawn.sarahGround, "long"],
+  james: [drawn.jamesSkin, drawn.jamesHair, drawn.jamesShirt, drawn.jamesGround, "short"],
+  priya: [drawn.priyaSkin, drawn.priyaHair, drawn.priyaShirt, drawn.priyaGround, "bun"],
+  mia: [drawn.miaSkin, drawn.miaHair, drawn.miaShirt, drawn.miaGround, "bun"],
 } as const satisfies Record<string, readonly [`#${string}`, `#${string}`, `#${string}`, `#${string}`, "long" | "short" | "bun"]>
 export type Person = keyof typeof people
 
@@ -217,23 +244,23 @@ export function Avatar(props: BoxProps & { who: Person; size: number }) {
 
 /** The app the pictures make, its icon: a rounded square of orange to red, its glyph white. */
 export const AppIcon = (props: BoxProps & { size: number; glyph: Part[]; stroke?: number }) => (
-  <Box {...props} w={props.size} h={props.size} r={props.size * 0.23} image="linear-gradient(145deg, #ffb340, #ff6a2b 55%, #f2384b)" shadow="inset 0 0.5px 0 #ffffff80" middle>
+  <Box {...props} w={props.size} h={props.size} r={props.size * 0.23} image={drawn.appIconGradient} shadow={drawn.appIconSheen} middle>
     <Shape w={props.size * 0.62} h={props.size * 0.62} viewBox="0 0 24 24" parts={props.glyph} />
   </Box>
 )
 
 /** A calendar with a tick, Roster's glyph, white on its icon. */
-export const roster = (width = 2.4): Part[] => [{ d: "M7 3v3M17 3v3M4 9h16M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zm4 8 2 2 4-4", stroke: "#ffffff", width }]
+export const roster = (width = 2.4): Part[] => [{ d: "M7 3v3M17 3v3M4 9h16M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zm4 8 2 2 4-4", stroke: drawn.glyph, width }]
 
 /** A box, Orders' glyph. */
-export const orders = (width = 2): Part[] => [{ d: "M12 3 4 7.2v9.6L12 21l8-4.2V7.2zM4 7.2l8 4.2 8-4.2M12 11.4V21M8 5.1l8 4.2", stroke: "#ffffff", width }]
+export const orders = (width = 2): Part[] => [{ d: "M12 3 4 7.2v9.6L12 21l8-4.2V7.2zM4 7.2l8 4.2 8-4.2M12 11.4V21M8 5.1l8 4.2", stroke: drawn.glyph, width }]
 
 /** A tent, Camp sign-up's glyph. */
-export const camp = (width = 2.6): Part[] => [{ d: "M12 3 3 19h18zM12 3v16M9 19l3-5 3 5", stroke: "#ffffff", width }]
+export const camp = (width = 2.6): Part[] => [{ d: "M12 3 3 19h18zM12 3v16M9 19l3-5 3 5", stroke: drawn.glyph, width }]
 
 /** The pointer someone moves, white edged in black, or an agent's, in its colour edged in white. */
 export const Pointer = (props: BoxProps & { colour?: `#${string}` }) => (
-  <Shape {...props} w={13} h={19} z={4} viewBox="0 0 13 19" parts={[{ d: "M1 1v14.5l3.6-3.4 2.4 5.6 2.4-1-2.4-5.5h5z", fill: props.colour ?? "#ffffff", stroke: props.colour ? "#ffffff" : "#000000", width: props.colour ? 1.2 : 1 }]} />
+  <Shape {...props} w={13} h={19} z={4} viewBox="0 0 13 19" parts={[{ d: "M1 1v14.5l3.6-3.4 2.4 5.6 2.4-1-2.4-5.5h5z", fill: props.colour ?? drawn.pointerBody, stroke: props.colour ? drawn.pointerEdge : drawn.pointerOutline, width: props.colour ? 1.2 : 1 }]} />
 )
 
 /** The art board every picture is drawn on, and the part of it that's fitted to the room it has (its margins trimmed). */

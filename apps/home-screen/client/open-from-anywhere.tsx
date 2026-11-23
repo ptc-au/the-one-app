@@ -4,10 +4,76 @@
 // it, where the shortcut is pressed and the launcher springs in over the window, again and again, from its start each
 // time the shortcut changes. One shortcut opens the launcher of every network's app on the computer.
 import { createSignal, For, Show } from "solid-js"
-import { Button, defineVars, type Element, Image, reducedMotion, styles, Text, tokens, View } from "ui"
+import { Button, defineVars, type Element, illustration, Image, reducedMotion, styles, Text, tokens, View } from "ui"
 import { Box, circle, Panel, Shape, Words } from "./art.tsx"
 import { labels, type Os, os, shortcut, ShortcutControl, WindowsKey } from "./shortcut.tsx"
 import { network } from "./welcome.tsx"
+
+const drawn = illustration("Open from anywhere's picture: a Mac, a Windows PC and a Linux desktop, Notes and its window controls, a launcher of app icons and the shortcut's keys, each in its own system's colours, drawn the same in light and dark", {
+  macWallpaper: "linear-gradient(160deg, #f6c9a8, #e8a3b8 35%, #a596ee 70%, #6d7cf2)",
+  windowsWallpaper: "radial-gradient(60% 70% at 50% 70%, #a9d6ff, #3f8cf0 30%, #1546b8 62%, #0a2466)",
+  linuxWallpaper: "linear-gradient(160deg, #4b1d63, #9b3c74 55%, #e2754f 85%, #f08a5d)",
+  dockIcon1: "linear-gradient(#5ac8fa, #007aff)",
+  dockIcon2: "linear-gradient(#ffd60a, #ff9f0a)",
+  dockIcon3: "linear-gradient(#ffffff, #d1d1d6)",
+  dockIcon4: "linear-gradient(#34c759, #248a3d)",
+  dockIcon5: "linear-gradient(#ff6482, #ff2d55)",
+  dockIcon6: "linear-gradient(#8e8e93, #48484a)",
+  appIcon1: "#ff9f0a,#ff6a2b",
+  appIcon2: "#64d2ff,#0a84ff",
+  appIcon3: "#30d158,#248a3d",
+  appIcon4: "#bf5af2,#7d3cff",
+  appIcon5: "#ff6482,#ff2d55",
+  appIcon6: "#ffd60a,#ff9f0a",
+  appIcon7: "#8e8e93,#48484a",
+  appIcon8: "#5e5ce6,#3634a3",
+  appIcon9: "#40c8e0,#0a84ff",
+  appIcon10: "#ff453a,#c9342a",
+  appIcon11: "#ffffff,#d1d1d6",
+  appIcon12: "#a2845e,#7a5c3a",
+  markInk: "#1d1d1f",
+  menuBar: "#ffffff66",
+  dock: "#ffffff59",
+  dockShadow: "0 0 0 0.5px #ffffff80, 0 6px 18px #00000026",
+  taskbar: "#eef2fad6",
+  taskbarEdge: "#0000001a",
+  windowsMark: "conic-gradient(#0078d4 0 25%, #00a4ef 0 50%, #0078d4 0 75%, #00a4ef 0)",
+  clockInk: "#111111",
+  linuxBar: "#000000",
+  linuxBarInk: "#ffffff",
+  linuxBarMarkDim: "#ffffff80",
+  window: "#ffffff",
+  windowShadow: "0 14px 36px #00000038, 0 0 0 0.5px #00000033",
+  macTitlebar: "#f5f5f7",
+  linuxTitlebar: "#ebebeb",
+  titlebarEdge: "#e2e2e6",
+  closeLight: "#ff5f57",
+  minimiseLight: "#febc2e",
+  zoomLight: "#28c840",
+  titleInk: "#3c3c43",
+  linuxControl: "#d8d8d8",
+  noteHeading: "#2c2c2e",
+  rowRule: "#e5e5ea",
+  iconPlate: "#00000017",
+  iconGloss: "inset 0 0.5px 0 #ffffff80",
+  iconLabel: "#00000024",
+  widget: "#ffffff",
+  widgetEdge: "0 0 0 0.5px #00000014",
+  mondayInk: "#ff3b30",
+  eventBar: "#c7d8ff",
+  launcherGlass: "#f6f6f8bd",
+  launcherShadow: "0 0 0 0.5px #0000001f, 0 10px 30px #0000002e",
+  caret: "#0a84ff",
+  searchInk: "#8a8a8e",
+  ownerPill: "#ffffffb3",
+  avatar: "#e8467c",
+  pageDot: "#000000b3",
+  pageDotOther: "#00000033",
+  libraryPill: "#ffffffbf",
+  keycap: "#1c1c1edb",
+  keycapShadow: "inset 0 -2px 0 #ffffff14, 0 4px 12px #0000004d",
+  keycapInk: "#ffffff",
+})
 
 const own = defineVars({
   title: 24,
@@ -49,7 +115,7 @@ const look = styles({
 /// One press of the shortcut, every 5.4 s, as the mockup plays it: its keys come up at 0.9 s and go down one
 /// after another, the launcher springs in at 1.5 s, the keys go at 2.4 s, and the launcher goes at 4.8 s.
 const moves = styles({
-  launcher: {
+  launcher: illustration("The launcher springing in over the window, as the mockup plays it", {
     animationName: {
       "0%": { opacity: 0, scale: 0.94, translateY: -6 },
       "27.8%": { opacity: 0, scale: 0.94, translateY: -6 },
@@ -62,8 +128,8 @@ const moves = styles({
     animationDuration: 5400,
     animationIterationCount: "infinite",
     animationTimingFunction: [0.2, 1.3, 0.35, 1],
-  },
-  keys: {
+  }),
+  keys: illustration("The shortcut's keys coming up and going down, as the mockup plays it", {
     animationName: {
       "0%": { opacity: 0, translateY: 6 },
       "16.7%": { opacity: 0, translateY: 6 },
@@ -75,87 +141,87 @@ const moves = styles({
     animationDuration: 5400,
     animationIterationCount: "infinite",
     animationTimingFunction: "ease",
-  },
+  }),
   // Each key goes down in turn, 0.11 s apart, and they all come up as the launcher's in.
-  down0: {
+  down0: illustration("The first key going down in turn, as the mockup plays it", {
     animationName: { "0%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "18.6%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "18.7%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "32.5%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "33%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "100%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" } },
     animationDuration: 5400,
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
-  },
-  down1: {
+  }),
+  down1: illustration("The second key going down in turn, as the mockup plays it", {
     animationName: { "0%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "20.6%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "20.7%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "32.5%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "33%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "100%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" } },
     animationDuration: 5400,
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
-  },
-  down2: {
+  }),
+  down2: illustration("The third key going down in turn, as the mockup plays it", {
     animationName: { "0%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "22.7%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "22.8%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "32.5%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "33%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "100%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" } },
     animationDuration: 5400,
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
-  },
-  down3: {
+  }),
+  down3: illustration("The fourth key going down in turn, as the mockup plays it", {
     animationName: { "0%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "24.7%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "24.8%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "32.5%": { translateY: 2, scale: 0.95, backgroundColor: "#0a84ffeb" }, "33%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" }, "100%": { translateY: 0, scale: 1, backgroundColor: "#1c1c1edb" } },
     animationDuration: 5400,
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
-  },
+  }),
 })
 const downs = [moves.down0, moves.down1, moves.down2, moves.down3]
 
 /// Each desktop's wallpaper, in the mockup's colours, each one gradient: the renderer draws a radial gradient that fades
 /// to transparent over another with a ring at its edge, and leaves a corner dark in dark mode (23 Nov).
 const wallpaper: Record<Os, string> = {
-  mac: "linear-gradient(160deg, #f6c9a8, #e8a3b8 35%, #a596ee 70%, #6d7cf2)",
-  windows: "radial-gradient(60% 70% at 50% 70%, #a9d6ff, #3f8cf0 30%, #1546b8 62%, #0a2466)",
-  linux: "linear-gradient(160deg, #4b1d63, #9b3c74 55%, #e2754f 85%, #f08a5d)",
+  mac: drawn.macWallpaper,
+  windows: drawn.windowsWallpaper,
+  linux: drawn.linuxWallpaper,
 }
 /// The apps in the dock or the taskbar, and on the launcher's pages, as the mockup colours them.
-const docked = ["linear-gradient(#5ac8fa, #007aff)", "linear-gradient(#ffd60a, #ff9f0a)", "linear-gradient(#ffffff, #d1d1d6)", "linear-gradient(#34c759, #248a3d)", "linear-gradient(#ff6482, #ff2d55)", "linear-gradient(#8e8e93, #48484a)"]
-const icons = ["#ff9f0a,#ff6a2b", "#64d2ff,#0a84ff", "#30d158,#248a3d", "#bf5af2,#7d3cff", "#ff6482,#ff2d55", "#ffd60a,#ff9f0a", "#8e8e93,#48484a", "#5e5ce6,#3634a3", "#40c8e0,#0a84ff", "#ff453a,#c9342a", "#ffffff,#d1d1d6", "#a2845e,#7a5c3a"].map((pair) => `linear-gradient(145deg, ${pair.split(",")[0]}, ${pair.split(",")[1]})`)
-const wifi = [{ d: "M8 11.5 5.6 9a3.4 3.4 0 0 1 4.8 0zM3.5 7a6.3 6.3 0 0 1 9 0l-1.4 1.4a4.3 4.3 0 0 0-6.2 0zM1.3 4.8a9.4 9.4 0 0 1 13.4 0l-1.4 1.4a7.4 7.4 0 0 0-10.6 0z", fill: "#1d1d1f" as const }]
-const apple = [{ d: "M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6 1.3-.1 1.7-.8 3.3-.8 1.5 0 1.9.8 3.3.8 1.4 0 2.2-1.3 3-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.4-.9-2.4-4.1zM11.6 3c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z", fill: "#1d1d1f" as const }]
+const docked = [drawn.dockIcon1, drawn.dockIcon2, drawn.dockIcon3, drawn.dockIcon4, drawn.dockIcon5, drawn.dockIcon6]
+const icons = [drawn.appIcon1, drawn.appIcon2, drawn.appIcon3, drawn.appIcon4, drawn.appIcon5, drawn.appIcon6, drawn.appIcon7, drawn.appIcon8, drawn.appIcon9, drawn.appIcon10, drawn.appIcon11, drawn.appIcon12].map((pair) => `linear-gradient(145deg, ${pair.split(",")[0]}, ${pair.split(",")[1]})`)
+const wifi = [{ d: "M8 11.5 5.6 9a3.4 3.4 0 0 1 4.8 0zM3.5 7a6.3 6.3 0 0 1 9 0l-1.4 1.4a4.3 4.3 0 0 0-6.2 0zM1.3 4.8a9.4 9.4 0 0 1 13.4 0l-1.4 1.4a7.4 7.4 0 0 0-10.6 0z", fill: drawn.markInk }]
+const apple = [{ d: "M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6 1.3-.1 1.7-.8 3.3-.8 1.5 0 1.9.8 3.3.8 1.4 0 2.2-1.3 3-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.4-.9-2.4-4.1zM11.6 3c.7-.9 1.2-2 1-3.2-1 0-2.3.7-3 1.6-.7.8-1.2 2-1.1 3.1 1.2.1 2.3-.6 3.1-1.5z", fill: drawn.markInk }]
 
 /// The desktop's own bars: a Mac's menu bar and Dock, Windows' taskbar, and GNOME's top bar.
 function Bars(props: { os: Os }) {
   return (
     <>
       <Show when={props.os === "mac"}>
-        <Box x={0} y={0} w={440} h={20} row gap={13} pad={[0, 12]} fill="#ffffff66" z={3}>
+        <Box x={0} y={0} w={440} h={20} row gap={13} pad={[0, 12]} fill={drawn.menuBar} z={3}>
           <Shape w={10} h={12} viewBox="0 0 17 20" parts={apple} />
           <Words size={11} weight={700}>Notes</Words>
           <Words size={11}>File</Words>
           <Words size={11}>Edit</Words>
           <Words size={11}>View</Words>
           <Box row gap={11} m={[0, 0, 0, "auto"]}>
-            <Shape w={11} h={11} viewBox="0 0 12 12" parts={[{ d: circle(6, 6, 4.6), stroke: "#1d1d1f", width: 1.4 }]} />
+            <Shape w={11} h={11} viewBox="0 0 12 12" parts={[{ d: circle(6, 6, 4.6), stroke: drawn.markInk, width: 1.4 }]} />
             <Shape w={13} h={10} viewBox="0 0 16 12" parts={wifi} />
             <Words size={11}>Mon 9:41</Words>
           </Box>
         </Box>
-        <Box x={128} bottom={6} h={34} row gap={5} pad={[4, 6]} r={13} fill="#ffffff59" shadow="0 0 0 0.5px #ffffff80, 0 6px 18px #00000026" z={3}>
+        <Box x={128} bottom={6} h={34} row gap={5} pad={[4, 6]} r={13} fill={drawn.dock} shadow={drawn.dockShadow} z={3}>
           <For each={docked}>{(image) => <Box w={26} h={26} r={7} image={image} />}</For>
         </Box>
       </Show>
       <Show when={props.os === "windows"}>
-        <Box x={0} right={0} bottom={0} h={30} row middle gap={6} fill="#eef2fad6" lines={[0.5, 0, "#0000001a"]} z={3}>
-          <Box w={18} h={18} r={4} image="conic-gradient(#0078d4 0 25%, #00a4ef 0 50%, #0078d4 0 75%, #00a4ef 0)" />
+        <Box x={0} right={0} bottom={0} h={30} row middle gap={6} fill={drawn.taskbar} lines={[0.5, 0, drawn.taskbarEdge]} z={3}>
+          <Box w={18} h={18} r={4} image={drawn.windowsMark} />
           <For each={docked.slice(1, 5)}>{(image) => <Box w={18} h={18} r={4} image={image} />}</For>
           <Box right={10} y={5}>
-            <Words size={9} leading={10} ink="#111111">9:41 AM</Words>
-            <Words size={9} leading={10} ink="#111111">23/11/2026</Words>
+            <Words size={9} leading={10} ink={drawn.clockInk}>9:41 AM</Words>
+            <Words size={9} leading={10} ink={drawn.clockInk}>23/11/2026</Words>
           </Box>
         </Box>
       </Show>
       <Show when={props.os === "linux"}>
-        <Box x={0} y={0} w={440} h={20} row middle fill="#000000" z={3}>
+        <Box x={0} y={0} w={440} h={20} row middle fill={drawn.linuxBar} z={3}>
           <Box x={8} y={7} row gap={3}>
-            <Box w={16} h={6} r={3} fill="#ffffff" />
-            <Box w={6} h={6} r={3} fill="#ffffff80" />
-            <Box w={6} h={6} r={3} fill="#ffffff80" />
+            <Box w={16} h={6} r={3} fill={drawn.linuxBarInk} />
+            <Box w={6} h={6} r={3} fill={drawn.linuxBarMarkDim} />
+            <Box w={6} h={6} r={3} fill={drawn.linuxBarMarkDim} />
           </Box>
-          <Words size={11} weight={600} ink="#ffffff">Mon 09:41</Words>
+          <Words size={11} weight={600} ink={drawn.linuxBarInk}>Mon 09:41</Words>
         </Box>
       </Show>
     </>
@@ -166,20 +232,20 @@ function Bars(props: { os: Os }) {
 function Window(props: { os: Os }) {
   const mac = () => props.os === "mac"
   return (
-    <Box x={54} y={34} w={330} h={214} r={props.os === "windows" ? 7 : 10} fill="#ffffff" clip shadow="0 14px 36px #00000038, 0 0 0 0.5px #00000033">
-      <Box h={props.os === "linux" ? 28 : 26} row gap={5} pad={[0, 9]} fill={props.os === "linux" ? "#ebebeb" : "#f5f5f7"} lines={[0, 0.5, "#e2e2e6"]}>
+    <Box x={54} y={34} w={330} h={214} r={props.os === "windows" ? 7 : 10} fill={drawn.window} clip shadow={drawn.windowShadow}>
+      <Box h={props.os === "linux" ? 28 : 26} row gap={5} pad={[0, 9]} fill={props.os === "linux" ? drawn.linuxTitlebar : drawn.macTitlebar} lines={[0, 0.5, drawn.titlebarEdge]}>
         <Show when={mac()}>
-          <For each={["#ff5f57", "#febc2e", "#28c840"] as const}>{(fill) => <Box w={7} h={7} r={3.5} fill={fill} />}</For>
+          <For each={[drawn.closeLight, drawn.minimiseLight, drawn.zoomLight] as const}>{(fill) => <Box w={7} h={7} r={3.5} fill={fill} />}</For>
         </Show>
-        <Words size={8} weight={props.os === "windows" ? 400 : props.os === "linux" ? 700 : 600} ink="#3c3c43" grow={1} centred={props.os !== "windows"}>
+        <Words size={8} weight={props.os === "windows" ? 400 : props.os === "linux" ? 700 : 600} ink={drawn.titleInk} grow={1} centred={props.os !== "windows"}>
           Notes
         </Words>
         <Show when={!mac()}>
           <Box row gap={props.os === "linux" ? 5 : 0}>
             <For each={["–", "☐", "✕"]}>
               {(control) => (
-                <Box w={props.os === "linux" ? 13 : 22} h={13} r={props.os === "linux" ? 6.5 : 0} fill={props.os === "linux" ? "#d8d8d8" : undefined} middle>
-                  <Words size={7} ink="#3c3c43">{control}</Words>
+                <Box w={props.os === "linux" ? 13 : 22} h={13} r={props.os === "linux" ? 6.5 : 0} fill={props.os === "linux" ? drawn.linuxControl : undefined} middle>
+                  <Words size={7} ink={drawn.titleInk}>{control}</Words>
                 </Box>
               )}
             </For>
@@ -187,8 +253,8 @@ function Window(props: { os: Os }) {
         </Show>
       </Box>
       <Box pad={[16, 22]} gap={7}>
-        <Box w="46%" h={9} r={3} fill="#2c2c2e" m={[0, 0, 5, 0]} />
-        <For each={[92, 84, 88, 60, 0, 90, 76, 82]}>{(width) => (width ? <Box w={`${width}%`} h={5} r={3} fill="#e5e5ea" /> : <Box h={3} />)}</For>
+        <Box w="46%" h={9} r={3} fill={drawn.noteHeading} m={[0, 0, 5, 0]} />
+        <For each={[92, 84, 88, 60, 0, 90, 76, 82]}>{(width) => (width ? <Box w={`${width}%`} h={5} r={3} fill={drawn.rowRule} /> : <Box h={3} />)}</For>
       </Box>
     </Box>
   )
@@ -199,20 +265,20 @@ function Launcher(props: { still: boolean }) {
   const Icon = (icon: { at: number; chosen?: boolean }) => (
     <Box w={14} h={21}>
       <Show when={icon.chosen}>
-        <Box x={-3} y={-3} w={20} h={23} r={6} fill="#00000017" />
+        <Box x={-3} y={-3} w={20} h={23} r={6} fill={drawn.iconPlate} />
       </Show>
-      <Box w={14} h={14} r={4} image={icons[icon.at % icons.length]} shadow="inset 0 0.5px 0 #ffffff80" />
-      <Box x={1} y={18} w={12} h={2} r={1} fill="#00000024" />
+      <Box w={14} h={14} r={4} image={icons[icon.at % icons.length]} shadow={drawn.iconGloss} />
+      <Box x={1} y={18} w={12} h={2} r={1} fill={drawn.iconLabel} />
     </Box>
   )
   const Page = (page: { count: number; from: number; widget?: boolean }) => (
     <Box w={74} row gap={6} style={look.rows(5)}>
       <Show when={page.widget}>
-        <Box w={34} h={47} r={7} fill="#ffffff" pad={[4, 5]} shadow="0 0 0 0.5px #00000014">
-          <Words size={5} weight={700} ink="#ff3b30">MONDAY</Words>
+        <Box w={34} h={47} r={7} fill={drawn.widget} pad={[4, 5]} shadow={drawn.widgetEdge}>
+          <Words size={5} weight={700} ink={drawn.mondayInk}>MONDAY</Words>
           <Words size={13} weight={700} leading={13}>23</Words>
-          <Box h={2} r={1} fill="#c7d8ff" m={[3, 0, 0, 0]} />
-          <Box h={2} r={1} fill="#e5e5ea" m={[3, 0, 0, 0]} />
+          <Box h={2} r={1} fill={drawn.eventBar} m={[3, 0, 0, 0]} />
+          <Box h={2} r={1} fill={drawn.rowRule} m={[3, 0, 0, 0]} />
         </Box>
       </Show>
       <For each={Array.from({ length: page.count }, (_, at) => at)}>{(at) => <Icon at={page.from + at * (page.widget ? 1 : 5)} chosen={page.widget && at === 0} />}</For>
@@ -220,13 +286,13 @@ function Launcher(props: { still: boolean }) {
   )
   return (
     <Box x={80} y={52} w={280} z={4} style={props.still ? undefined : moves.launcher}>
-      <Box h={34} r={11} row pad={[0, 13]} m={[0, 0, 7, 0]} fill="#f6f6f8bd" shadow="0 0 0 0.5px #0000001f, 0 10px 30px #0000002e">
-        <Box w={1.5} h={15} fill="#0a84ff" m={[0, 2, 0, 0]} />
-        <Words size={13.5} ink="#8a8a8e">Search apps…</Words>
+      <Box h={34} r={11} row pad={[0, 13]} m={[0, 0, 7, 0]} fill={drawn.launcherGlass} shadow={drawn.launcherShadow}>
+        <Box w={1.5} h={15} fill={drawn.caret} m={[0, 2, 0, 0]} />
+        <Words size={13.5} ink={drawn.searchInk}>Search apps…</Words>
       </Box>
-      <Box r={14} pad={[9, 12, 9, 12]} fill="#f6f6f8bd" shadow="0 0 0 0.5px #0000001f, 0 10px 30px #0000002e">
-        <Box row start gap={3} h={14} pad={[0, 7, 0, 3]} r={99} fill="#ffffffb3" m={[0, 0, 9, 0]} style={look.middle}>
-          <Box w={9} h={9} r={4.5} fill="#e8467c" />
+      <Box r={14} pad={[9, 12, 9, 12]} fill={drawn.launcherGlass} shadow={drawn.launcherShadow}>
+        <Box row start gap={3} h={14} pad={[0, 7, 0, 3]} r={99} fill={drawn.ownerPill} m={[0, 0, 9, 0]} style={look.middle}>
+          <Box w={9} h={9} r={4.5} fill={drawn.avatar} />
           <Words size={7} weight={600}>You</Words>
         </Box>
         <Box row between>
@@ -235,10 +301,10 @@ function Launcher(props: { still: boolean }) {
           <Page count={9} from={14} />
         </Box>
         <Box row middle gap={4} m={[6, 0, 0, 0]}>
-          <Box w={4} h={4} r={2} fill="#000000b3" />
-          <Box w={4} h={4} r={2} fill="#00000033" />
-          <Box w={4} h={4} r={2} fill="#00000033" />
-          <Box right={0} y={-3} h={10} pad={[0, 5]} r={99} fill="#ffffffbf" middle>
+          <Box w={4} h={4} r={2} fill={drawn.pageDot} />
+          <Box w={4} h={4} r={2} fill={drawn.pageDotOther} />
+          <Box w={4} h={4} r={2} fill={drawn.pageDotOther} />
+          <Box right={0} y={-3} h={10} pad={[0, 5]} r={99} fill={drawn.libraryPill} middle>
             <Words size={5.5} weight={600}>App Library</Words>
           </Box>
         </Box>
@@ -253,9 +319,9 @@ function Pressed(props: { keys: string[]; os: Os; still: boolean }) {
     <Box x={0} y={262} w={440} row middle gap={5} z={5} style={props.still ? undefined : moves.keys}>
       <For each={props.keys}>
         {(key, index) => (
-          <Box h={30} pad={[0, 9]} r={7} fill="#1c1c1edb" middle shadow="inset 0 -2px 0 #ffffff14, 0 4px 12px #0000004d" style={[look.least(key === "Space" ? 70 : 30), !props.still && downs[Math.min(index(), 3)]]}>
+          <Box h={30} pad={[0, 9]} r={7} fill={drawn.keycap} middle shadow={drawn.keycapShadow} style={[look.least(key === "Space" ? 70 : 30), !props.still && downs[Math.min(index(), 3)]]}>
             <Show when={key !== "Win"} fallback={<WindowsKey size={12} />}>
-              <Words size={key.length > 1 ? 11 : 13} weight={500} ink="#ffffff">{key}</Words>
+              <Words size={key.length > 1 ? 11 : 13} weight={500} ink={drawn.keycapInk}>{key}</Words>
             </Show>
           </Box>
         )}

@@ -4,8 +4,93 @@
 // Connect; ChatGPT's Plugins › + › Add custom MCP server, then Create as a plugin; then the network's own Sign in, and
 // "<AI> wants to use your network" with Allow, as its sign-in page says them.
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { type Element, reducedMotion } from "ui"
+import { type Element, illustration, reducedMotion } from "ui"
 import { Box, circle, type Part, Picture, Pointer, rect, Run, Shape, Words } from "./art.tsx"
+
+const drawn = illustration("Connect your AI's pictures: a Mac's window, Claude's and ChatGPT's own screens, a coding agent's terminal, Google Drive, Gmail and GitHub's marks and the network's sign-in, each in its own colours, drawn the same in light and dark", {
+  windowShadow: "0 14px 40px #00000029, 0 0 0 0.5px #00000029",
+  titleBar: "#ececee",
+  titleBarRule: "#d6d6da",
+  addressField: "#ffffff",
+  addressLock: "#8e8e93",
+  addressHost: "#3c3c43",
+  addressPath: "#8e8e93",
+  windowClose: "#ff5f57",
+  windowMinimise: "#febc2e",
+  windowZoom: "#28c840",
+  signInSheet: "#ffffff",
+  dialogShadow: "0 18px 50px #00000047, 0 0 0 0.5px #0000001a",
+  primaryButton: "#111111",
+  primaryLabel: "#ffffff",
+  cancelButton: "#e9e9ee",
+  secondaryNote: "#6e6e73",
+  chevron: "#6e6e73",
+  connectedGreen: "#1e8e3e",
+  tick: "#ffffff",
+  fieldFill: "#ffffff",
+  fieldRing: "#6a8fe0",
+  fieldEdge: "#dedcd2",
+  fieldFocusGlow: "0 0 0 2px #6a8fe038",
+  fieldRestGlow: "0 0 0 0 #6a8fe000",
+  fieldInk: "#1d1d1f",
+  placeholderInk: "#a3a29b",
+  pasteFill: "#1d1d1f",
+  pasteShadow: "0 2px 6px #0000004d",
+  driveBlue: "#0066da",
+  driveGreen: "#00ac47",
+  driveRed: "#ea4335",
+  driveDeepGreen: "#00832d",
+  driveLightBlue: "#2684fc",
+  driveYellow: "#ffba00",
+  gmailBlue: "#4285f4",
+  gmailGreen: "#34a853",
+  gmailYellow: "#fbbc04",
+  gmailRed: "#ea4335",
+  gmailDeepRed: "#c5221f",
+  githubInk: "#1f2328",
+  claudePage: "#faf9f5",
+  claudeInk: "#1f1e1d",
+  claudeButton: "#1f1e1d",
+  claudeSelected: "#ebe8df",
+  claudeMuted: "#5c5a52",
+  claudeBody: "#73726c",
+  claudeEdge: "#cfccc1",
+  productSurface: "#ffffff",
+  claudeCardEdge: "#e3e0d6",
+  connectedRow: "#e6f4ea",
+  customBadge: "#efefef",
+  rowRule: "#efede6",
+  outlineButton: "#d9d6cb",
+  outlineLabel: "#3d3929",
+  menuShadow: "0 8px 24px #00000033, 0 0 0 0.5px #0000001f",
+  claudeMenuRest: "#f4f2ec",
+  claudeScrim: "#1c1a144d",
+  betaBadge: "#e8eefc",
+  betaLabel: "#2b59c3",
+  chatSidebar: "#f9f9f9",
+  skeletonBar: "#e3e3e3",
+  chatEdge: "#e3e3e3",
+  chatSidebarSelected: "#ececec",
+  chatInk: "#0d0d0d",
+  chatControl: "#0d0d0d",
+  chatMuted: "#8f8f8f",
+  chatChevron: "#b4b4b4",
+  checkEdge: "#b4b4b4",
+  chatRowRule: "#f0f0f0",
+  chatMenuSelected: "#e9e9e9",
+  chatMenuRest: "#f4f4f4",
+  chatScrim: "#00000057",
+  plus: "#ffffff",
+  agentGround: "#141414",
+  agentAccent: "#d97757",
+  agentInk: "#e8e8e8",
+  agentCursor: "#e8e8e8",
+  agentDim: "#8c8c8c",
+  agentYou: "#b5b5b5",
+  agentGreen: "#4ec27a",
+  agentEdge: "#3a3a3a",
+  agentHint: "#6b6b6b",
+})
 
 /// What a picture says it's showing: the step's number (or done) and what it is.
 export type Caption = { step: string; text: string }
@@ -72,17 +157,17 @@ async function typed(wait: (ms: number) => Promise<void>, text: string, set: (te
 function Window(props: { x: number; y: number; w: number; h: number; host: string; path?: string; fill: `#${string}`; bar?: number; children?: Element }) {
   const bar = () => props.bar ?? 24
   return (
-    <Box x={props.x} y={props.y} w={props.w} h={props.h} r={10} clip fill={props.fill} shadow="0 14px 40px #00000029, 0 0 0 0.5px #00000029">
-      <Box h={bar()} row gap={4} pad={[0, 9]} fill="#ececee" lines={[0, 0.5, "#d6d6da"]}>
-        <Box w={7} h={7} r={3.5} fill="#ff5f57" />
-        <Box w={7} h={7} r={3.5} fill="#febc2e" />
-        <Box w={7} h={7} r={3.5} fill="#28c840" />
+    <Box x={props.x} y={props.y} w={props.w} h={props.h} r={10} clip fill={props.fill} shadow={drawn.windowShadow}>
+      <Box h={bar()} row gap={4} pad={[0, 9]} fill={drawn.titleBar} lines={[0, 0.5, drawn.titleBarRule]}>
+        <Box w={7} h={7} r={3.5} fill={drawn.windowClose} />
+        <Box w={7} h={7} r={3.5} fill={drawn.windowMinimise} />
+        <Box w={7} h={7} r={3.5} fill={drawn.windowZoom} />
         <Box grow={1} row middle>
-          <Box w={bar() > 20 ? 210 : 110} h={bar() > 20 ? 15 : 11} r={99} fill="#ffffff" row middle gap={4}>
-            <Shape w={6} h={7} viewBox="0 0 10 12" parts={[{ d: rect(1, 5, 8, 7, 1.5), fill: "#8e8e93" }, { d: "M3 5V3.5a2 2 0 0 1 4 0V5", stroke: "#8e8e93", width: 1.3 }]} />
-            <Words size={bar() > 20 ? 7 : 6.4} ink="#3c3c43">
+          <Box w={bar() > 20 ? 210 : 110} h={bar() > 20 ? 15 : 11} r={99} fill={drawn.addressField} row middle gap={4}>
+            <Shape w={6} h={7} viewBox="0 0 10 12" parts={[{ d: rect(1, 5, 8, 7, 1.5), fill: drawn.addressLock }, { d: "M3 5V3.5a2 2 0 0 1 4 0V5", stroke: drawn.addressLock, width: 1.3 }]} />
+            <Words size={bar() > 20 ? 7 : 6.4} ink={drawn.addressHost}>
               {props.host}
-              {props.path && <Run ink="#8e8e93">{props.path}</Run>}
+              {props.path && <Run ink={drawn.addressPath}>{props.path}</Run>}
             </Words>
           </Box>
         </Box>
@@ -97,8 +182,8 @@ function Window(props: { x: number; y: number; w: number; h: number; host: strin
 /// asking to use the network, with Cancel and Allow.
 function SignIn(props: { told: Told; ai: string; asking: boolean; pressed: "sign" | "allow" | undefined }) {
   return (
-    <Box x={127} y={52} w={186} r={10} clip fill="#ffffff" shadow="0 18px 50px #00000047, 0 0 0 0.5px #0000001a" z={8} shows>
-      <Window x={0} y={0} w={186} h={17} bar={17} host={props.told.host} fill="#ffffff" />
+    <Box x={127} y={52} w={186} r={10} clip fill={drawn.signInSheet} shadow={drawn.dialogShadow} z={8} shows>
+      <Window x={0} y={0} w={186} h={17} bar={17} host={props.told.host} fill={drawn.signInSheet} />
       <Box pad={[30, 14, 13, 14]} middle gap={3}>
         <Picture src={props.told.logo} w={30} h={30} r={8} m={[0, 0, 5, 0]} />
         <Show
@@ -106,20 +191,20 @@ function SignIn(props: { told: Told; ai: string; asking: boolean; pressed: "sign
           fallback={
             <>
               <Words size={9.6} weight={700} centred>Sign in</Words>
-              <Box h={22} w={158} r={99} fill="#111111" middle m={[10, 0, 0, 0]} zoom={props.pressed === "sign" ? 0.92 : 1}>
-                <Words size={7.6} weight={600} ink="#ffffff">Sign in</Words>
+              <Box h={22} w={158} r={99} fill={drawn.primaryButton} middle m={[10, 0, 0, 0]} zoom={props.pressed === "sign" ? 0.92 : 1}>
+                <Words size={7.6} weight={600} ink={drawn.primaryLabel}>Sign in</Words>
               </Box>
             </>
           }
         >
           <Words size={9.6} weight={700} centred>{`${props.ai} wants to use your network`}</Words>
-          <Words size={7} ink="#6e6e73" centred>{`It acts as you in ${props.told.name}.`}</Words>
+          <Words size={7} ink={drawn.secondaryNote} centred>{`It acts as you in ${props.told.name}.`}</Words>
           <Box row gap={6} m={[8, 0, 0, 0]}>
-            <Box w={76} h={22} r={99} fill="#e9e9ee" middle>
+            <Box w={76} h={22} r={99} fill={drawn.cancelButton} middle>
               <Words size={7.6} weight={600}>Cancel</Words>
             </Box>
-            <Box w={76} h={22} r={99} fill="#111111" middle zoom={props.pressed === "allow" ? 0.92 : 1}>
-              <Words size={7.6} weight={600} ink="#ffffff">Allow</Words>
+            <Box w={76} h={22} r={99} fill={drawn.primaryButton} middle zoom={props.pressed === "allow" ? 0.92 : 1}>
+              <Words size={7.6} weight={600} ink={drawn.primaryLabel}>Allow</Words>
             </Box>
           </Box>
         </Show>
@@ -134,47 +219,47 @@ const Mark = (props: { size: number; logo: string }) => <Picture src={props.logo
 /// Connected, in green with a tick, as a connector that's connected says.
 const Connected = () => (
   <Box row gap={3} m={[0, 0, 0, "auto"]}>
-    <Box w={9} h={9} r={4.5} fill="#1e8e3e" middle>
-      <Shape w={6} h={6} viewBox="0 0 24 24" parts={[{ d: "m5 12.5 4.5 4.5L19 7.5", stroke: "#ffffff", width: 4 }]} />
+    <Box w={9} h={9} r={4.5} fill={drawn.connectedGreen} middle>
+      <Shape w={6} h={6} viewBox="0 0 24 24" parts={[{ d: "m5 12.5 4.5 4.5L19 7.5", stroke: drawn.tick, width: 4 }]} />
     </Box>
-    <Words size={6.8} weight={600} ink="#1e8e3e">Connected</Words>
+    <Words size={6.8} weight={600} ink={drawn.connectedGreen}>Connected</Words>
   </Box>
 )
 
 /// A field of a form, its placeholder grey until something's typed in it, ringed while it's typed in, and flashed
 /// as what's pasted lands.
 const Field = (props: { placeholder: string; text: string; focus: boolean; w?: number; m?: number }) => (
-  <Box h={20} w={props.w} r={6} pad={[0, 7]} row fill="#ffffff" border={[1, props.focus ? "#6a8fe0" : "#dedcd2"]} shadow={props.focus ? "0 0 0 2px #6a8fe038" : "0 0 0 0 #6a8fe000"} m={[0, 0, props.m ?? 6, 0]} clip>
-    <Words size={7.4} ink={props.text ? "#1d1d1f" : "#a3a29b"}>{props.text || props.placeholder}</Words>
+  <Box h={20} w={props.w} r={6} pad={[0, 7]} row fill={drawn.fieldFill} border={[1, props.focus ? drawn.fieldRing : drawn.fieldEdge]} shadow={props.focus ? drawn.fieldFocusGlow : drawn.fieldRestGlow} m={[0, 0, props.m ?? 6, 0]} clip>
+    <Words size={7.4} ink={props.text ? drawn.fieldInk : drawn.placeholderInk}>{props.text || props.placeholder}</Words>
   </Box>
 )
 
 /// ⌘V, shown by the field as what's copied is pasted.
 const Paste = (props: { x: number; y: number }) => (
-  <Box x={props.x} y={props.y} pad={[2, 5]} r={4} fill="#1d1d1f" shadow="0 2px 6px #0000004d" z={19} shows>
-    <Words size={7.5} weight={600} ink="#ffffff">⌘V</Words>
+  <Box x={props.x} y={props.y} pad={[2, 5]} r={4} fill={drawn.pasteFill} shadow={drawn.pasteShadow} z={19} shows>
+    <Words size={7.5} weight={600} ink={drawn.primaryLabel}>⌘V</Words>
   </Box>
 )
 
 const drive: Part[] = [
-  { d: "m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z", fill: "#0066da" },
-  { d: "m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z", fill: "#00ac47" },
-  { d: "m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z", fill: "#ea4335" },
-  { d: "m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z", fill: "#00832d" },
-  { d: "m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z", fill: "#2684fc" },
-  { d: "m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z", fill: "#ffba00" },
+  { d: "m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z", fill: drawn.driveBlue },
+  { d: "m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z", fill: drawn.driveGreen },
+  { d: "m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z", fill: drawn.driveRed },
+  { d: "m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z", fill: drawn.driveDeepGreen },
+  { d: "m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z", fill: drawn.driveLightBlue },
+  { d: "m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z", fill: drawn.driveYellow },
 ]
 const gmail: Part[] = [
-  { d: "M58 108h14V74L52 59v43c0 3.32 2.69 6 6 6", fill: "#4285f4" },
-  { d: "M120 108h14c3.32 0 6-2.69 6-6V59l-20 15", fill: "#34a853" },
-  { d: "M120 48v26l20-15v-8c0-7.42-8.47-11.65-14.4-7.2", fill: "#fbbc04" },
-  { d: "M72 74V48l24 18 24-18v26L96 92", fill: "#ea4335" },
-  { d: "M52 51v8l20 15V48l-5.6-4.2c-5.94-4.45-14.4-.22-14.4 7.2", fill: "#c5221f" },
+  { d: "M58 108h14V74L52 59v43c0 3.32 2.69 6 6 6", fill: drawn.gmailBlue },
+  { d: "M120 108h14c3.32 0 6-2.69 6-6V59l-20 15", fill: drawn.gmailGreen },
+  { d: "M120 48v26l20-15v-8c0-7.42-8.47-11.65-14.4-7.2", fill: drawn.gmailYellow },
+  { d: "M72 74V48l24 18 24-18v26L96 92", fill: drawn.gmailRed },
+  { d: "M52 51v8l20 15V48l-5.6-4.2c-5.94-4.45-14.4-.22-14.4 7.2", fill: drawn.gmailDeepRed },
 ]
 const github: Part[] = [
   {
     d: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z",
-    fill: "#1f2328",
+    fill: drawn.githubInk,
   },
 ]
 
@@ -251,50 +336,50 @@ export function Claude(props: { told: Told }) {
   )
   return (
     <>
-      <Window x={12} y={10} w={416} h={290} host="claude.ai" path="/customize/connectors" fill="#faf9f5">
+      <Window x={12} y={10} w={416} h={290} host="claude.ai" path="/customize/connectors" fill={drawn.claudePage}>
         <Box row h={266}>
           <Box w={100} h="100%" pad={[13, 8]}>
-            <Words size={12} ink="#1f1e1d" m={[0, 0, 10, 6]}>Customize</Words>
-            <Box pad={[4, 6]} r={5} fill="#ebe8df" m={[0, 0, 1, 0]}>
-              <Words size={7.4} weight={600} ink="#1f1e1d">Connectors</Words>
+            <Words size={12} ink={drawn.claudeInk} m={[0, 0, 10, 6]}>Customize</Words>
+            <Box pad={[4, 6]} r={5} fill={drawn.claudeSelected} m={[0, 0, 1, 0]}>
+              <Words size={7.4} weight={600} ink={drawn.claudeInk}>Connectors</Words>
             </Box>
             <Box pad={[4, 6]}>
-              <Words size={7.4} ink="#5c5a52">Skills</Words>
+              <Words size={7.4} ink={drawn.claudeMuted}>Skills</Words>
             </Box>
           </Box>
           <Box grow={1} h="100%" pad={[14, 18, 0, 8]}>
             <Box row between>
               <Box>
-                <Words size={10.5} weight={600} ink="#1f1e1d">Connectors</Words>
-                <Words size={6.8} ink="#73726c" m={[2, 0, 9, 0]}>Let Claude use your apps and data.</Words>
+                <Words size={10.5} weight={600} ink={drawn.claudeInk}>Connectors</Words>
+                <Words size={6.8} ink={drawn.claudeBody} m={[2, 0, 9, 0]}>Let Claude use your apps and data.</Words>
               </Box>
-              <Box row gap={4} pad={[5, 9]} r={6} border={[0.5, "#cfccc1"]} fill="#ffffff" zoom={pressed() === "add" ? 0.92 : 1}>
-                <Shape w={8} h={8} viewBox="0 0 10 10" parts={[{ d: "M5 1v8M1 5h8", stroke: "#1f1e1d", width: 1.4 }]} />
-                <Words size={7.4} weight={600} ink="#1f1e1d">Add</Words>
+              <Box row gap={4} pad={[5, 9]} r={6} border={[0.5, drawn.claudeEdge]} fill={drawn.productSurface} zoom={pressed() === "add" ? 0.92 : 1}>
+                <Shape w={8} h={8} viewBox="0 0 10 10" parts={[{ d: "M5 1v8M1 5h8", stroke: drawn.claudeInk, width: 1.4 }]} />
+                <Words size={7.4} weight={600} ink={drawn.claudeInk}>Add</Words>
               </Box>
             </Box>
-            <Box r={8} clip border={[0.5, "#e3e0d6"]} fill="#ffffff">
+            <Box r={8} clip border={[0.5, drawn.claudeCardEdge]} fill={drawn.productSurface}>
               <Show when={added()}>
-                <Box h={27} row gap={7} pad={[0, 9]} fill={connected() ? "#e6f4ea" : "#ffffff"} shows>
+                <Box h={27} row gap={7} pad={[0, 9]} fill={connected() ? drawn.connectedRow : drawn.productSurface} shows>
                   <Mark size={14} logo={props.told.logo} />
                   <Words size={7.6}>{props.told.name}</Words>
-                  <Box pad={[1, 3]} r={3} fill="#efefef">
-                    <Words size={5.6} weight={600} ink="#6e6e73" spacing={0.2}>CUSTOM</Words>
+                  <Box pad={[1, 3]} r={3} fill={drawn.customBadge}>
+                    <Words size={5.6} weight={600} ink={drawn.secondaryNote} spacing={0.2}>CUSTOM</Words>
                   </Box>
-                  <Show when={connected()} fallback={<Box m={[0, 0, 0, "auto"]} pad={[3, 7]} r={5} border={[0.5, "#d9d6cb"]} zoom={pressed() === "connect" ? 0.92 : 1}><Words size={6.6} weight={500} ink="#3d3929">Connect</Words></Box>}>
+                  <Show when={connected()} fallback={<Box m={[0, 0, 0, "auto"]} pad={[3, 7]} r={5} border={[0.5, drawn.outlineButton]} zoom={pressed() === "connect" ? 0.92 : 1}><Words size={6.6} weight={500} ink={drawn.outlineLabel}>Connect</Words></Box>}>
                     <Connected />
                   </Show>
                 </Box>
               </Show>
               <For each={others}>
                 {([mark, box, label]) => (
-                  <Box h={27} row gap={7} pad={[0, 9]} lines={[0.5, 0, "#efede6"]}>
+                  <Box h={27} row gap={7} pad={[0, 9]} lines={[0.5, 0, drawn.rowRule]}>
                     <Box w={14} h={14} middle>
                       <Shape w={12} h={11} viewBox={box} parts={mark} />
                     </Box>
                     <Words size={7.6}>{label}</Words>
-                    <Box m={[0, 0, 0, "auto"]} pad={[3, 7]} r={5} border={[0.5, "#d9d6cb"]}>
-                      <Words size={6.6} weight={500} ink="#3d3929">Connect</Words>
+                    <Box m={[0, 0, 0, "auto"]} pad={[3, 7]} r={5} border={[0.5, drawn.outlineButton]}>
+                      <Words size={6.6} weight={500} ink={drawn.outlineLabel}>Connect</Words>
                     </Box>
                   </Box>
                 )}
@@ -303,37 +388,37 @@ export function Claude(props: { told: Told }) {
           </Box>
         </Box>
         <Show when={menu()}>
-          <Box x={300} y={68} w={110} pad={4} r={7} fill="#ffffff" shadow="0 8px 24px #00000033, 0 0 0 0.5px #0000001f" shows>
-            <Box pad={[5, 7]} r={5} fill={pressed() === "item" ? "#ebe8df" : "#f4f2ec"}>
-              <Words size={7.4} weight={500} ink="#1f1e1d">Add custom connector</Words>
+          <Box x={300} y={68} w={110} pad={4} r={7} fill={drawn.productSurface} shadow={drawn.menuShadow} shows>
+            <Box pad={[5, 7]} r={5} fill={pressed() === "item" ? drawn.claudeSelected : drawn.claudeMenuRest}>
+              <Words size={7.4} weight={500} ink={drawn.claudeInk}>Add custom connector</Words>
             </Box>
             <Box pad={[5, 7]}>
-              <Words size={7.4} ink="#5c5a52">Browse connectors</Words>
+              <Words size={7.4} ink={drawn.claudeMuted}>Browse connectors</Words>
             </Box>
           </Box>
         </Show>
         <Show when={dialog() || signing()}>
-          <Box x={0} y={24} right={0} bottom={0} fill="#1c1a144d" shows />
+          <Box x={0} y={24} right={0} bottom={0} fill={drawn.claudeScrim} shows />
         </Show>
         <Show when={dialog()}>
-          <Box x={97} y={62} w={222} pad={[13, 13, 12, 13]} r={12} fill="#ffffff" shadow="0 18px 50px #00000047, 0 0 0 0.5px #0000001a" z={5} shows>
+          <Box x={97} y={62} w={222} pad={[13, 13, 12, 13]} r={12} fill={drawn.productSurface} shadow={drawn.dialogShadow} z={5} shows>
             <Box row gap={4}>
-              <Words size={11.5} ink="#1f1e1d">Add custom connector</Words>
-              <Box pad={[1, 3]} r={3} fill="#e8eefc">
-                <Words size={5.6} weight={600} ink="#2b59c3" spacing={0.2}>BETA</Words>
+              <Words size={11.5} ink={drawn.claudeInk}>Add custom connector</Words>
+              <Box pad={[1, 3]} r={3} fill={drawn.betaBadge}>
+                <Words size={5.6} weight={600} ink={drawn.betaLabel} spacing={0.2}>BETA</Words>
               </Box>
             </Box>
-            <Words size={6.8} ink="#73726c" m={[3, 0, 9, 0]}>Connect Claude to your data and tools.</Words>
+            <Words size={6.8} ink={drawn.claudeBody} m={[3, 0, 9, 0]}>Connect Claude to your data and tools.</Words>
             <Field placeholder="Name" text={name()} focus={focus() === "name"} />
             <Field placeholder="Remote MCP server URL" text={address()} focus={focus() === "address"} />
-            <Words size={6.6} ink="#73726c">Advanced settings ›</Words>
+            <Words size={6.6} ink={drawn.claudeBody}>Advanced settings ›</Words>
             <Box row gap={5} m={[10, 0, 0, 0]}>
               <Box grow={1} />
-              <Box pad={[4, 11]} r={6} border={[0.5, "#d9d6cb"]}>
-                <Words size={7.4} weight={600} ink="#3d3929">Cancel</Words>
+              <Box pad={[4, 11]} r={6} border={[0.5, drawn.outlineButton]}>
+                <Words size={7.4} weight={600} ink={drawn.outlineLabel}>Cancel</Words>
               </Box>
-              <Box pad={[4, 11]} r={6} fill="#1f1e1d" zoom={pressed() === "ok" ? 0.92 : 1}>
-                <Words size={7.4} weight={600} ink="#ffffff">Add</Words>
+              <Box pad={[4, 11]} r={6} fill={drawn.claudeButton} zoom={pressed() === "ok" ? 0.92 : 1}>
+                <Words size={7.4} weight={600} ink={drawn.primaryLabel}>Add</Words>
               </Box>
             </Box>
           </Box>
@@ -417,83 +502,83 @@ export function ChatGPT(props: { told: Told }) {
   )
   return (
     <>
-      <Window x={12} y={10} w={416} h={290} host="chatgpt.com" path="/plugins" fill="#ffffff">
+      <Window x={12} y={10} w={416} h={290} host="chatgpt.com" path="/plugins" fill={drawn.productSurface}>
         <Box row h={266}>
-          <Box w={80} h="100%" fill="#f9f9f9" pad={[12, 8]} gap={6}>
-            <Box h={4} w="70%" r={2} fill="#e3e3e3" />
-            <Box h={4} r={2} fill="#e3e3e3" />
-            <Box h={4} w="80%" r={2} fill="#e3e3e3" />
-            <Box h={4} w="55%" r={2} fill="#e3e3e3" />
-            <Box pad={[4, 5]} r={6} fill="#ececec" m={[4, 0, 0, 0]}>
-              <Words size={7.2} weight={600} ink="#0d0d0d">Plugins</Words>
+          <Box w={80} h="100%" fill={drawn.chatSidebar} pad={[12, 8]} gap={6}>
+            <Box h={4} w="70%" r={2} fill={drawn.skeletonBar} />
+            <Box h={4} r={2} fill={drawn.skeletonBar} />
+            <Box h={4} w="80%" r={2} fill={drawn.skeletonBar} />
+            <Box h={4} w="55%" r={2} fill={drawn.skeletonBar} />
+            <Box pad={[4, 5]} r={6} fill={drawn.chatSidebarSelected} m={[4, 0, 0, 0]}>
+              <Words size={7.2} weight={600} ink={drawn.chatInk}>Plugins</Words>
             </Box>
           </Box>
           <Box grow={1} h="100%" pad={[12, 14, 0, 14]}>
             <Box row h={20} m={[0, 0, 6, 0]}>
-              <Words size={11} weight={600} ink="#0d0d0d">Plugins</Words>
-              <Box m={[0, 0, 0, "auto"]} w={18} h={18} r={9} fill="#0d0d0d" middle zoom={pressed() === "plus" ? 0.88 : 1}>
-                <Shape w={8} h={8} viewBox="0 0 10 10" parts={[{ d: "M5 1v8M1 5h8", stroke: "#ffffff", width: 1.5 }]} />
+              <Words size={11} weight={600} ink={drawn.chatInk}>Plugins</Words>
+              <Box m={[0, 0, 0, "auto"]} w={18} h={18} r={9} fill={drawn.chatControl} middle zoom={pressed() === "plus" ? 0.88 : 1}>
+                <Shape w={8} h={8} viewBox="0 0 10 10" parts={[{ d: "M5 1v8M1 5h8", stroke: drawn.plus, width: 1.5 }]} />
               </Box>
             </Box>
-            <Words size={6.8} ink="#8f8f8f" m={[0, 0, 8, 0]}>Let ChatGPT use your apps.</Words>
+            <Words size={6.8} ink={drawn.chatMuted} m={[0, 0, 8, 0]}>Let ChatGPT use your apps.</Words>
             <Show when={added()}>
-              <Box h={27} row gap={7} pad={[0, 4]} r={6} fill={connected() ? "#e6f4ea" : "#ffffff"} shows>
+              <Box h={27} row gap={7} pad={[0, 4]} r={6} fill={connected() ? drawn.connectedRow : drawn.productSurface} shows>
                 <Mark size={14} logo={props.told.logo} />
-                <Words size={7.6} ink="#0d0d0d">{props.told.name}</Words>
-                <Show when={connected()} fallback={<Words size={6.6} ink="#8f8f8f" m={[0, 0, 0, "auto"]}>Signing in…</Words>}>
+                <Words size={7.6} ink={drawn.chatInk}>{props.told.name}</Words>
+                <Show when={connected()} fallback={<Words size={6.6} ink={drawn.chatMuted} m={[0, 0, 0, "auto"]}>Signing in…</Words>}>
                   <Connected />
                 </Show>
               </Box>
             </Show>
             <For each={others}>
               {([mark, box, label]) => (
-                <Box h={27} row gap={7} pad={[0, 4]} lines={[0.5, 0, "#f0f0f0"]}>
+                <Box h={27} row gap={7} pad={[0, 4]} lines={[0.5, 0, drawn.chatRowRule]}>
                   <Box w={14} h={14} middle>
                     <Shape w={12} h={11} viewBox={box} parts={mark} />
                   </Box>
-                  <Words size={7.6} ink="#0d0d0d">{label}</Words>
-                  <Words size={8} ink="#b4b4b4" m={[0, 0, 0, "auto"]}>›</Words>
+                  <Words size={7.6} ink={drawn.chatInk}>{label}</Words>
+                  <Words size={8} ink={drawn.chatChevron} m={[0, 0, 0, "auto"]}>›</Words>
                 </Box>
               )}
             </For>
           </Box>
         </Box>
         <Show when={menu()}>
-          <Box x={300} y={64} w={112} pad={4} r={10} fill="#ffffff" shadow="0 8px 24px #00000033, 0 0 0 0.5px #0000001f" shows>
-            <Box pad={[5, 7]} r={6} fill={pressed() === "item" ? "#e9e9e9" : "#f4f4f4"}>
-              <Words size={7.4} weight={500} ink="#0d0d0d">Add custom MCP server</Words>
+          <Box x={300} y={64} w={112} pad={4} r={10} fill={drawn.productSurface} shadow={drawn.menuShadow} shows>
+            <Box pad={[5, 7]} r={6} fill={pressed() === "item" ? drawn.chatMenuSelected : drawn.chatMenuRest}>
+              <Words size={7.4} weight={500} ink={drawn.chatInk}>Add custom MCP server</Words>
             </Box>
           </Box>
         </Show>
         <Show when={dialog() || signing()}>
-          <Box x={0} y={24} right={0} bottom={0} fill="#00000057" shows />
+          <Box x={0} y={24} right={0} bottom={0} fill={drawn.chatScrim} shows />
         </Show>
         <Show when={dialog()}>
-          <Box x={98} y={44} w={220} pad={[12, 13, 12, 13]} r={14} fill="#ffffff" shadow="0 18px 50px #00000047, 0 0 0 0.5px #0000001a" z={5} shows>
-            <Words size={10.5} weight={600} ink="#0d0d0d" m={[0, 0, 8, 0]}>Add custom MCP server</Words>
-            <Words size={6.4} ink="#6e6e73" m={[0, 0, 2, 1]}>Name</Words>
+          <Box x={98} y={44} w={220} pad={[12, 13, 12, 13]} r={14} fill={drawn.productSurface} shadow={drawn.dialogShadow} z={5} shows>
+            <Words size={10.5} weight={600} ink={drawn.chatInk} m={[0, 0, 8, 0]}>Add custom MCP server</Words>
+            <Words size={6.4} ink={drawn.secondaryNote} m={[0, 0, 2, 1]}>Name</Words>
             <Field placeholder="Name" text={name()} focus={focus() === "name"} />
-            <Words size={6.4} ink="#6e6e73" m={[0, 0, 2, 1]}>Description (optional)</Words>
+            <Words size={6.4} ink={drawn.secondaryNote} m={[0, 0, 2, 1]}>Description (optional)</Words>
             <Field placeholder="What it does" text="" focus={false} />
-            <Words size={6.4} ink="#6e6e73" m={[0, 0, 2, 1]}>Server URL</Words>
+            <Words size={6.4} ink={drawn.secondaryNote} m={[0, 0, 2, 1]}>Server URL</Words>
             <Field placeholder="https://" text={address()} focus={focus() === "address"} />
-            <Words size={6.4} ink="#6e6e73" m={[0, 0, 2, 1]}>Authentication</Words>
-            <Box h={20} r={6} pad={[0, 7]} row between border={[1, "#e3e3e3"]} m={[0, 0, 6, 0]}>
-              <Words size={7.4} ink="#0d0d0d">OAuth</Words>
-              <Shape w={6} h={6} viewBox="0 0 10 10" parts={[{ d: "m2 4 3 3 3-3", stroke: "#6e6e73", width: 1.3 }]} />
+            <Words size={6.4} ink={drawn.secondaryNote} m={[0, 0, 2, 1]}>Authentication</Words>
+            <Box h={20} r={6} pad={[0, 7]} row between border={[1, drawn.chatEdge]} m={[0, 0, 6, 0]}>
+              <Words size={7.4} ink={drawn.chatInk}>OAuth</Words>
+              <Shape w={6} h={6} viewBox="0 0 10 10" parts={[{ d: "m2 4 3 3 3-3", stroke: drawn.chevron, width: 1.3 }]} />
             </Box>
             <Box row gap={5}>
-              <Box w={9} h={9} r={2.5} border={[1, understood() ? "#0d0d0d" : "#b4b4b4"]} fill={understood() ? "#0d0d0d" : "#ffffff"} middle zoom={pressed() === "box" ? 0.85 : 1}>
+              <Box w={9} h={9} r={2.5} border={[1, understood() ? drawn.chatControl : drawn.checkEdge]} fill={understood() ? drawn.chatControl : drawn.productSurface} middle zoom={pressed() === "box" ? 0.85 : 1}>
                 <Show when={understood()}>
-                  <Shape w={6} h={6} viewBox="0 0 24 24" parts={[{ d: "m5 12.5 4.5 4.5L19 7.5", stroke: "#ffffff", width: 4 }]} />
+                  <Shape w={6} h={6} viewBox="0 0 24 24" parts={[{ d: "m5 12.5 4.5 4.5L19 7.5", stroke: drawn.tick, width: 4 }]} />
                 </Show>
               </Box>
-              <Words size={6.8} ink="#0d0d0d">I understand and want to continue</Words>
+              <Words size={6.8} ink={drawn.chatInk}>I understand and want to continue</Words>
             </Box>
             <Box row m={[10, 0, 0, 0]}>
               <Box grow={1} />
-              <Box pad={[4, 11]} r={99} fill="#0d0d0d" zoom={pressed() === "ok" ? 0.92 : 1}>
-                <Words size={7.4} weight={600} ink="#ffffff">Create as a plugin</Words>
+              <Box pad={[4, 11]} r={99} fill={drawn.chatControl} zoom={pressed() === "ok" ? 0.92 : 1}>
+                <Words size={7.4} weight={600} ink={drawn.primaryLabel}>Create as a plugin</Words>
               </Box>
             </Box>
           </Box>
@@ -566,32 +651,32 @@ export function Agent(props: { told: Told; prompt: string }) {
   )
   return (
     <>
-      <Window x={12} y={10} w={416} h={290} host="claude" fill="#141414">
+      <Window x={12} y={10} w={416} h={290} host="claude" fill={drawn.agentGround}>
         <Box h={266} pad={[10, 12]} gap={3}>
-          <Box row start pad={[3, 6]} r={4} border={[1, "#d97757"]} m={[0, 0, 6, 0]}>
-            <Words size={7} ink="#d97757">✻</Words>
-            <Words size={7} ink="#e8e8e8" m={[0, 0, 0, 4]}>Welcome to Claude Code!</Words>
+          <Box row start pad={[3, 6]} r={4} border={[1, drawn.agentAccent]} m={[0, 0, 6, 0]}>
+            <Words size={7} ink={drawn.agentAccent}>✻</Words>
+            <Words size={7} ink={drawn.agentInk} m={[0, 0, 0, 4]}>Welcome to Claude Code!</Words>
           </Box>
           <For each={lines()}>
             {(line, at) => (
               <Show when={at() < shown()}>
                 <Box row gap={4} shows>
-                  {line.dot && <Words size={6.6} ink="#4ec27a" mono>●</Words>}
-                  {line.done && <Words size={6.6} ink="#e8e8e8" mono>●</Words>}
-                  <Words size={6.6} ink={line.grey ? "#8c8c8c" : line.you ? "#b5b5b5" : "#e8e8e8"} mono wraps>{line.text}</Words>
+                  {line.dot && <Words size={6.6} ink={drawn.agentGreen} mono>●</Words>}
+                  {line.done && <Words size={6.6} ink={drawn.agentInk} mono>●</Words>}
+                  <Words size={6.6} ink={line.grey ? drawn.agentDim : line.you ? drawn.agentYou : drawn.agentInk} mono wraps>{line.text}</Words>
                 </Box>
               </Show>
             )}
           </For>
           <Box grow={1} />
           <Show when={working()}>
-            <Words size={6.6} ink="#d97757" mono>{working()}</Words>
+            <Words size={6.6} ink={drawn.agentAccent} mono>{working()}</Words>
           </Show>
-          <Box h={16} r={4} pad={[0, 6]} row border={[1, "#3a3a3a"]} m={[4, 0, 0, 0]}>
-            <Words size={6.6} ink="#e8e8e8" mono>{`> ${typedIn()}`}</Words>
-            <Box w={4} h={8} fill="#e8e8e8" m={[0, 0, 0, 1]} />
+          <Box h={16} r={4} pad={[0, 6]} row border={[1, drawn.agentEdge]} m={[4, 0, 0, 0]}>
+            <Words size={6.6} ink={drawn.agentInk} mono>{`> ${typedIn()}`}</Words>
+            <Box w={4} h={8} fill={drawn.agentCursor} m={[0, 0, 0, 1]} />
           </Box>
-          <Words size={5.8} ink="#6b6b6b" mono>? for shortcuts</Words>
+          <Words size={5.8} ink={drawn.agentHint} mono>? for shortcuts</Words>
         </Box>
       </Window>
       <Show when={pasting()}>

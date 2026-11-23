@@ -7,10 +7,23 @@
 // the network's address and a phone: with it on, the apps run on this computer while it's awake and in the cloud while
 // it sleeps, every 3.2 s; with it off, in the cloud only. It changes as the switch does.
 import { createEffect, createSignal, For, Show } from "solid-js"
-import { Button, client, defineVars, type Element, Image, Path, reducedMotion, Svg, styles, Switch, Text, toast, tokens, View } from "ui"
+import { Button, client, defineVars, type Element, illustration, Image, Path, reducedMotion, Svg, styles, Switch, Text, toast, tokens, View } from "ui"
 import { Box, circle, Panel, type Part, Shape, Words } from "./art.tsx"
 import { device } from "./store.ts"
 import { network } from "./welcome.tsx"
+
+const drawn = illustration("Your own server's picture: this computer's screen and keyboard, a cloud, a phone and its apps, a moon, a globe and the apps moving between them, each in the colours of what isn't ours, drawn the same in light and dark", {
+  cloud: "#ffffff", cloudEdge: "#00000014", cloudShadow: "0 8px 18px #0000001f",
+  globeInk: "#6e6e73", moon: "#cfd2ff",
+  chip: "#ffffff", chipShadow: "0 2px 8px #0000001a, 0 0 0 0.5px #00000014", statusDot: "#c7c7cc",
+  screenBezel: "#0c0c0d", screenEdge: "inset 0 0 0 1px #3a3a3c", desktop: "linear-gradient(160deg, #e8a3b8, #8b8ff0)", screenOff: "#08080a",
+  keyboardDeck: "linear-gradient(#e9e9ec, #b9b9bf 70%, #8e8e94)", deckNotch: "#a5a5ab",
+  phoneBody: "#1c1c1e", phoneEdge: "inset 0 0 0 1.2px #5a5a5e, 0 10px 24px #0000002e", phoneScreen: "#f2f2f7", phoneIsland: "#000000",
+  phoneApp1: "linear-gradient(145deg, #ffb340, #f2384b)", phoneApp2: "linear-gradient(#5ac8fa, #007aff)", phoneApp3: "linear-gradient(#34c759, #248a3d)",
+  phoneApp4: "linear-gradient(#bf5af2, #7d3cff)", phoneApp5: "linear-gradient(#ffd60a, #ff9f0a)", phoneApp6: "linear-gradient(#ff6482, #ff2d55)",
+  movingApp1: "linear-gradient(145deg, #ffb340, #ff6a2b 55%, #f2384b)", movingApp2: "linear-gradient(145deg, #64d2ff, #0a84ff)", movingApp3: "linear-gradient(145deg, #bf5af2, #7d3cff)",
+  movingAppShadow: "inset 0 0.5px 0 #ffffff80, 0 3px 8px #00000033",
+})
 
 /// How long the picture shows this computer awake, then asleep, as the mockup plays them.
 const PHASE = 3200
@@ -44,14 +57,9 @@ const own = defineVars({
   captionLeading: 17,
   captionGlyph: 19,
   captionGlyphInner: 11,
-  captionFill: "#18181adb",
-  captionInk: "#ffffff",
-  captionGlyphFill: "#ffffff",
-  captionGlyphInk: "#111111",
   board: 440,
   boardHeight: 330,
-  wire: "#0000001a",
-  flow: "#0a84ff",
+  ...illustration("The caption pill's colours and the wires on the art board, as the mockup has them", { captionFill: "#18181adb", captionInk: "#ffffff", captionGlyphFill: "#ffffff", captionGlyphInk: "#111111", wire: "#0000001a", flow: "#0a84ff" }),
 })
 
 const look = styles({
@@ -83,7 +91,7 @@ const look = styles({
   strong: { fontWeight: 600, color: tokens.colour.label },
   go: { alignSelf: "stretch" },
   caption: { position: "absolute", start: 0, end: 0, bottom: tokens.grid[2.5], alignItems: "center", pointerEvents: "none" },
-  pill: {
+  pill: illustration("The caption pill's shadow and its rise into place, as the mockup draws them", {
     flexDirection: "row",
     alignItems: "center",
     gap: tokens.grid[1.5],
@@ -97,7 +105,7 @@ const look = styles({
     animationDuration: 300,
     animationTimingFunction: "ease",
     animationFillMode: "both",
-  },
+  }),
   pillGlyph: { width: own.captionGlyph, height: own.captionGlyph, borderRadius: tokens.radius.full, backgroundColor: own.captionGlyphFill, alignItems: "center", justifyContent: "center" },
   sun: { width: own.captionGlyphInner, height: own.captionGlyphInner },
   sunInk: { fill: "none", stroke: own.captionGlyphInk, strokeWidth: 1.2 },
@@ -161,12 +169,12 @@ function dashes(bezier: Curve): string[] {
 const wires = { computer: dashes(toComputer), cloud: dashes(toCloud) }
 
 // The mockup's drawings: a cloud, a globe, a moon and a sun, and the step's three glyphs.
-const cloudShape: Part[] = [{ d: "M38 86h76a30 30 0 0 0 3-59.8A40 40 0 0 0 42.3 22 32 32 0 0 0 38 86z", fill: "#ffffff", stroke: "#00000014" }]
+const cloudShape: Part[] = [{ d: "M38 86h76a30 30 0 0 0 3-59.8A40 40 0 0 0 42.3 22 32 32 0 0 0 38 86z", fill: drawn.cloud, stroke: drawn.cloudEdge }]
 const globe: Part[] = [
-  { d: circle(6, 6, 5), stroke: "#6e6e73", width: 1.2 },
-  { d: "M1 6h10M6 1c2 2.5 2 7.5 0 10M6 1c-2 2.5-2 7.5 0 10", stroke: "#6e6e73", width: 1 },
+  { d: circle(6, 6, 5), stroke: drawn.globeInk, width: 1.2 },
+  { d: "M1 6h10M6 1c2 2.5 2 7.5 0 10M6 1c-2 2.5-2 7.5 0 10", stroke: drawn.globeInk, width: 1 },
 ]
-const moon: Part[] = [{ d: "M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z", fill: "#cfd2ff" }]
+const moon: Part[] = [{ d: "M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z", fill: drawn.moon }]
 const glyphs = {
   faster: "M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z",
   costs: "M4.5 12.5h7.2a2.8 2.8 0 0 0 .3-5.58A3.8 3.8 0 0 0 4.6 5.8a2.7 2.7 0 0 0-.1 6.7z",
@@ -176,19 +184,19 @@ const sun = "M8.6 6a2.6 2.6 0 1 1-5.2 0 2.6 2.6 0 1 1 5.2 0M6 .8v1.6M6 9.6v1.6M.
 
 /// The phone's apps, and the three that move between this computer and the cloud, as the mockup colours them.
 const phoneApps = [
-  "linear-gradient(145deg, #ffb340, #f2384b)",
-  "linear-gradient(#5ac8fa, #007aff)",
-  "linear-gradient(#34c759, #248a3d)",
-  "linear-gradient(#bf5af2, #7d3cff)",
-  "linear-gradient(#ffd60a, #ff9f0a)",
-  "linear-gradient(#ff6482, #ff2d55)",
+  drawn.phoneApp1,
+  drawn.phoneApp2,
+  drawn.phoneApp3,
+  drawn.phoneApp4,
+  drawn.phoneApp5,
+  drawn.phoneApp6,
 ]
-const moving = ["linear-gradient(145deg, #ffb340, #ff6a2b 55%, #f2384b)", "linear-gradient(145deg, #64d2ff, #0a84ff)", "linear-gradient(145deg, #bf5af2, #7d3cff)"]
+const moving = [drawn.movingApp1, drawn.movingApp2, drawn.movingApp3]
 
 /// A white pill on the picture, centred on `x`: a dot or a glyph, and its words.
 const Chip = (props: { x: number; y: number; children: Element }) => (
   <Box x={props.x - 100} y={props.y} w={200} middle>
-    <Box row gap={5} h={20} pad={[0, 9]} r={99} fill="#ffffff" shadow="0 2px 8px #0000001a, 0 0 0 0.5px #00000014">
+    <Box row gap={5} h={20} pad={[0, 9]} r={99} fill={drawn.chip} shadow={drawn.chipShadow}>
       {props.children}
     </Box>
   </Box>
@@ -221,7 +229,7 @@ function Drawing(props: { on: boolean; awake: boolean; name: string; host: strin
       <Flow phases={wires.computer} shown={here()} />
       <Flow phases={wires.cloud} shown={!here()} />
 
-      <Box x={276} y={56} w={128} h={62} r={31} shadow="0 8px 18px #0000001f" style={[moves.fades, moves.shown(here() ? 0.55 : 1)]} />
+      <Box x={276} y={56} w={128} h={62} r={31} shadow={drawn.cloudShadow} style={[moves.fades, moves.shown(here() ? 0.55 : 1)]} />
       <Shape x={266} y={30} w={148} h={92} viewBox="0 0 148 92" parts={cloudShape} style={[moves.fades, moves.shown(here() ? 0.55 : 1)]} />
       <Chip x={340} y={116}>
         <Shape w={10} h={10} viewBox="0 0 12 12" parts={globe} />
@@ -229,32 +237,32 @@ function Drawing(props: { on: boolean; awake: boolean; name: string; host: strin
       </Chip>
 
       <Box x={34} y={82} w={206}>
-        <Box h={132} r={[10, 10, 3, 3]} fill="#0c0c0d" shadow="inset 0 0 0 1px #3a3a3c">
-          <Box x={6} y={6} w={194} h={119} r={3} clip image="linear-gradient(160deg, #e8a3b8, #8b8ff0)">
-            <Box x={0} y={0} w="100%" h="100%" fill="#08080a" style={[moves.fades, moves.shown(here() ? 0 : 0.9)]} />
+        <Box h={132} r={[10, 10, 3, 3]} fill={drawn.screenBezel} shadow={drawn.screenEdge}>
+          <Box x={6} y={6} w={194} h={119} r={3} clip image={drawn.desktop}>
+            <Box x={0} y={0} w="100%" h="100%" fill={drawn.screenOff} style={[moves.fades, moves.shown(here() ? 0 : 0.9)]} />
           </Box>
           <Shape x={92} y={55} w={22} h={22} viewBox="0 0 24 24" parts={moon} style={[moves.fades, moves.shown(props.on && !props.awake ? 1 : 0)]} />
         </Box>
-        <Box h={9} m={[0, -18, 0, -18]} r={[1, 1, 8, 8]} image="linear-gradient(#e9e9ec, #b9b9bf 70%, #8e8e94)">
-          <Box x={101} y={0} w={40} h={4} r={[0, 0, 5, 5]} fill="#a5a5ab" />
+        <Box h={9} m={[0, -18, 0, -18]} r={[1, 1, 8, 8]} image={drawn.keyboardDeck}>
+          <Box x={101} y={0} w={40} h={4} r={[0, 0, 5, 5]} fill={drawn.deckNotch} />
         </Box>
       </Box>
       <Chip x={137} y={228}>
-        <Box w={6} h={6} r={3} fill="#c7c7cc" />
+        <Box w={6} h={6} r={3} fill={drawn.statusDot} />
         <Words size={8.5} weight={600}>{`${props.name[0].toUpperCase()}${props.name.slice(1)} · ${status()}`}</Words>
       </Chip>
 
-      <Box x={336} y={168} w={60} h={122} r={14} fill="#1c1c1e" shadow="inset 0 0 0 1.2px #5a5a5e, 0 10px 24px #0000002e">
-        <Box x={3} y={3} w={54} h={116} r={11} fill="#f2f2f7" clip pad={[16, 6, 0, 6]} gap={5}>
+      <Box x={336} y={168} w={60} h={122} r={14} fill={drawn.phoneBody} shadow={drawn.phoneEdge}>
+        <Box x={3} y={3} w={54} h={116} r={11} fill={drawn.phoneScreen} clip pad={[16, 6, 0, 6]} gap={5}>
           <For each={[phoneApps.slice(0, 3), phoneApps.slice(3)]}>
             {(row) => <Box row gap={5}><For each={row}>{(image) => <Box w={10.6} h={10.6} r={3} image={image} />}</For></Box>}
           </For>
         </Box>
-        <Box x={22} y={5} w={16} h={5} r={3} fill="#000000" />
+        <Box x={22} y={5} w={16} h={5} r={3} fill={drawn.phoneIsland} />
       </Box>
 
       <Box x={0} y={0} row gap={5} z={3} style={[moves.travels, here() ? moves.at(98, 136) : moves.at(301, 66)]}>
-        <For each={moving}>{(image) => <Box w={22} h={22} r={6} image={image} shadow="inset 0 0.5px 0 #ffffff80, 0 3px 8px #00000033" />}</For>
+        <For each={moving}>{(image) => <Box w={22} h={22} r={6} image={image} shadow={drawn.movingAppShadow} />}</For>
       </Box>
     </Box>
   )

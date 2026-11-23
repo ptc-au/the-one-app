@@ -4,7 +4,7 @@
 // copied, a way to open where it goes, and a picture of what to do there (assistants.tsx). It never blocks: Continue
 // and Later both go on.
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { Button, client, copy, defineVars, type Element, Icon, Image, open, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, tokens, View } from "ui"
+import { Button, client, copy, defineVars, type Element, Icon, illustration, Image, open, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, tokens, View } from "ui"
 import { Agent, type Caption, ChatGPT, Claude, type Told } from "./assistants.tsx"
 import { network as named } from "./welcome.tsx"
 
@@ -32,13 +32,13 @@ const own = defineVars({
   gap: 14,
   lift: 4,
   dotText: 11,
-  row: { default: "#0000000d", dark: "#ffffff14" },
-  rowHover: { default: "#00000008", dark: "#ffffff0d" },
-  claudeTile: "#f4efe6",
-  gptTile: "#ffffff",
-  agentTile: "#1c1c1e",
-  captionFill: "#18181adb",
-  captionDone: "#34c759",
+  ...illustration("Connect your AI's tiles, one for each assistant, and the pill that says what to do, each in its own colours, as what they draw is drawn", {
+    claudeTile: "#f4efe6",
+    gptTile: "#ffffff",
+    agentTile: "#1c1c1e",
+    captionFill: "#18181adb",
+    captionDone: "#34c759",
+  }),
 })
 
 const look = styles({
@@ -59,9 +59,9 @@ const look = styles({
   centred: { textAlign: "center" },
   rows: { gap: tokens.grid[0.5] },
   row: (borderRadius: number) => ({ borderRadius, overflow: "hidden" }),
-  rowOn: { backgroundColor: own.row },
-  head: (borderRadius: number) => ({ flexDirection: "row", alignItems: "center", gap: tokens.grid[3], paddingBlock: tokens.grid[2], paddingInline: tokens.grid[2.5], borderRadius, cursor: "pointer", backgroundColor: { default: tokens.colour.transparent, hover: own.rowHover } }),
-  tile: (borderRadius: number) => ({ width: own.tile, height: own.tile, borderRadius, alignItems: "center", justifyContent: "center", boxShadow: "inset 0 0 0 0.5px #0000001f" }),
+  rowOn: { backgroundColor: tokens.colour.choice },
+  head: (borderRadius: number) => ({ flexDirection: "row", alignItems: "center", gap: tokens.grid[3], paddingBlock: tokens.grid[2], paddingInline: tokens.grid[2.5], borderRadius, cursor: "pointer", backgroundColor: { default: tokens.colour.transparent, hover: tokens.colour.choiceHover } }),
+  tile: (borderRadius: number) => ({ width: own.tile, height: own.tile, borderRadius, alignItems: "center", justifyContent: "center", boxShadow: illustration("a choice's tile, held in by its hairline edge, as the mockup draws it", "inset 0 0 0 0.5px #0000001f") }),
   claude: { backgroundColor: own.claudeTile },
   gpt: { backgroundColor: own.gptTile },
   agent: { backgroundColor: own.agentTile },
@@ -89,7 +89,7 @@ const look = styles({
   scene: { position: "absolute", top: 0, start: 0, width: "100%", height: "100%", pointerEvents: "none" },
   shown: { animationName: { from: { opacity: 0 }, to: { opacity: 1 } }, animationDuration: 400, animationTimingFunction: "ease", animationFillMode: "both" },
   caption: { position: "absolute", bottom: tokens.grid[2.5], start: 0, end: 0, alignItems: "center" },
-  pill: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2], paddingBlock: tokens.grid[1], paddingStart: tokens.grid[1], paddingEnd: tokens.grid[3], borderRadius: tokens.radius.full, backgroundColor: own.captionFill, boxShadow: "0 4px 14px #0000002e", opacity: { default: 1, entering: 0 }, translateY: { default: 0, entering: own.lift }, transitionProperty: ["opacity", "translateY"], transition: tokens.motion.settle },
+  pill: illustration("the caption pill over the picture, lifted off it, as the mockup draws it", { flexDirection: "row", alignItems: "center", gap: tokens.grid[2], paddingBlock: tokens.grid[1], paddingStart: tokens.grid[1], paddingEnd: tokens.grid[3], borderRadius: tokens.radius.full, backgroundColor: own.captionFill, boxShadow: "0 4px 14px #0000002e", opacity: { default: 1, entering: 0 }, translateY: { default: 0, entering: own.lift }, transitionProperty: ["opacity", "translateY"], transition: tokens.motion.settle }),
   dot: { width: own.captionDot, height: own.captionDot, borderRadius: tokens.radius.full, backgroundColor: own.gptTile, alignItems: "center", justifyContent: "center" },
   dotDone: { backgroundColor: own.captionDone },
   dotText: { fontSize: own.dotText, fontWeight: 700, color: own.agentTile },

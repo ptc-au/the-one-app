@@ -6,7 +6,7 @@
 // one box atop the list, with the one thing that fixes it. A request is an alert, as a system's permission prompt is.
 // It's written as the UI library's skill says, so it runs on a native host as it does on the DOM.
 import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose, untrack } from "solid-js"
-import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, Image, Input, link, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Skeleton, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
+import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, illustration, Image, Input, link, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Skeleton, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
 
 const look = styles({
   fill: { flexGrow: 1, alignSelf: "stretch" },
@@ -225,6 +225,8 @@ function enter() {
   setSecure(true)
 }
 
+const tile = illustration("an item's letter tile, as Apple's Passwords draws one, its colour picked by its name", (hue: number, first: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" style="fill:oklch(0.55 0.13 ${hue})"/><text x="16" y="16" dy="0.35em" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="600" fill="#fff">${first}</text></svg>`)
+
 /// An item's picture at the start of its row: its app's icon, or its first letter on a colour its name picks, as
 /// Passwords' tiles are.
 function Tile(props: { item: Item }) {
@@ -233,8 +235,7 @@ function Tile(props: { item: Item }) {
     // The golden angle apart for each letter, so names that start alike still differ.
     const hue = Math.round([...name].reduce((sum, letter, at) => sum + letter.codePointAt(0)! * (at + 1) * 137.508, 0) % 360)
     const first = (name.trim()[0]?.toUpperCase() ?? "?").replace(/[<>&"]/, (character) => `&#${character.codePointAt(0)};`)
-    const drawn = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" style="fill:oklch(0.55 0.13 ${hue})"/><text x="16" y="16" dy="0.35em" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="600" fill="#fff">${first}</text></svg>`
-    return `data:image/svg+xml,${encodeURIComponent(drawn)}`
+    return `data:image/svg+xml,${encodeURIComponent(tile(hue, first))}`
   }
   return <Image src={typeOf(props.item)?.icon ?? letter()} alt="" style={look.tile} />
 }

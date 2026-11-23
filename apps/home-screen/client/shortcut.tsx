@@ -77,9 +77,6 @@ const own = defineVars({
   pickGap: 3,
   pickKey: 16,
   noteGap: 4,
-  // The mockup's orange and green, dark enough in light to read at WCAG AA's 4.5:1 on the screen's grey.
-  warn: { default: "#9a4d00", dark: "#ffb340" },
-  good: { default: "#13702f", dark: "#30d158" },
 })
 
 const look = styles({
@@ -97,7 +94,7 @@ const look = styles({
     borderWidth: own.line,
     borderBottomWidth: own.ring,
     borderColor: tokens.colour.quaternaryLabel,
-    boxShadow: "0 1px 2px #0000000f",
+    boxShadow: tokens.shadow.keycap,
     color: tokens.colour.label,
     animationName: { from: { scale: 0.7, opacity: 0 }, to: { scale: 1, opacity: 1 } },
     animationDuration: 300,
@@ -113,8 +110,8 @@ const look = styles({
   change: { flexShrink: 0, height: own.change, paddingInline: tokens.grid[3], justifyContent: "center", backgroundColor: { default: tokens.colour.background, hover: tokens.colour.quinaryLabel }, borderWidth: own.line, borderColor: tokens.colour.quaternaryLabel, cursor: "pointer" },
   changeText: { fontSize: own.small, fontWeight: 500, color: tokens.colour.label },
   hint: { fontSize: own.hint, lineHeight: own.hintLeading, color: tokens.colour.secondaryLabel, minHeight: own.hintLeading, marginTop: negative(tokens.grid[1]), paddingInline: own.inset },
-  warn: { color: own.warn },
-  good: { color: own.good },
+  warn: { color: tokens.colour.warningLabel },
+  good: { color: tokens.colour.successLabel },
   heading: { fontSize: own.heading, fontWeight: 600, color: tokens.colour.secondaryLabel, paddingInline: own.inset, marginBottom: negative(tokens.grid[1]) },
   picks: { flexDirection: "row", flexWrap: "wrap", gap: own.capGap },
   pick: { flexDirection: "row", alignItems: "center", gap: own.pickGap, height: own.pick, paddingInline: own.pickPad, borderRadius: tokens.radius.full, borderWidth: own.line, borderColor: tokens.colour.quaternaryLabel, backgroundColor: { default: tokens.colour.transparent, hover: tokens.colour.quinaryLabel }, cursor: "pointer", color: tokens.colour.label },

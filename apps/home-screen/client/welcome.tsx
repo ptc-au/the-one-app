@@ -49,10 +49,6 @@ const own = defineVars({
   headingGap: 3,
   headingLeading: 20,
   headingTextLeading: 17.5,
-  row: { default: "#0000000d", dark: "#ffffff14" },
-  // A page dot not shown stands off the page at 3:1, as a control's mark must, where the mockup's 22% didn't.
-  dotOff: { default: "#00000080", dark: "#ffffff80" },
-  rowHover: { default: "#00000008", dark: "#ffffff0d" },
 })
 
 const look = styles({
@@ -66,8 +62,8 @@ const look = styles({
   title: { fontSize: own.title, fontWeight: 700, lineHeight: own.titleLeading, letterSpacing: own.titleSpacing, color: tokens.colour.label },
   titlePhone: { fontSize: own.titlePhone, fontWeight: 700, lineHeight: own.titleLeadingPhone, letterSpacing: own.titleSpacingPhone, color: tokens.colour.label },
   rows: { flexGrow: 1, flexDirection: "column", gap: own.rowsGap },
-  row: (borderRadius: number) => ({ position: "relative", paddingBlock: own.rowPad, paddingInline: tokens.grid[3], borderRadius, overflow: "hidden", cursor: "pointer", backgroundColor: { default: tokens.colour.transparent, hover: own.rowHover } }),
-  rowOn: { backgroundColor: own.row },
+  row: (borderRadius: number) => ({ position: "relative", paddingBlock: own.rowPad, paddingInline: tokens.grid[3], borderRadius, overflow: "hidden", cursor: "pointer", backgroundColor: { default: tokens.colour.transparent, hover: tokens.colour.choiceHover } }),
+  rowOn: { backgroundColor: tokens.colour.choice },
   rowTitle: { fontSize: own.rowTitle, fontWeight: 600, lineHeight: own.rowLeading, color: tokens.colour.secondaryLabel },
   rowTitleOn: { color: tokens.colour.label },
   rowText: { fontSize: own.rowText, lineHeight: own.textLeading, color: tokens.colour.secondaryLabel, paddingTop: own.textTop, paddingBottom: own.textBottom, opacity: { default: 1, entering: 0 }, transitionProperty: ["opacity"], transition: tokens.motion.settle },
@@ -82,7 +78,7 @@ const look = styles({
   headingTitle: { fontSize: own.heading, fontWeight: 650, lineHeight: own.headingLeading, color: tokens.colour.label, textAlign: "center" },
   headingText: { fontSize: own.headingText, lineHeight: own.headingTextLeading, color: tokens.colour.secondaryLabel, textAlign: "center" },
   dots: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: tokens.grid[2], paddingBlock: tokens.grid[0.5] },
-  dot: { width: own.dot, height: own.dot, borderRadius: tokens.radius.full, backgroundColor: own.dotOff, transitionProperty: ["width", "backgroundColor"], transition: tokens.motion.settle, cursor: "pointer" },
+  dot: { width: own.dot, height: own.dot, borderRadius: tokens.radius.full, backgroundColor: tokens.colour.pageDot, transitionProperty: ["width", "backgroundColor"], transition: tokens.motion.settle, cursor: "pointer" },
   dotOn: { width: own.dotOn, backgroundColor: tokens.colour.label },
   go: { alignSelf: "stretch" },
 })

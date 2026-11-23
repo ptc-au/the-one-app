@@ -6,10 +6,32 @@
 // it and hands it to every server waiting for it, with one passkey. Coming back, the picture shows it done, the lock
 // shut on the Vault or opened off it, and the button goes on. Later goes on without it: Vault in Settings still asks.
 import { createEffect, createMemo, createSignal, For, isPending, onCleanup, refresh, Show } from "solid-js"
-import { Button, call, changed, client, defineVars, type Element, Icon, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
+import { Button, call, changed, client, defineVars, type Element, Icon, illustration, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
 import { Box, circle, Panel, type Part, rect, Shape, Words } from "./art.tsx"
 import { amazon, google, microsoft, stripe } from "./slides.tsx"
 import { network } from "./welcome.tsx"
+
+const drawn = illustration("Vault's pictures: the Vault's window and its rows, the lock and its passkey beside it, the rows smudged while it's locked, and the panel of what the server sees, as a picture of what isn't ours, drawn the same in light and dark", {
+  lockGlyph: "#ffffff",
+  wifiTile: "#e8e8ed",
+  mutedInk: "#8e8e93",
+  shackle: "#b9bcc4",
+  shackleSheen: "inset 0 2px 0 #ffffff99",
+  lockBodyGradient: "linear-gradient(180deg, #3a3a3e, #1c1c1e)",
+  lockShadow: "0 14px 22px #00000047, inset 0 1px 0 #ffffff2e",
+  vaultFace: "#ffffff",
+  vaultShadow: "0 10px 30px #0000001f, 0 0 0 0.5px #0000001a",
+  titleRule: "#ececef",
+  vaultLock: "#1d1d1f",
+  rowRule: "#f1f1f3",
+  smudgeCover: "#ffffff",
+  nameSmudge: "#d9d9de",
+  dotsSmudge: "#e3e3e8",
+  captionLock: "#111111",
+  serverPanel: "#ffffffb3",
+  serverEdge: "0 0 0 0.5px #00000014",
+  serverInk: "#6e6e73",
+})
 
 /** Which of the two a Vault needs here. */
 export type VaultStepKind = "set-up" | "unlock"
@@ -48,11 +70,11 @@ const scrambled = () => Array.from({ length: 6 }, () => Math.floor(Math.random()
 /// A padlock, and a passkey (a person and a key) on its body, in white.
 const lock = (colour: `#${string}`, width = 1.6): Part[] => [{ d: rect(2.5, 7, 11, 8, 2), fill: colour }, { d: "M5 7V5a3 3 0 0 1 6 0v2", stroke: colour, width }]
 /// A tick, in white.
-const tick: Part[] = [{ d: "M2.2 6.3 4.8 9 9.8 3.2", stroke: "#ffffff", width: 2 }]
-const passkey: Part[] = [{ d: circle(18, 15, 7.5), fill: "#ffffff" }, { d: "M4 38c0-8 6.3-12.5 14-12.5 3 0 5.8.7 8 2V38z", fill: "#ffffff" }, { d: circle(34, 21, 6), stroke: "#ffffff", width: 3.4 }, { d: "M34 27v14l3-2.5-1.8-2 1.8-2-3-2.5", fill: "#ffffff", stroke: "#ffffff", width: 3.4 }]
+const tick: Part[] = [{ d: "M2.2 6.3 4.8 9 9.8 3.2", stroke: drawn.lockGlyph, width: 2 }]
+const passkey: Part[] = [{ d: circle(18, 15, 7.5), fill: drawn.lockGlyph }, { d: "M4 38c0-8 6.3-12.5 14-12.5 3 0 5.8.7 8 2V38z", fill: drawn.lockGlyph }, { d: circle(34, 21, 6), stroke: drawn.lockGlyph, width: 3.4 }, { d: "M34 27v14l3-2.5-1.8-2 1.8-2-3-2.5", fill: drawn.lockGlyph, stroke: drawn.lockGlyph, width: 3.4 }]
 
 /// Wi-Fi's mark: a plus on grey, as an item with no site's.
-const wifi: Part[] = [{ d: rect(0, 0, 16, 16, 3.5), fill: "#e8e8ed" }, { d: "M5 8h6M8 5v6", stroke: "#8e8e93", width: 1.4 }]
+const wifi: Part[] = [{ d: rect(0, 0, 16, 16, 3.5), fill: drawn.wifiTile }, { d: "M5 8h6M8 5v6", stroke: drawn.mutedInk, width: 1.4 }]
 
 /// The Vault's rows in the picture: each one's mark, name, dots, and how large its mark is drawn.
 const rows: [Part[], string, number, number, string][] = [
@@ -94,9 +116,7 @@ const own = defineVars({
   pillGap: 7,
   pillPad: 5,
   pillEnd: 12,
-  pill: "#18181adb",
-  white: "#ffffff",
-  done: "#34c759",
+  ...illustration("Vault's caption pill: its dark fill, its white words and dot, and its dot green once it's done", { pill: "#18181adb", white: "#ffffff", done: "#34c759" }),
 })
 
 const look = styles({
@@ -141,7 +161,7 @@ const look = styles({
   scroll: (width: number, height: number) => ({ width, height }),
   phone: (width: number, paddingTop: number, paddingBottom: number) => ({ width, alignSelf: "center", paddingTop, paddingBottom, paddingInline: tokens.grid[4], flexDirection: "column", gap: own.phoneGap }),
   caption: { position: "absolute", start: 0, end: 0, bottom: own.captionBottom, alignItems: "center", pointerEvents: "none" },
-  pill: { flexDirection: "row", alignItems: "center", gap: own.pillGap, paddingBlock: own.pillPad, paddingStart: own.pillPad, paddingEnd: own.pillEnd, borderRadius: tokens.radius.full, backgroundColor: own.pill, boxShadow: "0 4px 14px #0000002e", animationName: { from: { opacity: 0, translateY: 4 }, to: { opacity: 1, translateY: 0 } }, animationDuration: 300, animationTimingFunction: "ease", animationFillMode: "both" },
+  pill: illustration("Vault's caption pill, with its shadow and its words rising as it appears, as the mockup draws it", { flexDirection: "row", alignItems: "center", gap: own.pillGap, paddingBlock: own.pillPad, paddingStart: own.pillPad, paddingEnd: own.pillEnd, borderRadius: tokens.radius.full, backgroundColor: own.pill, boxShadow: "0 4px 14px #0000002e", animationName: { from: { opacity: 0, translateY: 4 }, to: { opacity: 1, translateY: 0 } }, animationDuration: 300, animationTimingFunction: "ease", animationFillMode: "both" }),
   dot: { width: own.captionDot, height: own.captionDot, borderRadius: tokens.radius.full, backgroundColor: own.white, alignItems: "center", justifyContent: "center" },
   dotDone: { backgroundColor: own.done },
   captionText: { fontSize: own.caption, fontWeight: 600, lineHeight: own.captionLeading, color: own.white, whiteSpace: "nowrap" },
@@ -150,9 +170,9 @@ const look = styles({
 /// How the picture's parts move: the lock's shackle shutting, its passkey lighting, the shackle lifting and the lock
 /// going as it opens, and the smudges over the Vault's rows clearing, each as the mockup's keyframes.
 const moves = styles({
-  shut: { animationName: { from: { translateY: -14 }, to: { translateY: 0 } }, animationDelay: 150, animationDuration: 500, animationTimingFunction: [0.5, 0, 0.2, 1.4], animationFillMode: "both" },
+  shut: illustration("The lock's shackle coming down as it shuts", { animationName: { from: { translateY: -14 }, to: { translateY: 0 } }, animationDelay: 150, animationDuration: 500, animationTimingFunction: [0.5, 0, 0.2, 1.4], animationFillMode: "both" }),
   glow: { animationName: { "0%": { opacity: 0.35 }, "50%": { opacity: 1 }, "100%": { opacity: 1 } }, animationDelay: 400, animationDuration: 1400, animationTimingFunction: "ease", animationFillMode: "both" },
-  lift: { animationName: { from: { translateY: 0 }, to: { translateY: -14 } }, animationDuration: 450, animationTimingFunction: [0.3, 1.4, 0.5, 1], animationFillMode: "both" },
+  lift: illustration("The lock's shackle lifting as it opens", { animationName: { from: { translateY: 0 }, to: { translateY: -14 } }, animationDuration: 450, animationTimingFunction: [0.3, 1.4, 0.5, 1], animationFillMode: "both" }),
   go: { animationName: { from: { opacity: 1, scale: 1 }, to: { opacity: 0, scale: 0.85 } }, animationDelay: 500, animationDuration: 500, animationTimingFunction: "ease", animationFillMode: "both" },
   clear: { animationName: { from: { opacity: 1 }, to: { opacity: 0 } }, animationDuration: 600, animationTimingFunction: "ease", animationFillMode: "both" },
   shackle: { borderBottomWidth: 0 },
@@ -163,8 +183,8 @@ const moves = styles({
 function Lock(props: { x: number; y: number; shut?: boolean; open?: boolean }) {
   return (
     <Box x={props.x} y={props.y} w={84} h={104} z={4} style={props.open ? moves.go : undefined}>
-      <Box x={19} y={0} w={46} h={52} border={[8, "#b9bcc4"]} r={[23, 23, 0, 0]} shadow="inset 0 2px 0 #ffffff99" style={[moves.shackle, props.shut && moves.shut, props.open && moves.lift]} />
-      <Box x={0} y={38} w={84} h={66} r={16} image="linear-gradient(180deg, #3a3a3e, #1c1c1e)" shadow="0 14px 22px #00000047, inset 0 1px 0 #ffffff2e" middle>
+      <Box x={19} y={0} w={46} h={52} border={[8, drawn.shackle]} r={[23, 23, 0, 0]} shadow={drawn.shackleSheen} style={[moves.shackle, props.shut && moves.shut, props.open && moves.lift]} />
+      <Box x={0} y={38} w={84} h={66} r={16} image={drawn.lockBodyGradient} shadow={drawn.lockShadow} middle>
         <Shape w={40} h={40} viewBox="0 0 48 48" parts={passkey} style={props.shut ? moves.glow : undefined} />
       </Box>
     </Box>
@@ -174,20 +194,20 @@ function Lock(props: { x: number; y: number; shut?: boolean; open?: boolean }) {
 /// The Vault, as its window shows it: its rows, names and dots, smudged while it's locked.
 function Vault(props: { x: number; locked?: boolean; cleared?: boolean }) {
   return (
-    <Box x={props.x} y={30} w={266} r={12} fill="#ffffff" shadow="0 10px 30px #0000001f, 0 0 0 0.5px #0000001a" clip>
-      <Box h={26} row gap={6} pad={[0, 10]} lines={[0, 1, "#ececef"]}>
-        <Shape w={12} h={12} viewBox="0 0 16 16" parts={lock("#1d1d1f")} />
+    <Box x={props.x} y={30} w={266} r={12} fill={drawn.vaultFace} shadow={drawn.vaultShadow} clip>
+      <Box h={26} row gap={6} pad={[0, 10]} lines={[0, 1, drawn.titleRule]}>
+        <Shape w={12} h={12} viewBox="0 0 16 16" parts={lock(drawn.vaultLock)} />
         <Words size={9.5} weight={600}>Vault</Words>
       </Box>
       <Box>
         <For each={rows}>
           {([mark, name, dots, size, box]) => (
-            <Box h={29} row gap={8} pad={[0, 10]} lines={[0, 1, "#f1f1f3"]}>
+            <Box h={29} row gap={8} pad={[0, 10]} lines={[0, 1, drawn.rowRule]}>
               <Box w={16} h={16} middle>
                 <Shape w={size} h={size} viewBox={box} parts={mark} />
               </Box>
               <Words size={8.5}>{name}</Words>
-              <Words size={8} ink="#8e8e93" spacing={0.5} mono m={[0, 0, 0, "auto"]}>{"•".repeat(dots)}</Words>
+              <Words size={8} ink={drawn.mutedInk} spacing={0.5} mono m={[0, 0, 0, "auto"]}>{"•".repeat(dots)}</Words>
             </Box>
           )}
         </For>
@@ -195,20 +215,20 @@ function Vault(props: { x: number; locked?: boolean; cleared?: boolean }) {
           <Box w={16} h={16} middle>
             <Shape w={14} h={14} viewBox="0 0 16 16" parts={wifi} />
           </Box>
-          <Words size={8.5} ink="#8e8e93">Wi-Fi</Words>
-          <Words size={8} ink="#8e8e93" spacing={0.5} mono m={[0, 0, 0, "auto"]}>{"•".repeat(9)}</Words>
+          <Words size={8.5} ink={drawn.mutedInk}>Wi-Fi</Words>
+          <Words size={8} ink={drawn.mutedInk} spacing={0.5} mono m={[0, 0, 0, "auto"]}>{"•".repeat(9)}</Words>
         </Box>
         {/* Locked, each row is only a smudge of its mark and its words, which clears as it's unlocked. */}
         <Show when={props.locked}>
-          <Box x={0} y={0} right={0} bottom={0} fill="#ffffff" style={props.cleared ? moves.clear : undefined}>
+          <Box x={0} y={0} right={0} bottom={0} fill={drawn.smudgeCover} style={props.cleared ? moves.clear : undefined}>
             <For each={[...rows.map(([mark, name, dots, size, box]) => [mark, name.length, dots, size, box] as const), [wifi, 5, 9, 14, "0 0 16 16"] as const]}>
               {([mark, letters, dots, size, box]) => (
                 <Box h={29} row gap={8} pad={[0, 10]} opacity={0.55}>
                   <Box w={16} h={16} middle opacity={0.5}>
                     <Shape w={size} h={size} viewBox={box} parts={mark} />
                   </Box>
-                  <Box w={letters * 5} h={6} r={3} fill="#d9d9de" />
-                  <Box w={dots * 5} h={4} r={2} fill="#e3e3e8" m={[0, 0, 0, "auto"]} />
+                  <Box w={letters * 5} h={6} r={3} fill={drawn.nameSmudge} />
+                  <Box w={dots * 5} h={4} r={2} fill={drawn.dotsSmudge} m={[0, 0, 0, "auto"]} />
                 </Box>
               )}
             </For>
@@ -381,7 +401,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
               {(words) => (
                 <View style={look.pill}>
                   <View style={[look.dot, done() && look.dotDone]}>
-                    <Shape w={11} h={11} viewBox={done() ? "0 0 12 12" : "0 0 16 16"} parts={done() ? tick : lock("#111111", 1.8)} />
+                    <Shape w={11} h={11} viewBox={done() ? "0 0 12 12" : "0 0 16 16"} parts={done() ? tick : lock(drawn.captionLock, 1.8)} />
                   </View>
                   <Text style={look.captionText}>{words}</Text>
                 </View>
@@ -400,12 +420,12 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
             }
           >
             <Vault x={150} />
-            <Box x={150} y={222} w={266} pad={[8, 10]} r={10} fill="#ffffffb3" shadow="0 0 0 0.5px #00000014">
+            <Box x={150} y={222} w={266} pad={[8, 10]} r={10} fill={drawn.serverPanel} shadow={drawn.serverEdge}>
               <Box row gap={5} m={[0, 0, 4, 0]}>
-                <Shape w={9} h={9} viewBox="0 0 16 16" parts={lock("#6e6e73")} />
-                <Words size={7.5} weight={600} ink="#6e6e73">What the server sees</Words>
+                <Shape w={9} h={9} viewBox="0 0 16 16" parts={lock(drawn.serverInk)} />
+                <Words size={7.5} weight={600} ink={drawn.serverInk}>What the server sees</Words>
               </Box>
-              <Words size={8.4} ink="#8e8e93" spacing={0.4} mono>{cipher()}</Words>
+              <Words size={8.4} ink={drawn.mutedInk} spacing={0.4} mono>{cipher()}</Words>
             </Box>
             {/* Shut again as it's done, as the mockup's lock is. */}
             <Show when={done()} fallback={<Lock x={22} y={150} shut />}>
