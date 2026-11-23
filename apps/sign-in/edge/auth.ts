@@ -942,7 +942,14 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       await set("logo", Object.keys(logo).length ? logo : null);
     }
     const { name, icon, logo } = await network();
-    return { name, icon: icon && `${origin}/apple-touch-icon.png`, logo: logo && { light: `${origin}/Logo.png`, dark: `${origin}/Logo-dark.png` } };
+    // Its mark as data too, for a page drawn where only its app's own files load, as a native window's is.
+    const data = (picture?: Picture) => picture && `data:image/png;base64,${picture.png}`;
+    return {
+      name,
+      icon: icon && `${origin}/apple-touch-icon.png`,
+      logo: logo && { light: `${origin}/Logo.png`, dark: `${origin}/Logo-dark.png` },
+      mark: logo && { light: data(logo.light ?? logo.dark), dark: data(logo.dark ?? logo.light) },
+    };
   }
   // Everyone who has joined, and everyone invited who hasn't yet, with the name each goes by.
   if (ask === "everyone") {

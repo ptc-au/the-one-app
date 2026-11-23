@@ -135,6 +135,11 @@ defmodule SignIn do
               type: ["object", "null"],
               description: "Where its logo is, for a light page and a dark, if it has one of its own",
               properties: %{light: %{type: "string"}, dark: %{type: "string"}}
+            },
+            mark: %{
+              type: ["object", "null"],
+              description: "Its logo as a page draws it where only an app's own files load, as `data:` addresses",
+              properties: %{light: %{type: "string"}, dark: %{type: "string"}}
             }
           },
           required: ["name", "icon"]
@@ -509,7 +514,7 @@ defmodule SignIn do
       Call.reach(call, Artifact.name(call.own), "editor")
     end
 
-    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo"])
+    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo", "mark"])
   end
 
   # Whoever invites takes out, and nobody takes themselves out. Only an owner takes out an owner, as only a super
