@@ -6,6 +6,7 @@
 // goes on to onboarding's next step for this device (home.tsx), or the Home Screen.
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Button, call, defineVars, type Element, Image, Pressable, safeArea, styles, Text, tokens, View } from "ui"
+import { Panel } from "./art.tsx"
 import { Automate, Devices, Multiplayer, Secure } from "./slides.tsx"
 
 /// What a row and its picture say, in order, as Andre wrote them.
@@ -18,10 +19,8 @@ const items: { title: string; text: string; picture: () => Element }[] = [
 
 /// How long each is shown before the next, as the mockup plays them.
 const CYCLE = 6500
-/// The art board the pictures are drawn on, and the part of it that's fitted to the room it has (its margins trimmed).
-const BOARD = { width: 440, height: 330, fits: [428, 302] }
-/// How round a row's corners are and the picture's, as the mockup has them: the window's radius, 10, and 2 and 6 more.
-const ROUND = { row: 12, panel: 16 }
+/// How round a row's corners are, as the mockup has them: the window's radius, 10, and 2 more.
+const ROUND = { row: 12 }
 
 const own = defineVars({
   title: 24,
@@ -74,8 +73,6 @@ const look = styles({
   rowText: { fontSize: own.rowText, lineHeight: own.textLeading, color: tokens.colour.secondaryLabel, paddingTop: own.textTop, paddingBottom: own.textBottom, opacity: { default: 1, entering: 0 }, transitionProperty: ["opacity"], transition: tokens.motion.settle },
   line: { position: "absolute", start: tokens.grid[3], end: tokens.grid[3], bottom: 0, height: own.line, borderRadius: tokens.radius.full, overflow: "hidden" },
   filling: { height: "100%", backgroundColor: tokens.colour.tertiaryLabel, animationName: { from: { width: "0%" }, to: { width: "100%" } }, animationDuration: 6500, animationTimingFunction: "linear", animationFillMode: "forwards" },
-  panel: (width: number, height: number, borderRadius: number) => ({ width, height, borderRadius, overflow: "hidden", color: tokens.colour.label, backgroundImage: "radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, currentColor 7%, transparent), color-mix(in oklab, currentColor 3%, transparent))" }),
-  stage: (start: number, top: number, width: number, height: number, scale: number) => ({ position: "absolute", start, top, width, height, scale }),
   scene: { position: "absolute", top: 0, start: 0, width: "100%", height: "100%", pointerEvents: "none" },
   shown: { animationName: { from: { opacity: 0 }, to: { opacity: 1 } }, animationDuration: 450, animationTimingFunction: "ease", animationFillMode: "both" },
   gone: { animationName: { from: { opacity: 1 }, to: { opacity: 0 } }, animationDuration: 450, animationTimingFunction: "ease", animationFillMode: "both" },
@@ -134,25 +131,20 @@ export function Welcome(props: { width: number; height: number; onContinue: () =
     </View>
   )
 
-  // The art board, centred in the picture's room and grown to fill it.
-  const Panel = (size: { width: number; height: number }) => {
-    const scale = () => Math.min(size.width / BOARD.fits[0], size.height / BOARD.fits[1])
-    return (
-      <View style={look.panel(size.width, size.height, ROUND.panel)} aria-hidden="true">
-        <View style={look.stage((size.width - BOARD.width) / 2, (size.height - BOARD.height) / 2, BOARD.width, BOARD.height, scale())}>
-          <For each={items}>
-            {(item, index) => (
-              <View style={[look.scene, shown() === index() ? look.shown : was() === index() ? look.gone : look.unseen]}>
-                <Show when={runs()[index()]} keyed>
-                  {item.picture()}
-                </Show>
-              </View>
-            )}
-          </For>
-        </View>
-      </View>
-    )
-  }
+  // The four pictures, the one shown faded in over the one before.
+  const Pictures = (size: { width: number; height: number }) => (
+    <Panel width={size.width} height={size.height}>
+      <For each={items}>
+        {(item, index) => (
+          <View style={[look.scene, shown() === index() ? look.shown : was() === index() ? look.gone : look.unseen]}>
+            <Show when={runs()[index()]} keyed>
+              {item.picture()}
+            </Show>
+          </View>
+        )}
+      </For>
+    </Panel>
+  )
 
   const Continue = () => (
     <Button shape={wide() ? undefined : "capsule"} onPress={props.onContinue} style={look.go}>
@@ -174,7 +166,7 @@ export function Welcome(props: { width: number; height: number; onContinue: () =
                 <Text style={look.headingTitle}>{items[shown()].title}</Text>
                 <Text style={look.headingText}>{items[shown()].text}</Text>
               </View>
-              <Panel width={inner} height={Math.round((inner * 3.15) / 4)} />
+              <Pictures width={inner} height={Math.round((inner * 3.15) / 4)} />
               <View role="tablist" aria-label="Highlights" style={look.dots}>
                 <For each={items}>{(item, index) => <Pressable role="tab" aria-label={item.title} aria-selected={shown() === index() ? "true" : "false"} onPress={() => choose(index())} style={[look.dot, shown() === index() && look.dotOn]} />}</For>
               </View>
@@ -211,7 +203,7 @@ export function Welcome(props: { width: number; height: number; onContinue: () =
                 </View>
                 <Continue />
               </View>
-              <Panel width={width - 20 - side} height={height} />
+              <Pictures width={width - 20 - side} height={height} />
             </View>
           )
         })()}

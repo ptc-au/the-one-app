@@ -236,5 +236,29 @@ export const Pointer = (props: BoxProps & { colour?: `#${string}` }) => (
   <Shape {...props} w={13} h={19} z={4} viewBox="0 0 13 19" parts={[{ d: "M1 1v14.5l3.6-3.4 2.4 5.6 2.4-1-2.4-5.5h5z", fill: props.colour ?? "#ffffff", stroke: props.colour ? "#ffffff" : "#000000", width: props.colour ? 1.2 : 1 }]} />
 )
 
+/** The art board every picture is drawn on, and the part of it that's fitted to the room it has (its margins trimmed). */
+export const BOARD = { width: 440, height: 330, fits: [428, 302] }
+/** How round a picture's panel is, as the mockups have it: the window's radius, 10, and 6 more. */
+const PANEL_ROUND = 16
+
+const panels = styles({
+  panel: (width: number, height: number, borderRadius: number) => ({ position: "relative", width, height, borderRadius, overflow: "hidden", color: tokens.colour.label }),
+  ground: { backgroundImage: "radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, currentColor 7%, transparent), color-mix(in oklab, currentColor 3%, transparent))" },
+  stage: (start: number, top: number, width: number, height: number, scale: number) => ({ position: "absolute", start, top, width, height, scale, pointerEvents: "none" }),
+})
+
+/** A picture in its panel, `width` by `height`, on the pictures' soft ground unless it's `bare` (one with a ground of
+ * its own, a desktop): its art board centred in it and grown to fill it, and `over` drawn over that at the panel's own
+ * size (a caption). It's only to look at, so it's hidden from assistive tech and takes no presses. */
+export const Panel = (props: { width: number; height: number; bare?: boolean; over?: Element; children: Element }) => {
+  const scale = () => Math.min(props.width / BOARD.fits[0], props.height / BOARD.fits[1])
+  return (
+    <View style={[panels.panel(props.width, props.height, PANEL_ROUND), !props.bare && panels.ground]} aria-hidden="true">
+      <View style={panels.stage((props.width - BOARD.width) / 2, (props.height - BOARD.height) / 2, BOARD.width, BOARD.height, scale())}>{props.children}</View>
+      {props.over}
+    </View>
+  )
+}
+
 /** A picture of the art board's own (a brand's logo), sized and placed as a box is. */
 export const Picture = (props: BoxProps & { src: string }) => <Image src={props.src} alt="" style={boxStyle(props)} />

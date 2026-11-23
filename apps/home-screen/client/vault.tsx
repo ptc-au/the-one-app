@@ -7,7 +7,7 @@
 // shut on the Vault or opened off it, and the button goes on. Later goes on without it: Vault in Settings still asks.
 import { createEffect, createMemo, createSignal, For, onCleanup, refresh, Show } from "solid-js"
 import { Button, call, changed, client, defineVars, Icon, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
-import { Box, circle, type Part, rect, Shape, Words } from "./art.tsx"
+import { Box, circle, Panel, type Part, rect, Shape, Words } from "./art.tsx"
 import { amazon, google, microsoft, stripe } from "./slides.tsx"
 import { network } from "./welcome.tsx"
 
@@ -38,12 +38,8 @@ export const vaultStep = () =>
     () => undefined,
   )
 
-/// The art board the picture is drawn on (art.tsx), and the part of it that's fitted to the room it has, as Welcome's.
-const BOARD = { width: 440, height: 330, fits: [428, 302] }
 /// How wide the heading's words go before they wrap, as the mockup's 34em.
 const READABLE = 460
-/// How round the picture's corners are, as Welcome's: the window's radius, 10, and 6 more.
-const PANEL_ROUND = 16
 
 /// What the server keeps of a Vault: six groups of four hex digits, new each time it's drawn.
 const scrambled = () => Array.from({ length: 6 }, () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0")).join(" ")
@@ -143,8 +139,6 @@ const look = styles({
   stretch: { alignSelf: "stretch" },
   scroll: (width: number, height: number) => ({ width, height }),
   phone: (width: number, paddingTop: number, paddingBottom: number) => ({ width, alignSelf: "center", paddingTop, paddingBottom, paddingInline: tokens.grid[4], flexDirection: "column", gap: own.phoneGap }),
-  panel: (width: number, height: number, borderRadius: number) => ({ position: "relative", width, height, borderRadius, overflow: "hidden", color: tokens.colour.label, backgroundImage: "radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, currentColor 7%, transparent), color-mix(in oklab, currentColor 3%, transparent))" }),
-  stage: (start: number, top: number, width: number, height: number, scale: number) => ({ position: "absolute", start, top, width, height, scale, pointerEvents: "none" }),
   caption: { position: "absolute", start: 0, end: 0, bottom: own.captionBottom, alignItems: "center", pointerEvents: "none" },
   pill: { flexDirection: "row", alignItems: "center", gap: own.pillGap, paddingBlock: own.pillPad, paddingStart: own.pillPad, paddingEnd: own.pillEnd, borderRadius: tokens.radius.full, backgroundColor: own.pill, boxShadow: "0 4px 14px #0000002e", animationName: { from: { opacity: 0, translateY: 4 }, to: { opacity: 1, translateY: 0 } }, animationDuration: 300, animationTimingFunction: "ease", animationFillMode: "both" },
   dot: { width: own.captionDot, height: own.captionDot, borderRadius: tokens.radius.full, backgroundColor: own.white, alignItems: "center", justifyContent: "center" },
@@ -363,12 +357,27 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
 
   // The picture: the Vault, what the server sees of it and the lock beside it, shut as it's set up; or the Vault
   // smudged under its lock, which opens off it as it's unlocked. Its caption says which.
-  const Panel = (size: { width: number; height: number }) => {
-    const scale = () => Math.min(size.width / BOARD.fits[0], size.height / BOARD.fits[1])
+  const Picture = (size: { width: number; height: number }) => {
     const caption = () => (setUp() ? (done() ? "Your Vault is protected" : "Encrypted to your passkey") : done() ? `Unlocked on ${where()}` : `Locked on ${where()}`)
     return (
-      <View style={look.panel(size.width, size.height, PANEL_ROUND)} aria-hidden="true">
-        <View style={look.stage((size.width - BOARD.width) / 2, (size.height - BOARD.height) / 2, BOARD.width, BOARD.height, scale())}>
+      <Panel
+        width={size.width}
+        height={size.height}
+        over={
+          <View style={look.caption}>
+            <Show when={caption()} keyed>
+              {(words) => (
+                <View style={look.pill}>
+                  <View style={[look.dot, done() && look.dotDone]}>
+                    <Shape w={11} h={11} viewBox={done() ? "0 0 12 12" : "0 0 16 16"} parts={done() ? tick : lock("#111111", 1.8)} />
+                  </View>
+                  <Text style={look.captionText}>{words}</Text>
+                </View>
+              )}
+            </Show>
+          </View>
+        }
+      >
           <Show
             when={setUp()}
             fallback={
@@ -391,20 +400,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
               <Lock x={22} y={150} shut />
             </Show>
           </Show>
-        </View>
-        <View style={look.caption}>
-          <Show when={caption()} keyed>
-            {(words) => (
-              <View style={look.pill}>
-                <View style={[look.dot, done() && look.dotDone]}>
-                  <Shape w={11} h={11} viewBox={done() ? "0 0 12 12" : "0 0 16 16"} parts={done() ? tick : lock("#111111", 1.8)} />
-                </View>
-                <Text style={look.captionText}>{words}</Text>
-              </View>
-            )}
-          </Show>
-        </View>
-      </View>
+      </Panel>
     )
   }
 
@@ -419,7 +415,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
             <ScrollView style={look.scroll(props.width, props.height)}>
               <View style={look.phone(width, safeArea().top + 20, safeArea().bottom + 18)}>
                 <Brand phone />
-                <Panel width={inner} height={Math.round((inner * 3.4) / 4)} />
+                <Picture width={inner} height={Math.round((inner * 3.4) / 4)} />
                 <Body />
                 <Actions />
               </View>
@@ -440,7 +436,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
                   <Body />
                   <Actions />
                 </View>
-                <Panel width={width - 20 - side} height={height} />
+                <Picture width={width - 20 - side} height={height} />
               </View>
             </View>
           )

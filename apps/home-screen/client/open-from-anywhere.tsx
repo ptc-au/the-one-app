@@ -5,14 +5,9 @@
 // time the shortcut changes. One shortcut opens the launcher of every network's app on the computer.
 import { createSignal, For, Show } from "solid-js"
 import { Button, defineVars, Image, reducedMotion, styles, Text, tokens, View } from "ui"
-import { Box, circle, Shape, Words } from "./art.tsx"
+import { Box, circle, Panel, Shape, Words } from "./art.tsx"
 import { labels, type Os, os, shortcut, ShortcutControl, WindowsKey } from "./shortcut.tsx"
 import { network } from "./welcome.tsx"
-
-/// The art board the picture is drawn on, and the part of it that's fitted to the room it has, as Welcome's.
-const BOARD = { width: 440, height: 330, fits: [428, 302] }
-/// How round the picture's corners are, as the mockup has them: the window's radius, 10, and 6 more.
-const ROUND = 16
 
 const own = defineVars({
   title: 24,
@@ -45,8 +40,6 @@ const look = styles({
   subtitle: { fontSize: own.subtitle, lineHeight: own.subtitleLeading, color: tokens.colour.secondaryLabel },
   centred: { textAlign: "center" },
   go: { alignSelf: "stretch" },
-  panel: (width: number, height: number, borderRadius: number) => ({ width, height, borderRadius, overflow: "hidden" }),
-  stage: (start: number, top: number, width: number, height: number, scale: number) => ({ position: "absolute", start, top, width, height, scale }),
   // The picture's own: a launcher page's icons in rows, the owner pill in the card's middle, and a keycap's least width.
   rows: (rowGap: number) => ({ flexWrap: "wrap", rowGap }),
   middle: { alignSelf: "center" },
@@ -300,19 +293,14 @@ export function OpenFromAnywhere(props: { width: number; height: number; onConti
       <Text style={[look.subtitle, heading.narrow && look.centred]}>Press your shortcut in any app to bring up {network()?.name ?? "The One App"}.</Text>
     </View>
   )
-  // The art board, centred in the picture's room and grown to fill it.
-  const Panel = (size: { width: number; height: number }) => {
-    const scale = () => Math.min(size.width / BOARD.fits[0], size.height / BOARD.fits[1])
-    return (
-      <View style={look.panel(size.width, size.height, ROUND)} aria-hidden="true">
-        <View style={look.stage((size.width - BOARD.width) / 2, (size.height - BOARD.height) / 2, BOARD.width, BOARD.height, scale())}>
-          <Show when={`${plays()} ${keys()}`} keyed>
-            <Desktop os={os()} keys={keys()} />
-          </Show>
-        </View>
-      </View>
-    )
-  }
+  // The desktop, played again as the shortcut changes.
+  const Picture = (size: { width: number; height: number }) => (
+    <Panel width={size.width} height={size.height} bare>
+      <Show when={`${plays()} ${keys()}`} keyed>
+        <Desktop os={os()} keys={keys()} />
+      </Show>
+    </Panel>
+  )
   const Control = () => <ShortcutControl onChanged={() => setPlays(plays() + 1)} />
   const Continue = () => (
     <Button shape={wide() ? undefined : "capsule"} onPress={props.onContinue} style={look.go}>
@@ -329,7 +317,7 @@ export function OpenFromAnywhere(props: { width: number; height: number; onConti
           return (
             <View style={look.narrow(width)}>
               <Heading narrow />
-              <Panel width={inner} height={Math.round((inner * 3.4) / 4)} />
+              <Picture width={inner} height={Math.round((inner * 3.4) / 4)} />
               <Control />
               <Continue />
             </View>
@@ -349,7 +337,7 @@ export function OpenFromAnywhere(props: { width: number; height: number; onConti
                   <Control />
                   <Continue />
                 </View>
-                <Panel width={panel} height={height} />
+                <Picture width={panel} height={height} />
               </View>
             </View>
           )

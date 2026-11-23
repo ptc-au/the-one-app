@@ -2,20 +2,20 @@
 // and only where it isn't one of its network's servers already. This computer can run its person's apps while it's
 // awake, instead of the cloud. Its switch starts on, and changes nothing until Continue: then, with it on, this
 // computer becomes a server, as the switch at the top of Settings › Devices makes it one (apps/sign-in/client/
-// devices.tsx), and it goes on at once while that's under way. Its picture, beside it, is this computer, the cloud at
+// devices.tsx), Continue spinning until it's started, as the mockup's Starting… does, and it goes on: so the Vault's
+// step after it (vault.tsx) sees a server waiting for its person's key. Where it couldn't start, it says why and stays. Its picture, beside it, is this computer, the cloud at
 // the network's address and a phone: with it on, the apps run on this computer while it's awake and in the cloud while
 // it sleeps, every 3.2 s; with it off, in the cloud only. It changes as the switch does.
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import { Button, call, client, defineVars, type Element, Image, Path, reducedMotion, Svg, styles, Switch, Text, toast, tokens, View } from "ui"
-import { Box, circle, type Part, Shape, Words } from "./art.tsx"
+import { createEffect, createSignal, For, Show } from "solid-js"
+import { Button, client, defineVars, type Element, Image, Path, reducedMotion, Svg, styles, Switch, Text, toast, tokens, View } from "ui"
+import { Box, circle, Panel, type Part, Shape, Words } from "./art.tsx"
 import { device } from "./store.ts"
+import { network } from "./welcome.tsx"
 
 /// How long the picture shows this computer awake, then asleep, as the mockup plays them.
 const PHASE = 3200
-/// The art board the picture is drawn on, and the part of it that's fitted to the room it has, as Welcome's.
-const BOARD = { width: 440, height: 330, fits: [428, 302] }
-/// How round the switch's card's corners are and the picture's, as the mockup has them: the window's radius, 10, and 4 and 6 more.
-const ROUND = { card: 14, panel: 16 }
+/// How round the switch's card's corners are, as the mockup has them: the window's radius, 10, and 4 more.
+const ROUND = { card: 14 }
 
 const own = defineVars({
   title: 24,
@@ -82,10 +82,7 @@ const look = styles({
   small: { fontSize: own.small, lineHeight: own.smallLeading, color: tokens.colour.secondaryLabel },
   strong: { fontWeight: 600, color: tokens.colour.label },
   go: { alignSelf: "stretch" },
-  panel: (width: number, height: number, borderRadius: number) => ({ width, height, borderRadius, overflow: "hidden", color: tokens.colour.label, backgroundImage: "radial-gradient(120% 90% at 50% 100%, color-mix(in oklab, currentColor 7%, transparent), color-mix(in oklab, currentColor 3%, transparent))" }),
-  stage: (start: number, top: number, width: number, height: number, scale: number) => ({ position: "absolute", start, top, width, height, scale }),
-  // Across the picture, at its foot.
-  caption: (width: number, top: number) => ({ position: "absolute", start: 0, top, width, alignItems: "center", pointerEvents: "none" }),
+  caption: { position: "absolute", start: 0, end: 0, bottom: tokens.grid[2.5], alignItems: "center", pointerEvents: "none" },
   pill: {
     flexDirection: "row",
     alignItems: "center",
@@ -128,14 +125,9 @@ const marching = [moves.dash0, moves.dash1, moves.dash2, moves.dash3, moves.dash
 /// What this computer is called, by its build's target (`macos-aarch64`), or nothing for a phone or a browser.
 export const computer = (target?: string) => ({ macos: "this Mac", windows: "this PC", linux: "this computer" } as Record<string, string>)[target?.split("-")[0] ?? ""]
 
-/// The network's name, short, as the step says it ("Keeps costs down for PTC"): its own, without "The" and "App", or
-/// the One App's.
-const named = createMemo(() =>
-  call("sign-in_network").then(
-    (answer) => (JSON.parse(answer) as { name?: string | null }).name?.replace(/^The (.+) App$/, "$1") ?? "the One App",
-    () => "the One App",
-  ),
-)
+/// The network's name, short, as the step says it ("Keeps costs down for PTC"): its own without "The" and "App", or
+/// the One App's, said "the One App".
+const short = (name: string) => (name === "The One App" ? "the One App" : name.replace(/^The (.+) App$/, "$1"))
 
 // The wires, from the phone to this computer and to the cloud, as cubic Béziers, and each drawn as dashes 3 long
 // every 10, at each of the five offsets they march through.
@@ -217,7 +209,7 @@ const Flow = (props: { phases: string[]; shown: boolean }) => (
 
 /// The picture: this computer awake or asleep, or not running a server (`on` false), the cloud and a phone, and where
 /// the apps run.
-function Picture(props: { on: boolean; awake: boolean; name: string; host: string }) {
+function Drawing(props: { on: boolean; awake: boolean; name: string; host: string }) {
   const here = () => props.on && props.awake
   const status = () => (!props.on ? "Not running" : props.awake ? "Awake" : "Asleep")
   return (
@@ -285,8 +277,18 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
   )
   const name = () => computer(device().target) ?? "this computer"
   const host = () => (device().network ? new URL(device().network!).host : "Cloud")
-  const go = () => {
-    if (on()) client({ serve: true }).then(({ message }) => void (message && toast(message)), (error) => void toast(error as Error))
+  const [starting, setStarting] = createSignal(false)
+  const go = async () => {
+    if (on()) {
+      setStarting(true)
+      // Going on says it's done; only why it couldn't is said.
+      try {
+        await client({ serve: true })
+      } catch (error) {
+        setStarting(false)
+        return void toast(error as Error)
+      }
+    }
     props.onContinue()
   }
   const wide = () => props.width >= 600
@@ -294,7 +296,7 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
   const Heading = (heading: { narrow?: boolean }) => (
     <View style={heading.narrow ? look.brandNarrow : look.brand}>
       <View style={heading.narrow ? look.headingNarrow : look.heading}>
-        <Image src="/Logo.png" srcDark="/Logo-dark.png" alt="" style={heading.narrow ? look.markNarrow : look.mark} />
+        <Image src={network().light} srcDark={network().dark} alt="" style={heading.narrow ? look.markNarrow : look.mark} />
         <Text role="heading" aria-level={1} style={heading.narrow ? look.titleNarrow : look.title}>
           Your own server
         </Text>
@@ -316,7 +318,7 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
     <View style={look.body}>
       <View style={look.perks}>
         <Perk d={glyphs.faster}>Faster</Perk>
-        <Perk d={glyphs.costs}>{`Keeps costs down for ${named()}`}</Perk>
+        <Perk d={glyphs.costs}>{`Keeps costs down for ${short(network().name)}`}</Perk>
         <Perk d={glyphs.builds}>{`Build apps that use ${name()}`}</Perk>
       </View>
       <View style={look.card(ROUND.card)}>
@@ -324,7 +326,7 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
           <Text style={look.option}>Run your own server on {name()}</Text>
           <Text style={look.small}>Only runs your own apps and data, never anyone else's.</Text>
         </View>
-        <Switch aria-label="Run your own server" value={on()} onValueChange={setOn} />
+        <Switch aria-label="Run your own server" value={on()} disabled={starting()} onValueChange={setOn} />
       </View>
       <Text style={look.small}>
         {on() ? "Turn it off anytime in " : "You can turn it on later in "}
@@ -333,35 +335,37 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
     </View>
   )
 
-  // The art board, centred in the picture's room and grown to fill it, and what it shows said under it.
-  const Panel = (size: { width: number; height: number }) => {
-    const scale = () => Math.min(size.width / BOARD.fits[0], size.height / BOARD.fits[1])
+  // The picture, and what it shows said at its foot.
+  const Picture = (size: { width: number; height: number }) => {
     const caption = () => (!on() ? "Apps run in the cloud" : awake() ? `Awake: apps run on ${name()}` : "Asleep: the cloud takes over")
     return (
-      <View style={look.panel(size.width, size.height, ROUND.panel)} aria-hidden="true">
-        <View style={look.stage((size.width - BOARD.width) / 2, (size.height - BOARD.height) / 2, BOARD.width, BOARD.height, scale())}>
-          <Picture on={on()} awake={awake()} name={name()} host={host()} />
-        </View>
-        <View style={look.caption(size.width, size.height - 39)}>
-          <Show when={caption()} keyed>
-            {(said) => (
-              <View style={look.pill}>
-                <View style={look.pillGlyph}>
-                  <Svg viewBox="0 0 12 12" style={look.sun}>
-                    <Path d={sun} style={look.sunInk} />
-                  </Svg>
+      <Panel
+        width={size.width}
+        height={size.height}
+        over={
+          <View style={look.caption}>
+            <Show when={caption()} keyed>
+              {(said) => (
+                <View style={look.pill}>
+                  <View style={look.pillGlyph}>
+                    <Svg viewBox="0 0 12 12" style={look.sun}>
+                      <Path d={sun} style={look.sunInk} />
+                    </Svg>
+                  </View>
+                  <Text style={look.pillText}>{said}</Text>
                 </View>
-                <Text style={look.pillText}>{said}</Text>
-              </View>
-            )}
-          </Show>
-        </View>
-      </View>
+              )}
+            </Show>
+          </View>
+        }
+      >
+        <Drawing on={on()} awake={awake()} name={name()} host={host()} />
+      </Panel>
     )
   }
 
   const Continue = () => (
-    <Button shape={wide() ? undefined : "capsule"} onPress={go} style={look.go}>
+    <Button shape={wide() ? undefined : "capsule"} loading={starting()} onPress={go} style={look.go}>
       Continue
     </Button>
   )
@@ -376,7 +380,7 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
           return (
             <View style={look.narrow(width)}>
               <Heading narrow />
-              <Panel width={inner} height={Math.round((inner * 3.4) / 4)} />
+              <Picture width={inner} height={Math.round((inner * 3.4) / 4)} />
               <Body />
               <Continue />
             </View>
@@ -396,7 +400,7 @@ export function OwnServer(props: { width: number; height: number; onContinue: ()
                   <Body />
                   <Continue />
                 </View>
-                <Panel width={panel} height={height} />
+                <Picture width={panel} height={height} />
               </View>
             </View>
           )
