@@ -72,6 +72,11 @@ const path = (link: string) => {
 const titled = (app: string) => app[0].toUpperCase() + app.split("#")[0].slice(1)
 /// "Gmail, Google Calendar and Google Drive".
 const listed = (things: string[]) => new Intl.ListFormat("en", { type: "conjunction" }).format(things)
+/// The network's name, as its manifest says it (`apps/sign-in/edge/worker.ts`): the app a sign-in begun in it is for.
+const [named, setNamed] = createSignal("the One App")
+fetch("/manifest.webmanifest")
+  .then((response) => response.json())
+  .then(({ name }) => setNamed(name))
 
 render(() => {
   const status = () => ended()?.status
@@ -107,7 +112,7 @@ render(() => {
       </Show>
       <Show when={status() === "cancelled"}>
         <Text style={look.said}>
-          You didn't let {listed(ended()!.apps?.length ? ended()!.apps! : ["the One App"])} use your {ended()!.service} account.
+          You didn't let {listed(ended()!.apps?.length ? ended()!.apps! : [named()])} use your {ended()!.service} account.
         </Text>
       </Show>
       <Show when={ended() && after()}>

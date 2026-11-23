@@ -32,7 +32,7 @@ export let windows = false
 /// it doesn't, as in a browser, which draws each app in a frame here with the renderer it loads.
 let runtimeVersion = 0
 /// Why a phone can't open an app's page natively: its page needs a newer renderer than the app's, or newer tables.
-const NEWER = "It needs a newer version of the One App. Update it, then open it again."
+const NEWER = "It needs a newer version of this app. Update it, then open it again."
 /// On a phone, the launcher is drawn natively, as its root window, under every app's (`open_launcher`).
 export let nativeLauncher = false
 /// Whether the native launcher was last told it shows, which it doesn't while an app in a frame here is in front, and

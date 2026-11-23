@@ -37,7 +37,7 @@ render(() =>
           return h(Problem, {
             warn: true,
             get heading() { return failed() ? "Couldn't Update" : "Update Required" },
-            get text() { return failed() ?? "This version of the One App no longer works with your network." },
+            get text() { return failed() ?? "This version of the app no longer works with your network." },
             get action() {
               return [h(Button, { onPress: update, children: "Update" }), h(Button, { variant: "outline", onPress: retry, children: "Try Again" })]
             },

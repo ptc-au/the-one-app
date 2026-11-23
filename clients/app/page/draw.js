@@ -30,7 +30,7 @@ function problemOf(now) {
 }
 /// What a computer's launcher says while its servers say it's behind them: Update Required, with Update.
 /** @type {[string, string, undefined, string]} */
-const UPDATE_REQUIRED = ["Update Required", "This version of the One App no longer works with your network.", undefined, "Update"]
+const UPDATE_REQUIRED = ["Update Required", "This version of the app no longer works with your network.", undefined, "Update"]
 /// Draws what the window shows of itself, in its middle, over the frames: its mark and steps while it opens, a
 /// spinner and a line while it updates, why there's no Home Screen, or a problem; and over the launcher, a banner
 /// while its network doesn't answer. The launcher is the frames alone.
@@ -94,7 +94,7 @@ export function draw() {
     byId("problem-button").textContent = action ?? ""
   }
   // What's shown is reported once, as it's shown, with what Show Details says.
-  const said = behind ? "Update Required: This version of the One App no longer works with your network." : problem && [problem[0], problem[1], problem[2]].filter(Boolean).join(": ")
+  const said = behind ? "Update Required: This version of the app no longer works with your network." : problem && [problem[0], problem[1], problem[2]].filter(Boolean).join(": ")
   if (said && said !== lastProblem) report("one.client.problem", said)
   lastProblem = said
   fit()

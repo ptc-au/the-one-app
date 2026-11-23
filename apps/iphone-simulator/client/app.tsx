@@ -87,7 +87,7 @@ function Detail(props: { simulator: Simulator }) {
           <Status heading="Removing…" />
         </Match>
         <Match when={e().state === "gone"}>
-          <Problem warn heading="Gone from Xcode" text="It was deleted outside the One App." action={<Button loading={busy()} onPress={() => act("remove")}>Remove</Button>} />
+          <Problem warn heading="Gone from Xcode" text="It was deleted outside this app." action={<Button loading={busy()} onPress={() => act("remove")}>Remove</Button>} />
         </Match>
         <Match when={e().why}>
           <Problem heading={`Couldn't start ${e().name}`} text={e().why} action={<Button loading={busy()} onPress={() => act("start")}>Try Again</Button>} />

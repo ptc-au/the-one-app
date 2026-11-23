@@ -21,11 +21,14 @@ import { check, code, forDevice, forPasskey, forServers, NO_PRF, opened as opene
 /// The network's mark: its own logo, for a light page and a dark one, or the One App's (`icon` in `../worker.ts`).
 const mark = "/Logo.png"
 const markDark = "/Logo-dark.png"
-// The tab is named as the network is, which a password manager may name what it saves here by.
+/// The network's name, as its manifest says it (`../worker.ts`): the app its notes send someone back to, and the tab's,
+/// which a password manager may name what it saves here by.
+const [app, setApp] = createSignal("the One App")
 fetch("/manifest.webmanifest")
   .then((response) => response.json())
   .then(({ name }) => {
     document.title = name
+    setApp(name)
   })
 
 const look = styles({
@@ -625,12 +628,12 @@ function shows(): Shows {
           return { heading, note: "Use your new passkey once, so it can unlock your key on a new device.", button: "Use Passkey", onSignIn: () => withPasskey().then(created) }
         case "created":
           if (!shownCode) return { heading, done: "Your passkey is created, and you can sign in with it, but it can't unlock your key on a new device. Passkeys saved in iCloud Keychain or Google Password Manager can." }
-          if (now.by) return { heading, done: `Your passkey is created. Go back to the One App on ${now.by}: it lets your passkey unlock your key.` }
+          if (now.by) return { heading, done: `Your passkey is created. Go back to ${app()} on ${now.by}: it lets your passkey unlock your key.` }
           // The code is for comparing with the one a device that holds the key shows beside Allow: with no such device there's nothing to compare it with.
           if (now.on && !now.on.length) return { heading, done: "Your passkey is created, and you can sign in with it. No device holds your key yet, so there's nothing to allow." }
           return {
             heading,
-            note: `Your passkey is created. To let it unlock your key, open the One App on ${now.on ? listed(now.on) : "a device that holds your key"} and tap Allow, but only if it shows this same code.${flow.replaces ? " Your old passkey is removed then." : ""}`,
+            note: `Your passkey is created. To let it unlock your key, open ${app()} on ${now.on ? listed(now.on) : "a device that holds your key"} and tap Allow, but only if it shows this same code.${flow.replaces ? " Your old passkey is removed then." : ""}`,
             code: shownCode,
           }
         default:

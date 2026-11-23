@@ -363,7 +363,7 @@ function Detail(props: { thing: Thing; all: All; groups?: Groups }) {
 const called = (thing: Thing) => (thing.command ? `${thing.command} CLI on ${thing.name}` : (thing.name ?? "Server"))
 
 /// What kind of thing a device is, as About says it.
-const kinds = { app: "the One App", assistant: "Assistant", browser: "Browser", server: "Server" }
+const kinds = { app: "App", assistant: "Assistant", browser: "Browser", server: "Server" }
 
 /// What this device is called where it's a computer whose app runs a server, by its build's target (`macos-aarch64`):
 /// "this Mac", "this PC" or "this computer". A phone and a browser are none.
