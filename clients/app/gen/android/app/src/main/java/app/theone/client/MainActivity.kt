@@ -99,6 +99,7 @@ class MainActivity : TauriActivity() {
   override fun onStop() {
     visible(false)
     super.onStop()
+    Widgets.redraw(this)
   }
 
   private external fun visible(onScreen: Boolean)
@@ -109,14 +110,9 @@ class MainActivity : TauriActivity() {
     if (hasFocus) focused = this else if (focused === this) focused = null
   }
 
-  /** Its home-screen widgets are drawn again as it opens and as it's left, so they show what was just seen in it. */
+  /** Its home-screen widgets are drawn again as it opens and as it's left (`onStop`), so they show what was just seen in it. */
   override fun onResume() {
     super.onResume()
-    Widgets.redraw(this)
-  }
-
-  override fun onStop() {
-    super.onStop()
     Widgets.redraw(this)
   }
 
