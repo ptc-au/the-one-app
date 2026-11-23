@@ -58,6 +58,8 @@ line.addEventListener("pointermove", (event) => {
     if (moving()?.matches("tracking")) pull = { id: event.pointerId, x: down.x, recent: [] }
   }
   if (event.pointerId !== pull?.id) return
+  // Its button is up, and the line never heard it go: it's let go here.
+  if (event.buttons === 0) return letGo(event)
   const inward = (pull.x - event.clientX) / innerWidth
   // The app follows the finger, and past the card (`HELD`) slows to a stop, as a rubber band does.
   const p = HELD * Math.tanh(Math.max(0, inward) / HELD)
@@ -65,7 +67,7 @@ line.addEventListener("pointermove", (event) => {
   line.toggleAttribute("data-pulled", true)
   on({ type: "drag", p })
 })
-/** @param {PointerEvent} event */
+/** @param {{ pointerId: number, type: string }} event */
 function letGo(event) {
   touching.delete(event.pointerId)
   if (event.pointerId !== pull?.id) return
@@ -82,3 +84,9 @@ function letGo(event) {
 }
 line.addEventListener("pointerup", letGo)
 line.addEventListener("pointercancel", letGo)
+// A pull the browser stops telling the line about lets go as a lift would, where it is: its capture lost before the
+// button was let go (the button then let go over an app's frame, which hears it), or the window put away under it
+// (another app, a menu), where the button is let go. Waiting for a lift the line never hears left the app frozen as a
+// card over the Home Screen (22 Nov). After a lift, the capture lost says nothing more.
+line.addEventListener("lostpointercapture", letGo)
+addEventListener("blur", () => pull && letGo({ pointerId: pull.id, type: "blur" }))
