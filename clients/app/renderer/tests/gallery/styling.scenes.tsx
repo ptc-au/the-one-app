@@ -28,6 +28,8 @@ const look = styles({
   later: { position: "relative" },
   plain: { flexShrink: 0 },
   rounded: { width: 120, height: 120, overflow: "hidden", borderRadius: tokens.radius.large },
+  // Gradients over each other, the first on top, as the desktops behind onboarding's Open from anywhere were.
+  layered: (backgroundImage: string) => ({ width: 320, height: 200, borderRadius: tokens.radius.large, backgroundImage }),
   round: { width: 260, height: 260, overflow: "hidden", borderRadius: 80 },
   inner: { width: "100%", height: "100%", overflow: "hidden", borderRadius: tokens.radius.small },
   fill: { width: "100%", height: "100%" },
@@ -268,6 +270,15 @@ export default {
   },
   // Drawn per thing, the card's start over the square was a mix of the two (2.2:1 by it), the square showing through;
   // faded as one, about 4:1; not faded at all, its parts drawn outside its layer, far more.
+  // Each layer of a background's gradients drawn over the next, two fading to transparent over a third, where they
+  // were read as one gradient with all their stops, which drew rings across the picture and a dark corner (Andre's
+  // Mac, 23 Nov).
+  "Styling/Gradients layered": () => (
+    <View style={look.stack}>
+      <View style={look.layered("radial-gradient(90% 80% at 20% 10%, #f6c9a8, #f6c9a800 60%), radial-gradient(90% 90% at 90% 90%, #6d7cf2, #6d7cf200 65%), linear-gradient(160deg, #e8a3b8, #8b8ff0)")} />
+      <View style={look.layered("radial-gradient(80% 80% at 80% 100%, #f08a5d, #f08a5d00 60%), linear-gradient(160deg, #4b1d63, #9b3c74 60%, #e2754f)")} />
+    </View>
+  ),
   "Styling/Faded as one": {
     render: () => <Faded />,
     checks: { "What's over another in a faded group hides it": [{ expect: { contrast: { of: { role: "img", name: "Over" }, least: 3, most: 6 } } }] },

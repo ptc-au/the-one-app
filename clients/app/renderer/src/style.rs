@@ -29,8 +29,9 @@ use crate::tree::Node;
 #[derive(Clone, Debug)]
 pub struct Look {
     pub background: Option<Hsla>,
-    /// A gradient over its background (`backgroundImage`, CSS's `linear-gradient()` or `radial-gradient()`).
-    pub background_image: Option<crate::css::Gradient>,
+    /// The gradients over its background, the first on top (`backgroundImage`, CSS's `linear-gradient()` and
+    /// `radial-gradient()`).
+    pub background_image: Vec<crate::css::Gradient>,
     pub border_color: Hsla,
     pub borders: Edges<f32>,
     pub dashed: bool,
@@ -145,7 +146,7 @@ impl Default for Look {
     fn default() -> Look {
         Look {
             background: None,
-            background_image: None,
+            background_image: Vec::new(),
             border_color: Hsla::default(),
             borders: Edges::default(),
             dashed: false,
@@ -641,7 +642,7 @@ fn computed(style: &Map<String, Value>, conditions: Conditions) -> Computed {
     };
     let look = Look {
         background: get("backgroundColor").and_then(|value| ref_colour(value, conditions)),
-        background_image: word("backgroundImage").and_then(crate::css::Gradient::of),
+        background_image: word("backgroundImage").map(crate::css::gradients).unwrap_or_default(),
         border_color: get("borderColor").and_then(|value| ref_colour(value, conditions)).unwrap_or_default(),
         borders,
         dashed: word("borderStyle") == Some("dashed"),

@@ -1,7 +1,8 @@
 //! CSS's own values, as a style gives them as text, the way React Native takes them: a colour (`#f80`, `rgba(0,0,0,.2)`,
 //! `transparent`), a `boxShadow` (`0 10px 30px rgba(0,0,0,.14), inset 0 0 0 1px #3a3a3c`) and a
 //! `backgroundImage` (`linear-gradient(145deg, #ffb340, #ff6a2b 55%, #f2384b)`, `radial-gradient(120% 90% at 50% 100%,
-//! …)`, `radial-gradient(closest-side, …)`), with a gradient drawn here, the same on every host.
+//! …)`, `radial-gradient(closest-side, …)`, or several of them, the first on top), with gradients drawn here, the same
+//! on every host.
 
 use crate::geometry::Rgba;
 use crate::tokens::Shadow;
@@ -159,9 +160,36 @@ fn part(word: &str) -> Option<f32> {
     }
 }
 
+/// A `backgroundImage`'s gradients, the first drawn on top, as CSS layers them: each `linear-gradient(…)` or
+/// `radial-gradient(…)` of its list. Read as one, three of them were a radial gradient with all their stops, which drew
+/// rings across a desktop's picture and a dark corner (Andre's Mac, 23 Nov).
+pub fn gradients(text: &str) -> Vec<Gradient> {
+    split(text).into_iter().filter_map(Gradient::of).collect()
+}
+
+/// `layers` (the first on top, `gradients`) drawn on a box `width` × `height` CSS pixels, at `width_px` × `height_px`
+/// device pixels, with the text's colour `current`: its pixels, premultiplied BGRA, as a picture's are, each layer's
+/// colours mixed premultiplied as CSS mixes a gradient's, and each over those under it.
+pub fn draw(layers: &[Gradient], width: f32, height: f32, width_px: u32, height_px: u32, current: Rgba) -> Vec<u8> {
+    let placed: Vec<Vec<(Rgba, f32)>> = layers.iter().map(|layer| layer.placed(current)).collect();
+    let (sx, sy) = (width / width_px.max(1) as f32, height / height_px.max(1) as f32);
+    let mut pixels = Vec::with_capacity((width_px * height_px * 4) as usize);
+    for row in 0..height_px {
+        for column in 0..width_px {
+            let (x, y) = ((column as f32 + 0.5) * sx, (row as f32 + 0.5) * sy);
+            let [r, g, b, a] = layers.iter().zip(&placed).rev().fold([0.0; 4], |under, (layer, stops)| {
+                let over = layer.at(stops, layer.along(x, y, width, height));
+                std::array::from_fn(|channel| over[channel] + under[channel] * (1.0 - over[3]))
+            });
+            pixels.extend([b, g, r, a].map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8));
+        }
+    }
+    pixels
+}
+
 impl Gradient {
-    /// A `backgroundImage`'s gradient: `linear-gradient(…)` or `radial-gradient(…)`.
-    pub fn of(text: &str) -> Option<Gradient> {
+    /// One `linear-gradient(…)` or `radial-gradient(…)`.
+    fn of(text: &str) -> Option<Gradient> {
         let text = text.trim();
         let (radial, inner) = match text.strip_prefix("linear-gradient(") {
             Some(inner) => (false, inner),
@@ -240,46 +268,35 @@ impl Gradient {
         self.stops.iter().any(|(tint, _)| matches!(tint, Tint::Current(_)))
     }
 
-    /// Drawn on a box `width` × `height` CSS pixels, at `width_px` × `height_px` device pixels, with the text's colour
-    /// `current`: its pixels, premultiplied BGRA, as a picture's are, mixed premultiplied as CSS mixes a gradient's
-    /// colours.
-    pub fn draw(&self, width: f32, height: f32, width_px: u32, height_px: u32, current: Rgba) -> Vec<u8> {
-        let stops = self.placed(current);
+    /// Its colour `t` of the way along it (`along`), with its stops `stops` (`placed`): premultiplied.
+    fn at(&self, stops: &[(Rgba, f32)], t: f32) -> [f32; 4] {
         let premultiplied = |c: Rgba| [c.r * c.a, c.g * c.a, c.b * c.a, c.a];
-        let at = |t: f32| -> [f32; 4] {
-            let after = stops.iter().position(|(_, at)| *at >= t);
-            match after {
-                None => premultiplied(stops[stops.len() - 1].0),
-                Some(0) => premultiplied(stops[0].0),
-                Some(after) => {
-                    let ((a, from), (b, to)) = (stops[after - 1], stops[after]);
-                    let mix = if to > from { (t - from) / (to - from) } else { 1.0 };
-                    let (a, b) = (premultiplied(a), premultiplied(b));
-                    std::array::from_fn(|channel| a[channel] + (b[channel] - a[channel]) * mix)
-                }
+        match stops.iter().position(|(_, at)| *at >= t) {
+            None => premultiplied(stops[stops.len() - 1].0),
+            Some(0) => premultiplied(stops[0].0),
+            Some(after) => {
+                let ((a, from), (b, to)) = (stops[after - 1], stops[after]);
+                let mix = if to > from { (t - from) / (to - from) } else { 1.0 };
+                let (a, b) = (premultiplied(a), premultiplied(b));
+                std::array::from_fn(|channel| a[channel] + (b[channel] - a[channel]) * mix)
             }
-        };
-        let (sx, sy) = (width / width_px.max(1) as f32, height / height_px.max(1) as f32);
-        let along: Box<dyn Fn(f32, f32) -> f32> = match self.shape {
+        }
+    }
+
+    /// How far along it the point `x`, `y` of a box `width` × `height` is: 0 at its start, 1 at its end.
+    fn along(&self, x: f32, y: f32, width: f32, height: f32) -> f32 {
+        match self.shape {
             Shape::Linear { angle } => {
                 let (sin, cos) = angle.to_radians().sin_cos();
                 let length = (width * sin).abs() + (height * cos).abs();
-                Box::new(move |x, y| ((x - width / 2.0) * sin - (y - height / 2.0) * cos) / length.max(f32::EPSILON) + 0.5)
+                ((x - width / 2.0) * sin - (y - height / 2.0) * cos) / length.max(f32::EPSILON) + 0.5
             }
             Shape::Radial { radii, middle } => {
                 let (cx, cy) = (middle.0 * width, middle.1 * height);
                 let (rx, ry) = radii.map_or((cx.min(width - cx), cy.min(height - cy)), |(x, y)| (x * width, y * height));
-                Box::new(move |x, y| (((x - cx) / rx.max(f32::EPSILON)).powi(2) + ((y - cy) / ry.max(f32::EPSILON)).powi(2)).sqrt())
-            }
-        };
-        let mut pixels = Vec::with_capacity((width_px * height_px * 4) as usize);
-        for row in 0..height_px {
-            for column in 0..width_px {
-                let [r, g, b, a] = at(along((column as f32 + 0.5) * sx, (row as f32 + 0.5) * sy));
-                pixels.extend([b, g, r, a].map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8));
+                (((x - cx) / rx.max(f32::EPSILON)).powi(2) + ((y - cy) / ry.max(f32::EPSILON)).powi(2)).sqrt()
             }
         }
-        pixels
     }
 }
 

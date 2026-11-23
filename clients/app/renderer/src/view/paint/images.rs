@@ -129,18 +129,18 @@ impl Painter<'_> {
         self.sprite(tile, content, Corners::default(), opacity, mask);
     }
 
-    /// A gradient over a box's background (`backgroundImage`), drawn for its size in device pixels and kept as a
+    /// The gradients over a box's background (`backgroundImage`), drawn for its size in device pixels and kept as a
     /// picture is, its corners rounded as the box's are.
-    pub(in crate::view) fn paint_gradient(&mut self, gradient: &crate::css::Gradient, bounds: Bounds<f32>, radii: Corners<f32>, current: Hsla, opacity: f32, mask: ContentMask<f32>) {
+    pub(in crate::view) fn paint_gradient(&mut self, gradients: &[crate::css::Gradient], bounds: Bounds<f32>, radii: Corners<f32>, current: Hsla, opacity: f32, mask: ContentMask<f32>) {
         let device = pictures::fitting(Size { width: (bounds.size.width * self.scale).round() as u32, height: (bounds.size.height * self.scale).round() as u32 }, self.atlas);
         if device.width == 0 || device.height == 0 {
             return;
         }
         let (width, height) = (bounds.size.width, bounds.size.height);
         let current = crate::geometry::Rgba::from(current);
-        let tint = if gradient.current() { format!("{current:?}") } else { String::new() };
-        let key = format!("gradient{gradient:?}{tint}{}x{} {}x{}", width.to_bits(), height.to_bits(), device.width, device.height);
-        let draw = || Some(Decoded { picture: Picture { width: device.width, height: device.height }, bgra: gradient.draw(width, height, device.width, device.height, current) });
+        let tint = if gradients.iter().any(crate::css::Gradient::current) { format!("{current:?}") } else { String::new() };
+        let key = format!("gradient{gradients:?}{tint}{}x{} {}x{}", width.to_bits(), height.to_bits(), device.width, device.height);
+        let draw = || Some(Decoded { picture: Picture { width: device.width, height: device.height }, bgra: crate::css::draw(gradients, width, height, device.width, device.height, current) });
         let Some(tile) = self.pictures.now(self.atlas, &key, draw) else { return };
         self.sprite(tile, bounds, radii, opacity, mask);
     }
