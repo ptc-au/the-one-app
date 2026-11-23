@@ -49,7 +49,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { chromium } from "playwright-core"
 import { PNG } from "pngjs"
 import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
@@ -71,6 +70,8 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 const out = resolve(option("--out") ?? join(root, "target", "screenshot"))
 const dark = flag("--dark")
 const onTheWeb = flag("--web")
+// Chromium, which only `--web` starts, loaded only then.
+const { chromium } = onTheWeb ? await import("playwright-core") : {}
 // Every scene in a window this size, a phone's if it is under COMPACT and a computer's if not, where it says none of its own.
 const sized = option("--size")?.split("x").map(Number)
 const against = option("--against") && resolve(option("--against"))
@@ -509,7 +510,9 @@ const headlessRun = (asked) => slot(() => work(headless, asked, env))
 const keptRun = (asked, outputs) => slot(() => cached(headless, asked, env, outputs, (args) => work(headless, args, env)))
 
 /// A scene drawn by a native host's headless renderer, or nothing where it hasn't been built or can't draw the page.
-async function native(built, scene, folder, fresh = false) {
+/// `again` draws it a second time, only to be compared with the first: afresh, never kept, without what only the first
+/// is judged by (how quickly it drew, `--measure`, and the rules).
+async function native(built, scene, folder, again = false) {
   if (hosted < needed) return { missing: `the native host's runtime version is ${hosted}, the UI library needs ${needed}: nothing to compare until it's ${needed}` }
   const at = pageFolder(built, scene.page, folder, scene.uses)
   const answers = { ...scene.answers, "ui/initialize": scene.answers["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
@@ -521,8 +524,8 @@ async function native(built, scene, folder, fresh = false) {
   const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query" }, { op: "query", frames: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   writeFileSync(join(folder, "requests.jsonl"), requests)
-  const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", "--measure", "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...panel(scene)]
-  const run = await (fresh ? headlessRun(asked) : keptRun(asked, [join(folder, "native.png"), join(folder, "native.json")]))
+  const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", ...(again ? [] : ["--measure"]), "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...panel(scene)]
+  const run = await (again ? headlessRun(asked) : keptRun(asked, [join(folder, "native.png"), join(folder, "native.json")]))
   if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing"), error: true }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))
   // Its tree: each node's role, name and what it is (its states, by ARIA's names, beside them), and its words.
@@ -542,7 +545,7 @@ async function native(built, scene, folder, fresh = false) {
   const overflowing = overflowingWords(queried, scene.size[0])
   const allNodes = said.at(-after - 1)?.result?.nodes ?? []
   writeFileSync(join(folder, "native-nodes.json"), JSON.stringify(allNodes))
-  const broken = existsSync(join(folder, "native.png")) ? rules(allNodes, join(folder, "native.png"), scene.size, `${basename(dirname(folder))} · ${scene.name}`) : []
+  const broken = !again && existsSync(join(folder, "native.png")) ? rules(allNodes, join(folder, "native.png"), scene.size, `${basename(dirname(folder))} · ${scene.name}`) : []
   // The words in sight, as the last frame drew them: each text and name of the semantic tree whose node, or the nearest
   // above it the inspector knows (a text in a line, a page in a frame), has some of its box in the window and isn't
   // see-through.
