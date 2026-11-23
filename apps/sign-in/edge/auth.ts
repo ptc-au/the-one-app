@@ -632,8 +632,11 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
     // Better Auth limits how often an address asks only where NODE_ENV says production, which a Worker's doesn't,
     // and counts in memory, which each copy of a Worker has its own of.
     // Better Auth's own limit on looking up a device's code counts every lookup from an address, which a household
-    // or an office shares: that one is counted for the person instead (`WRONG_CODES`).
-    rateLimit: { enabled: true, storage: "database", customRules: { "/device": false } },
+    // or an office shares: that one is counted for the person instead (`WRONG_CODES`). Its limit on a token, 20 a
+    // minute from an address, isn't kept: a token is only given for a refresh token or a code, which can't be guessed,
+    // and every server and device behind one address asks for theirs at once as they start (PTC's three servers and
+    // Andre's devices, 429 each time its machine restarted, 23 Nov).
+    rateLimit: { enabled: true, storage: "database", customRules: { "/device": false, "/oauth2/token": false } },
     // Cloudflare says where a request came from in a header of its own. Its cookies are named the One App's, since a
     // browser sends a parent domain's cookies too, and another Better Auth there names its own `better-auth.*`,
     // which it would send first: a network at a subdomain wasn't signed in by its own after another's on its parent domain.
