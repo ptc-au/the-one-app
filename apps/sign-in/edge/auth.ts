@@ -290,15 +290,30 @@ async function place(adapter: Adapter, device: string, kind: Device["kind"], nam
 async function goesBy(user: User) {
   const person = { called: user.called ?? null, email: user.emailVerified ? user.email : null };
   await env.OWN.update(`people/${user.name}`, () => JSON.stringify(person));
-  // Better Auth keeps Google's picture's address as `image`, which is taken again each time they sign in with Google.
-  // Where Google doesn't answer it's taken at the next ten minutes (`pictures`), as signing in doesn't wait for it.
-  await keepGoogle(user.name, user.image).catch((error) => console.error(`Couldn't take ${user.name}'s picture from Google: ${error.message}`));
 }
 
-/** Takes Google's picture for everyone who has one and doesn't yet, and the network's, which the edge calls every ten minutes (`wrangler.jsonc`), as a network made before pictures was, or where Google didn't answer, has none. */
+/** The picture in a Google ID token's claims (`picture`), whose address Google sizes, or null. The token is Google's own, handed over as Better Auth signed them in. */
+function pictureOf(idToken: string | null | undefined) {
+  try {
+    const claims = JSON.parse(atob(idToken!.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof claims.picture === "string" ? claims.picture : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Takes the picture Google has for someone who signed in with it, which Better Auth keeps the ID token of each time they do. */
+async function fromGoogle(account: { userId: string; providerId: string; idToken?: string | null }) {
+  if (account.providerId !== "google") return;
+  const user = await env.DB.prepare('select name from "user" where id = ?').bind(account.userId).first<{ name: string }>();
+  // Someone not made yet has theirs taken at the next ten minutes (`pictures`), as does one Google didn't answer for, as signing in doesn't wait for it.
+  if (user) await keepGoogle(user.name, pictureOf(account.idToken)).catch((error) => console.error(`Couldn't take ${user.name}'s picture from Google: ${error.message}`));
+}
+
+/** Takes Google's picture for everyone who signed in with it and has none kept, and the network's, which the edge calls every ten minutes (`wrangler.jsonc`), as a network made before pictures was has none. */
 export async function pictures() {
-  const { results } = await env.DB.prepare('select name, image from "user" where image is not null').all<{ name: string; image: string }>();
-  await Promise.all(results.map(({ name, image }) => keepGoogle(name, image).catch((error) => console.error(`Couldn't take ${name}'s picture from Google: ${error.message}`))));
+  const { results } = await env.DB.prepare(`select "user".name as name, account.idToken as token from account join "user" on "user".id = account.userId where account.providerId = 'google'`).all<{ name: string; token: string | null }>();
+  await Promise.all(results.map(({ name, token }) => keepGoogle(name, pictureOf(token)).catch((error) => console.error(`Couldn't take ${name}'s picture from Google: ${error.message}`))));
   await keepNetwork((await network()).icon?.png ?? null, false);
 }
 
@@ -608,8 +623,7 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
       },
     },
     // A network with a Google client signs people in with it too, choosing the account each time.
-    // Their profile is read again each time they sign in, for the picture (`goesBy`), which Better Auth takes with their name; `update.before` below keeps the name.
-    socialProviders: env.GOOGLE_CLIENT_ID ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET!, prompt: "select_account" as const, overrideUserInfoOnSignIn: true } } : {},
+    socialProviders: env.GOOGLE_CLIENT_ID ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET!, prompt: "select_account" as const } } : {},
     databaseHooks: {
       user: {
         // Someone joining with Google is `users/<name>` by the invitation they came with, or by a name made of their
@@ -631,10 +645,10 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
           },
           after: goesBy,
         },
-        // Signing in with Google again makes Better Auth give the user Google's name, where the name they're
-        // `users/<name>` by never changes.
-        update: { before: async ({ name: _, ...data }) => ({ data }), after: goesBy },
+        update: { after: goesBy },
       },
+      // Better Auth keeps Google's ID token each time someone signs in with it, which has their picture.
+      account: { create: { after: fromGoogle }, update: { after: fromGoogle } },
       // A browser that's signed in is one of its person's devices for as long as it is: the web client asks as its
       // session (`worker.ts`).
       session: {
