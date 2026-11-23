@@ -24,7 +24,8 @@ work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
 git -C "$network" fetch -q origin main
 git -C "$network" archive origin/main app | tar -x -C "$work"
 config=$(jq -s '.[0] * (.[1] // {})' "$work/app/tauri.conf.json" $([[ -f $work/app/tauri.macos.conf.json ]] && echo "$work/app/tauri.macos.conf.json"))
-name=$(jq -er .productName <<<"$config") identifier=$(jq -er .identifier <<<"$config") command=$(jq -r '.mainBinaryName // "one"' <<<"$config")
+# A network that names none is the One App's, as its Info.plist names it.
+name=$(jq -r '.productName // empty' <<<"$config") identifier=$(jq -r '.identifier // empty' <<<"$config") command=$(jq -r '.mainBinaryName // "one"' <<<"$config")
 
 # The plain build, as every network's Mac takes it (`core/edge/updater/core.ts`), signed in the One App's bundle.
 build=$(curl -fsSL https://github.com/ptc-au/the-one-app/releases/download/builds/macos-aarch64.json | jq -e .one)
@@ -34,26 +35,35 @@ sha256sum -c --quiet <<<"$(jq -r .sha256 <<<"$build")  $work/one.gz"
 rm -rf "$out" && mkdir -p "$out/Contents/MacOS" "$out/Contents/Resources"
 gunzip -c "$work/one.gz" >"$out/Contents/MacOS/$command" && chmod +x "$out/Contents/MacOS/$command"
 jq -nc --arg address "$(cat "$work/app/address")" '{address: $address}' >"$out/Contents/Resources/network"
-python3 -I - "$root/clients/app/macos/Contents/Info.plist" "$out/Contents/Info.plist" "$name" "$identifier" "$command" <<'EOF'
+# Its Info.plist, which says its name and identifier, the One App's where the network names none.
+IFS=$'\t' read -r name identifier < <(python3 -I - "$root/clients/app/macos/Contents/Info.plist" "$out/Contents/Info.plist" "$name" "$identifier" "$command" <<'EOF'
 import plistlib, sys
 source, to, name, identifier, command = sys.argv[1:]
 with open(source, "rb") as file:
     info = plistlib.load(file)
+name, identifier = name or info["CFBundleName"], identifier or info["CFBundleIdentifier"]
 info = {key: value.replace("The One App", name) if isinstance(value, str) else value for key, value in info.items()}
 info.update(CFBundleIdentifier=identifier, CFBundleExecutable=command, CFBundleIconFile="AppIcon.icns")
 with open(to, "wb") as file:
     plistlib.dump(info, file)
+print(f"{name}\t{identifier}")
 EOF
+)
 
 # macOS's grid for an app icon of 1024, as `tooling/helper-icon` draws it: a body 824 square, rounded by 185, with a
-# shadow below it, 80, 90 from the corner. Pillow writes the .icns of it, every size a Mac's icon has.
-convert "$work/app/icons/icon.png" -resize 824x824! "$work/body.png"
-convert -size 824x824 xc:none -fill white -draw 'roundrectangle 0,0,823,823,185,185' "$work/mask.png"
-convert "$work/body.png" "$work/mask.png" -compose DstIn -composite "$work/rounded.png"
-convert "$work/rounded.png" \( +clone -background black -shadow 30x10+0+10 \) +swap -background none -layers merge +repage \
-  "$work/shadowed.png"
-convert -size 1024x1024 xc:none "$work/shadowed.png" -geometry +80+90 -composite "$work/1024.png"
-python3 -c 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])' "$work/1024.png" "$out/Contents/Resources/AppIcon.icns"
+# shadow below it, 80, 90 from the corner. Pillow writes the .icns of it, every size a Mac's icon has. A network with no
+# icon has the One App's.
+if [[ -f $work/app/icons/icon.png ]]; then
+  convert "$work/app/icons/icon.png" -resize 824x824! "$work/body.png"
+  convert -size 824x824 xc:none -fill white -draw 'roundrectangle 0,0,823,823,185,185' "$work/mask.png"
+  convert "$work/body.png" "$work/mask.png" -compose DstIn -composite "$work/rounded.png"
+  convert "$work/rounded.png" \( +clone -background black -shadow 30x10+0+10 \) +swap -background none -layers merge +repage \
+    "$work/shadowed.png"
+  convert -size 1024x1024 xc:none "$work/shadowed.png" -geometry +80+90 -composite "$work/1024.png"
+  python3 -c 'import sys; from PIL import Image; Image.open(sys.argv[1]).save(sys.argv[2])' "$work/1024.png" "$out/Contents/Resources/AppIcon.icns"
+else
+  cp "$root/clients/app/macos/Contents/Resources/The One App.icns" "$out/Contents/Resources/AppIcon.icns"
+fi
 
 "$root/tooling/developer-id-sign" "$out"
 echo "$out: $name ($identifier, \`$command\`), on $(cat "$work/app/address"), $(jq -r .build <<<"$build")"

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Makes a network's installers, its app as a person installs it the first time on each kind of computer and phone, from
+# the core's latest builds, and publishes them in the network's Software Update (`publish_installer`), which the
+# network's download page, <address>/download, offers (the Downloads app): for the network of this machine's `one`, or
+# the one in ONE_HOME, from the network's repo, which says its name, icon and address:
+#
+#     tooling/installers <the network's repo>
+#
+# An installer whose build is the one published already is left as it is. `tooling/release client` runs it once it has
+# published, from ONE_NETWORK_REPO. From then on the app updates itself.
+set -euo pipefail
+[[ -d ${1:-} ]] || { echo "tooling/installers <the network's repo>" >&2 && exit 1; }
+network=$(cd "$1" && pwd)
+root=$(cd "$(dirname "$0")/.." && pwd)
+work=$(mktemp -d) && trap 'rm -rf "$work"' EXIT
+
+git -C "$network" fetch -q origin main
+config=$(git -C "$network" show origin/main:app/tauri.conf.json)
+name=$(jq -r '.productName // "The One App"' <<<"$config")
+published=$(one software-update installers)
+latest() { curl -fsSL "https://github.com/ptc-au/the-one-app/releases/download/builds/$1.json" | jq -er "$2.build"; }
+has() { jq -e --arg platform "$1" --arg build "$2" 'any(.installers[]; .platform == $platform and .build == $build)' <<<"$published" >/dev/null; }
+
+# A Mac with Apple silicon: the app in a disk image, notarised (`tooling/mac-dmg`).
+build=$(latest macos-aarch64 .one)
+if has mac "$build"; then
+  echo "mac: $name.dmg is $build already"
+else
+  build=$("$root/tooling/mac-dmg" "$network" "$work/$name.dmg" | tail -1)
+  one software-update publish_installer --platform mac --name "$name.dmg" --build "$build" --file-from "$work/$name.dmg" >/dev/null
+  echo "mac: published $name.dmg, $build"
+fi

@@ -208,22 +208,29 @@ getting_dev_builds() {
 
 # A network's iPhone app goes to TestFlight beside its computers' clients, where its native code changed
 # (`tooling/testflight`), built from the network's repo, which ONE_NETWORK_REPO names (Agent Memory says where it is).
-# The release ends once Apple has taken the upload, and fails if it doesn't.
-iphone=
+# The release ends once Apple has taken the upload, and fails if it doesn't. Its installers are made from the network's
+# repo too, once the release has ended, published or covered by another, from the builds the network has then
+# (`tooling/installers`).
+iphone= installers=
 if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
+  installers=${ONE_NETWORK_REPO:-}
   if [[ -z ${ONE_NETWORK_REPO:-} ]]; then
-    echo "The iPhone's app isn't built: ONE_NETWORK_REPO names the network's repo, which it's built from"
+    echo "The iPhone's app and the installers aren't built: ONE_NETWORK_REPO names the network's repo, which they're built from"
   elif getting_dev_builds | jq -e '[.devices[] | select(.target | startswith("ios-"))] | length > 0' >/dev/null; then
     tooling/testflight "$ONE_NETWORK_REPO" > >(sed 's/^/iphone: /') 2>&1 &
     iphone=$!
   fi
 fi
 # The machine's lock goes first, as waiting for Apple holds up nothing here: the next client release (19 Nov: 164 s).
+# It's given the status the release ends with.
 iphone_done() {
+  local status=$1
   exec 9>&-
   [[ -z $iphone ]] || wait "$iphone" || { echo "The iPhone's app didn't reach TestFlight." >&2 && exit 1; }
+  [[ $status != 0 || -z $installers ]] || tooling/installers "$installers" > >(sed 's/^/installers: /') 2>&1 ||
+    { echo "The network's installers weren't published." >&2 && exit 1; }
 }
-trap iphone_done EXIT
+trap 'iphone_done $?' EXIT
 
 # A build is named by its commit's version (`tooling/version`), so what's built is all committed.
 [[ -z $(git status --porcelain) ]] || { echo "Commit what's changed first: a build is named by its commit." >&2 && exit 1; }
@@ -392,7 +399,7 @@ if [[ -z $dry && $(uname) == Linux ]]; then
   done
   echo "$build, pid $$" >"$kept.lock"
   echo "$build $commit ${wanted[*]}" >"$kept.releasing"
-  trap 'rm -f "$kept.releasing"; iphone_done' EXIT
+  trap 'status=$?; rm -f "$kept.releasing"; iphone_done $status' EXIT
   # What the release before this one published.
   survey && covered
 fi

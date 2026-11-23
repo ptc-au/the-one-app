@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Makes a network's installer for a Mac, here on Linux: its app (`tooling/mac-app`) in a disk image a person opens and
+# drags to Applications, as Slack's and Linear's are, signed with the Developer ID, notarised by Apple and stapled, so
+# Gatekeeper opens it from a browser's download saying nothing:
+#
+#     tooling/mac-dmg <the network's repo> <the installer, a file that ends in .dmg>
+#
+# The image is made as Firefox's builds for a Mac are made on Linux: an HFS+ volume named as the app, holding the app
+# and a link to Applications (hfsprogs' `mkfs.hfsplus`, `sudo apt install hfsprogs`, and Mozilla's libdmg-hfsplus,
+# `hfsplus` and `dmg`, built here once, in ~/.cache/libdmg-hfsplus), compressed as a .dmg. It's notarised with the App
+# Store Connect API key the TestFlight uploads use (`tooling/testflight`), by rcodesign. The last line it prints is the
+# build of `one` the app holds.
+set -euo pipefail
+(($# == 2)) && [[ $2 == *.dmg ]] || { echo "tooling/mac-dmg <the network's repo> <the installer, a file that ends in .dmg>" >&2 && exit 1; }
+network=$1 out=$(realpath -m "$2")
+root=$(cd "$(dirname "$0")/.." && pwd)
+command -v mkfs.hfsplus >/dev/null || { echo "A Mac's disk image is made with mkfs.hfsplus: sudo apt install hfsprogs" >&2 && exit 1; }
+rcodesign=$(mise -C "$root" which rcodesign)
+work=$(umask 077 && mktemp -d) && trap 'rm -rf "$work"' EXIT
+
+# Mozilla's libdmg-hfsplus, at the commit Firefox's builds use, built once.
+libdmg=$HOME/.cache/libdmg-hfsplus
+if [[ ! -x $libdmg/build/dmg/dmg ]]; then
+  rm -rf "$libdmg" && git clone -q https://github.com/mozilla/libdmg-hfsplus "$libdmg/src"
+  git -C "$libdmg/src" checkout -q e18579b
+  cmake -S "$libdmg/src" -B "$libdmg/build" -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build "$libdmg/build" -j 4 >/dev/null
+fi
+
+said=$("$root/tooling/mac-app" "$network" "$work/stage/app.app" | tail -1)
+name=$(python3 -I -c 'import plistlib, sys; print(plistlib.load(open(sys.argv[1], "rb"))["CFBundleName"])' "$work/stage/app.app/Contents/Info.plist")
+mv "$work/stage/app.app" "$work/stage/$name.app"
+
+# Apple notarises only a program signed with the hardened runtime, and a secure timestamp, which rcodesign adds.
+"$root/tooling/developer-id-sign" --code-signature-flags runtime "$work/stage/$name.app"
+
+size=$(($(du -sm "$work/stage" | cut -f1) * 12 / 10 + 10))
+truncate -s "${size}M" "$work/volume"
+mkfs.hfsplus -v "$name" "$work/volume" >/dev/null
+"$libdmg/build/hfs/hfsplus" "$work/volume" addall "$work/stage" >/dev/null
+"$libdmg/build/hfs/hfsplus" "$work/volume" symlink /Applications /Applications >/dev/null
+"$libdmg/build/dmg/dmg" build "$work/volume" "$work/installer.dmg" >/dev/null
+"$root/tooling/developer-id-sign" "$work/installer.dmg"
+
+# The API key, an Admin's, whose .p8 is in 1Password, as rcodesign reads it.
+op document get "PTC Builds App Store Connect API key (key R49QVKSHMK)" --vault ptc-nosudo >"$work/key.p8"
+"$rcodesign" encode-app-store-connect-api-key -o "$work/key.json" 2dac44a7-07fb-45f2-85a8-e7f63345f838 R49QVKSHMK "$work/key.p8" >/dev/null
+"$rcodesign" notary-submit --api-key-file "$work/key.json" --wait --max-wait-seconds 1800 --staple "$work/installer.dmg" >&2
+mv "$work/installer.dmg" "$out"
+echo "${said##*, }"
