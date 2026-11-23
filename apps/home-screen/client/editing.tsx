@@ -7,7 +7,7 @@ import { type Held } from "./machine.ts"
 import { type Entrypoint, type Size, type Widget as WidgetItem, src } from "./types.ts"
 import { looks } from "./looks.ts"
 import { home, state, room, laidPage } from "./store.ts"
-import { json, type Owner, owners, and, installedFor, named } from "./owners.ts"
+import { answered, json, type Owner, and, installedFor, named } from "./owners.ts"
 import { Card } from "./tiles.tsx"
 
 const SIZES: Record<Size, string> = { "2x2": "Small", "4x2": "Medium", "4x4": "Large" }
@@ -82,11 +82,11 @@ export function Asking(props: { owner: Owner; held: Held }) {
       } catch (error) {
         toast(`Couldn't install ${title} for ${named(owner)}. ${(error as Error).message ?? error}`)
         home.send({ type: "failed" })
-        return void refresh(owners)
+        return void refresh(answered)
       }
     }
     home.send({ type: "installed" })
-    refresh(owners)
+    refresh(answered)
   }
   const reach = () => {
     const it = missing().length > 1 ? "them" : "it"

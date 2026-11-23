@@ -16,7 +16,7 @@ import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, re
 import { Button, call, client, connection, covers, type Element, haptic, keydown, PresentationContext, Problem, render, whole, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
-import { json, type Owner, owners } from "./owners.ts"
+import { answered, json, type Owner, owners } from "./owners.ts"
 import { OpenCategory } from "./category.tsx"
 import { made } from "./library.tsx"
 import { Holding } from "./holding.tsx"
@@ -214,7 +214,7 @@ function Broken(props: { error: unknown }) {
       <Problem
         heading="Home Screen didn't open."
         text={new Error(`Try again in a moment.\n\n${whole(props.error)}`)}
-        action={<Button onPress={() => refresh(owners)}>Try Again</Button>}
+        action={<Button onPress={() => refresh(answered)}>Try Again</Button>}
       />
     </Screen>
   )
@@ -240,7 +240,7 @@ function Waiting() {
       }
     >
       <Screen heading="Home Screen">
-        <Problem heading="Home Screen didn't open." text={said()} action={<Button onPress={() => (setWaited(0), refresh(owners))}>Try Again</Button>} />
+        <Problem heading="Home Screen didn't open." text={said()} action={<Button onPress={() => (setWaited(0), refresh(answered))}>Try Again</Button>} />
       </Screen>
     </Show>
   )

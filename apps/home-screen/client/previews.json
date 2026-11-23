@@ -2985,6 +2985,286 @@
       }
     }
   },
+  "Home, three groups": {
+    "like": "Home, two pages",
+    "answers": {
+      "permissions_groups": {
+        "groups": [
+          {
+            "group": "groups/family",
+            "called": "Family"
+          },
+          {
+            "group": "groups/work",
+            "called": "Work"
+          },
+          {
+            "group": "groups/book-club",
+            "called": "Book Club"
+          }
+        ]
+      },
+      "home-screen_reorder": {
+        "order": [
+          "groups/work",
+          "groups/family",
+          "groups/book-club"
+        ]
+      }
+    }
+  },
+  "Home, its owners": {
+    "like": "Home, three groups",
+    "taps": [
+      {
+        "role": "button",
+        "name": "You"
+      }
+    ]
+  },
+  "Home, Edit Order": {
+    "like": "Home, three groups",
+    "taps": [
+      {
+        "role": "button",
+        "name": "You"
+      },
+      {
+        "role": "menuitem",
+        "name": "Edit Order…"
+      }
+    ],
+    "motions": {
+      "A group dragged by its handle past the next and held": {
+        "from": {
+          "role": "button",
+          "name": "Reorder Family"
+        },
+        "follow": {
+          "role": "listitem",
+          "name": "Family"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 120
+            },
+            {
+              "dy": 70,
+              "ms": 400
+            },
+            {
+              "ms": 200
+            }
+          ],
+          "lift": false
+        }
+      },
+      "A group dragged by its handle past the next and let go": {
+        "from": {
+          "role": "button",
+          "name": "Reorder Family"
+        },
+        "follow": {
+          "role": "listitem",
+          "name": "Family"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 120
+            },
+            {
+              "dy": 70,
+              "ms": 400
+            },
+            {
+              "ms": 200
+            }
+          ],
+          "lift": true
+        }
+      }
+    },
+    "checks": {
+      "Space, Down and Space move a group, and Done keeps it": [
+        {
+          "key": "Tab"
+        },
+        {
+          "key": "Tab"
+        },
+        {
+          "expect": {
+            "focused": {
+              "role": "button",
+              "name": "Reorder Family"
+            }
+          }
+        },
+        {
+          "key": " "
+        },
+        {
+          "key": "ArrowDown"
+        },
+        {
+          "key": " "
+        },
+        "Done",
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Edit Order"
+            }
+          }
+        },
+        {
+          "expect": {
+            "shown": {
+              "role": "button",
+              "name": "You"
+            }
+          }
+        },
+        {
+          "expect": {
+            "asked": {
+              "home-screen_reorder": 1
+            }
+          }
+        }
+      ],
+      "Its close button leaves the order as it was": [
+        {
+          "role": "button",
+          "name": "Reorder Family"
+        },
+        {
+          "key": "ArrowDown"
+        },
+        "Close",
+        {
+          "expect": {
+            "gone": {
+              "role": "dialog",
+              "name": "Edit Order"
+            }
+          }
+        },
+        {
+          "expect": {
+            "asked": {
+              "home-screen_reorder": 0
+            }
+          }
+        }
+      ]
+    }
+  },
+  "Launcher, three groups": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "permissions_groups": {
+        "groups": [
+          {
+            "group": "groups/family",
+            "called": "Family"
+          },
+          {
+            "group": "groups/work",
+            "called": "Work"
+          },
+          {
+            "group": "groups/book-club",
+            "called": "Book Club"
+          }
+        ]
+      },
+      "home-screen_reorder": {
+        "order": [
+          "groups/work",
+          "groups/family",
+          "groups/book-club"
+        ]
+      }
+    }
+  },
+  "Launcher, its owners": {
+    "like": "Launcher, three groups",
+    "taps": [
+      {
+        "role": "button",
+        "name": "You"
+      }
+    ]
+  },
+  "Launcher, Edit Order": {
+    "like": "Launcher, three groups",
+    "taps": [
+      {
+        "role": "button",
+        "name": "You"
+      },
+      {
+        "role": "menuitem",
+        "name": "Edit Order…"
+      }
+    ],
+    "motions": {
+      "A group dragged by its handle past the next and held": {
+        "from": {
+          "role": "button",
+          "name": "Reorder Family"
+        },
+        "follow": {
+          "role": "listitem",
+          "name": "Family"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 120
+            },
+            {
+              "dy": 70,
+              "ms": 400
+            },
+            {
+              "ms": 200
+            }
+          ],
+          "lift": false
+        }
+      },
+      "A group dragged by its handle past the next and let go": {
+        "from": {
+          "role": "button",
+          "name": "Reorder Family"
+        },
+        "follow": {
+          "role": "listitem",
+          "name": "Family"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 120
+            },
+            {
+              "dy": 70,
+              "ms": 400
+            },
+            {
+              "ms": 200
+            }
+          ],
+          "lift": true
+        }
+      }
+    }
+  },
   "Launcher, its tips": {
     "like": "Launcher on a computer",
     "answers": {

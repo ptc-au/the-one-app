@@ -50,6 +50,8 @@ export interface Pages {
   library: Category[]
   widgets: Widget[]
   apps: { app: string; name: string }[]
+  /** Yours only: your groups, in the order you put their Home Screens in. */
+  order?: string[]
 }
 
 /** Where this page loads an icon, from its address, `ui://icons/<sha256>/<file>`: beside its app's own files, at that

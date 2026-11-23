@@ -13,7 +13,8 @@ defmodule HomeScreen do
   to put on a page. The App Store is an app like any other, in its app's category.
 
   A tip a client shows a person once, wherever they are (`tip`), is kept with their pages, so a second device
-  doesn't show it again.
+  doesn't show it again. So is the order a person puts their groups' Home Screens in (`reorder`), between theirs,
+  always first, and everyone's, always last, which `pages` answers them with.
 
   Every tool here is asked for whoever's Home Screen it is, as an app opened from it is. What draws them is this
   app's `client/`: its app in the category `launcher`, which a client shows first.
@@ -51,6 +52,12 @@ defmodule HomeScreen do
   @impl true
   def tools do
     none = %{type: "object", properties: %{}}
+
+    order = %{
+      type: "array",
+      items: %{type: "string"},
+      description: "Your groups, as `permissions_groups` names them (groups/family), in the order their Home Screens come in"
+    }
 
     seen = %{
       type: "object",
@@ -129,8 +136,9 @@ defmodule HomeScreen do
         description: """
         Gives your Home Screen: its pages, in order, each what's on it and whether it's hidden (`pages`), its App
         Library, every app that runs for you by category, yours, your groups' and everyone's (`library`), the widgets
-        that could be put on a page (`widgets`), the apps that open on its pages (`apps`), and whether you may arrange it. Asked for a group or for the network, it's
-        theirs.
+        that could be put on a page (`widgets`), the apps that open on its pages (`apps`), whether you may arrange it,
+        and the order you put your groups' Home Screens in (`order`). Asked for a group or for the network, it's
+        theirs, with no order.
         """,
         inputs: none,
         outputs: %{
@@ -177,10 +185,20 @@ defmodule HomeScreen do
                 properties: %{app: %{type: "string"}, name: %{type: "string"}},
                 required: ["app", "name"]
               }
-            }
+            },
+            order: order
           },
           required: ["who", "arranges", "pages", "library", "widgets", "apps"]
         }
+      },
+      %{
+        name: "reorder",
+        description: """
+        Puts your groups' Home Screens in an order, by the groups (`permissions_groups`), as you move between them:
+        yours is always first and everyone's last. A group left out, or one you join later, comes after those given.
+        """,
+        inputs: %{type: "object", properties: %{order: order}, required: ["order"]},
+        outputs: %{type: "object", properties: %{order: order}, required: ["order"]}
       },
       %{
         name: "tips",
@@ -331,6 +349,15 @@ defmodule HomeScreen do
       widgets: widgets,
       apps: for(app <- apps, do: %{app: app.app, name: app.name})
     }
+    |> Map.merge(if person?(call), do: %{order: order(call)}, else: %{})
+  end
+
+  def call("reorder", %{"order" => order}, call) when is_list(order) do
+    if not person?(call), do: raise("Only a person puts their groups in an order, not #{call.subject}.")
+    if not Enum.all?(order, &is_binary/1), do: raise("The order is the groups, each as `permissions_groups` names it.")
+    order = Enum.uniq(order)
+    Artifact.update(Call.make(call, "home"), "order", fn _ -> JSON.encode!(order) end)
+    %{order: order}
   end
 
   def call("tips", _inputs, call) do
@@ -551,6 +578,15 @@ defmodule HomeScreen do
       shown -> List.update_at(pages, elem(shown, 1), &%{&1 | "items" => &1["items"] ++ [item]})
       true -> pages ++ [%{"items" => [item]}]
     end
+  end
+
+  defp person?(call), do: String.starts_with?(call.subject, "users/")
+
+  # The order a person put their groups' Home Screens in, kept beside their tips: none until they've put them in one.
+  defp order(call) do
+    with {:ok, order, _tag} <- Artifact.read(Call.make(call, "home"), "order"),
+         do: JSON.decode!(order),
+         else: (:absent -> [])
   end
 
   # How a Home Screen's pages are arranged is its owner's: an artifact made for them, which holds the one blob, every

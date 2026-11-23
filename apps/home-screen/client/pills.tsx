@@ -1,12 +1,12 @@
 // The pills: the owner's name, which opens the list of every owner, and the page dots with the App Library's glyph.
-import { For, Show } from "solid-js"
-import { type Element, haptic, Icon, Menu, Pressable, type Pressed, Text, type Tip, Tips, View } from "ui"
+import { createEffect, createSignal, For, Show, untrack } from "solid-js"
+import { Button, type Element, haptic, Icon, Menu, Pressable, type Pressed, ReorderList, Sheet, Text, type Tip, Tips, View } from "ui"
 import { BAR, DOTS } from "./layout.ts"
 import { type Kind } from "./machine.ts"
 import { looks } from "./looks.ts"
 import { home, state, seen, along, rolled, at, screensOf, lastOf, editingNow, editingOwner, launcher, device } from "./store.ts"
 import { onboarded, showOnboarding } from "./home.tsx"
-import { type Owner } from "./owners.ts"
+import { group, type Owner, owners as all, reorder } from "./owners.ts"
 
 /// A window onto a row for each owner, which rolls as the owners move up and down, `at` in owners, each row `height`
 /// tall: the row nearest is laid out, and so says how wide the window is, and the others are drawn above and below
@@ -88,16 +88,43 @@ function Dots(props: { owner: Owner; index: number; count: number; size: number 
   )
 }
 
+/// Edit Order's sheet: every owner in the order they're moved between, You first and Everyone last where they stay,
+/// and your groups between, each dragged by its handle, as iOS's lists and macOS's System Settings reorder. Done keeps
+/// the order for you on every device; closed any other way, it's as it was.
+function EditOrder(props: { open: boolean; onClose: () => void }) {
+  // Opened, it's the order they're in now.
+  const [order, setOrder] = createSignal<Owner[]>([])
+  createEffect(
+    () => props.open,
+    (open) => void (open && setOrder(untrack(all)!)),
+  )
+  const done = () => {
+    reorder(order().filter(group).map((owner) => owner.subject!))
+    props.onClose()
+  }
+  return (
+    <Sheet heading="Edit Order" open={props.open} onClose={props.onClose}>
+      <ReorderList label="Home Screens" each={order()} keyed={(owner) => owner.key} heading={(owner) => owner.name} fixed={(owner) => !group(owner)} onReorder={setOrder} />
+      <View style={looks.orderDone}>
+        <Button onPress={done}>Done</Button>
+      </View>
+    </Sheet>
+  )
+}
+
 /// The owner pill, at the top of Home in the middle, and of the launcher's card: whose pages they are, "You ⌄", which
-/// opens the list of every owner, the current one ticked, in a pill of Liquid Glass as the dots have. Its name rolls as
-/// the owners move. While pages are edited, + and Done are either side of it, and it opens nothing.
+/// opens the list of every owner, the current one ticked, in a pill of Liquid Glass as the dots have, and after them
+/// Edit Order…, which puts your groups in the order they come in, once there are two to order. Its name rolls as the
+/// owners move. While pages are edited, + and Done are either side of it, and it opens nothing.
 export function OwnerPill(props: { owners: Owner[] }) {
   const shown = () => at().owner
   return (
+    <>
     <Menu.Root
       open={state().matches("listing")}
-      onOpenChange={(open) => (open ? state().matches("nothing") && home.send({ type: "list" }) : state().matches("listing") && home.send({ type: "dismiss" }))}
-      onSelect={(value) => home.send({ type: "pick", owner: Number(value) })}
+      // The machine as it is now, not as last drawn: Edit Order… has just moved it on as the menu closes.
+      onOpenChange={(open) => (open ? home.getSnapshot().matches("nothing") && home.send({ type: "list" }) : home.getSnapshot().matches("listing") && home.send({ type: "dismiss" }))}
+      onSelect={(value) => home.send(value === "order" ? { type: "order" } : { type: "pick", owner: Number(value) })}
     >
       <View style={[looks.pill, looks.glass, looks.ownerPill]}>
         <Menu.Trigger variant="ghost" shape="capsule" aria-label={props.owners[shown()]?.name}>
@@ -125,9 +152,20 @@ export function OwnerPill(props: { owners: Owner[] }) {
               </Menu.Item>
             )}
           </For>
+          <Menu.Separator />
+          <Menu.Item value="order" disabled={props.owners.filter(group).length < 2}>
+            <View style={looks.ownerItem}>
+              <View style={looks.opacity(0)}>
+                <Icon name="check" />
+              </View>
+              <Text>Edit Order…</Text>
+            </View>
+          </Menu.Item>
         </Menu.Content>
       </Menu.Positioner>
     </Menu.Root>
+    <EditOrder open={state().matches("ordering")} onClose={() => state().matches("ordering") && home.send({ type: "dismiss" })} />
+    </>
   )
 }
 

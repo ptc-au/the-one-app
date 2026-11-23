@@ -197,6 +197,7 @@ export const looks = styles({
   ownerName: { font: tokens.type.medium, fontWeight: tokens.weight.medium, lineClamp: 1, maxWidth: sizes.ownerName },
   caret: { color: tokens.colour.secondaryLabel, scale: 0.75 },
   ownerItem: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2] },
+  orderDone: { alignItems: "flex-end" },
   // The launcher's chevrons, fading in and out under the pointer, and in its card's corners, the tips and its way to the
   // App Library and back.
   turn: { position: "absolute", zIndex: 6, alignItems: "center", justifyContent: "center", transitionProperty: ["opacity"], transition: tokens.motion.snappy },

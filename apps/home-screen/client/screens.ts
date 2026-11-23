@@ -41,14 +41,14 @@ export function createScreens(props: { owners: Owner[] }) {
   })
   /// Each owner's Home screenfuls, which their row of pages has.
   const homes = (owner: number) => screens()[owner]?.filter(({ kind }) => kind === "home") ?? []
-  const laid = createMemo(() => ({ screens: screens().map((owner) => owner.map(({ kind }) => kind)), fit: room().fit }), { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) })
+  const laid = createMemo(() => ({ owners: props.owners.map((owner) => owner.key), screens: screens().map((owner) => owner.map(({ kind }) => kind)), fit: room().fit }), { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) })
   // What was just kept shows until the Home Screen has been asked again.
   createEffect(
     () => props.owners,
     () => void setKept([]),
     { defer: true },
   )
-  createEffect(laid, ({ screens, fit }) => home.send({ type: "laid", screens, fit }))
+  createEffect(laid, ({ owners, screens, fit }) => home.send({ type: "laid", owners, screens, fit }))
   /// A link to the App Library, `one:home-screen#library`, shows the first of it, as its mark in the dots does, once
   /// there is one.
   createEffect(

@@ -5,6 +5,7 @@
 //   where it is: home { owner, screen } | library
 //     step(screen): Home's screenfuls, then the App Library
 //     step(owner): on Home only.   list ─pick─► another owner: on Home only
+//   list ─order─► ordering (Edit Order's sheet) ─dismiss─► nothing
 //   open ─► category (App Library), as now
 //   holding (an app in the App Library) ─lift─► editing.dragging, with Home brought forward on the last owner
 //   editing.dragging: over (rested a moment at a place) · flip(page ±1) · flip(owner ±1) · stack · drop ─► still | asking | refused
@@ -143,6 +144,8 @@ export type Drop = "place" | "ask" | "refuse"
 interface Context {
   /** Each owner's screenfuls, each by its section, in order: Home's, then the App Library. */
   screens: Kind[][]
+  /** Who each owner is, in order, by their key. */
+  owners: string[]
   /** How many Home pages a screenful has side by side. */
   fit: number
   at: At
@@ -160,9 +163,9 @@ interface Context {
 }
 
 export type Event =
-  /** The owners and their screenfuls, each by its section, as they're laid out now, and how many Home pages each
-   * screenful has. */
-  | { type: "laid"; screens: Kind[][]; fit: number }
+  /** The owners, by their keys, and their screenfuls, each by its section, as they're laid out now, and how many
+   * Home pages each screenful has. */
+  | { type: "laid"; owners: string[]; screens: Kind[][]; fit: number }
   /** The Home Screen came to rest here, as a finger or a scroll left it. */
   | { type: "settled"; at: At }
   /** One screenful along, or one owner: a key, a wheel or a trackpad. */
@@ -174,9 +177,11 @@ export type Event =
   | { type: "go"; screen: number }
   /** A link to one of the screenfuls (`one:home-screen#library`): there at once, whatever was open. */
   | { type: "link"; screen: number }
-  /** The owner switcher's list opened, an owner was picked from it, or it was dismissed. */
+  /** The owner switcher's list opened, an owner was picked from it, or it was dismissed; or Edit Order… was chosen
+   * from it, whose sheet is dismissed, Done or not. */
   | { type: "list" }
   | { type: "pick"; owner: number }
+  | { type: "order" }
   | { type: "dismiss" }
   /** A category was tapped in the App Library, or closed. */
   | { type: "open"; category: string }
@@ -287,15 +292,29 @@ export const machine = setup({
   },
   actions: {
     // Every owner keeps the screenful they were on, as far as they still have it: in the App Library, still there,
-    // however many of Home's come before it.
+    // however many of Home's come before it. Owners put in another order, or one come or gone, are who they were:
+    // the one shown stays shown, wherever they've moved to, as do the pages being edited.
     lay: assign(({ context, event }) => {
-      const { screens, fit } = event as Extract<Event, { type: "laid" }>
+      const { owners, screens, fit } = event as Extract<Event, { type: "laid" }>
+      const was = (owner: number) => (context.owners.length ? context.owners.indexOf(owners[owner]) : owner)
+      const now = (owner: number) => (context.owners.length && owners.includes(context.owners[owner]) ? owners.indexOf(context.owners[owner]) : owner)
       const last = screens.map((kinds, owner) => {
-        const was = context.screens[owner]?.[context.last[owner] ?? 0] ?? "home"
-        return was === "home" ? within(context.last[owner] ?? 0, homes(kinds)) : Math.max(0, kinds.indexOf(was))
+        const before = was(owner)
+        const kind = context.screens[before]?.[context.last[before] ?? 0] ?? "home"
+        return kind === "home" ? within(context.last[before] ?? 0, homes(kinds)) : Math.max(0, kinds.indexOf(kind))
       })
-      const owner = within(context.at.owner, screens.length)
-      return { screens, fit, last, at: { owner, screen: last[owner] ?? 0 } }
+      const owner = within(now(context.at.owner), screens.length)
+      const moved = (one: Editing) => ({ ...one, owner: now(one.owner) })
+      return {
+        owners,
+        screens,
+        fit,
+        last,
+        at: { owner, screen: last[owner] ?? 0 },
+        editing: context.editing && moved(context.editing),
+        drafts: context.drafts.map(moved),
+        before: context.before.map(moved),
+      }
     }),
     // Where it is now, which its owner's pages remember.
     be: assign(({ context, event }) => {
@@ -422,7 +441,7 @@ export const machine = setup({
   },
 }).createMachine({
   id: "home",
-  context: { screens: [], fit: 1, at: { owner: 0, screen: 0 }, last: [], drafts: [], before: [] },
+  context: { screens: [], owners: [], fit: 1, at: { owner: 0, screen: 0 }, last: [], drafts: [], before: [] },
   initial: "nothing",
   on: {
     // Where it is follows the pages, whatever's open.
@@ -449,7 +468,12 @@ export const machine = setup({
       on: {
         dismiss: "nothing",
         pick: { target: "nothing", actions: ["pick", "glide"] },
+        order: "ordering",
       },
+    },
+    // Edit Order's sheet, over Home, which the keys moving Home leave alone while it's open.
+    ordering: {
+      on: { dismiss: "nothing" },
     },
     // A category opened over the App Library, as an iPhone's. It's open the moment it's tapped and closed the moment
     // it's told, as a finger changes its mind: how it grows out of its place and shrinks back into it is the

@@ -5,7 +5,7 @@ import { type Entrypoint, type Item, type Widget as WidgetItem, src } from "./ty
 import { corner } from "./layout.ts"
 import { looks } from "./looks.ts"
 import { home, state, pins, room, laidPage, windowWidth } from "./store.ts"
-import { json, type Owner, owners, draft, subjectOf, and, addable, addToHome, removeFromHome, whose } from "./owners.ts"
+import { answered, json, type Owner, owners, draft, subjectOf, and, addable, addToHome, removeFromHome, whose } from "./owners.ts"
 import { Card, Tile } from "./tiles.tsx"
 
 /// What a finger holds, lifted over the dimmed Home Screen, as a phone's is, with its menu beside it, which grows out of
@@ -47,7 +47,7 @@ export function Holding(props: { owner: Owner; index: number; held: Held }) {
     } catch (error) {
       toast(error as Error)
     }
-    refresh(owners)
+    refresh(answered)
   }
   // Why whoever holds it can't remove it: it's a group's or everyone's, and they're not one of its owners.
   const cant = () => {

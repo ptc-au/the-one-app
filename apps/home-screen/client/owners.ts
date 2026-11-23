@@ -20,11 +20,11 @@ export interface Owner extends Pages {
 /// every read of the Home Screen in that while would ask for its page and fail. They're left out until the list changes.
 const refused = { list: "", groups: new Set<string>() }
 
-/// You, everyone, then each of your groups, in the order they're listed. A network with nothing that keeps groups
-/// has none. Yours and everyone's are asked for beside the groups, which they don't wait on. Asked again and not
-/// answered, as while a server restarts, it's what it was, as a phone's Home Screen stays: only a Home Screen that
-/// never had an answer says why.
-export const owners = createMemo(async (was?: Owner[]) => {
+/// Every owner as they're answered: you, everyone, then each of your groups, in the order they're listed. A network
+/// with nothing that keeps groups has none. Yours and everyone's are asked for beside the groups, which they don't
+/// wait on. Asked again and not answered, as while a server restarts, it's what it was, as a phone's Home Screen
+/// stays: only a Home Screen that never had an answer says why.
+export const answered = createMemo(async (was?: Owner[]) => {
   // An app with no screen of its own is listed only if it has a section in Settings, which opening it shows, as macOS
   // opens a menu-bar app's preferences: its own page, or a section of the sidebar (a device's page isn't about it).
   const sections = json<{ sections: { app: string; in: string }[] }>("settings_sections").then(({ sections }) => new Set(sections.filter((section) => section.in !== "device").map((section) => section.app)), () => new Set<string>())
@@ -56,7 +56,32 @@ export const owners = createMemo(async (was?: Owner[]) => {
   const all = Promise.all([pages({ name: "You" }), pages({ subject: "network", name: "Everyone" }), theirs])
   return all.then(([yours, everyone, groupsPages]) => [yours, everyone, ...groupsPages.filter((owner) => owner !== undefined)], (error) => was ?? Promise.reject(error))
 })
-changed(() => refresh(owners))
+changed(() => refresh(answered))
+
+/// The order you just put your groups in, shown at once, until the Home Screen asked again has it too.
+const [ordering, setOrdering] = createSignal<string[]>()
+createEffect(answered, ([yours]) => void (JSON.stringify(yours.order) === JSON.stringify(untrack(ordering)) && setOrdering(undefined)))
+
+/// The owners in the order they're moved between: you first, then your groups in the order you put them in
+/// (`reorder`), those you haven't put in one after them as they're listed, and everyone last.
+export const owners = createMemo(() => {
+  const [yours, everyone, ...groups] = answered()
+  const order = ordering() ?? yours.order ?? []
+  const at = (owner: Owner) => (order.includes(owner.subject!) ? order.indexOf(owner.subject!) : order.length)
+  return [yours, ...groups.toSorted((a, b) => at(a) - at(b)), everyone]
+})
+
+/// Whether an owner is one of your groups, which you put in order, between you and everyone.
+export const group = (owner: Owner) => !!owner.subject && owner.subject !== "network"
+
+/// Puts your groups' Home Screens in an order, by their subjects, kept for you on every device.
+export function reorder(order: string[]) {
+  setOrdering(order)
+  call("home-screen_reorder", { order }).then(
+    () => refresh(answered),
+    (error) => (setOrdering(undefined), toast(error as Error)),
+  )
+}
 
 /// The red count on an app's icon, by who it's for and its badge tool (`badge`): what its app says waits for whoever's
 /// looking, asked again with everything else as anything changes. One that couldn't be asked has none.
@@ -188,7 +213,7 @@ export async function keep(edited: Editing[]) {
       call("home-screen_arrange", { pages: asked(one.pages, all[one.owner]) }, { subject: all[one.owner].subject }).catch((error) => toast(error as Error)),
     ),
   )
-  refresh(owners)
+  refresh(answered)
 }
 
 /// Who an owner is in a sentence: you, Everyone, or a group by its name.
