@@ -361,8 +361,8 @@ impl Screen {
         let chain = self.under(at);
         self.pointer_event(&chain, "wheel", at, 0, Some((delta, phase, notches)));
         // A mouse wheel's notch eases, as Windows' apps (WinUI) and Chrome smooth-scroll one; a Mac's moves at once, as
-        // AppKit's does where nothing smooths it, and so does any where motion is reduced.
-        if notches.is_some() && !crate::platform::mac_keys() && !self.reduced_motion {
+        // AppKit's does where nothing smooths it, and so does any where motion is reduced. (Mutant: none eased.)
+        if notches.is_some() && !crate::platform::mac_keys() && !self.reduced_motion && !crate::mutants::mutant("notch-jumps") {
             return self.wheel_scroll(at, delta);
         }
         self.pan(at, delta)

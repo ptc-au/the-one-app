@@ -91,8 +91,7 @@ if (stale()) throw new Error(stale())
 setHeadless(copied(built(), out))
 
 
-/// A target's scenes, each its name, page, link, answers, taps and size, and where a wheel's notch eases what it
-/// scrolls (`wheel`: a motion's `eases`, at its trace's first wheel's point).
+/// A target's scenes, each its name, page, link, answers, taps and size.
 async function scenesOf(target, built) {
   if (existsSync(join(target, "client/previews.json"))) {
     const all = JSON.parse(readFileSync(join(target, "client/previews.json"), "utf8"))
@@ -101,9 +100,7 @@ async function scenesOf(target, built) {
       const { component, uses = [], answers = {}, taps = [], size = sized ?? [390, 844], touch, timeZone = "UTC", errors, safeArea, wait = 0, checks } = whole(scene)
       const at = whole(scene).page ?? (component ? `${COMPONENTS}/${component}.html` : "client/index.html")
       const [page, link] = at.split("#")
-      const eased = Object.values(whole(scene).motions ?? {}).find((motion) => motion.eases && motion.gesture?.trace)
-      const wheel = eased && JSON.parse(readFileSync(join(target, "client", eased.gesture.trace), "utf8")).find((event) => event.kind === "wheel")
-      return { ...phone({ name, page, link, uses, answers, taps, size, touch: sized ? undefined : touch, timeZone, errors, safeArea: sized ? undefined : safeArea, checks }), wheel, wait }
+      return { ...phone({ name, page, link, uses, answers, taps, size, touch: sized ? undefined : touch, timeZone, errors, safeArea: sized ? undefined : safeArea, checks }), wait }
     })
   }
   // The gallery lists its own, drawn at `#scenes` by the headless renderer (animation.js).
@@ -417,9 +414,6 @@ async function web(browser, serve, key, scene, folder) {
     )
     : { words: [], names: [] }
   if (drawn) writeFileSync(join(folder, "web-text.txt"), words.join("\n") + "\n")
-  // Its clock runs again once what's read of it is, where a wheel's ease needs it (`notched`): read with it running, a
-  // sheet that slid in as the clock moved on was where it was between two runs' reads.
-  if (drawn) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ pause: false }))
   // The texts a scene's checks say are code (`expect.monospace`) advance as one monospace face does in the web's inspector
   // too, as the native check has it: the web draws them in the same face, bundled with it, and not the browser's own.
   const code = [...new Set(Object.values(scene.checks ?? {}).flat().flatMap((step) => step?.expect?.monospace ?? []))]
@@ -427,54 +421,8 @@ async function web(browser, serve, key, scene, folder) {
   if (spaced) {
     problems.push(failing(`its code: ${spaced}`))
   }
-  const jumped = drawn && scene.wheel && (await notched(page, frame, scene.wheel))
-  if (jumped?.note) problems.push(jumped.note)
-  else if (jumped) {
-    problems.push(failing(jumped))
-  }
   await page.close()
   return drawn ? { problems, internal: internalWords(names.join("\n")), words, all: names } : { missing: `it drew nothing${problems.length ? `: ${problems.join("; ")}` : ""}`, error: true }
-}
-
-/// A mouse wheel's notch turned at `at`, as Chrome gives one (CDP's: pixels, marked a notch only by its legacy
-/// `wheelDelta` of 120), which eases what it scrolls, as natively (a motion's `eases`): where the nodes of the ARIA tree
-/// are, frame by frame over the second after it, what moved furthest hasn't moved all of the notch within a tenth of a
-/// second of it, which an ease's spring takes longer than. One whose first move came later than that can't tell (a frame
-/// SwiftShader, on the CPU, took long to draw), and is turned again, up to three times. → what's wrong, if it is.
-async function notched(page, frame, at) {
-  const box = await page.locator("#page").boundingBox()
-  await page.mouse.move(box.x + at.x, box.y + at.y)
-  for (let turns = 0; turns < 3; turns++) {
-    // What the turn before moved has come to rest, so this one's moves are its own.
-    await frame.evaluate((deadline) => /** @type {any} */ (globalThis).inspector.settle(deadline), HANGS_AFTER_MS)
-    const watched = frame.evaluate(
-      () =>
-        new Promise((done) => {
-          const where = () => new Map([...document.querySelectorAll("#semantics [aria-label], #semantics span")].map((node) => [node, node.getBoundingClientRect().y]))
-          let [before, turned] = [where(), Infinity]
-          addEventListener("wheel", (event) => (turned = Math.min(turned, event.timeStamp)), { capture: true, passive: true, once: true })
-          const moves = []
-          const since = performance.now()
-          let frames = 0
-          const frame = (/** @type {number} */ at) => {
-            frames++
-            const now = where()
-            const by = [...now].reduce((most, [node, y]) => (before.has(node) && Math.abs(y - before.get(node)) > Math.abs(most) ? y - before.get(node) : most), 0)
-            if (by) moves.push({ after: at - turned, by })
-            before = now
-            at - since < 1000 ? /** @type {any} */ (globalThis).inspector.frame(frame) : done({ moves, frames })
-          }
-          /** @type {any} */ (globalThis).inspector.frame(frame)
-        }),
-    )
-    await page.mouse.wheel(0, 100)
-    const { moves, frames } = await watched
-    const all = Math.abs(moves.reduce((sum, move) => sum + move.by, 0))
-    if (all < 1 || frames < 30) continue
-    if (moves[0].after >= 100) continue
-    return Math.abs(moves[0].by) >= all - 0.5 ? `a wheel's notch moved it ${all.toFixed(0)} px all at once, ${moves[0].after.toFixed(0)} ms after it, where it eases natively` : undefined
-  }
-  return { note: "a wheel's notch was turned 3 times and each time the page drew too few frames, or moved nothing within a tenth of a second, to tell whether it eased" }
 }
 
 // A round trip to a server, as a live network's take, and how soon a page opened should show its first content.

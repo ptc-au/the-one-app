@@ -2,7 +2,7 @@
 import { PNG } from "pngjs"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join, relative } from "node:path"
-import { against, glass, keeping, only, out, present, rates, ssh } from "./options.js"
+import { against, glass, keeping, only, out, present, rates, root, ssh } from "./options.js"
 import { build, pageFolder } from "./pages.js"
 import { costlier, device, devices, hostScore, judge } from "./tiers.js"
 import { presentThere, run, scenesOf } from "./headless.js"
@@ -10,6 +10,9 @@ import { finger, ios, moves, projected, selector, single, travel } from "./gestu
 import { wordsApart } from "../rules.js"
 import { requests, unlike as unlikeAfresh } from "./judges.js"
 import { apart, arrives, contactSheet, curve, cut, differs, dips, filmstrip, lull, rect, sharpness, strayInk } from "./output.js"
+
+/// How long a mouse wheel's notch eases what it scrolls, as the renderer has it (`NOTCH_MS` in view/bounce.rs).
+const NOTCH_MS = Number(readFileSync(join(root, "clients/app/renderer/src/view/bounce.rs"), "utf8").match(/const NOTCH_MS: f64 = ([\d.]+)/)[1])
 
 
 /// `replay` with each frame's picture, its own and its nodes written in `folder`'s `frames` as it's drawn, where the
@@ -106,6 +109,10 @@ async function play(built, scene, name, motion, hz, folder) {
   // at once, as a browser's compositor does (`Windows::waits`); a press, a key or a finger does.
   const waits = !events?.every((event) => ["wheel", "move"].includes(event.kind))
   const [way, values] = travel(frames)
+  // Whether a mouse wheel's notches scroll it, which this machine's headless renderer eases (`Screen::wheel_scroll`): not
+  // what turns a page a notch itself, as the launcher's pages do.
+  const scrolls = (frame) => frame.scroll && (frame.scroll.x !== frames[0].scroll?.x || frame.scroll.y !== frames[0].scroll?.y)
+  const eases = !ssh && !motion.reducedMotion && Boolean(events?.some((event) => event.kind === "wheel" && (event.notchesX || event.notchesY))) && frames.some(scrolls)
   const light = frames.map(({ width, height, unlike_whole, ...frame }) => ({ ...frame, ...(unlike_whole ? { unlike_whole: unlike_whole.map(({ whole, presented, ...unlike }) => unlike) } : {}) }))
   const beforeAt = against && join(against, relative(out, folder))
   const before = beforeAt && existsSync(join(beforeAt, "frames.json")) ? JSON.parse(readFileSync(join(beforeAt, "frames.json"), "utf8")) : undefined
@@ -240,22 +247,24 @@ async function play(built, scene, name, motion, hz, folder) {
     else if (!from || !first) failed.push(`${from ? "what it follows" : "what it opens from"} isn't there to compare`)
     else if (apart(first, from) > Math.max(1, next ? apart(next, first) : 0)) failed.push(`it's first drawn at ${rect(first)}, not where it opens from, ${rect(from)}`)
   }
-  // What each wheel's turn moves goes over several frames, as Windows' apps and Chrome smooth-scroll a notch: no frame
-  // moves it as far as one turn does by itself.
-  if (motion.eases) {
+  // What each turn of a mouse's wheel moves goes over several frames, as Windows' apps (WinUI) and Chrome smooth-scroll
+  // a notch, in every motion a wheel's notches move, natively, where nothing reduces motion: no frame moves it as far as
+  // one turn does by itself. (A Mac's moves at once, as AppKit's does; this machine's headless renderer eases.) A check
+  // a motion had to ask for (`eases`) ran nowhere once no preview asked (23 Nov).
+  if (eases) {
     const turn = Math.max(0, ...(events ?? []).filter((event) => event.kind === "wheel").map((event) => Math.max(Math.abs(event.dx ?? 0), Math.abs(event.dy ?? 0))))
     const jump = values.findIndex((value, n) => n > 0 && Math.abs(value - values[n - 1]) >= turn - 0.5)
-    if (!turn) failed.push("it has no wheel's turns to ease")
-    else if (jump >= 0) failed.push(`it moved ${Math.abs(values[jump] - values[jump - 1]).toFixed(0)} pt at frame ${jump + 1} (${frames[jump].at} ms), as far as a turn of the wheel moves it, all at once`)
+    if (turn && jump >= 0) failed.push(`it moved ${Math.abs(values[jump] - values[jump - 1]).toFixed(0)} pt at frame ${jump + 1} (${frames[jump].at} ms), as far as a turn of the wheel moves it, all at once`)
     // A steady hand's notches (each as far, each as long after the one before) scroll at a steady speed, as a Mac's
-    // smooth scrolling does: where they send it all their way (no end slows it), over the second half of their turning,
+    // smooth scrolling does: where they send it all their way (no end slows it), over the second half of their turning
+    // and once a notch's ease has passed since the first (`NOTCH_MS`), before which it's still speeding up,
     // no refresh moves it more than 2 pt further than another (a point either way, on whole points), where a spring
     // sent on at each notch pulsed (8, 7, 6, 7, 10, 10 pt a refresh at 120 Hz).
     const notches = (events ?? []).filter((event) => event.kind === "wheel" && (event.dx || event.dy))
     const apart = notches.slice(1).map((notch, n) => notch.ms - notches[n].ms)
     const whole = Math.abs(values.at(-1) - values[0]) >= notches.reduce((sum, notch) => sum + Math.hypot(notch.dx ?? 0, notch.dy ?? 0), 0) - 0.5
     const steady = whole && notches.length > 3 && notches.every((notch) => Math.hypot(notch.dx ?? 0, notch.dy ?? 0) === Math.hypot(notches[0].dx ?? 0, notches[0].dy ?? 0)) && apart.every((ms) => Math.abs(ms - apart[0]) < 1)
-    const [from, to] = steady ? [notches[0].ms + (notches.at(-1).ms - notches[0].ms) / 2, notches.at(-1).ms] : [0, -1]
+    const [from, to] = steady ? [notches[0].ms + Math.max((notches.at(-1).ms - notches[0].ms) / 2, NOTCH_MS), notches.at(-1).ms] : [0, -1]
     const paced = values.map((value, n) => (n && frames[n - 1].at >= from + 1000 / hz && frames[n].at <= to + 1000 / hz ? Math.abs(value - values[n - 1]) : undefined)).filter((step) => step !== undefined)
     if (paced.length > 1 && Math.max(...paced) - Math.min(...paced) > 2) failed.push(`its steady notches moved it ${Math.min(...paced).toFixed(0)} to ${Math.max(...paced).toFixed(0)} pt a refresh as they turned, not a steady speed`)
     // And slowing to rest from the last of its fastest steps, no step is a point or more longer than the one before, as
@@ -271,7 +280,7 @@ async function play(built, scene, name, motion, hz, folder) {
   // the refresh before (a finger along its moves, a trace's wheel turning or its finger or pressed pointer
   // moving), from the refresh after what moves it is done (a finger lifted, a wheel's last turn), and in the one that
   // shows that where it moved in the refresh before, as a trackpad's page let go held there (16.8 pt a refresh, then
-  // none), and with `eases` as the wheel turns, as a spin of it glides on. A frame held so is one a refresh missed: the loop's own
+  // none), and as a wheel's notches turn it (`eases`), as a spin of it glides on. A frame held so is one a refresh missed: the loop's own
   // clock paced slower than the display, as one at 60 Hz on a 120 Hz display misses every other, a display link that
   // stopped ticking with nothing standing in for it, or a move drawn a refresh late from then on. A device others load
   // (`frameMs`) takes several refreshes a frame.
@@ -289,7 +298,7 @@ async function play(built, scene, name, motion, hz, folder) {
   // Chromium's and UIKit's are) does, shows a frame again between pixels: that's no refresh missed.
   const pixel = 1 / (device?.scale ?? 1)
   const slow = (n) => Math.abs((values[n + 1] ?? values[n]) - values[n - 1]) < 2 * pixel - 0.01
-  const held = moved < 0 || motion.frameMs || motion.reducedMotion ? -1 : values.findIndex((value, n) => n > moved && (motion.eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && !slow(n) && Math.abs(value - values.at(-1)) > 2)
+  const held = moved < 0 || motion.frameMs || motion.reducedMotion ? -1 : values.findIndex((value, n) => n > moved && (eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && !slow(n) && Math.abs(value - values.at(-1)) > 2)
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
   // No refresh draws nothing while something on the window is on its way somewhere (the headless renderer's `held`), whatever
   // it follows: a refresh so is one the loop missed, the frame before shown twice, then a jump. A device others load
@@ -311,7 +320,7 @@ async function play(built, scene, name, motion, hz, folder) {
   // either way; a curve's fastest step is one step longer, alone.
   const steps = values.map((value, n) => (n ? value - values[n - 1] : 0))
   const bend = (n) => steps[n + 1] - steps[n]
-  const even = !events || motion.eases
+  const even = !events || eases
   const after = (n) => even || frames[n - 1].at > end + refresh + 0.5
   const spike = (n) => Math.sign(steps[n - 1]) === Math.sign(steps[n]) && Math.sign(steps[n]) === Math.sign(steps[n + 1]) && Math.abs(steps[n]) - Math.max(Math.abs(steps[n - 1]), Math.abs(steps[n + 1])) > Math.max(2, Math.max(Math.abs(steps[n - 1]), Math.abs(steps[n + 1])) / 2)
   const uneven = moved < 0 || motion.frameMs ? -1 : steps.findIndex((step, n) => n > moved + 1 && after(n) && n + 2 < steps.length && ((Math.sign(bend(n - 1)) === -Math.sign(bend(n)) && Math.sign(bend(n)) === -Math.sign(bend(n + 1)) && Math.abs(bend(n)) > Math.max(2, (Math.abs(step) + Math.abs(steps[n + 1])) / 8)) || spike(n)))
