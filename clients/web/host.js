@@ -39,6 +39,35 @@ let apps
 let device
 /** @type {string} */
 let key
+/// What this browser kept of its network from when it last opened, as the app's client keeps it on disk, so it opens
+/// from that at once while each is asked for again, as stale-while-revalidate has it: where its apps' files are and who
+/// it is (`apps`, `device`, `key`), the files a server listed for each subject (`lists`, by subject, `""` its user's),
+/// the tools (`tools`), and what each app was answered that only reads (`reads`, by app and by what it asked). A
+/// browser that's no longer signed in, or signed in as someone else, keeps none of it.
+const KEPT = "kept"
+/** @type {{ apps?: string, device?: string, key?: string, lists: Record<string, any>, tools?: any[], reads: Record<string, Record<string, unknown>> }} */
+const kept = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(KEPT) ?? "null") ?? { lists: {}, reads: {} }
+  } catch {
+    return { lists: {}, reads: {} }
+  }
+})()
+/// It's written a moment after it changes, once for each run of changes; a browser out of room keeps what it had.
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let keeping
+const keep = () =>
+  void (keeping ??= setTimeout(() => {
+    keeping = undefined
+    try {
+      localStorage.setItem(KEPT, JSON.stringify(kept))
+    } catch {}
+  }, 500))
+const forget = () => {
+  clearTimeout(keeping)
+  localStorage.removeItem(KEPT)
+}
+
 /// Whether its network answers, as the app's client says it (`Connection` in core/client), how soon it's asked
 /// again while it doesn't, and that ask.
 /** @type {import("../app/page/host.js").Connection} */
@@ -87,6 +116,7 @@ async function mcp(method, params = {}) {
     throw new Error("Can't reach your network. Check this device is online.")
   }
   if (response.status === 401) {
+    forget()
     location.replace(await signIn())
     throw new Error("Sign in again.")
   }
@@ -198,7 +228,7 @@ function answered(now) {
   connected(now ? "online" : "offline")
   if (was === connection) return
   if (now && lost) {
-    tools = undefined
+    listTools().catch(() => {})
     for (const view of views.keys()) refresh(view)
   }
   if (!now) unanswered ||= performance.now()
@@ -240,6 +270,8 @@ function fetchEntry(view, entry, generation) {
       if (entry.fetching?.generation === generation) entry.fetching = undefined
       if (generation < entry.invalidated || generation < entry.fetched) return true
       entry.fetched = generation
+      ;(kept.reads[view] ??= {})[JSON.stringify([entry.method, entry.params])] = fresh
+      keep()
       if (JSON.stringify(fresh) !== JSON.stringify(entry.response)) {
         entry.response = fresh
         emit("changed", view)
@@ -261,30 +293,45 @@ async function read(view, method, params) {
   const request = JSON.stringify([method, params])
   const cached = responses(view).get(request)
   if (cached) return cached.response
+  // Answered before this browser last closed it: that at once, and asked again, the app told if it's changed.
+  if (kept.reads[view] && request in kept.reads[view]) {
+    const entry = { method, params, response: kept.reads[view][request], invalidated: 0, fetched: 0 }
+    responses(view).set(request, entry)
+    fetchEntry(view, entry, 0)
+    return entry.response
+  }
   const response = await mcp(method, params)
   if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0 })
+  ;(kept.reads[view] ??= {})[request] = response
+  keep()
   return /** @type {CachedQuery} */ (responses(view).get(request)).response
 }
 
 /// The tools a server lists, by which a call is known to only read: asked for as soon as this browser is signed in,
-/// as nearly every app's first call waits on it, and again once something may have changed them.
+/// as nearly every app's first call waits on it, and again once something may have changed them. Those kept from
+/// before say it meanwhile, as which tools only read hardly changes.
 /** @type {Promise<{ name: string, annotations?: { readOnlyHint?: boolean }, inputSchema?: { properties?: Record<string, { format?: string }> } }[]> | undefined} */
 let tools
 const listTools = () =>
   (tools = mcp("tools/list").then(
-    (listed) => listed.tools,
+    (listed) => {
+      kept.tools = listed.tools
+      keep()
+      return listed.tools
+    },
     (error) => {
       tools = undefined
       throw error
     },
   ))
+const known = () => (kept.tools ? Promise.resolve(kept.tools) : (tools ?? listTools()))
 
 /// A tool's call with the inputs a device fills in itself filled in where none is given, as the app's client fills
 /// them (`core/client/src/resolve.rs`): `device`, this browser's key as a server knows it, and `device-name`, what
 /// it's called. The rest are filled in by what only a device holds, which a browser doesn't.
 /** @param {Record<string, any>} params */
 async function filled(params) {
-  const listed = /** @type {Awaited<NonNullable<typeof tools>>} */ (await (tools ?? listTools()))
+  const listed = /** @type {Awaited<NonNullable<typeof tools>>} */ (await known())
   const tool = listed.find(({ name }) => name === params.name)
   /** @type {Record<string, string>} */
   const own = { device: key, "device-name": called() }
@@ -298,7 +345,7 @@ async function filled(params) {
 async function reads(method, params) {
   if (["tools/list", "resources/list", "resources/read"].includes(method)) return true
   if (method !== "tools/call") return false
-  return (await (tools ?? listTools())).some((/** @type {{ name: string, annotations?: { readOnlyHint?: boolean } }} */ tool) => tool.name === params.name && tool.annotations?.readOnlyHint === true)
+  return (await known()).some((/** @type {{ name: string, annotations?: { readOnlyHint?: boolean } }} */ tool) => tool.name === params.name && tool.annotations?.readOnlyHint === true)
 }
 
 /// Asks again, in the background, for each tool `view` was answered, as a write may have changed what they answer.
@@ -373,12 +420,21 @@ async function opened() {
     return answered(false)
   }
   if (response.status === 401) {
+    forget()
     moved({ session: { state: "signIn" }, link: await signIn() })
     return answered(true)
   }
   if (!response.ok) return answered(false)
-  ;({ apps, device, key } = await response.json())
-  moved({ session: { state: "signedIn" } })
+  const now = await response.json()
+  // Signed in as someone else since, what was kept isn't theirs: it opens again with none.
+  if (kept.apps && now.apps !== kept.apps) {
+    forget()
+    return location.reload()
+  }
+  ;({ apps, device, key } = now)
+  Object.assign(kept, now)
+  keep()
+  if (session.session.state !== "signedIn") moved({ session: { state: "signedIn" } })
   answered(true)
   listTools().catch(() => {})
   // Its person may have turned its notifications on or off in the browser's settings since.
@@ -405,6 +461,14 @@ function pushed(next) {
   push = next
   for (const view of views.keys()) emit("changed", view)
 }
+/// Where it was signed in when it last opened, which it opens as, and whether it's signed in now, asked of its
+/// network's address as the page loads, beside whether this browser has WebGPU, not after.
+if (kept.apps) {
+  ;({ apps, device, key } = /** @type {{ apps: string, device: string, key: string }} */ (kept))
+  session = { session: { state: "signedIn" } }
+}
+const opening = opened()
+
 /// Each operating system, as a person calls it, by `os()`'s names: what a browser is called, beside its own name.
 /** @type {Record<string, string>} */
 const SYSTEMS = { ios: "iPhone", android: "Android", macos: "Mac", windows: "Windows", chromeos: "ChromeOS", linux: "Linux" }
@@ -443,7 +507,6 @@ const NO_KEY = "A browser can't hold your key. Use the app on your phone or comp
 
 /// Where this tab keeps the link it was opened with while its person signs in.
 const OPEN = "open"
-/** @type {{ [Command in keyof Commands]?: (...args: Parameters<Commands[Command]>) => ReturnType<Commands[Command]> | Promise<ReturnType<Commands[Command]>> }} */
 /// When this tab last came back from being stopped, its device asleep or the tab frozen in the background: a timer that
 /// came 4 s or more late, so an open across it isn't told.
 let stopped = 0
@@ -454,6 +517,7 @@ setInterval(() => {
   ticked = now
 }, 2000)
 
+/** @type {{ [Command in keyof Commands]?: (...args: Parameters<Commands[Command]>) => ReturnType<Commands[Command]> | Promise<ReturnType<Commands[Command]>> }} */
 const commands = {
   /// Where this browser is with its network, as the app's client says a device's session (`State` in core/client):
   /// signed in here, or sent to sign in, and whether its network answers. A browser keeps nothing of a network's, so
@@ -461,6 +525,7 @@ const commands = {
   /// What the address it was opened at links to (`/?open=<one: link>`, as a request's link in Vault leads here) is
   /// opened once it's signed in: it's kept in this tab while its person signs in, and the address forgets it.
   async start() {
+    const asked = opening
     if (!(await webgpu)) {
       location.replace("/unsupported")
       return new Promise(() => {})
@@ -470,15 +535,33 @@ const commands = {
       sessionStorage.setItem(OPEN, linked)
       history.replaceState(null, "", location.pathname)
     }
-    await opened()
+    // Signed in when it last opened, it opens as it was while its network says whether it still is.
+    if (!kept.apps) await asked
     const open = session.session.state === "signIn" ? null : sessionStorage.getItem(OPEN)
     if (open) sessionStorage.removeItem(OPEN)
     return { state: state(), ...(open && { open }) }
   },
   /// The files a server lists for `subject`, and the open apps that are out of date.
+  /// Those kept from before are answered at once, and listed again: an open app whose app has a new version since is
+  /// told it's stale, and the page lists them again where anything changed, as a server says it.
   async apps({ subject }) {
-    const listed = await mcp("resources/list", subject ? { _meta: { subject } } : {})
-    return { ...listed, outdated: outdated(subject, listed.resources) }
+    const at = subject ?? ""
+    const before = kept.lists[at]
+    const listing = mcp("resources/list", subject ? { _meta: { subject } } : {}).then((listed) => {
+      kept.lists[at] = listed
+      keep()
+      return listed
+    })
+    if (!before) {
+      const listed = await listing
+      return { ...listed, outdated: outdated(subject, listed.resources) }
+    }
+    listing.then((listed) => {
+      const stale = outdated(subject, listed.resources)
+      if (stale.length) emit("stale", stale)
+      if (JSON.stringify(listed) !== JSON.stringify(before)) emit("changed", "client")
+    }, () => {})
+    return { ...before, outdated: outdated(subject, before.resources) }
   },
   async request({ view, method, params }) {
     if (await reads(method, params)) return read(view, method, params)
@@ -486,7 +569,7 @@ const commands = {
     // A server tells every client it's connected to that something changed. A browser isn't connected, so it
     // invalidates every open app's cached reads and refetches them in the background.
     const name = typeof params?.name === "string" ? params.name : ""
-    if (method === "tools/call" && (!name.includes("_") || name.startsWith("apps_"))) tools = undefined
+    if (method === "tools/call" && (!name.includes("_") || name.startsWith("apps_"))) listTools().catch(() => {})
     for (const open of views.keys()) invalidate(open)
     return response
   },
@@ -513,6 +596,7 @@ const commands = {
   /// Its session is gone, and with it what the network kept of this browser (`sign-in.device_removed`): what its push
   /// service kept goes too.
   async sign_out() {
+    forget()
     await (await navigator.serviceWorker?.getRegistration())?.pushManager.getSubscription().then((subscription) => subscription?.unsubscribe())
     location.reload()
   },
