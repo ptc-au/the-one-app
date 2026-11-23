@@ -1,6 +1,6 @@
 ---
 name: software-update
-description: Read when the network's edge is behind its servers' build, when Software Update says the edge went back, before setting up a network's edge to update itself, or to choose which devices get dev builds.
+description: Read when the network's edge is behind its servers' build, when Software Update says the edge went back, before setting up a network's edge to update itself, to choose which devices get dev builds, or to publish the network's installers.
 metadata:
   title: "Software Update"
   subtitle: "Keeps your network's edge current"
@@ -31,3 +31,11 @@ off, so a new one starts on. The Home Screen widget Dev Builds shows the same, a
 a device that's off keeps its build and gets the next release once it's on again. Servers and the edge always get every
 release, so a device that's one of the network's servers isn't one of these: its target's `one` is built whenever a
 server needs it, and it's no row to switch.
+
+## Installers
+
+The network's own installers, its app as a person installs it the first time on a Mac, Windows, Linux or Android, are
+kept here: `installers` lists them, and `tooling/release client` publishes each (`publish_installer`, the file sent as
+an upload: `one software-update publish_installer --platform mac --name "The PTC App.dmg" --build <build> --file-from
+<path>`), in place of the one before. The Downloads app offers them on the network's download page, <address>/download,
+and `installer` gives one with a link that downloads it. From then on the app updates itself.

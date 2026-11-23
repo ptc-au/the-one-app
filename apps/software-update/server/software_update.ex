@@ -13,12 +13,20 @@ defmodule SoftwareUpdate do
   device is on until it's switched off, so a new one starts on. `tooling/release client` builds only for the devices
   that are, and the Home Screen widget switches them. A device that's one of the network's servers isn't one of them:
   a server runs `one` too and gets every release, so it's nobody's to switch off, and it's no row.
+
+  And it keeps the network's own installers, one for each kind of computer and phone (`@platforms`), the network's app
+  as a person installs it the first time, which `tooling/release client` publishes (`publish_installer`) and the
+  Downloads app offers. Each is the upload it was sent as, never copied, and the one it replaces is removed.
   """
   @behaviour OneCore.App
   require Logger
   alias OneCore.{Artifact, Bucket, Call, Servers}
 
   @item "Cloudflare edge deploy"
+
+  # The kinds of computer and phone an installer is for: a Mac with Apple silicon or Intel, Windows, Linux as an
+  # AppImage or a .deb, and Android.
+  @platforms ~w(mac mac-intel windows linux-appimage linux-deb android)
 
   @impl true
   def icon, do: "icon.svg"
@@ -62,6 +70,17 @@ defmodule SoftwareUpdate do
       required: ["devices"]
     }
 
+    installer = %{
+      type: "object",
+      properties: %{
+        platform: %{type: "string", enum: @platforms},
+        name: %{type: "string", description: "Its file's name, as it's downloaded"},
+        build: %{type: "string", description: "The build of the network's app it installs"},
+        size: %{type: "integer", description: "In bytes"}
+      },
+      required: ["platform", "name", "build", "size"]
+    }
+
     [
       %{
         name: "dev_builds",
@@ -83,6 +102,36 @@ defmodule SoftwareUpdate do
           required: ["device", "on"]
         },
         outputs: devices
+      },
+      %{
+        name: "installers",
+        read_only: true,
+        description: "Lists the network's own installers, each the network's app for a kind of computer or phone as a person installs it the first time",
+        inputs: %{type: "object", properties: %{}},
+        outputs: %{type: "object", properties: %{installers: %{type: "array", items: installer}}, required: ["installers"]}
+      },
+      %{
+        name: "installer",
+        read_only: true,
+        description: "Gives one of the network's installers, by its file's name, with a link that downloads it within a minute",
+        inputs: %{type: "object", properties: %{name: %{type: "string", description: "Its file's name, as `installers` lists it"}}, required: ["name"]},
+        outputs: put_in(installer, [:properties, :link], %{type: "string", description: "Downloads it, within a minute"})
+      },
+      %{
+        name: "publish_installer",
+        description:
+          "Publishes the network's installer for a kind of computer or phone, in place of the one before: the network's app as a person installs it the first time, which the Downloads app offers",
+        inputs: %{
+          type: "object",
+          properties: %{
+            platform: %{type: "string", enum: @platforms},
+            name: %{type: "string", description: "Its file's name, as it's downloaded: The PTC App.dmg"},
+            build: %{type: "string", description: "The build of the network's app it installs, as `one builds` names it"},
+            file: %{type: "string", format: "upload", description: "The installer"}
+          },
+          required: ["platform", "name", "build", "file"]
+        },
+        outputs: %{type: "object", properties: %{installers: %{type: "array", items: installer}}, required: ["installers"]}
       },
       %{
         name: "widget",
@@ -108,6 +157,34 @@ defmodule SoftwareUpdate do
     listed(call)
   end
 
+  def call("installers", _inputs, call), do: %{installers: installers(call)}
+
+  def call("installer", %{"name" => name}, call) do
+    case Enum.find(kept(call), fn {_platform, installer} -> installer["name"] == name end) do
+      {platform, installer} -> Map.merge(shown(platform, installer), %{link: Artifact.link(call.own, installer["file"], :read).url})
+      nil -> raise "The network has no installer named #{name}: `installers` lists them."
+    end
+  end
+
+  def call("publish_installer", %{"platform" => platform, "name" => name, "build" => build, "file" => file}, call) do
+    if String.contains?(name, ["/", "\\"]) or String.trim(name) != name or name == "", do: raise("An installer's name is a file's name, with no folder: The PTC App.dmg")
+
+    size =
+      case Artifact.size(call.own, file) do
+        {:ok, size} -> size
+        _absent -> raise "#{file} didn't arrive: send the installer to its upload's link first."
+      end
+
+    before = kept(call)[platform]
+
+    Artifact.update(call.own, "installers", fn was ->
+      JSON.encode!(Map.put(if(was, do: JSON.decode!(was), else: %{}), platform, %{name: name, build: build, file: file, size: size}))
+    end)
+
+    if before && before["file"] != file, do: Artifact.remove(call.own, before["file"])
+    %{installers: installers(call)}
+  end
+
   def call("widget", _inputs, call) do
     %{devices: devices} = listed(call)
     on = Enum.count(devices, & &1.on)
@@ -124,6 +201,15 @@ defmodule SoftwareUpdate do
       ]
     }
   end
+
+  # The network's installers, by kind of computer or phone, each with the upload it is (`file`).
+  defp kept(call) do
+    with {:ok, was, _tag} <- Artifact.read(call.own, "installers"), do: JSON.decode!(was), else: (:absent -> %{})
+  end
+
+  defp installers(call), do: for({platform, installer} <- Enum.sort(kept(call)), do: shown(platform, installer))
+
+  defp shown(platform, installer), do: %{platform: platform, name: installer["name"], build: installer["build"], size: installer["size"]}
 
   # The devices, each on unless it was switched off.
   defp listed(call) do
