@@ -42,7 +42,7 @@ pub async fn take_program(client: &Client) -> Result<Option<String>> {
     let program = program()?;
     let new = fetched_program(client, one, &program).await?;
     fs::create_dir_all(here.folder.join("programs").join(PROGRAM))?;
-    fs::copy(&new, here.program(latest))?;
+    copied(&new, &here.program(latest))?;
     // Put in place under the record's lock, and only while the server takes no update of its own, which pairs the
     // program in place with its build as it prepares.
     let mut taken = Ok(false);
@@ -55,7 +55,7 @@ pub async fn take_program(client: &Client) -> Result<Option<String>> {
         }
     })?;
     if !taken? {
-        let _ = fs::remove_file(&new);
+        remove(&new);
         return Ok(None);
     }
     Ok(Some(latest.to_owned()))
@@ -223,10 +223,11 @@ pub(super) async fn take(client: &Client, here: &Here, record: &Record, program:
         here.take(builds, &record.told(ServerDaemonStatus::Running), Some(&current.build)).await?;
     }
     if next.program != current.program {
-        // Both are kept beside the one in place, which they're put in place of only as the pair they're in is taken.
-        // One downloaded and checked before, as a prepare asked again of the same pair has, is taken as it is.
+        // Both are kept beside the one in place, which they're put in place of only as the pair they're in is taken:
+        // a program, or a network's whole app on a Mac (`installed`). One downloaded and checked before, as a prepare
+        // asked again of the same pair has, is taken as it is.
         fs::create_dir_all(here.folder.join("programs").join(PROGRAM))?;
-        fs::copy(program.canonicalize()?, here.program(&current.program))?;
+        copied(&installed(program)?, &here.program(&current.program))?;
         if !here.program(&next.program).exists() {
             fs::rename(fetched_program(client, &builds[PROGRAM], program).await?, here.program(&next.program))?;
         }

@@ -2,31 +2,22 @@
 
 use super::*;
 
-/// Downloads the build `one` of the program `program` beside it, and gives where, once it has said it's that build.
-/// It's beside the file a link to it names, as on a Mac `~/.local/bin/one` is a link to the program in the One App's
-/// bundle, under a name of this process's own (`one.<pid>.new`): the app and the server's `one serve run` each take
-/// the same program at once, which on Windows one couldn't write while the other held it (os error 32). On a Mac whose
-/// bundle is a network's own app, it's that network's program (`networks_program`).
+/// Downloads the build `one` of the program `program` beside what an update replaces (`installed`), and gives where,
+/// once it has said it's that build. It's under a name of this process's own (`<name>.<pid>.new`, `beside`): the app
+/// and the server's `one serve run` each take the same build at once, which on Windows one couldn't write while the
+/// other held it (os error 32). A network's own app takes its network's own build (`networks_build`), as its name and
+/// icon are in it, and otherwise it's the platform's.
 pub(super) async fn fetched_program(client: &Client, one: &Value, program: &Path) -> Result<PathBuf> {
     let build = one["build"].as_str().context("a build says which it is")?;
     ensure!(count(build) >= count(BUILD), "The network's build of one, {build}, is older than this one, {BUILD}.");
     let program = program.canonicalize()?;
-    #[cfg(target_os = "macos")]
-    let new = match bundle_of(&program) {
-        Some((contents, true)) => networks_program(client, build, &program, &contents).await?,
-        _ => unpacked(one, &program).await?,
+    let new = match networks_own(&program) {
+        true => networks_build(client, build, &program).await?,
+        false => unpacked(one, &program).await?,
     };
-    #[cfg(not(target_os = "macos"))]
-    let new = {
-        let _ = client;
-        unpacked(one, &program).await?
-    };
-    #[cfg(target_os = "macos")]
-    let started = bundled(&new, &program).await;
-    #[cfg(not(target_os = "macos"))]
-    let started = build_of(&new).await;
+    let started = checked(&new, &program).await;
     if !started.as_ref().is_ok_and(|started| started.as_deref() == Some(build)) {
-        fs::remove_file(&new)?;
+        remove(&new);
         started?;
         bail!("The build {build} of one doesn't start here.")
     }
@@ -45,6 +36,148 @@ async fn unpacked(one: &Value, program: &Path) -> Result<PathBuf> {
     #[cfg(unix)]
     fs::set_permissions(&new, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
     Ok(new)
+}
+
+/// Whether `program` is a network's own app's, which takes its network's own build of itself (`networks_build`),
+/// with its name and icon: on a Mac, a bundle that's another app's than the One App's (`bundle_of`), and on Windows, one
+/// its network's installer put in place, with its `network` beside it (`tooling/installers`).
+pub(super) fn networks_own(program: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    return bundle_of(program).is_some_and(|(_, another)| another);
+    #[cfg(windows)]
+    return program.with_file_name("network").exists();
+    #[cfg(not(any(target_os = "macos", windows)))]
+    return {
+        let _ = program;
+        false
+    };
+}
+
+/// What an update replaces of `program`: on a Mac, a network's own app's whole bundle, as its network's disk image has
+/// it (`networks_build`), and otherwise the program alone.
+pub(super) fn installed(program: &Path) -> Result<PathBuf> {
+    let program = program.canonicalize()?;
+    #[cfg(target_os = "macos")]
+    if let Some((contents, true)) = bundle_of(&program) {
+        return Ok(contents.parent().context("a bundle is in a folder")?.to_owned());
+    }
+    Ok(program)
+}
+
+/// Where a build to put in place of `program` is put first, beside what it replaces (`installed`), as it's moved
+/// there in one step: `ptc.<pid>.new`, `The PTC App.app.<pid>.new`.
+pub(super) fn beside(program: &Path) -> Result<PathBuf> {
+    let installed = installed(program)?;
+    let name = installed.file_name().context("what's installed has a name")?.to_string_lossy();
+    Ok(installed.with_file_name(format!("{name}.{}.new", std::process::id())))
+}
+
+/// Copies a build, a program or a Mac's app (`installed`), from `from` to `to`, in place of what's there.
+pub(super) fn copied(from: &Path, to: &Path) -> Result<()> {
+    remove(to);
+    #[cfg(target_os = "macos")]
+    if from.is_dir() {
+        // As a Mac copies an app, its links and extended attributes too, which its signature covers.
+        let copied = command("ditto").arg(from).arg(to).output()?;
+        ensure!(copied.status.success(), "{}", String::from_utf8_lossy(&copied.stderr).trim());
+        return Ok(());
+    }
+    fs::copy(from, to)?;
+    Ok(())
+}
+
+/// Removes a build, a program or a Mac's app, where it's there.
+pub(super) fn remove(path: &Path) {
+    let _ = fs::remove_dir_all(path).or_else(|_| fs::remove_file(path));
+}
+
+/// The build the build `new` says it is, as `program` is to run it, once it's checked it may: on a Mac, signed by the
+/// platform for its bundle (`bundled`); on Windows, signed by whoever signed the program in place (`signed_alike`).
+async fn checked(new: &Path, program: &Path) -> Result<Option<String>> {
+    #[cfg(target_os = "macos")]
+    return bundled(new, program).await;
+    #[cfg(windows)]
+    signed_alike(new, program).await?;
+    #[cfg(not(target_os = "macos"))]
+    return {
+        let _ = program;
+        build_of(new).await
+    };
+}
+
+/// How long a network's own build is waited for in its Software Update to be the build being taken
+/// (`networks_build`).
+#[cfg(any(target_os = "macos", windows))]
+const PUBLISHED: Duration = Duration::from_secs(8 * 60);
+
+/// The network's own build for this kind of computer in its Software Update, `platform` (`mac`, `windows-program`),
+/// once it's the build `build`, as `download_to` downloads it: the core's release publishes a network's installers
+/// minutes after the builds they're made from (`tooling/release`), so it's asked again until it's this build, for
+/// less than the network's update gives a server to prepare (`PREPARING`, `core/edge/updater/updater.ts`).
+#[cfg(any(target_os = "macos", windows))]
+async fn published(client: &Client, platform: &str, build: &str) -> Result<Value> {
+    let waiting = Instant::now();
+    let found = loop {
+        let listed: Value = serde_json::from_str(&tool(client, "software-update_installers", json!({})).await?)?;
+        let found = listed["installers"].as_array().into_iter().flatten().find(|installer| installer["platform"] == platform).cloned();
+        let found = found.with_context(|| format!("The network's Software Update has no {platform} for this app to take its build from."))?;
+        let has = found["build"].as_str().unwrap_or_default();
+        if count(has) >= count(build) || waiting.elapsed() > PUBLISHED {
+            ensure!(has == build, "The network's {platform} is the build {has}, not {build}: this app takes the build its network's is.");
+            break found;
+        }
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    };
+    let installer: Value = serde_json::from_str(&tool(client, "software-update_installer", json!({"name": found["name"]})).await?)?;
+    Ok(json!({"build": build, "name": found["name"], "size": found["size"], "sha256": found["sha256"], "link": {"url": installer["link"]}}))
+}
+
+/// The build `build` of a network's own app on Windows: its program, named, iconed and signed as the network's
+/// installer's is, which `tooling/installers` publishes beside it with its SHA-256 (`windows-program`), so an update
+/// keeps the app's name and icon, where the platform's `one.exe` took them (Task Manager and Explorer said the One App).
+/// The installer itself isn't the update: it closes the app and its server, the updater among them.
+#[cfg(windows)]
+async fn networks_build(client: &Client, build: &str, program: &Path) -> Result<PathBuf> {
+    let published = published(client, "windows-program", build).await?;
+    ensure!(published["sha256"].is_string(), "The network's program for Windows says no SHA-256 to check it by.");
+    let new = beside(program)?;
+    download_to(&published, &new).await?;
+    Ok(new)
+}
+
+/// The program `new`, beside Windows' `program`, is signed with Authenticode by whoever signed `program`, where
+/// `program` is signed: the certificate's subject is compared, as Sparkle compares a new app's signer with the old
+/// one's, and Windows checks its chain. One in place that isn't signed, as none was before the network's certificate,
+/// is checked against the SHA-256 its network published (`networks_build`). It's the build it says it is.
+#[cfg(windows)]
+async fn signed_alike(new: &Path, program: &Path) -> Result<()> {
+    let Some(ours) = signer(program).await? else { return Ok(()) };
+    let theirs = signer(new).await?;
+    ensure!(
+        theirs.as_deref() == Some(ours.as_str()),
+        "It isn't signed by {ours}, as the app in place is, so the one there is kept: it's signed by {}.",
+        theirs.as_deref().unwrap_or("nobody")
+    );
+    Ok(())
+}
+
+/// Who signed the program `program` with Authenticode, its certificate's subject, where Windows says the signature
+/// is valid (PowerShell's `Get-AuthenticodeSignature`, which asks WinVerifyTrust).
+#[cfg(windows)]
+async fn signer(program: &Path) -> Result<Option<String>> {
+    let mut asked = command("powershell");
+    asked.args(["-NoProfile", "-NonInteractive", "-Command"]);
+    asked.arg("$s = Get-AuthenticodeSignature -LiteralPath $env:ONE_SIGNED; if ($s.Status -eq 'Valid') { $s.SignerCertificate.Subject }");
+    asked.env("ONE_SIGNED", program);
+    let said = ran(asked, Duration::from_secs(60)).await?;
+    ensure!(said.status.success(), "Windows didn't say who signed {}: {}", program.display(), String::from_utf8_lossy(&said.stderr).trim());
+    let subject = String::from_utf8_lossy(&said.stdout).trim().to_owned();
+    Ok((!subject.is_empty()).then_some(subject))
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+async fn networks_build(_: &Client, _: &str, _: &Path) -> Result<PathBuf> {
+    bail!("A network's own app updates itself only on a Mac and on Windows.")
 }
 
 /// The One App's bundle but its program: its Info.plist, icon and seal, the same for every build, which each build of
@@ -75,42 +208,20 @@ pub(super) fn bundle_of(program: &Path) -> Option<(PathBuf, bool)> {
     Some((contents, another))
 }
 
-/// How long a network's installer for a Mac is waited for to be the build being taken (`networks_program`).
+/// The build `build` of a network's own app for a Mac: the whole app, from the network's installer for a Mac, its
+/// disk image, signed and notarised, which the core's release publishes in its Software Update after each build
+/// (`tooling/installers`), as Sparkle and Tauri's updater take a whole app. So a network that changed its app's name or
+/// icon has it changed by the update: a program alone is signed with its bundle's Info.plist and icon, and is killed in
+/// another bundle ("Code Signature Invalid", on Andre's Mac on 23 Nov 2026). It's put beside the app it replaces
+/// (`beside`), on the same volume, to be swapped with it in one step (`put`).
 #[cfg(target_os = "macos")]
-const INSTALLER: Duration = Duration::from_secs(8 * 60);
-
-/// The build `build` of a network's own app's program, for the bundle whose `Contents` are `contents`: a network's
-/// app has its program signed in its own bundle, with its Info.plist, icon and `network`, so the platform's build,
-/// signed in the One App's, is killed there ("Code Signature Invalid", on Andre's Mac on 23 Nov 2026). It's taken
-/// from the network's installer for a Mac, its whole app signed and notarised, which the core's release publishes in
-/// the network's Software Update after each build (`tooling/installers`), once that's the build `build`, as Sparkle
-/// takes an app from its disk image. It's put beside `program` (`<command>.<pid>.new`).
-#[cfg(target_os = "macos")]
-async fn networks_program(client: &Client, build: &str, program: &Path, contents: &Path) -> Result<PathBuf> {
-    // The release publishes a network's installers minutes after the builds they're made from (`tooling/release`), so
-    // it's asked again until it's this build, for less than the network's update gives a server to prepare
-    // (`PREPARING`, `core/edge/updater/updater.ts`).
-    let waiting = Instant::now();
-    let mac = loop {
-        let listed: Value = serde_json::from_str(&tool(client, "software-update_installers", json!({})).await?)?;
-        let mac = listed["installers"].as_array().into_iter().flatten().find(|installer| installer["platform"] == "mac").cloned();
-        let mac = mac.context("The network has no app for a Mac in its Software Update to take this app's program from.")?;
-        let has = mac["build"].as_str().unwrap_or_default();
-        if count(has) >= count(build) || waiting.elapsed() > INSTALLER {
-            ensure!(has == build, "The network's app for a Mac is the build {has}, not {build}: this app takes the build its app is.");
-            break mac;
-        }
-        tokio::time::sleep(Duration::from_secs(30)).await;
-    };
-    let name = mac["name"].as_str().context("an installer has a name")?;
-    let installer: Value = serde_json::from_str(&tool(client, "software-update_installer", json!({"name": name})).await?)?;
-    let updates = contents.join("Updates");
-    fs::create_dir_all(&updates)?;
-    let image = updates.join(format!("{}.dmg", std::process::id()));
-    let volume = updates.join(format!("{}.volume", std::process::id()));
-    let link = json!({"build": build, "size": mac["size"], "link": {"url": installer["link"]}});
-    let downloaded = download_to(&link, &image).await;
-    let new = program.with_extension(format!("{}.new", std::process::id()));
+async fn networks_build(client: &Client, build: &str, program: &Path) -> Result<PathBuf> {
+    let published = published(client, "mac", build).await?;
+    let name = published["name"].as_str().context("an installer has a name")?.to_owned();
+    let image = env::temp_dir().join(format!("one.{}.dmg", std::process::id()));
+    let volume = env::temp_dir().join(format!("one.{}.volume", std::process::id()));
+    let downloaded = download_to(&published, &image).await;
+    let new = beside(program)?;
     let taken = async {
         downloaded?;
         let mut attach = command("hdiutil");
@@ -118,11 +229,7 @@ async fn networks_program(client: &Client, build: &str, program: &Path, contents
         let attached = ran(attach, Duration::from_secs(120)).await?;
         ensure!(attached.status.success(), "{name} didn't open: {}", String::from_utf8_lossy(&attached.stderr).trim());
         let app = fs::read_dir(&volume)?.flatten().map(|entry| entry.path()).find(|path| path.extension().is_some_and(|it| it == "app"));
-        let app = app.with_context(|| format!("{name} holds no app"))?;
-        let info = plist::Value::from_file(app.join("Contents/Info.plist"))?;
-        let command = info.as_dictionary().and_then(|info| info.get("CFBundleExecutable")?.as_string()).context("an app names its program")?;
-        fs::copy(app.join("Contents/MacOS").join(command), &new)?;
-        Ok(())
+        copied(&app.with_context(|| format!("{name} holds no app"))?, &new)
     }
     .await;
     if volume.exists() {
@@ -132,20 +239,26 @@ async fn networks_program(client: &Client, build: &str, program: &Path, contents
     }
     let _ = fs::remove_file(&image);
     let _ = fs::remove_dir(&volume);
-    let _ = fs::remove_dir(&updates);
-    taken.with_context(|| format!("This app couldn't take the network's program from {name}"))?;
+    if let Err(error) = taken {
+        remove(&new);
+        return Err(error.context(format!("This app couldn't take the network's app from {name}")));
+    }
     Ok(new)
 }
 
-/// The build the program `new` says it is (`build_of`), downloaded beside a Mac's `program`: where that's in an app
-/// bundle, it's run as the program of a copy of the bundle it's to be put in, once it's signed for it (`Checking`), so
-/// it's put in place only where macOS runs it. The One App's bundle has `BUNDLE` put in place first, which each build
-/// of `one` is signed in. A bundle that's another app's, as a network's own app is (`tooling/mac-app`), keeps its own
-/// Info.plist, icon, `network` and seal, as white-label apps keep theirs, and takes its network's program
-/// (`networks_program`), signed in it.
+/// The build a Mac's build `new` says it is, as `program` is to run it, once macOS would: a network's whole app
+/// (`networks_build`) signed by the platform as this app, by its identifier, and notarised (`checked_app`); and a
+/// program alone run as the program of a copy of the bundle it's to be put in, once it's signed for it (`Checking`).
+/// The One App's bundle has `BUNDLE` put in place first, which each build of `one` is signed in.
 #[cfg(target_os = "macos")]
 pub(super) async fn bundled(new: &Path, program: &Path) -> Result<Option<String>> {
     let Some((contents, another)) = bundle_of(program) else { return build_of(new).await };
+    if new.is_dir() {
+        checked_app(new, program)?;
+        let named = new.join("Contents/MacOS").join(program.file_name().context("a program has a name")?);
+        ensure!(named.exists(), "The network's app names its program otherwise now, so it's installed again from its download page.");
+        return build_of(&named).await;
+    }
     if !another {
         for (file, bytes) in BUNDLE {
             let path = contents.join(file);
@@ -160,6 +273,30 @@ pub(super) async fn bundled(new: &Path, program: &Path) -> Result<Option<String>
     }
     let checking = Checking::new(new, program)?;
     build_of(&checking.checked).await
+}
+
+/// Checks the app `new` is the app `program` is in, as macOS opens it: signed by the platform (`TEAM`) with the same
+/// identifier, `codesign --verify --strict`, as Sparkle checks a new app's signer against the old's, and accepted by
+/// Gatekeeper, notarised (`spctl --assess`).
+#[cfg(target_os = "macos")]
+pub(super) fn checked_app(new: &Path, program: &Path) -> Result<()> {
+    let (contents, _) = bundle_of(program).context("a program in a bundle")?;
+    let info = plist::Value::from_file(contents.join("Info.plist"))?;
+    let identifier = info.as_dictionary().and_then(|info| info.get("CFBundleIdentifier")?.as_string()).context("an app has an identifier")?;
+    let requirement = format!("=identifier \"{identifier}\" and anchor apple generic and certificate leaf[subject.OU] = \"{TEAM}\"");
+    let verified = command("codesign").args(["--verify", "--strict", "-R", &requirement]).arg(new).output()?;
+    ensure!(
+        verified.status.success(),
+        "It isn't this app signed by the platform, so the one there is kept: {}",
+        String::from_utf8_lossy(&verified.stderr).trim()
+    );
+    let assessed = command("spctl").args(["--assess", "--type", "execute"]).arg(new).output()?;
+    ensure!(
+        assessed.status.success(),
+        "Gatekeeper doesn't accept it, so the one there is kept: {}",
+        String::from_utf8_lossy(&assessed.stderr).trim()
+    );
+    Ok(())
 }
 
 /// The program `new`, beside a Mac's `program`, checked as the program of a copy of the app bundle `program` is in
@@ -224,12 +361,26 @@ pub async fn build_of(program: &Path) -> Result<Option<String>> {
     Ok(String::from_utf8_lossy(&output.stdout).split_whitespace().nth(1).map(str::to_owned))
 }
 
-/// Puts the program `new` in place of `program`, in one step. Windows replaces or removes no program that's running,
-/// but lets it be renamed: the one before is put aside under a name of its own (`one.<ms>.old`), as one put aside
-/// before may still be running (the app, or the `one serve run` that's putting this in place, started from it), and
-/// those put aside before that nothing runs any more go.
+/// Puts the build `new` in place of `program`, in one step: a program, or on a Mac a network's whole app, swapped with
+/// the one there (`renamex_np`'s `RENAME_SWAP`, as Sparkle swaps an app), which then goes, at the same path, so its
+/// server's agent, its Dock icon and its link on the PATH find it as before. Windows replaces or removes no program
+/// that's running, but lets it be renamed: the one before is put aside under a name of its own (`one.<ms>.old`), as one
+/// put aside before may still be running (the app, or the `one serve run` that's putting this in place, started from
+/// it), and those put aside before that nothing runs any more go.
 pub(super) fn put(new: &Path, program: &Path) -> Result<()> {
     let program = program.canonicalize()?;
+    #[cfg(target_os = "macos")]
+    if new.is_dir() {
+        use std::os::unix::ffi::OsStrExt;
+        let app = installed(&program)?;
+        ensure!(app.is_dir(), "{} is no app to put {} in place of", program.display(), new.display());
+        let (from, to) = (std::ffi::CString::new(new.as_os_str().as_bytes())?, std::ffi::CString::new(app.as_os_str().as_bytes())?);
+        if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } != 0 {
+            return Err(std::io::Error::last_os_error()).with_context(|| format!("{} couldn't be put in place", app.display()));
+        }
+        remove(new);
+        return Ok(());
+    }
     #[cfg(windows)]
     {
         let stem = program.file_stem().unwrap_or_default().to_string_lossy().into_owned();
