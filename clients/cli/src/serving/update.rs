@@ -161,7 +161,7 @@ pub(super) async fn prepared(
         })
         .await?;
     take(here, record, program, builds).await?;
-    let taking = if next.build == current.build { format!("one {}", next.program) } else { next.build.clone() };
+    let taking = if next.build == current.build { format!("{} {}", client::command(), next.program) } else { next.build.clone() };
     println!("Prepared {taking}");
     *record = here
         .save(server, |record| {

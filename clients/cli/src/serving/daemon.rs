@@ -27,7 +27,7 @@ pub(super) async fn serve(client: &Arc<Client>, here: &Here, reports: &Reports) 
     let address = client.address().context("A server is for a network with an address, and this one has none.")?;
     let who = env::var("ONE_SUBJECT").context("ONE_SUBJECT says who the server is for")?;
     if settled(client, here, false).await?.server_membership == ServerMembership::Inactive {
-        println!("This device isn't a server: `one serve on` makes it one.");
+        println!("This device isn't a server: `{} serve on` makes it one.", client::command());
         return Ok(());
     }
     let log = here.folder.join("server.log");

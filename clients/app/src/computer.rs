@@ -514,6 +514,10 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
     if let Err(error) = links() {
         eprintln!("this device's one: links don't open this app: {error:#}");
     }
+    #[cfg(all(target_os = "macos", not(debug_assertions)))]
+    if let Err(error) = on_path() {
+        eprintln!("this device's {}: it isn't on the PATH: {error:#}", ::client::command());
+    }
     crate::login::begin(&home);
     #[cfg(all(windows, not(debug_assertions)))]
     if let Err(error) = toasts() {
@@ -861,6 +865,23 @@ pub(crate) fn opened() {
             let _ = unsafe { windows::Win32::System::Console::SetStdHandle(windows::Win32::System::Console::STD_OUTPUT_HANDLE, handle) };
         }
     }
+}
+
+/// Puts this app's command on the PATH, as Windows' installer does (`installer.nsi`): `~/.local/bin/<command>`, a link to
+/// the program in its bundle, which `one update` and a server replace in place. A Mac with the One App and PTC's has
+/// `one` and `ptc` there, each its own app's. What's there already stays as it is, a file as a link to a program that's
+/// there, the One App's or another's; a link to one that's gone, as an app moved from where it was, is made again.
+#[cfg(all(target_os = "macos", not(debug_assertions)))]
+fn on_path() -> anyhow::Result<()> {
+    let program = cli::serving::program()?.canonicalize()?;
+    let folder = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("this user has no home folder"))?.join(".local/bin");
+    let link = folder.join(::client::command());
+    match std::fs::symlink_metadata(&link) {
+        Ok(found) if !found.is_symlink() || link.exists() => return Ok(()),
+        Ok(_) => std::fs::remove_file(&link)?,
+        Err(_) => std::fs::create_dir_all(&folder)?,
+    }
+    Ok(std::os::unix::fs::symlink(&program, &link)?)
 }
 
 /// Has the device open `one:` links with this program, as Tauri's deep links did: Linux by a desktop entry that takes

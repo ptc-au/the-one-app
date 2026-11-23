@@ -252,26 +252,42 @@ pub fn home() -> Result<PathBuf> {
 /// `one` and `the One App` there, and this is neither. A debug build's has `.dev` after it (`build.rs`): a client of
 /// its own, never the installed one's.
 pub fn identifier() -> &'static str {
-    &bundle().0
+    &bundle().identifier
 }
 
 /// The app's name, as a person sees it: its Mac bundle's (`CFBundleName`), as for `identifier`, and otherwise
 /// `clients/app/tauri.conf.json`'s `productName` (`build.rs`).
 pub fn app_name() -> &'static str {
-    &bundle().1
+    &bundle().name
 }
 
-fn bundle() -> &'static (String, String) {
-    static BUNDLE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+/// What a person types to run this program, which a network names as it names its app, by Tauri's `mainBinaryName`
+/// (`tooling/mac-app` makes the bundle's program that): `one`, or `ptc` for PTC's. It's what the program says of itself
+/// where a person or an agent reads it, and what `git-remote-` and `::` in a git address are followed by. On a Mac it's
+/// its bundle's (`CFBundleExecutable`), through any link to it, as for `identifier`; elsewhere it's `one`.
+pub fn command() -> &'static str {
+    &bundle().command
+}
+
+struct Bundle {
+    identifier: String,
+    name: String,
+    command: String,
+}
+
+fn bundle() -> &'static Bundle {
+    static BUNDLE: std::sync::OnceLock<Bundle> = std::sync::OnceLock::new();
     BUNDLE.get_or_init(|| {
         #[cfg(target_os = "macos")]
         if let Some(info) = env::current_exe().ok().and_then(|program| system::bundle_info(&program)) {
             let said = |key: &str| info.get(key).and_then(|value| value.as_string()).map(str::to_owned);
-            if let (Some(identifier), Some(name)) = (said("CFBundleIdentifier"), said("CFBundleName")) {
-                return (identifier, name);
+            if let (Some(identifier), Some(name), Some(command)) =
+                (said("CFBundleIdentifier"), said("CFBundleName"), said("CFBundleExecutable"))
+            {
+                return Bundle { identifier, name, command };
             }
         }
-        (env!("ONE_IDENTIFIER").to_owned(), env!("ONE_APP_NAME").to_owned())
+        Bundle { identifier: env!("ONE_IDENTIFIER").to_owned(), name: env!("ONE_APP_NAME").to_owned(), command: "one".to_owned() }
     })
 }
 

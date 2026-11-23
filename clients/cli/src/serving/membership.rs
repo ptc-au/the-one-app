@@ -15,10 +15,10 @@ pub async fn on(client: &Client) -> Result<String> {
     let record = here.read()?;
     match record.server_membership {
         ServerMembership::Active => {
-            let who = record.subject.context(
+            let who = record.subject.with_context(|| format!(
                 "This device's server hasn't said whom it's for yet, which it does as it starts on this build: \
-                 `one serve on` registers it again once it has.",
-            )?;
+                 `{} serve on` registers it again once it has.", client::command()
+            ))?;
             let registered = registered(&here, &key, &who).await?;
             return Ok(format!("This device is a server for {who} already, and {registered}. Its key: {key}"));
         }
@@ -43,7 +43,7 @@ pub async fn on(client: &Client) -> Result<String> {
 pub(super) async fn registered(here: &Here, key: &str, who: &str) -> Result<&'static str> {
     let server = kept(here, key, &program()?, unit_env(who.to_owned(), None).await?);
     let changed = client::system::install(&server)
-        .map_err(|error| anyhow::anyhow!("{error:#}\nThen `one serve on` again, as yourself, registers it as yours."))?;
+        .map_err(|error| anyhow::anyhow!("{error:#}\nThen `{} serve on` again, as yourself, registers it as yours.", client::command()))?;
     Ok(if changed {
         "the system runs it as this build says to from its next start (its registration changed)"
     } else {
@@ -258,7 +258,7 @@ pub(super) fn kept(here: &Here, key: &str, program: &Path, env: Vec<(&str, Strin
     client::system::Program {
         name: SERVER.to_owned(),
         key: key.to_owned(),
-        description: "the One App server, which `one serve off` removes.".to_owned(),
+        description: format!("the One App server, which `{} serve off` removes.", client::command()),
         command,
         env,
         folder: here.folder.clone(),

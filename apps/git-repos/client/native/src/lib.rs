@@ -1,5 +1,6 @@
 //! Git's remote helper for `one::` addresses (gitremote-helpers): git runs this program as `git-remote-one
-//! <remote> <repo>` for `git clone one::users/alice/made/git-repos/notes`, and every fetch and push after.
+//! <remote> <repo>` for `git clone one::users/alice/made/git-repos/notes`, and every fetch and push after. Where
+//! a network's own program is `ptc` (`client::command`), they're `git-remote-ptc` and `ptc::`.
 //!
 //! It runs git's own HTTP transport (`git remote-http`) at an address on this machine that only it answers, for as
 //! long as that runs, and carries each request git makes there to a server as one call of the tool `git-repos_git`,
@@ -23,17 +24,20 @@ use serde_json::{Value, json};
 
 use client::Client;
 
-/// The program git runs for `one::` addresses, which is this one by another name.
-pub const HELPER: &str = "git-remote-one";
+/// The program git runs for this command's addresses, which is this one by another name.
+pub fn helper_name() -> String {
+    format!("git-remote-{}", client::command())
+}
+
 /// Larger than this, what git sends goes through the bucket, as the server sends what's larger back.
 const INLINE: usize = 4 << 20;
 
 /// Runs as git's remote helper on `client`, with what git gave it: the remote's name and the repo.
 pub async fn helper(client: Arc<Client>, args: &[String]) -> Result<ExitCode> {
     let [remote, repo] = args else {
-        bail!("{HELPER} is run by git, for addresses like one::users/alice/made/git-repos/notes")
+        bail!("{} is run by git, for addresses like {}::users/alice/made/git-repos/notes", helper_name(), client::command())
     };
-    let repo = repo.trim_start_matches("one::").trim_matches('/').to_owned();
+    let repo = repo.trim_start_matches(&format!("{}::", client::command())).trim_matches('/').to_owned();
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
     let port = listener.local_addr()?.port();
     let secret = iroh::SecretKey::generate().public().to_string();
@@ -70,17 +74,17 @@ pub async fn helper(client: Arc<Client>, args: &[String]) -> Result<ExitCode> {
     Ok(ExitCode::from(status.code().unwrap_or(128).clamp(0, 255) as u8))
 }
 
-/// Puts `git-remote-one` beside `one` where `one` is found on the PATH, so git finds it: the same program, which
-/// knows it's the helper by the name it's run as. A folder this can't write in, as a system's, is left to whoever
+/// Puts `git-remote-one` beside `one` where `one` is found on the PATH, so git finds it (`git-remote-ptc` beside
+/// `ptc`): the same program, which knows it's the helper by the name it's run as. A folder this can't write in, as a system's, is left to whoever
 /// installed `one` there, so this says nothing if it can't.
 pub fn beside() {
     let Ok(me) = env::current_exe().and_then(fs::canonicalize) else { return };
     let Some(path) = env::var_os("PATH") else { return };
     let program = |name: &str| format!("{name}{}", env::consts::EXE_SUFFIX);
     for folder in env::split_paths(&path) {
-        let one = folder.join(program("one"));
+        let one = folder.join(program(client::command()));
         if fs::canonicalize(&one).is_ok_and(|found| found == me) {
-            link(&one, &folder.join(program(HELPER)));
+            link(&one, &folder.join(program(&helper_name())));
             return;
         }
     }
@@ -90,7 +94,7 @@ pub fn beside() {
 #[cfg(unix)]
 fn link(_one: &Path, helper: &Path) {
     if fs::symlink_metadata(helper).is_err() {
-        let _ = std::os::unix::fs::symlink(Path::new("one"), helper);
+        let _ = std::os::unix::fs::symlink(Path::new(client::command()), helper);
     }
 }
 

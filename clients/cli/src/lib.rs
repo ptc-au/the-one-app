@@ -49,7 +49,7 @@ pub fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     // Run by git as its remote helper, it's that, under the name git found it by, with `.exe` after it on Windows.
     let named = env::args().next().map(|program| Path::new(&program).file_stem().map(|name| name.to_owned()));
-    let result = if named.flatten().is_some_and(|name| name == git_repos_client::HELPER) {
+    let result = if named.flatten().is_some_and(|name| name == git_repos_client::helper_name().as_str()) {
         runtime.block_on(async { git_repos_client::helper(Client::open(client::home()?, "cli", resolvers(), Vec::new()).await?, &args).await })
     } else {
         git_repos_client::beside();
@@ -64,21 +64,21 @@ pub fn main() -> ExitCode {
 /// What isn't a tool: finding tools and running scripts with them, MCP, and what's about this device: its build,
 /// making it a server (`serving`), and updating it.
 const COMMANDS: &str = "Besides the tools:\n\n\
-                           one serve on       makes it a server of yours, which starts whenever it does\n\
-                           one serve on --address <address> --first <secret> --owner <name>\n\
+                           {one} serve on       makes it a server of yours, which starts whenever it does\n\
+                           {one} serve on --address <address> --first <secret> --owner <name>\n\
                                               makes it a new network's first server (core/edge/README.md)\n\
-                           one serve off      stops it being one, and removes it\n\
-                           one update         takes the latest build: this device's, or on a server the network's Update Now\n\
-                           one search <words> finds the tools for a task, each with its command\n\
-                           one run <file>     runs a script that calls tools, as MCP's execute does\n\
-                           one task <id>      says how a tool called with --task is going; --result waits for its answer\n\
-                           one mcp [--code]   serves MCP to an agent here: every tool, or code mode's few\n\
-                           one restore        restores a whole network from a backup, with none running\n\
-                           one --version      says which build it is";
+                           {one} serve off      stops it being one, and removes it\n\
+                           {one} update         takes the latest build: this device's, or on a server the network's Update Now\n\
+                           {one} search <words> finds the tools for a task, each with its command\n\
+                           {one} run <file>     runs a script that calls tools, as MCP's execute does\n\
+                           {one} task <id>      says how a tool called with --task is going; --result waits for its answer\n\
+                           {one} mcp [--code]   serves MCP to an agent here: every tool, or code mode's few\n\
+                           {one} restore        restores a whole network from a backup, with none running\n\
+                           {one} --version      says which build it is";
 
 async fn run(args: Vec<String>) -> Result<ExitCode> {
     if args == ["--version"] {
-        println!("one {} {}", client::BUILD, client::target());
+        println!("{} {} {}", client::command(), client::BUILD, client::target());
         return Ok(ExitCode::SUCCESS);
     }
     // What the system keeps running for a server's services, which needs nothing of the network (`system`).
@@ -266,13 +266,13 @@ pub(crate) async fn command(client: &Client, args: &[String]) -> Result<ExitCode
             let skill = skill.map(|skill| skill.split_once("\n---\n").map_or(skill, |(_, text)| text).trim());
             if within.is_empty() && skill.is_none() {
                 listed_result?;
-                bail!("There's no tool, app or skill named `{}`. `one --help` lists them.", words.join(" "));
+                bail!("There's no tool, app or skill named `{}`. `{} --help` lists them.", words.join(" "), client::command());
             }
             if listed_result.is_err() {
                 eprintln!("No server is answering, so this is what one last listed.\n");
             }
             if let Some(skill) = skill {
-                println!("{skill}\n");
+                println!("{}\n", skill_text(skill));
             }
             if within.is_empty() {
                 return Ok(ExitCode::SUCCESS);
@@ -281,21 +281,33 @@ pub(crate) async fn command(client: &Client, args: &[String]) -> Result<ExitCode
             for tool in within {
                 let name = tool["name"].as_str().unwrap_or_default().replacen('_', " ", 1);
                 let about = tool["description"].as_str().unwrap_or_default().lines().next().unwrap_or_default();
-                println!("one {name:width$}  {about}");
+                println!("{} {name:width$}  {about}", client::command());
             }
-            println!("\n`one <tool> --help` shows a tool's inputs.");
+            println!("\n`{} <tool> --help` shows a tool's inputs.", client::command());
             if name.is_empty() {
-                println!("\n{COMMANDS}");
-                println!("\nA skill says when and how to use an app's tools, and `one <skill>` shows one:\n");
+                println!("\n{}", COMMANDS.replace("{one}", client::command()));
+                println!("\nA skill says when and how to use an app's tools, and `{} <skill>` shows one:\n", client::command());
                 for skill in skills {
                     let words = uri_words(skill["uri"].as_str().unwrap_or_default()).join(" ");
                     let about = skill["frontmatter"]["description"].as_str().unwrap_or_default();
-                    println!("one {words:width$}  {about}");
+                    println!("{} {words:width$}  {about}", client::command());
                 }
             }
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// A skill's text as this program's person reads it: the skills of the network's apps say `one` where they mean the
+/// command, as every network's skills are the same text, and it's this program's (`client::command`), `ptc` for PTC's.
+fn skill_text(skill: &str) -> String {
+    let one = client::command();
+    skill
+        .replace("`one ", &format!("`{one} "))
+        .replace("`one`", &format!("`{one}`"))
+        .replace("\n    one ", &format!("\n    {one} "))
+        .replace("git-remote-one", &format!("git-remote-{one}"))
+        .replace("one::", &format!("{one}::"))
 }
 
 /// The words that show a skill, from its address (`OneCore.Skills`): an app's own, `skill://<app>/<its own
@@ -441,7 +453,7 @@ pub(crate) fn read(path: &Path, base64: bool) -> Result<Value> {
 }
 
 fn usage(tool: &Value) {
-    println!("one {}\n", tool["name"].as_str().unwrap_or_default().replacen('_', " ", 1));
+    println!("{} {}\n", client::command(), tool["name"].as_str().unwrap_or_default().replacen('_', " ", 1));
     println!("{}\n", tool["description"].as_str().unwrap_or_default().trim_end());
     let required = tool["inputSchema"]["required"].as_array().map(Vec::as_slice).unwrap_or_default();
     let mut inputs: Vec<_> = tool["inputSchema"]["properties"].as_object().into_iter().flatten().collect();

@@ -335,9 +335,10 @@ async fn prepare_deploy(
     if let Some(other) = apps.iter().find(|it| it["name"] == name && it["for"] == of && it["app"] != own.as_str())
     {
         bail!(
-            "{name} is installed for {of} already, as {}. `one uninstall --name {name}` it first, to install a copy of \
+            "{name} is installed for {of} already, as {}. `{} uninstall --name {name}` it first, to install a copy of \
              your own in its place.",
-            other["app"].as_str().unwrap_or_default()
+            other["app"].as_str().unwrap_or_default(),
+            client::command()
         );
     }
     built(client, of, name, &app).await?;
@@ -506,9 +507,9 @@ impl<'a> Installer<'a> {
             if req.deleted {
                 let why = if req.why.is_empty() { String::new() } else { format!(" ({})", req.why) };
                 bail!(
-                    "{name} requires {}{why}, which is in Recently Deleted for {}: restore it there (`one soft-delete \
+                    "{name} requires {}{why}, which is in Recently Deleted for {}: restore it there (`{} soft-delete \
                      restore`) first.",
-                    req.name, self.of
+                    req.name, self.of, client::command()
                 );
             }
         }
@@ -583,7 +584,8 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
             "--new" => new = true,
             "--app" => names.push(flags.next().context("--app needs an app's name")?.clone()),
             other => bail!(
-                "`{other}` isn't something `one install` takes: --app <name>, --trusted, --untrusted, --new or --list"
+                "`{other}` isn't something `{} install` takes: --app <name>, --trusted, --untrusted, --new or --list",
+                client::command()
             ),
         }
     }
@@ -596,7 +598,7 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
         }
         println!("\n{} at {}, in {}/apps.", source.spec, &commit[..12], folder.display());
         if !list {
-            println!("`one install {} --app <name>` installs one.", args[0]);
+            println!("`{} install {} --app <name>` installs one.", client::command(), args[0]);
         }
         return Ok(ExitCode::SUCCESS);
     }
@@ -606,7 +608,7 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
     let mut order: Vec<&String> = Vec::new();
     for name in &names {
         if !folder.join("apps").join(name).join("SKILL.md").exists() {
-            bail!("{} has no app {name}: `one install {} --list` lists the ones it has", source.spec, args[0]);
+            bail!("{} has no app {name}: `{} install {} --list` lists the ones it has", source.spec, client::command(), args[0]);
         }
         if !order.contains(&name) {
             order.push(name);
@@ -635,7 +637,8 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
     match lock {
         Some(file) => println!("Recorded in {}.", file.display()),
         None => println!(
-            "Not in a network's repo, so no {LOCK} is written: the network keeps where it came from (`one apps`)."
+            "Not in a network's repo, so no {LOCK} is written: the network keeps where it came from (`{} apps`).",
+            client::command()
         ),
     }
     Ok(ExitCode::SUCCESS)

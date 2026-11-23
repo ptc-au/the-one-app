@@ -28,11 +28,12 @@ on that network's sign-in page.
 ## On a Mac
 
 A Mac's app is its bundle, `macos/` with the program as `Contents/MacOS/one`, which `tooling/release` signs in it. It
-goes in `/Applications`, and `~/.local/bin/one` is a link to the program in it, so the CLI, a server and `one update`
-all run and replace that one program. Its identifier and name, and with them the folder its client is kept in, are
-its bundle's Info.plist's, so a network's own app (`tooling/mac-app`) keeps its own beside the One App's, and an
-update replaces its program alone. The program, signed in the One App's bundle, runs in another's, though `codesign
---verify` then says its Info.plist was changed.
+goes in `/Applications`, and the app makes `~/.local/bin/one` a link to the program in it as it starts (what's there
+already is left alone, unless it's a link to a program that's gone), so the CLI, a server and `one update` all run and
+replace that one program. Its identifier, name and command, and with them the folder its client is kept in, are its
+bundle's Info.plist's (`CFBundleExecutable` is the command: `one`, or `ptc` for PTC's), so a network's own app
+(`tooling/mac-app`) keeps its own beside the One App's, and an update replaces its program alone. The program, signed
+in the One App's bundle, runs in another's, though `codesign --verify` then says its Info.plist was changed.
 
 ## On Windows
 
