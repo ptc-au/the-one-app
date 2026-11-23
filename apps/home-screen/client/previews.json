@@ -3348,6 +3348,130 @@
       "Tips"
     ]
   },
+  "Open from anywhere": {
+    "like": "Home, two pages",
+    "size": [
+      900,
+      560
+    ],
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.34.0",
+        "theme": null,
+        "target": "macos-aarch64",
+        "network": "https://ptcau.app",
+        "mac": true,
+        "runtimeVersion": 6,
+        "shortcut": {
+          "keys": "alt+Space",
+          "default": "alt+Space"
+        }
+      }
+    },
+    "wait": 2000
+  },
+  "Open from anywhere, its keys pressed": {
+    "like": "Open from anywhere",
+    "wait": 1000
+  },
+  "Open from anywhere on Windows": {
+    "like": "Open from anywhere",
+    "answers": {
+      "sign-in_network": {
+        "name": null,
+        "icon": null,
+        "logo": null
+      },
+      "one/client": {
+        "device": "Windows",
+        "build": "0.34.0",
+        "theme": null,
+        "target": "windows-x86_64",
+        "network": "https://ptcau.app",
+        "mac": false,
+        "runtimeVersion": 6,
+        "shortcut": {
+          "keys": "alt+super+Space",
+          "default": "alt+super+Space"
+        }
+      }
+    }
+  },
+  "Open from anywhere on Linux": {
+    "like": "Open from anywhere",
+    "answers": {
+      "one/client": {
+        "device": "Linux",
+        "build": "0.34.0",
+        "theme": null,
+        "target": "linux-x86_64",
+        "network": "https://ptcau.app",
+        "mac": false,
+        "runtimeVersion": 6,
+        "shortcut": {
+          "keys": "control+alt+Space",
+          "default": "alt+super+Space"
+        }
+      }
+    }
+  },
+  "Open from anywhere, recording": {
+    "like": "Open from anywhere",
+    "taps": [
+      "Change"
+    ]
+  },
+  "Open from anywhere in a narrow window": {
+    "like": "Open from anywhere",
+    "size": [
+      480,
+      860
+    ],
+    "touch": false
+  },
+  "Open from anywhere in the launcher": {
+    "like": "Launcher on a computer",
+    "answers": {
+      "home-screen_tips": {
+        "seen": [
+          "pull-home",
+          "welcome"
+        ]
+      },
+      "sign-in_network": {
+        "name": "The PTC App",
+        "icon": null,
+        "logo": null
+      },
+      "one/client": {
+        "device": "Mac",
+        "build": "0.34.0",
+        "theme": null,
+        "target": "macos-aarch64",
+        "network": "https://ptcau.app",
+        "mac": true,
+        "runtimeVersion": 6,
+        "shortcut": {
+          "keys": "alt+Space",
+          "default": "alt+Space"
+        },
+        "launcher": true
+      }
+    },
+    "wait": 2000
+  },
   "Your own server": {
     "like": "Home, two pages",
     "size": [

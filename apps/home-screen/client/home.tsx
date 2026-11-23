@@ -29,6 +29,8 @@ import { createPaging } from "./paging.ts"
 import { Carried, createCarry } from "./carry.tsx"
 import { Welcome } from "./welcome.tsx"
 import { computer, OwnServer } from "./own-server.tsx"
+import { OpenFromAnywhere } from "./open-from-anywhere.tsx"
+import { shortcut } from "./shortcut.tsx"
 import { VaultStep, vaultStep } from "./vault.tsx"
 
 /// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
@@ -40,11 +42,12 @@ const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVers
 /// one before may have made this computer a server that's waiting for its person's key.
 const vaultNeed = createMemo(() => (["vault", "vault-unlock"].some((tip) => tips()?.includes(tip) === false) ? vaultStep() : undefined))
 /// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, and the devices it's
-/// for: Welcome on every one that draws it, Your own server on a computer's app that isn't one of the network's
+/// for: Welcome on every one that draws it, Open from anywhere on a computer's app, whose launcher has a shortcut, Your own server on a computer's app that isn't one of the network's
 /// servers, and last the Vault's where it needs a passkey: Set Up Your Vault once, and Unlock Your Vault once, on the
 /// first device that can't open it (`vaultStep`).
 const steps = [
   { tip: "welcome", Step: Welcome, here: () => drawn() >= 6 },
+  { tip: "shortcut", Step: OpenFromAnywhere, here: () => drawn() >= 6 && !!shortcut() },
   { tip: "own-server", Step: OwnServer, here: () => !!computer(device().target) && !device().server },
   { tip: "vault", Step: (size: StepProps) => <VaultStep kind="set-up" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "set-up" },
   { tip: "vault-unlock", Step: (size: StepProps) => <VaultStep kind="unlock" {...size} />, here: () => drawn() >= 6 && vaultNeed() === "unlock" },
