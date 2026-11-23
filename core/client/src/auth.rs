@@ -154,9 +154,11 @@ impl std::fmt::Debug for DeviceAuthorization {
 
 impl DeviceAuthorization {
     /// Asks the network's authorization server for a code to let the device with `key` in by, under this
-    /// machine's name.
-    async fn request(server: &AuthorizationServer, key: &SecretKey) -> Result<Self> {
-        let ask = serde_urlencoded::to_string([("client_id", key.public().to_string()), ("name", name())])?;
+    /// machine's name, and the `command` that ran it if a terminal did, which the network lists it by.
+    async fn request(server: &AuthorizationServer, key: &SecretKey, command: Option<&str>) -> Result<Self> {
+        let mut ask = vec![("client_id", key.public().to_string()), ("name", name())];
+        ask.extend(command.map(|command| ("command", command.to_owned())));
+        let ask = serde_urlencoded::to_string(ask)?;
         let (given, response) = ask_edge(&server.device_authorization_endpoint, key, FORM, ask).await?;
         let (true, Some(link), Some(code), Some(device_code)) = (
             given,
@@ -342,12 +344,12 @@ impl NetworkConfig {
     }
 
     /// Asks the network's authorization server for a code this device is let in by, signed with its key.
-    async fn device_code(&mut self, key: &SecretKey, home: &Path) -> Result<DeviceAuthorization> {
+    async fn device_code(&mut self, key: &SecretKey, home: &Path, command: Option<&str>) -> Result<DeviceAuthorization> {
         let server = match self.authorization_server.clone() {
             Some(server) => server,
             None => AuthorizationServer::discovered(&self.address).await?,
         };
-        let requested = DeviceAuthorization::request(&server, key).await;
+        let requested = DeviceAuthorization::request(&server, key, command).await;
         // What it found is kept for the next time, and what didn't answer is looked for again then.
         self.authorization_server = requested.is_ok().then_some(server);
         write(&home.join("network"), &serde_json::to_vec(self)?)?;
@@ -492,7 +494,7 @@ impl Client {
             },
             Ok(false) => {
                 let removed = config.who.is_some().then_some(NotApproved::Removed);
-                match config.device_code(&self.key, &self.home).await {
+                match config.device_code(&self.key, &self.home, self.terminal()).await {
                     Ok(code) => {
                         self.moved(|_| Some(State::SignIn { code: Box::new(code), why: why.or(removed) }));
                         return AGAIN;

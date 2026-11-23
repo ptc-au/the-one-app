@@ -393,6 +393,13 @@ pub struct Client {
 }
 
 impl Client {
+    /// The command that ran this client if a terminal did, `ptc`: every program but the app is run from one. It's what a
+    /// network lists a device it signed in as, "ptc CLI on workspace".
+    pub(crate) fn terminal(&self) -> Option<&'static str> {
+        let service = self.resource.read().expect("no report panics").get("service.name").and_then(Value::as_str) != Some("app");
+        service.then(command)
+    }
+
     /// Which server this client asks now, by its key's first 12 hex digits, and how it reaches it (`direct` or
     /// `relay`), for what it reports of a request: `None` where it reaches none, or it's reaching one now.
     pub fn asking(&self) -> Option<String> {
