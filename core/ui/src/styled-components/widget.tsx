@@ -442,8 +442,8 @@ function Item(props: { part: Layout; first?: boolean }) {
     <Show when={props.part.tool} fallback={<View style={[look.item, props.first && look.first, ...room(props.part)]}>{words}</View>}>
       <Pressable
         role="checkbox"
-        aria-checked={on() === undefined ? undefined : on()}
-        aria-label={props.part.title}
+        aria-checked={on() === undefined ? undefined : on() ? "true" : "false"}
+        aria-label={props.part.title || undefined}
         aria-busy={busy() ? "true" : undefined}
         onPress={(event: Located) => (took(event), !busy() && act({ ...(props.part.inputs ?? {}), on: !on() }))}
         style={[look.item, look.pressable, props.first && look.first, busy() && look.dim, ...room(props.part)]}
