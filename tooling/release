@@ -317,8 +317,10 @@ covers() {
 # What the network has, and which of what's asked for it has none of from this commit or a newer one: those are `mine`,
 # to build, and `notes` says why each of the rest isn't.
 survey() {
-  builds=$(one builds)
-  getting=$(getting_dev_builds)
+  # It's run as `survey && covered`, where `set -e` doesn't stop it: what the network has, unread, would leave nothing
+  # to build and the release ended as if covered, publishing nothing and saying nothing (24 Nov, as the edge dropped).
+  builds=$(one builds) || { echo "The network didn't say what it has (\`one builds\`), so nothing was released: run it again" >&2 && exit 1; }
+  getting=$(getting_dev_builds) || { echo "The network didn't say which devices get dev builds, so nothing was released: run it again" >&2 && exit 1; }
   git fetch -q origin main
   # What's asked for, by name. A desktop or the CLI is built for each kind of machine a device of the network's is, and
   # Android's app always, as each network's installer is made from it; an iPhone's is built from the network's repo.
