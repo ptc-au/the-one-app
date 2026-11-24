@@ -25,8 +25,8 @@ nothing on a server saw is in `errors` and in `alerts` (a resolved `server` aler
 - `overview` is what Telemetry's app shows: what's failing, what's slowest and what AI cost, over
   the last `hours` (24 if left out, up to 336).
 - `errors` lists each kind of error once: where (a span's name, as `<app> <tool>`, or `<method> <route>` for the edge's, or what logged it, with
-  the servers it was logged on), its message, how often, when it was last, how long it lasted, and the trace of the
-  newest. A kind is its message with numbers, ids and its stack left out, so one cause is one kind. A call refused
+  the servers it was logged on), its message, how often, when it was first and last, how long it lasted, how often in each minute it
+  happened in (`minutes`, a burst's timing, from the 14 days kept), and the trace of the newest. A kind is its message with numbers, ids and its stack left out, so one cause is one kind. A call refused
   for what it was given or who asked is the caller's mistake, not an error: its `one.tool.duration` outcome is
   `refused`, not `error`, and it doesn't count as a failure; so is one a tool refused itself (`OneCore.Call.Refused`),
   for what it was given or for a device that's off. Start a bug there. Each says where it's `from`: the server or the

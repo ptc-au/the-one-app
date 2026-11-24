@@ -78,6 +78,7 @@ defmodule Telemetry do
         where: %{type: ["string", "null"], description: "The span or the log it's from"},
         message: %{type: ["string", "null"]},
         count: %{type: "integer", description: "How often"},
+        first: ms.("When it was first"),
         at: ms.("When it was last"),
         took: maybe.("How long its span took, in milliseconds"),
         trace: %{type: ["string", "null"], description: "The newest one's trace, for `trace`"},
@@ -88,7 +89,19 @@ defmodule Telemetry do
         code: %{type: ["string", "null"], description: "Where the newest one threw, `file:line`, in its app's source for a page's error"},
         stack: %{type: ["string", "null"], description: "The newest one's stack, in its app's source for a page's error"}
       },
-      required: ~w(where message count at took trace server from whose span code stack)
+      required: ~w(where message count first at took trace server from whose span code stack)
+    }
+
+    # `errors` says more of each kind than the overview does, which has no room for a timeline.
+    timed = %{
+      failure
+      | properties:
+          Map.put(failure.properties, :minutes, %{
+            type: "array",
+            description: "How often in each minute it happened in, oldest first: a burst's timing",
+            items: %{type: "object", properties: %{at: ms.("The minute's start"), count: %{type: "integer"}}, required: ["at", "count"]}
+          }),
+        required: failure.required ++ ["minutes"]
     }
 
     slow = %{
@@ -165,9 +178,9 @@ defmodule Telemetry do
         name: "errors",
         read_only: true,
         description:
-          "The errors of the last hours, each kind once: where it was, its message, how often, when it was last, and the trace of the newest",
+          "The errors of the last hours, each kind once: where it was, its message, how often, when it was first and last, how often in each minute it happened in, and the trace of the newest",
         inputs: %{type: "object", properties: %{hours: hours}},
-        outputs: %{type: "object", properties: %{errors: %{type: "array", items: failure}}, required: ["errors"]}
+        outputs: %{type: "object", properties: %{errors: %{type: "array", items: timed}}, required: ["errors"]}
       },
       %{
         name: "slowest",
@@ -465,7 +478,7 @@ defmodule Telemetry do
       %{
         from: div(from, 1_000_000),
         to: div(to, 1_000_000),
-        failing: Read.errors(batches, shown) |> Enum.take(20),
+        failing: Read.errors(batches, shown) |> Enum.take(20) |> Enum.map(&Map.delete(&1, :minutes)),
         slowest: Read.slowest(batches, from, to, names) |> Enum.take(12),
         spending: Read.spending(batches),
         calls: Read.calls(batches, from, to),

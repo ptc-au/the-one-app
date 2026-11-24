@@ -65,6 +65,8 @@ defmodule Telemetry.Read do
         where: if(span or servers == [], do: where, else: "#{where} on #{Enum.join(servers, ", ")}"),
         message: message(latest.message),
         count: length(all),
+        first: all |> Enum.map(& &1.at) |> Enum.min(),
+        minutes: minutes(all),
         at: latest.at,
         took: latest.took,
         trace: latest.trace,
@@ -77,6 +79,15 @@ defmodule Telemetry.Read do
       }
     end)
     |> Enum.sort_by(& &1.at, :desc)
+  end
+
+  # How often it happened in each minute it did, oldest first, where each of its occurrences was kept: the failed spans
+  # and logged errors of a rollup keep their times.
+  defp minutes(all) do
+    all
+    |> Enum.frequencies_by(&(div(&1.at, 60_000) * 60_000))
+    |> Enum.sort()
+    |> Enum.map(fn {at, count} -> %{at: at, count: count} end)
   end
 
   @doc """
