@@ -43,6 +43,7 @@ import minusCircle from "@phosphor-icons/core/assets/regular/minus-circle.svg?ra
 import plusCircle from "@phosphor-icons/core/assets/regular/plus-circle.svg?raw"
 import question from "@phosphor-icons/core/assets/regular/question.svg?raw"
 import squaresFour from "@phosphor-icons/core/assets/regular/squares-four.svg?raw"
+import videoCamera from "@phosphor-icons/core/assets/regular/video-camera.svg?raw"
 import x from "@phosphor-icons/core/assets/regular/x.svg?raw"
 
 // The Phosphor icons the UI library draws with, by Phosphor's own names: each one path in a 256 square.
@@ -80,6 +81,7 @@ const svgs = {
   question,
   "squares-four": squaresFour,
   trash,
+  "video-camera": videoCamera,
   "warning-circle": warningCircle,
   x,
 }

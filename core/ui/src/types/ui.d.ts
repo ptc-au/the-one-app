@@ -342,7 +342,7 @@ export declare function Row(props: {
 export type IconName =
   | "arrow-counter-clockwise" | "arrow-elbow-down-left" | "calendar-blank" | "caret-down" | "caret-left" | "caret-right" | "caret-up-down" | "check" | "copy" | "corners-in"
   | "corners-out" | "device-mobile" | "devices" | "dots-three" | "dots-three-circle" | "download-simple" | "file" | "gear-six" | "globe" | "hard-drives" | "list" | "magnifying-glass" | "minus" | "minus-circle"
-  | "paperclip" | "pencil-simple" | "plus" | "plus-circle" | "question" | "robot" | "squares-four" | "terminal-window" | "trash" | "warning-circle" | "x"
+  | "paperclip" | "pencil-simple" | "plus" | "plus-circle" | "question" | "robot" | "squares-four" | "terminal-window" | "trash" | "video-camera" | "warning-circle" | "x"
 export declare function Icon(props: { name: IconName; along?: boolean; large?: boolean }): Element
 export declare function Spinner(): Element
 
