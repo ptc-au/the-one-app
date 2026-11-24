@@ -4,7 +4,7 @@
 // component (`settings.sections`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
 // Vault draws an item type's. Updates and an app's page are Settings' own.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, link, List, ListStyle, Problem, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, View, viewport } from "ui"
+import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, List, ListStyle, navigate, Problem, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, toolInput, View, viewport } from "ui"
 
 /** What an app adds to Settings, as `settings_sections` answers it. */
 interface Added {
@@ -95,8 +95,30 @@ const look = styles({
 })
 
 /// What's open beside the sidebar, by its id: a section's (`<app>/<component>`), `updates`, or an app's page
-/// (`app:<for>:<name>`). A link opens one (`one:settings#sign-in/devices`), with what follows `&` for the section itself.
-const [open, setOpen] = createSignal<string | undefined>(() => link()?.split("&")[0] || undefined)
+/// (`app:<for>:<name>`), as the screen shown says it, a tool and its arguments (`toolInput`): `settings_section
+/// { app: "sign-in", section: "devices" }` at /settings/sign-in/devices, `settings_updates`, `settings_app { name }`.
+/// The section's own arguments are the section's (Vault's `request`).
+const open = () => {
+  const { name, arguments: inputs } = toolInput("settings_sections")
+  if (name === "settings_updates") return "updates"
+  if (name === "settings_app") {
+    const app = apps().find((one) => one.name === inputs.name && (inputs.for === undefined || one.for === inputs.for))
+    return app ? `app:${app.for}:${app.name}` : undefined
+  }
+  if (name !== "settings_section") return undefined
+  if (inputs.section) return `${inputs.app}/${inputs.section}`
+  const theirs = sidebar(added()).filter((one) => one.app === inputs.app)
+  return (theirs.find((one) => one.group !== "you") ?? theirs[0])?.id
+}
+/// Shows what an id names beside the sidebar, as a step Back goes back from, or the sidebar alone.
+function setOpen(id?: string) {
+  if (!id) return navigate("settings_sections")
+  if (id === "updates") return navigate("settings_updates")
+  const [kind, owner, name] = id.split(":")
+  if (kind === "app") return navigate("settings_app", { name, for: owner })
+  const [app, ...section] = id.split("/")
+  navigate("settings_section", { app, section: section.join("/") })
+}
 
 /// Whether what's open sits beside the sidebar, where the first section shows until another is chosen.
 const beside = () => viewport().width >= 768
@@ -274,6 +296,10 @@ async function doing(does: () => Promise<unknown>) {
   }
 }
 
+/// The apps with a newer version waiting, as Settings' Updates answers them (`settings_updates`).
+const waiting = createMemo(() => json<{ apps: App[] }>("settings_updates"))
+changed(() => refresh(waiting))
+
 /// What's waiting to update: this device and each app with a newer version ready. The network's servers' is Software
 /// Update's, at the top of Servers (Devices).
 const updates = createMemo(async () => {
@@ -289,10 +315,10 @@ function Updates() {
   const press = (id: string, does: () => Promise<unknown>) => async () => {
     setWorking(id)
     await doing(does)
-    refresh(updates)
+    ;[updates, waiting].forEach(refresh)
     setWorking()
   }
-  const ready = () => apps().filter(updating)
+  const ready = () => waiting().apps
   return (
     <Screen heading="Updates" back>
       <Errored fallback={(error) => <Problem heading="Can't show what's waiting to update" text={error() as Error} />}>
@@ -410,28 +436,11 @@ function AppPage(props: { app: App }) {
   )
 }
 
-/// What a link names, as Settings opens it: a section, Updates or an app's page as they are, or where a place in one
-/// follows (`vault/accounts/cloudflare-turn`, as a browser's address has it), that one; an app by its name alone
-/// (`#sign-in`, as the client opens an app with no page of its own, or a page it no longer has), its first section
-/// after the person's row, or else its page.
-function resolved(place: string) {
-  const parts = place.split("/")
-  const known = (id: string) => id === "updates" || id.startsWith("app:") || added().some((one) => one.id === id && one.in === "settings")
-  const within = parts.map((_, at) => parts.slice(0, parts.length - at).join("/")).find(known)
-  if (within) return within
-  const id = parts[0]!
-  const theirs = sidebar(added()).filter((one) => one.app === id)
-  const section = theirs.find((one) => one.group !== "you") ?? theirs[0]
-  if (section) return section.id
-  const app = apps().find((one) => one.name === id)
-  return app ? `app:${app.for}:${app.name}` : id
-}
-
 function Settings() {
   // Beside the sidebar, the first section shows until another is chosen, as Raycast's Settings opens on General.
   const shown = () => {
     const id = open()
-    return id ? resolved(id) : beside() ? (sidebar(added()).find((one) => one.group !== "you")?.id ?? "updates") : undefined
+    return id ? id : beside() ? (sidebar(added()).find((one) => one.group !== "you")?.id ?? "updates") : undefined
   }
   // Back and Forward go through what was open beside the sidebar, as macOS's System Settings' do.
   const [past, setPast] = createSignal<string[]>([])
@@ -452,7 +461,6 @@ function Settings() {
     <Split
       open={!!open()}
       onClose={() => setOpen()}
-      place={shown()}
       pick="Choose a section."
       detail={
         <ListStyle value="insetGrouped">

@@ -17,7 +17,7 @@ defmodule Settings do
   def entrypoints, do: [%{page: "client/index.html", category: "settings", subject: "user", badge: "badge", runtime_version: 4}]
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.174"}
+  def requires, do: %{"core" => ">= 0.34.604"}
 
   @impl true
   def offers do
@@ -50,10 +50,12 @@ defmodule Settings do
       %{
         name: "sections",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
           "What the apps you have add to Settings (`settings.sections`): each with the app that adds it and its " <>
             "title, icon and whether it's trusted, which decides where its component is drawn, and a section's " <>
-            "red count where it says one.",
+            "red count where it says one. It's Settings' first screen, its sidebar.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{
           type: "object",
@@ -85,6 +87,53 @@ defmodule Settings do
           },
           required: ["sections"]
         }
+      },
+      %{
+        name: "section",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{app}/{section}",
+        runtime_version: 4,
+        description:
+          "One section of Settings' sidebar, as `sections` lists it, by the app that adds it and its component: " <>
+            "Settings' screen of it, /settings/vault/accounts. Without `section`, the app's first.",
+        inputs: %{
+          type: "object",
+          properties: %{
+            app: %{type: "string", description: "The app that adds it, like vault"},
+            section: %{type: "string", description: "Its component, like accounts"}
+          },
+          required: ["app"]
+        },
+        outputs: %{type: "object", properties: %{section: %{type: "object"}}, required: ["section"]}
+      },
+      %{
+        name: "updates",
+        read_only: true,
+        ui: "client/index.html",
+        path: "updates",
+        runtime_version: 4,
+        description: "The apps you have with a newer version waiting, each with its update, as `apps` says it: Settings' Updates.",
+        inputs: %{type: "object", properties: %{}},
+        outputs: %{type: "object", properties: %{apps: %{type: "array", items: %{type: "object"}}}, required: ["apps"]}
+      },
+      %{
+        name: "app",
+        read_only: true,
+        ui: "client/index.html",
+        path: "apps/{name}",
+        runtime_version: 4,
+        description:
+          "One app you have, as `apps` lists it: Settings' page of it, who has it, its update and Remove App, at /settings/apps/notes.",
+        inputs: %{
+          type: "object",
+          properties: %{
+            name: %{type: "string", description: "The name it's installed by"},
+            for: %{type: "string", description: "Who it's installed for, where more than one has it: users/sam, groups/family or network"}
+          },
+          required: ["name"]
+        },
+        outputs: %{type: "object", properties: %{app: %{type: "object"}}, required: ["app"]}
       },
       %{
         name: "badge",
@@ -128,6 +177,27 @@ defmodule Settings do
 
   @impl true
   def call("sections", _inputs, call), do: %{sections: sections(call)}
+
+  def call("section", %{"app" => app} = inputs, call) do
+    theirs = Enum.filter(sections(call), &(&1.in == "settings" and &1.app == app))
+    one = if inputs["section"], do: Enum.find(theirs, &(&1.component == inputs["section"])), else: List.first(theirs)
+    if one, do: %{section: one}, else: raise(Call.Refused, "#{app} adds no section #{inputs["section"]} to Settings.")
+  end
+
+  def call("updates", _inputs, call) do
+    %{apps: apps} = call("apps", %{}, call)
+    waiting = for app <- apps, update = Apps.Update.read(app.app), update["state"] not in [nil, "unchecked"], do: Map.put(app, :update, update)
+    %{apps: waiting}
+  end
+
+  def call("app", %{"name" => name} = inputs, call) do
+    %{apps: apps} = call("apps", %{}, call)
+
+    case Enum.find(apps, &(&1.name == name and inputs["for"] in [nil, &1.for])) do
+      nil -> raise Call.Refused, "You have no app #{name}."
+      app -> %{app: app}
+    end
+  end
 
   def call("badge", _inputs, call),
     do: %{count: sections(call) |> Enum.map(&(&1.count || 0)) |> Enum.sum()}
