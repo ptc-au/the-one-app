@@ -4,6 +4,7 @@ import { appTitle } from "./chrome.js"
 import { on, open, own, page, phone, shown } from "./client.js"
 import { shortcuts } from "./shortcuts.js"
 import { exception } from "./util.js"
+import { named, pagesOf } from "./path.js"
 
 /// The launcher's page, as this user's apps list it, once they're listed: `<app>/<page>`. And the App Store's,
 /// which installs one where there's none: the app in the category `app-store`, if there is one.
@@ -101,24 +102,13 @@ export async function list(subject) {
 /// App Store's page (`appStore`). An app is a page of an MCP App's kind, at ui://<app>/<version>/<page>.
 /** @param {import("./host.js").Resource[]} resources */
 function launcherIn(resources) {
-  const pages = resources.filter(({ mimeType }) => mimeType === "text/html;profile=mcp-app")
-  const named = (/** @type {string} */ uri) => {
-    const [app, _version, ...page] = uri.slice("ui://".length).split("/")
-    return `${app}/${page.join("/")}`
-  }
-  // The last one set for an app is the one kept: its first.
-  first = new Map(pages.toReversed().map(({ uri }) => [named(uri).split("/")[0], named(uri)]))
-  files = new Set(resources.map(({ uri }) => named(uri)))
+  const got = pagesOf(resources)
+  ;({ first, files, settings, appStore } = got)
+  const { pages } = got
   names = new Map(pages.map(({ uri, name }) => [named(uri), name ?? ""]))
   icons = new Map(pages.flatMap(({ uri, icons }) => (icons?.[0] ? [[named(uri), icons[0].src]] : [])))
   needs = new Map(pages.flatMap(({ uri, _meta }) => (typeof _meta?.runtimeVersion === "number" ? [[named(uri), _meta.runtimeVersion]] : [])))
-  const found = (/** @type {string} */ category) => pages.find(({ _meta }) => _meta?.category === category)?.uri
-  appStore = found("app-store") ? named(/** @type {string} */ (found("app-store"))) : ""
-  settings = found("settings") ? named(/** @type {string} */ (found("settings"))) : ""
-  const home = found("launcher") ? named(/** @type {string} */ (found("launcher"))) : ""
-  // The launcher's app opens the launcher, as `one:home-screen` does.
-  if (home) first.set(home.split("/")[0], home)
-  return home
+  return got.launcher
 }
 
 /// Who may install for everyone, if not this person, who then can't install a Home Screen: "Only Andre can install a

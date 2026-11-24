@@ -11,7 +11,7 @@
 import { address, addressed, asksToReload, invoke, listen, sandbox } from "./host.js"
 import { appStore, files, first, launcher, list, listed, names, needs, settings } from "./apps.js"
 import { post } from "./bridge.js"
-import { pathOf } from "./path.js"
+import { opens, pathOf } from "./path.js"
 import { chosen, dress, heardTheme, titled } from "./chrome.js"
 import { draw } from "./draw.js"
 import { gestures } from "./gestures.js"
@@ -325,13 +325,10 @@ export function opened(view) {
 /// here.
 /** @param {string} link @param {string} [subject] @param {boolean} [behind] @param {Rect} [from] */
 export function go(link, subject, behind, from) {
-  const [entrypoint, fragment] = link.split("#", 2)
-  const page = entrypoint.includes("/") ? entrypoint : first.get(entrypoint)
-  // An app with no page of its own to open, or a page it no longer has (a link kept from before, an older phone's),
-  // opens where its settings are, at that app (its own `#<app>`).
-  if (files.size && (!page || !files.has(page)) && settings && page !== settings)
-    return go(`${settings}#${entrypoint.split("/")[0]}${fragment ? `&${fragment}` : ""}`, subject, behind, from)
-  if (!page) return false
+  const to = opens(link, { first, files, settings })
+  if (!to) return false
+  const { page, fragment } = to
+  link = to.link
   // On a computer, an app opens in its own window, and the Home Screen comes forward in its own.
   if (windows && key(page, subject) !== baseKey()) {
     if (behind) return true
