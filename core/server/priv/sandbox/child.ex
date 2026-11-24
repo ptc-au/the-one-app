@@ -81,6 +81,13 @@ defmodule OneCore.Call do
   end
 end
 
+defmodule OneCore.Call.Refused do
+  @moduledoc false
+  # What a tool raises when it refuses a call, as the server's own does (`OneCore.Call.Refused`): the child says it
+  # was refused, and the server raises it again.
+  defexception [:message]
+end
+
 defmodule OneCore.Artifact do
   @moduledoc false
   # An artifact as an untrusted app holds it: a handle the server gave, which it looks up, and its name.
@@ -234,6 +241,7 @@ defmodule OneCore.Sandbox.Child do
         {:returned, encoded(run(what, call))}
       rescue
         # What it raised is redacted (`OneCore.Redact`), as a call on the server is (`OneCore.Apps.held/2`).
+        refused in OneCore.Call.Refused -> {:refused, Exception.message(OneCore.Redact.redact(refused))}
         error -> {:raised, Exception.message(OneCore.Redact.redact(error))}
       catch
         kind, reason -> {:raised, Exception.format_banner(kind, OneCore.Redact.redact(reason))}
@@ -244,6 +252,7 @@ defmodule OneCore.Sandbox.Child do
 
   defp reply_body({:returned, result}), do: %{"ok" => result}
   defp reply_body({:raised, why}), do: %{"raised" => why}
+  defp reply_body({:refused, why}), do: %{"refused" => why}
 
   defp run({:tool, tool, inputs}, call), do: app().call(tool, inputs, call)
   defp run({:hook, hook, about}, call), do: app().hook(hook, about, call)

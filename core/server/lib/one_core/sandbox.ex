@@ -22,7 +22,7 @@ defmodule OneCore.Sandbox do
     those it requires first; `{:call, id, what, about}`, a tool, a hook heard or what `server-debug` asks (`debug/5`),
     with who it's for;
     `{:reply, request, result}`; and `{:cancel, id}`.
-  - The child sends JSON, which never reaches `binary_to_term`: `{"answer": id, "ok" | "raised": ...}`,
+  - The child sends JSON, which never reaches `binary_to_term`: `{"answer": id, "ok" | "raised" | "refused": ...}`,
     `{"request": n, "call": id, "op": ..., ...}`, one of the functions below, and `{"log": level, "text": ...}`.
     A frame over 64 MB, or that isn't one of these, stops it.
 
@@ -234,6 +234,7 @@ defmodule OneCore.Sandbox do
 
   defp decoded(%{"ok" => nil}, _context), do: nil
   defp decoded(%{"raised" => why}, _context) when is_binary(why), do: raise(String.slice(why, 0, 8000))
+  defp decoded(%{"refused" => why}, _context) when is_binary(why), do: raise(Call.Refused, String.slice(why, 0, 8000))
   defp decoded(_reply, context), do: raise("#{context.name} answered what isn't an answer")
 
   # What a request is answered with: `{:ok, result}`, or `{:raise, why}`. Moving the call to another server ends it

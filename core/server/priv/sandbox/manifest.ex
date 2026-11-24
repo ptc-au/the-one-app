@@ -299,6 +299,7 @@ defmodule OneCore.App.Manifest do
     %{
       "OneCore.Call" =>
         ~w(app tool make reach reaches? member? owns? apps deployed process forward_to changed stage ask __struct__)a,
+      "OneCore.Call.Refused" => ~w(exception message __struct__)a,
       "OneCore.Artifact" => ~w(name read read_all write replace remove size list __struct__)a,
       "OneCore.App" => ~w(file behaviour_info)a
     }
