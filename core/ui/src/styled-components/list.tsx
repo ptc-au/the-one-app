@@ -312,6 +312,7 @@ type RowProps = {
   control?: JSX.Element
   action?: JSX.Element
   destructive?: boolean
+  chevron?: boolean
 }
 
 /// `<Row heading="Remove Device…" destructive onPress={remove} />` is a row that does something destructive, its
@@ -327,7 +328,8 @@ type RowProps = {
 /// goes under the words under a finger in a narrow room, as a phone's rows keep their words wide, and elsewhere where it
 /// would leave them narrower than a menu. A ⋯ `Menu` in its `end` opens on a long press or a
 /// right-click on the row too, and its `destructive` item (Delete, Remove) shows as a finger swipes the row toward
-/// its start, as a phone's lists do: pressed, or swiped most of the way, it's done.
+/// its start, as a phone's lists do: pressed, or swiped most of the way, it's done. A row that opens what isn't a page of
+/// the app has `chevron={false}`, as iOS Reminders' rows have none.
 export function Row(props: RowProps): JSX.Element {
   const [menu, setMenu] = createSignal<Menu>()
   // The heading is drawn once, and its words are the row's name, which letters typed find it by.
@@ -375,7 +377,7 @@ export function Row(props: RowProps): JSX.Element {
   const full = () => !!props.action && touch() && room() < ROOMY
   // A row that opens something says so with a chevron, as iOS's Settings does, but not in a computer's sidebar, whose
   // rows open beside it, or a plain list's.
-  const opens = () => !!props.onPress && style !== "plain" && (touch() || style === "insetGrouped") && !props.destructive
+  const opens = () => props.chevron !== false && !!props.onPress && style !== "plain" && (touch() || style === "insetGrouped") && !props.destructive
   const title = () => (
     <Text style={[look.heading, flat() && !stacked() && look.flatHeading, !beside() && look.underHeading, style !== "plain" && look.groupedHeading, grouped() && look.groupedSize, sidebar() && look.sidebarSize, props.destructive && look.destructive]}>{heading()}</Text>
   )

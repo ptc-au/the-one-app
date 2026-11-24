@@ -337,6 +337,8 @@ export declare function Row(props: {
   action?: Element
   /** Something destructive it does, its heading red. */
   destructive?: boolean
+  /** `false` for a row that opens what isn't a page of the app, as iOS Reminders' rows have none. */
+  chevron?: boolean
 }): Element
 
 export type IconName =
