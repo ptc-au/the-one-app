@@ -1,16 +1,19 @@
-//! What a finger selects in an input, as a phone's own fields have it (Flutter's `TextSelectionOverlay` and its
-//! `TextSelectionControls`, UIKit's `UITextInteraction`, Android's `Editor`): a finger held on a word, or a double
-//! tap, selects it; handles at the selection's ends drag them; the system's own menu for it (`TextMenu`: Cut, Copy,
-//! Paste, Select All) shows over it, or under it where the safe area leaves no room above; and the system's magnifier
+//! What a finger selects in an input, or in text that isn't one, as a phone's own fields and pages have it (Flutter's
+//! `TextSelectionOverlay` and its `TextSelectionControls`, UIKit's `UITextInteraction`, Android's `Editor`, a phone's
+//! browser): a finger held on a word, or a double tap in an input, selects it; handles at the selection's ends drag
+//! them; the system's own menu for it (`TextMenu`: Cut, Copy, Paste, Select All; Copy and Select All for text that
+//! isn't an input) shows over it, or under it where the safe area leaves no room above; and the system's magnifier
 //! shows what's under a finger moving it. A tap on the caret shows the menu too (Paste). Where each is comes from where
-//! the input's text was last drawn (`Drawn`), the same for every host: each host shows its system's own menu and
-//! magnifier (`Display::text_menu`, `Display::magnifier`), and the renderer draws the handles, as Flutter does.
+//! the text was last drawn (`Drawn`, `selection::Shown`), the same for every host: each host shows its system's own
+//! menu and magnifier (`Display::text_menu`, `Display::magnifier`), and the renderer draws the handles, as Flutter
+//! does. Text that isn't an input that a finger selected is the platform's text input client while it is, read-only
+//! and with no keyboard (`bridge`), so the system's own Copy copies it.
 
 use super::{Screen, TextMenu};
 use crate::geometry::{Bounds, Corners, Point, Size, point};
 use crate::tree::Id;
 
-/// What a finger selected in input `id`, and whether the system's menu is shown for it.
+/// What a finger selected in input `id`, or in text `id` that isn't one, and whether the system's menu is shown for it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Overlay {
     pub id: Id,
@@ -94,17 +97,37 @@ impl Handle {
 }
 
 impl Screen {
-    /// The input whose selection shows its handles: one a finger selected in, while something's selected in it and it
-    /// has the keyboard.
+    /// What shows its handles: an input a finger selected in, while something's selected in it and it has the
+    /// keyboard, or a text that isn't one, while something's selected of it.
     pub(super) fn handles_on(&self) -> Option<Id> {
         let id = self.editing.overlay?.id;
-        let field = self.editing.fields.get(&id)?;
-        (self.focus.focused == Some(id) && !field.selected().is_empty() && !field.composing()).then_some(id)
+        match self.editing.fields.get(&id) {
+            Some(field) => (self.focus.focused == Some(id) && !field.selected().is_empty() && !field.composing()).then_some(id),
+            None => self.read_selection().map(|(id, ..)| id),
+        }
+    }
+
+    /// The text that isn't an input a finger selected in, while something of it is: it, and what's selected of it, in
+    /// bytes, from its start to its end.
+    pub(super) fn read_selection(&self) -> Option<(Id, usize, usize)> {
+        let id = self.editing.overlay?.id;
+        let selected = self.editing.selected.filter(|selected| selected.id == id && !self.editing.fields.contains_key(&id))?;
+        let (start, end) = selected.range();
+        (start < end && self.editing.texts.contains_key(&id)).then_some((id, start, end))
+    }
+
+    /// Where the carets at the start and the end of what a finger selected of a text that isn't an input are drawn.
+    fn read_carets(&self) -> Option<(Bounds<f32>, Bounds<f32>)> {
+        let (id, start, end) = self.read_selection()?;
+        self.editing.texts.get(&id)?.carets(start, end)
     }
 
     /// The handles drawn now, at the ends of what a finger selected.
     pub fn handles(&self) -> Vec<Handle> {
         let Some(id) = self.handles_on() else { return Vec::new() };
+        if let Some((start, end)) = self.read_carets() {
+            return handles(start, end).to_vec();
+        }
         let (Some(field), Some(drawn)) = (self.editing.fields.get(&id), self.editing.drawn.get(&id)) else { return Vec::new() };
         let (start, end) = field.selection();
         handles(drawn.caret_at(start, false), drawn.caret_at(end, true)).to_vec()
@@ -122,6 +145,9 @@ impl Screen {
     /// Handle `end` dragged to `at`: that end of the selection goes there by the character, the other staying.
     pub(super) fn drag_handle(&mut self, end: End, at: Point<f32>) {
         let Some(id) = self.editing.overlay.map(|overlay| overlay.id) else { return };
+        if !self.editing.fields.contains_key(&id) {
+            return self.select_end(end == End::Start, at);
+        }
         let Some((index, upstream)) = self.editing.drawn.get(&id).map(|drawn| drawn.hit(at)) else { return };
         self.edit(id, |field| {
             let (start, finish) = field.selection();
@@ -132,9 +158,19 @@ impl Screen {
         self.changed();
     }
 
-    /// A finger held on input `id`, or tapped twice there, selected at `at`, by the word: its handles and the
-    /// system's menu show for it.
+    /// A finger held on an input, or tapped twice there, or held on text that isn't one, selected at `at`, by the word:
+    /// its handles and the system's menu show for it.
     pub(super) fn select_word(&mut self, at: Point<f32>) -> Option<Id> {
+        if let Some(id) = self.text_at(at) {
+            // The keyboard goes, as a phone's browser puts it away for words selected outside the field.
+            if self.focus.focused.is_some_and(|focused| self.editing.fields.contains_key(&focused)) {
+                self.focus(None);
+            }
+            self.select_down(Some(id), at, 2);
+            self.editing.selecting_text = false;
+            self.editing.overlay = Some(Overlay { id, menu: true });
+            return Some(id);
+        }
         let id = self.under(at).into_iter().find(|id| self.editing.fields.contains_key(id))?;
         self.focus(Some(id));
         let index = self.editing.drawn.get(&id).map_or(usize::MAX, |drawn| drawn.index_at(at));
@@ -144,9 +180,27 @@ impl Screen {
         Some(id)
     }
 
+    /// Text that isn't an input at `at`, which a finger selects held there: selectable, and in nothing pressed.
+    pub(super) fn text_at(&self, at: Point<f32>) -> Option<Id> {
+        let chain = self.under(at);
+        self.pressed_in(&chain).is_none().then(|| chain.into_iter().find(|id| self.editing.texts.contains_key(id))).flatten()
+    }
+
+    /// What a finger selected of a text that isn't an input is let go, as a tap elsewhere lets go of it.
+    pub(super) fn let_go_read(&mut self) {
+        if self.editing.overlay.is_some_and(|overlay| !self.editing.fields.contains_key(&overlay.id)) {
+            self.editing.overlay = None;
+            self.editing.selected = None;
+            self.changed();
+        }
+    }
+
     /// The finger held on a selection moved to `at`: it runs from the word it was held on to the word there.
     pub(super) fn drag_word(&mut self, at: Point<f32>) {
         let Some(id) = self.editing.overlay.map(|overlay| overlay.id) else { return };
+        if !self.editing.fields.contains_key(&id) {
+            return self.select_to(at);
+        }
         let Some((index, upstream)) = self.editing.drawn.get(&id).map(|drawn| drawn.hit(at)) else { return };
         self.edit(id, |field| field.drag(index.min(field.display().len()), upstream));
         self.changed();
@@ -156,14 +210,20 @@ impl Screen {
     /// finger is down (moving it, scrolling, or about to tap elsewhere), as UIKit's and Android's hide theirs.
     pub fn text_menu_shown(&self) -> Option<TextMenu> {
         let id = self.editing.overlay.filter(|overlay| overlay.menu)?.id;
-        if self.focus.focused != Some(id) || self.finger.is_some() {
+        if self.finger.is_some() {
             return None;
         }
-        let (field, drawn) = (self.editing.fields.get(&id)?, self.editing.drawn.get(&id)?);
-        let (start, end) = field.selection();
-        let rect = match start < end {
-            true => drawn.spans(start, end).into_iter().reduce(|all, line| all.union(&line))?,
-            false => drawn.caret_at(field.caret(), field.upstream()),
+        let rect = match self.read_selection() {
+            Some((id, start, end)) => self.editing.texts.get(&id)?.spans(start, end).into_iter().reduce(|all, line| all.union(&line))?,
+            None if self.focus.focused != Some(id) => return None,
+            None => {
+                let (field, drawn) = (self.editing.fields.get(&id)?, self.editing.drawn.get(&id)?);
+                let (start, end) = field.selection();
+                match start < end {
+                    true => drawn.spans(start, end).into_iter().reduce(|all, line| all.union(&line))?,
+                    false => drawn.caret_at(field.caret(), field.upstream()),
+                }
+            }
         };
         // With its handles, as Android's Editor gives its toolbar, so it covers neither.
         let rect = self.handles().iter().fold(rect, |all, handle| all.union(&handle.bounds()));
@@ -177,9 +237,14 @@ impl Screen {
         Some(self.text_menu_of(id, rect))
     }
 
-    /// The system's menu for input `id`'s text, shown beside `rect`: what of it can be done there.
+    /// The system's menu for input `id`'s text, or text `id` that isn't one, shown beside `rect`: what of it can be done
+    /// there.
     pub(super) fn text_menu_of(&self, id: Id, rect: Bounds<f32>) -> TextMenu {
-        let field = &self.editing.fields[&id];
+        let Some(field) = self.editing.fields.get(&id) else {
+            let whole = self.editing.texts.get(&id).map_or(0, |shown| shown.words.len());
+            let selected = self.read_selection().map_or(0, |(_, start, end)| end - start);
+            return TextMenu { rect, cut: false, copy: selected > 0, paste: false, select_all: selected < whole, select: false };
+        };
         let selected = !field.selected().is_empty();
         let empty = field.text.is_empty();
         TextMenu {
@@ -247,6 +312,17 @@ impl Screen {
     pub fn magnifier(&self) -> Option<Magnifier> {
         let finger = self.finger.as_ref().filter(|finger| finger.held || finger.handle.is_some())?;
         let id = self.editing.overlay?.id;
+        if let Some((start, end)) = self.read_carets() {
+            // The caret it moves: the end it's dragging, or where it's held, the end nearer it.
+            let near_start = (finger.last.x - start.origin.x).hypot(finger.last.y - start.origin.y) < (finger.last.x - end.origin.x).hypot(finger.last.y - end.origin.y);
+            let caret = match finger.handle {
+                Some(End::Start) => start,
+                Some(End::End) => end,
+                None if near_start => start,
+                None => end,
+            };
+            return Some(Magnifier { at: point(finger.last.x, caret.origin.y + caret.size.height / 2.0), caret });
+        }
         let (field, drawn) = (self.editing.fields.get(&id)?, self.editing.drawn.get(&id)?);
         let caret = drawn.caret_at(field.caret(), field.upstream());
         Some(Magnifier { at: point(finger.last.x, caret.origin.y + caret.size.height / 2.0), caret })

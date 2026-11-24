@@ -88,7 +88,8 @@ pub(super) struct Finger {
     /// When it landed, on the page's clock, and how long it's held still before it's a long press.
     landed: f64,
     hold: f64,
-    /// It was held still on an input long enough: it selects by the word as it moves (`text_selection`).
+    /// It was held still on an input, or on text that isn't one, long enough: it selects by the word as it moves
+    /// (`text_selection`).
     pub(super) held: bool,
     /// It landed on a handle of what a finger selected, whose end it drags.
     pub(super) handle: Option<End>,
@@ -101,6 +102,8 @@ pub(super) struct Finger {
     /// browser latches a scroll gesture to the scroller it began on, not whatever is innermost under where it landed.
     scrolled: Option<Id>,
     on_input: bool,
+    /// It landed on text that isn't an input, which it selects held there.
+    on_text: bool,
     stopped: bool,
     swipe: Option<Swipe>,
     velocity: Velocity,
@@ -164,20 +167,24 @@ impl Screen {
         self.finger.as_ref().is_some_and(|finger| finger.id == id && !finger.panning && !finger.stopped && finger.swipe.is_none() && !finger.held && finger.handle.is_none())
     }
 
-    /// How long until the finger it follows, held still on an input, is a long press (`Fingers::hold`).
+    /// How long until the finger it follows, held still on an input or on text, is a long press (`Fingers::hold`).
     pub(super) fn finger_hold(&self) -> Option<std::time::Duration> {
-        let finger = self.finger.as_ref().filter(|finger| finger.on_input && !finger.moved && !finger.held)?;
+        let finger = self.finger.as_ref().filter(|finger| (finger.on_input || finger.on_text) && !finger.moved && !finger.held)?;
         let left = finger.landed + finger.hold - self.js.clock().now();
         Some(std::time::Duration::from_secs_f64(left.max(0.0) / 1000.0))
     }
 
-    /// The finger it follows has been held still on an input long enough: the word under it is selected, with its
-    /// handles and the system's menu as it lifts, and as it moves on, the words to where it is.
+    /// The finger it follows has been held still on an input or on text long enough: the word under it is selected,
+    /// with its handles and the system's menu as it lifts, and as it moves on, the words to where it is. On text, what
+    /// it went down on doesn't hear it as a press any more.
     pub(super) fn finger_held(&mut self) {
         if self.finger_hold() != Some(std::time::Duration::ZERO) {
             return;
         }
-        let Some(at) = self.finger.as_ref().map(|finger| finger.last) else { return };
+        let Some((at, on_text)) = self.finger.as_ref().map(|finger| (finger.last, finger.on_text)) else { return };
+        if on_text {
+            self.pointer_cancel(at);
+        }
         self.select_word(at);
         if let Some(finger) = &mut self.finger {
             finger.held = true;
@@ -195,7 +202,7 @@ impl Screen {
             let mut velocity = Velocity::default();
             velocity.add(at, time);
             #[rustfmt::skip]
-            let finger = Finger { id, start: at, last: at, landed: time, hold: fingers.hold, held: false, handle, menu, moved: false, panning: false, scrolled: None, on_input: false, stopped: false, swipe: None, velocity };
+            let finger = Finger { id, start: at, last: at, landed: time, hold: fingers.hold, held: false, handle, menu, moved: false, panning: false, scrolled: None, on_input: false, on_text: false, stopped: false, swipe: None, velocity };
             self.finger = Some(finger);
             return Touched::Done;
         }
@@ -209,10 +216,11 @@ impl Screen {
         });
         let slid = fingers.edge.and_then(|edge| edge.slid).unwrap_or(0.0);
         let on_input = swipe.is_none() && self.input_at(at);
+        let on_text = swipe.is_none() && !on_input && !stopped && self.text_at(at).is_some();
         let mut velocity = Velocity::default();
         velocity.add(at, time);
         #[rustfmt::skip]
-        let finger = Finger { id, start: point(at.x - slid, at.y), last: at, landed: time, hold: fingers.hold, held: false, handle: None, menu, moved: false, panning: false, scrolled: None, on_input, stopped, swipe, velocity };
+        let finger = Finger { id, start: point(at.x - slid, at.y), last: at, landed: time, hold: fingers.hold, held: false, handle: None, menu, moved: false, panning: false, scrolled: None, on_input, on_text, stopped, swipe, velocity };
         self.finger = Some(finger);
         if swipe.is_none() && !on_input && !stopped {
             self.pointer_down(at, 0, false);
@@ -306,6 +314,8 @@ impl Screen {
         if finger.stopped {
             return Touched::Done;
         }
+        // A tap lets go of what a finger selected of a text that isn't an input, as a phone's browser does.
+        self.let_go_read();
         let had = self.focused();
         let caret = had.and_then(|id| self.editing.fields.get(&id)).filter(|field| field.selected().is_empty()).map(crate::editing::Field::caret);
         if finger.on_input {

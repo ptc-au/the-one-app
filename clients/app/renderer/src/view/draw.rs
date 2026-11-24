@@ -764,7 +764,7 @@ pub(super) struct Seen {
     pub(super) stretched: std::collections::BTreeMap<Id, Point<f32>>,
     fields: Vec<(Id, String, editing::Value, Option<(usize, f32)>, bool)>,
     pub(super) caret: bool,
-    /// The input a finger's selection shows its handles in.
+    /// The input, or the text that isn't one, a finger's selection shows its handles in.
     handles: Option<Id>,
     hovering: bool,
     notice: Option<(String, Option<String>)>,

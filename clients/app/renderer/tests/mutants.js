@@ -44,6 +44,7 @@ const MUTANTS = {
   "rounded-clip": { bug: "rounded clip off", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Rounded corners clip")] },
   "text-stretched": { bug: "text drawn from a stretched picture", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "faded-apart": { bug: "a faded group's things each faded on their own, what's under showing through what's over it (Welcome on Andre's iPhone, 23 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Faded as one")] },
+  "handles-unpainted": { bug: "the handles of words a finger selected counted but never drawn (24 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Selected by a finger")] },
   "title-words-move": { bug: "the words of a screen's title in a Mac's title row moved the window where they're held, so they couldn't be selected (24 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Selected in a title row")] },
   "late-tap": { bug: "a tap delivered a frame late", plays: [checks("clients/app/renderer/tests/gallery", "Buttons/Pressed")] },
   "stale-rect": { bug: "a stale inspector rect", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },

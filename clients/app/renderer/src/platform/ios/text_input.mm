@@ -100,7 +100,12 @@ NSObject const* FlutterMethodNotImplemented = [[NSObject alloc] init];
 @property(nonatomic, assign) CGRect editMenuTargetRect;
 @property(nonatomic, assign) int textInputClient;
 - (id<FlutterTextInputDelegate>)textInputDelegate;
+- (BOOL)becomeFirstResponderFromFramework;
 @end
+
+// What the edit menu showing may offer, as the screen says (`TextMenu`): text that isn't a field, read-only, offers
+// neither Cut nor Paste, which UIKit would otherwise offer by what's on the pasteboard.
+static BOOL menuCuts = YES, menuCopies = YES, menuPastes = YES, menuSelectsAll = YES;
 
 // The edit menu's Select, which UIKit offers at a caret, as its own fields do: the screen selects the word there, as
 // Flutter's engine tells its framework of a custom item (`ContextMenu.onPerformCustomAction`). A selection offers none.
@@ -113,7 +118,13 @@ NSObject const* FlutterMethodNotImplemented = [[NSObject alloc] init];
 
 - (void)validateCommand:(UICommand*)command {
   [super validateCommand:command];
-  if (command.action == @selector(select:) && !self.selectedTextRange.isEmpty) {
+  SEL action = command.action;
+  BOOL offered = action == @selector(cut:) ? menuCuts
+                 : action == @selector(copy:) ? menuCopies
+                 : action == @selector(paste:) ? menuPastes
+                 : action == @selector(selectAll:) ? menuSelectsAll
+                 : YES;
+  if ((action == @selector(select:) && !self.selectedTextRange.isEmpty) || !offered) {
     command.attributes |= UIMenuElementAttributesHidden;
   }
 }
@@ -322,10 +333,11 @@ void text_input_call(void* input, const char* method, const char* arguments) {
                                }];
 }
 
-// The field's edit menu, UIKit's own (what it offers is what the field can do: Cut, Copy, Paste, Select, Select All,
-// Look Up…), beside `x`, `y`, `width`, `height` in the window's points, or none (`shown` false): moved where it's
-// already shown.
-void text_input_menu(void* input, bool shown, double x, double y, double width, double height) {
+// The field's edit menu, UIKit's own (what it offers is what the field can do and the screen offers: Cut, Copy, Paste,
+// Select, Select All, Look Up…), beside `x`, `y`, `width`, `height` in the window's points, or none (`shown` false):
+// moved where it's already shown. For text that isn't a field, whose client has no keyboard (`TextInputType.none`), its
+// view takes the focus first, as only a view that has it shows the menu, and an empty input view shows for it.
+void text_input_menu(void* input, bool shown, double x, double y, double width, double height, bool cut, bool copy, bool paste, bool select_all) {
   if (@available(iOS 16.0, *)) {
     TextInput* text_input = (__bridge TextInput*)input;
     FlutterTextInputPlugin* plugin = text_input.plugin;
@@ -336,8 +348,15 @@ void text_input_menu(void* input, bool shown, double x, double y, double width, 
       }
       return;
     }
+    menuCuts = cut;
+    menuCopies = copy;
+    menuPastes = paste;
+    menuSelectsAll = select_all;
     CGRect rect = CGRectMake(x, y, width, height);
     FlutterTextInputView* view = (FlutterTextInputView*)plugin.textInputView;
+    if (view && !view.isFirstResponder) {
+      [view becomeFirstResponderFromFramework];
+    }
     if (text_input.menuShown && view) {
       view.editMenuTargetRect = [plugin.viewController.view convertRect:rect toView:view];
       [view.editMenuInteraction updateVisibleMenuPositionAnimated:NO];

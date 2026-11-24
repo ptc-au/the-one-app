@@ -344,7 +344,7 @@ pub(super) struct Painter<'a> {
     pub(super) selected: Option<(Id, (usize, usize))>,
     /// The caret shows in this frame, as it blinks.
     pub(super) caret: bool,
-    /// The input whose selection a finger made, which shows its handles (`text_selection`).
+    /// The input, or the text that isn't one, whose selection a finger made, which shows its handles (`text_selection`).
     pub(super) handles: Option<Id>,
     pub(super) pictures: &'a mut pictures::Pictures,
     /// Pictures by address, fetched, and those this frame wanted that weren't yet.

@@ -272,10 +272,12 @@ impl Screen {
             _ => 1,
         };
         self.editing.last_press = Some((now, at, clicks));
-        // Text that's neither a field nor in something pressed is selected from here, by a pointer (a finger drags to
-        // scroll); a press anywhere else lets go of what was.
-        let text = (pressed.is_none() && !self.touch).then(|| chain.iter().copied().find(|id| self.editing.texts.contains_key(id))).flatten();
-        self.select_down(text, at, clicks);
+        // Text that's neither a field nor in something pressed is selected from here, by a pointer; a press anywhere
+        // else lets go of what was. A finger drags to scroll, and selects held still (`text_selection`).
+        if !self.touch {
+            let text = pressed.is_none().then(|| chain.iter().copied().find(|id| self.editing.texts.contains_key(id))).flatten();
+            self.select_down(text, at, clicks);
+        }
         if let Some(input) = input {
             self.editing.selecting = Some(input);
             self.press_input(input, at, clicks, shift);

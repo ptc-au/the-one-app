@@ -442,7 +442,8 @@ impl Display {
     pub fn text_menu(&self, native: &NativeWindow, menu: Option<crate::view::TextMenu>) {
         let rect = menu.map(|menu| menu.rect).unwrap_or_default();
         let f = f64::from;
-        unsafe { text_input_menu(native.text_input.0, menu.is_some(), f(rect.origin.x), f(rect.origin.y), f(rect.size.width), f(rect.size.height)) };
+        let offers = |item: fn(&crate::view::TextMenu) -> bool| menu.as_ref().is_some_and(item);
+        unsafe { text_input_menu(native.text_input.0, menu.is_some(), f(rect.origin.x), f(rect.origin.y), f(rect.size.width), f(rect.size.height), offers(|menu| menu.cut), offers(|menu| menu.copy), offers(|menu| menu.paste), offers(|menu| menu.select_all)) };
     }
 
     /// Shows iOS's magnifier over what a finger moving a selection is at, or takes it away (`text_input.mm`).
@@ -834,7 +835,8 @@ unsafe extern "C" {
     fn text_input_new(controller: *mut UIViewController, context: *mut c_void, send: extern "C" fn(*mut c_void, *const c_char, *const c_char)) -> *mut c_void;
     fn text_input_free(plugin: *mut c_void);
     fn text_input_call(plugin: *mut c_void, method: *const c_char, arguments: *const c_char);
-    fn text_input_menu(plugin: *mut c_void, shown: bool, x: f64, y: f64, width: f64, height: f64);
+    #[allow(clippy::too_many_arguments)]
+    fn text_input_menu(plugin: *mut c_void, shown: bool, x: f64, y: f64, width: f64, height: f64, cut: bool, copy: bool, paste: bool, select_all: bool);
     #[allow(clippy::too_many_arguments)]
     fn text_input_magnifier(plugin: *mut c_void, shown: bool, x: f64, y: f64, caret_x: f64, caret_y: f64, caret_width: f64, caret_height: f64);
 }

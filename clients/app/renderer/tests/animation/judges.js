@@ -49,6 +49,8 @@ export function requests(steps, folder, answers = {}) {
   // What the window looked like before anything's done, which `dimmed` compares what's over the page with.
   let before
   let apartFrom
+  let handlesAt = []
+  let handlesPoints
   if (steps.some((step) => step.expect?.dimmed)) out.push({ request: { op: "snap" }, judge: (answer) => void (before = answer?.result?.png) })
   for (const [at, step] of steps.entries()) {
     const from = out.length
@@ -429,7 +431,32 @@ export function requests(steps, folder, answers = {}) {
             if (menu && drawn.some((handle) => over(menu.rect, handle.rect))) wrong.push("the menu for text covers a handle")
             if (handles !== undefined && drawn.length !== handles) wrong.push(`${drawn.length} handles are drawn`)
             if (magnifier !== undefined && Boolean(shown) !== magnifier) wrong.push(shown ? "the magnifier shows" : "no magnifier shows")
+            handlesAt = drawn
             return wrong.join("; ") || undefined
+          },
+        })
+      // Each handle the window says it has is in its picture: its knob (iOS's, which the headless renderer draws: over
+      // the start, under the end, 10 points across) is the blue a handle is drawn in, as a handle the screen counts but
+      // never painted isn't, whatever is around it.
+      if (handles)
+        out.push({ request: { op: "window" }, judge: (answer) => void (handlesPoints = answer?.result?.width) })
+      if (handles)
+        out.push({
+          request: { op: "snap" },
+          judge: (answer) => {
+            const { data, width } = PNG.sync.read(Buffer.from(answer.result.png, "base64"))
+            const scale = width / handlesPoints
+            const knob = ({ end, rect }) => [rect.x + rect.width / 2, end === "start" ? rect.y + 5 : rect.y + rect.height - 5]
+            const colour = (handle) => {
+              const [x, y] = knob(handle)
+              const at = (Math.round(y * scale) * width + Math.round(x * scale)) * 4
+              return [data[at], data[at + 1], data[at + 2]]
+            }
+            const unseen = handlesAt.filter((handle) => {
+              const [r, , b] = colour(handle)
+              return b - r < 80
+            })
+            return unseen.length ? `${unseen.length} of its handles aren't drawn: ${unseen.map((handle) => `${handle.end} at ${handle.rect.x.toFixed(0)}, ${handle.rect.y.toFixed(0)}, its knob rgb(${colour(handle).join(", ")})`).join(", ")}` : undefined
           },
         })
     }

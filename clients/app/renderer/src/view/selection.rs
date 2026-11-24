@@ -35,6 +35,21 @@ impl Shown {
         self.paragraph.lines.iter().enumerate().map(move |(at, line)| Bounds { origin: Point { x: self.left(at), y: self.content.origin.y + at as f32 * height }, size: crate::geometry::Size { width: line.width * self.grown, height } })
     }
 
+    /// Where its words from byte `start` to `end` are in the window, a rectangle for each line.
+    pub fn spans(&self, start: usize, end: usize) -> Vec<Bounds<f32>> {
+        let height = self.paragraph.line_height * self.grown;
+        let left = |line: usize| self.left(line);
+        self.paragraph.spans(start, end).into_iter().map(|(line, x0, x1)| Bounds { origin: Point { x: left(line) + x0 * self.grown, y: self.content.origin.y + line as f32 * height }, size: crate::geometry::Size { width: (x1 - x0) * self.grown, height } }).collect()
+    }
+
+    /// Where the carets at byte `start` and byte `end` of its words are drawn, in the window, as a selection's ends.
+    pub fn carets(&self, start: usize, end: usize) -> Option<(Bounds<f32>, Bounds<f32>)> {
+        let spans = self.spans(start, end);
+        let (first, last) = (spans.first()?, spans.last()?);
+        let caret = |x: f32, line: &Bounds<f32>| Bounds { origin: Point { x, y: line.origin.y }, size: crate::geometry::Size { width: 0.0, height: line.size.height } };
+        Some((caret(first.origin.x, first), caret(last.origin.x + last.size.width, last)))
+    }
+
     /// The byte of its words a point is at, on the line it's beside.
     fn index_at(&self, at: Point<f32>) -> usize {
         let line_height = self.paragraph.line_height * self.grown;
@@ -94,12 +109,40 @@ impl Screen {
 
     /// The pointer moved to `at`, with a selection's press held: it goes to there, keeping what the press began with.
     pub(super) fn select_moved(&mut self, at: Point<f32>) {
-        let Some(selected) = self.editing.selected.filter(|_| self.editing.selecting_text) else { return };
+        if self.editing.selecting_text {
+            self.select_to(at);
+        }
+    }
+
+    /// What's selected of a text that isn't a field goes to `at`, keeping what its press began with (a word, held by a
+    /// finger or clicked twice).
+    pub(super) fn select_to(&mut self, at: Point<f32>) {
+        let Some(selected) = self.editing.selected else { return };
         let Some(shown) = self.editing.texts.get(&selected.id) else { return };
         let index = shown.index_at(at);
         let (start, end) = selected.began;
         let (anchor, focus) = if index < start { (end, index) } else { (start, index.max(end)) };
         self.editing.selected = Some(Selected { anchor, focus, ..selected });
+        self.changed();
+    }
+
+    /// An end of what's selected of a text that isn't a field dragged to `at` (its handle, by a finger): that end goes
+    /// there by the character, the other staying.
+    pub(super) fn select_end(&mut self, start: bool, at: Point<f32>) {
+        let Some(selected) = self.editing.selected else { return };
+        let Some(shown) = self.editing.texts.get(&selected.id) else { return };
+        let (first, last) = selected.range();
+        let kept = if start { last } else { first };
+        let index = shown.index_at(at);
+        self.editing.selected = Some(Selected { began: (kept, kept), anchor: kept, focus: index, ..selected });
+        self.changed();
+    }
+
+    /// Text `id`, which isn't a field, selected from byte `start` to `end` (the system's Select All, by a finger).
+    pub(super) fn select_range(&mut self, id: Id, start: usize, end: usize) {
+        let Some(shown) = self.editing.texts.get(&id) else { return };
+        let (start, end) = (start.min(shown.words.len()), end.min(shown.words.len()));
+        self.editing.selected = Some(Selected { id, began: (start, start), anchor: start, focus: end });
         self.changed();
     }
 

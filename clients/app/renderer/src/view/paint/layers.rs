@@ -252,10 +252,17 @@ impl Painter<'_> {
                 if text.selectable {
                     let shown = super::super::selection::Shown { paragraph: paragraph.clone(), words, content, width, grown: transform.scale, align: text.align };
                     if let Some((_, (start, end))) = self.selected.filter(|(on, (start, end))| *on == id && start < end) {
-                        let (tint, line_height) = (colour_token("blue", self.conditions).opacity(0.3), paragraph.line_height * transform.scale);
-                        for (line, x0, x1) in paragraph.spans(start, end) {
-                            let bounds = Bounds { origin: point(shown.left(line) + x0 * transform.scale, content.origin.y + line as f32 * line_height), size: Size { width: (x1 - x0) * transform.scale, height: line_height } };
-                            self.quad(bounds, mask, tint, Edges::default(), Hsla::default(), Corners::default(), false, opacity);
+                        let tint = colour_token("blue", self.conditions);
+                        for bounds in shown.spans(start, end) {
+                            self.quad(bounds, mask, tint.opacity(0.3), Edges::default(), Hsla::default(), Corners::default(), false, opacity);
+                        }
+                        // What a finger selected has its handles at its ends, as a phone's browser draws them.
+                        if let (Some((first, last)), true) = (shown.carets(start, end), self.handles == Some(id) && !crate::mutants::mutant("handles-unpainted")) {
+                            for handle in super::super::text_selection::handles(first, last) {
+                                for (bounds, corners) in handle.shapes() {
+                                    self.quad(bounds, mask, tint, Edges::default(), Hsla::default(), corners, false, opacity);
+                                }
+                            }
                         }
                     }
                     self.texts.insert(id, shown);

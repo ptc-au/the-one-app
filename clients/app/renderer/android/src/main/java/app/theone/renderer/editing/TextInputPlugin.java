@@ -220,6 +220,10 @@ public class TextInputPlugin implements ListenableEditingState.EditingStateWatch
 
     mRestartInputPending = true;
     mEditable.addEditingStateListener(this);
+    // A connection to it now, not only once a keyboard asks for one as it shows, so the floating toolbar's items act
+    // on it: text that isn't a field, selected by a finger, has no keyboard (`TextInputType.none`), and its Copy
+    // copies from here.
+    createInputConnection(mView, new EditorInfo());
   }
 
   /** Flutter's saveEditableSizeAndTransform, for an affine `matrix`: where the field is, which autofill shows at. */

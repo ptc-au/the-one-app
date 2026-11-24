@@ -29,15 +29,24 @@ pub struct TextInputConnection {
 impl Screen {
     /// What window's text input plugin is to be told, as the input with the keyboard, its editing state or its caret
     /// changed since `connection` was: attached to an input that takes typing as it takes the keyboard, detached as it
-    /// loses it, as Flutter's `TextInput.attach` and `TextInputConnection.close` call it.
+    /// loses it, as Flutter's `TextInput.attach` and `TextInputConnection.close` call it. With none, what a finger
+    /// selected of a text that isn't an input is attached, read-only and with no keyboard (`TextInputType.none`), so
+    /// the system's menu for it copies it (`text_selection`).
     pub fn text_input(&self, connection: &mut TextInputConnection) -> Vec<TextInput> {
         let typing = self.focus.focused.filter(|id| self.editing.fields.get(id).is_some_and(|field| !field.readonly));
+        let read = typing.is_none().then(|| self.read_selection()).flatten();
         let mut calls = Vec::new();
-        if connection.client != typing {
+        if connection.client != typing.or(read.map(|(id, ..)| id)) {
             if connection.client.is_some() {
                 calls.extend([TextInput::ClearClient, TextInput::Hide]);
             }
             *connection = TextInputConnection::default();
+            if let (Some((id, ..)), Some(value)) = (read, self.read_value()) {
+                let mut configuration = editing::configuration(&json!({"readonly": true}), &value);
+                configuration["inputType"]["name"] = json!("TextInputType.none");
+                calls.extend([TextInput::SetClient(id, configuration), TextInput::SetEditingState(value.clone())]);
+                (connection.client, connection.value) = (Some(id), Some(value));
+            }
             if let (Some(id), Some(field), Some(value)) = (typing, typing.and_then(|id| self.field(id)), self.editing()) {
                 // An input with an autofill hint is in a group with every other on the screen, which a password manager
                 // fills together, as Flutter's `TextInputConfiguration.fields`.
@@ -70,7 +79,7 @@ impl Screen {
             calls.insert(show, TextInput::SetEditableSizeAndTransform { width: rect.width, height: rect.height, transform });
             (connection.rect, connection.origin) = (Some(rect), point(rect.x, rect.y));
         }
-        let value = self.editing();
+        let value = if read.is_some() { self.read_value() } else { self.editing() };
         if value.is_some() && connection.value != value {
             calls.push(TextInput::SetEditingState(value.clone().expect("checked")));
             connection.value = value;
@@ -92,7 +101,11 @@ impl Screen {
     pub fn text_input_client(&mut self, connection: &mut TextInputConnection, said: TextInputClient) {
         match said {
             TextInputClient::UpdateEditingState(client, value) if connection.client == Some(client) => {
-                self.set_editing(client, &value);
+                match self.editing.fields.contains_key(&client) {
+                    true => self.set_editing(client, &value),
+                    // What a finger selected of a text that isn't an input, which only the system's Select All changes.
+                    false => self.read_selected(client, &value),
+                }
                 connection.value = Some(value);
             }
             TextInputClient::PerformAction(client, action) if connection.client == Some(client) => {
@@ -108,6 +121,26 @@ impl Screen {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// What a finger selected of a text that isn't an input, as an editing state: its words and what's selected of
+    /// them, in UTF-16 units, as a keyboard's.
+    fn read_value(&self) -> Option<editing::Value> {
+        let (id, start, end) = self.read_selection()?;
+        let words = &self.editing.texts.get(&id)?.words;
+        let units = |byte: usize| words[..byte].encode_utf16().count();
+        Some(editing::Value { text: words.clone(), selection: editing::Selection { base: units(start), extent: units(end) }, composing: None })
+    }
+
+    /// The system said what's selected of text `id`, which isn't an input, is now `value`'s selection.
+    fn read_selected(&mut self, id: Id, value: &editing::Value) {
+        let Some(words) = self.editing.texts.get(&id).map(|shown| shown.words.clone()) else { return };
+        let byte = |unit: usize| words.char_indices().scan(0, |units, (at, ch)| { let here = *units; *units += ch.len_utf16(); Some((here, at)) }).find(|(here, _)| *here >= unit).map_or(words.len(), |(_, at)| at);
+        let (base, extent) = (value.selection.base.min(value.selection.extent), value.selection.base.max(value.selection.extent));
+        self.select_range(id, byte(base), byte(extent));
+        if let Some(overlay) = &mut self.editing.overlay {
+            overlay.menu = true;
         }
     }
 

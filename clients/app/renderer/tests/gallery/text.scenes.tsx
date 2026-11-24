@@ -174,6 +174,41 @@ export default {
       ],
     },
   },
+  // Under a finger, as a phone's browser and its own apps' pages have it: held still on words, a finger selects the
+  // word, magnified as it's held, with handles at its ends and the system's menu (Copy, Select All) as it lifts; a tap
+  // elsewhere lets go of it; a finger held on a row presses it and moving scrolls, selecting nothing.
+  "Text/Selected by a finger": {
+    render: () => <Selectable />,
+    checks: {
+      "Held, a word is selected and magnified, with its handles and the menu as it lifts": [
+        { down: { text: "Every word that reads", position: { x: 12, y: 10 } } },
+        { wait: 600 },
+        { expect: { selected: "Every", magnifier: true, handles: 2, textMenu: false } },
+        { up: true },
+        { expect: { selected: "Every", textMenu: { items: ["copy", "selectAll"] }, handles: 2, magnifier: false } },
+      ],
+      "A tap elsewhere lets go of it": [
+        { down: { text: "Its server didn't answer", position: { x: 12, y: 8 } } },
+        { wait: 600 },
+        { up: true },
+        { expect: { selected: "Its", handles: 2 } },
+        { x: 200, y: 760 },
+        { expect: { selected: false, handles: 0, textMenu: false } },
+      ],
+      "A row held is pressed, selecting nothing": [
+        { down: { text: "Pressed 0 times", position: { x: 12, y: 8 } } },
+        { wait: 600 },
+        { up: true },
+        { expect: { selected: false, handles: 0, text: "Pressed 1 times" } },
+      ],
+      "Moved, a finger scrolls, selecting nothing": [
+        { down: { text: "Every word that reads", position: { x: 12, y: 10 } } },
+        { hover: { x: 40, y: 300 } },
+        { up: true },
+        { expect: { selected: false, handles: 0 } },
+      ],
+    },
+  },
   // In a Mac's app window a screen opened from another has its bar in the title row, which moves the window where it's
   // held, but its title's words are selected there, as a page's are.
   "Text/Selected in a title row": {
