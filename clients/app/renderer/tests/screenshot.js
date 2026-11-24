@@ -510,6 +510,8 @@ async function native(built, scene, folder, again = false) {
   writeFileSync(join(folder, "native-answers.jsonl"), run.stdout)
   const measured = run.stderr.match(/^measured (.*)$/m)
   const said = answered(run.stdout)
+  // A step the headless renderer refused (a tap that matches no node) never happened, so the scene fails, saying which.
+  const refused = steps.flatMap((step, at) => (step.op === "clock" || step.op === "query" || step.op === "profile" || step.op === "snap" ? [] : said.filter((answer) => answer.id === at + 1 && answer.error).map((answer) => `step ${JSON.stringify(step)}: ${answer.error.message ?? JSON.stringify(answer.error)}`)))
   const after = ssh ? DRAWN.length : 0
   const drew = glass === "tinted" ? said.at(-after - 3)?.result?.frames?.[0]?.work : undefined
   const blurring = drew && (drew.backdrops > 0 || drew.blurs > 0 || drew.blurred > 0) ? `glass drawn tinted still blurs: ${drew.backdrops} backdrop pixels, ${drew.blurs} blur passes` : undefined
@@ -542,7 +544,7 @@ async function native(built, scene, folder, again = false) {
   const every = (list) => list.flatMap((node) => [...(node.name ? [node.name] : []), ...every(node.children ?? [])])
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
-  return { kept: run.kept, tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, ink, blurring, answers: said, at, asked, requests }
+  return { kept: run.kept, refused, tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, ink, blurring, answers: said, at, asked, requests }
 }
 
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
@@ -938,6 +940,7 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
     if (drawn.tree?.includes(messages.cantShowPage)) {
       said.push(failing(`  native: the page crashed, showing "${messages.cantShowPage}"`))
     }
+    for (const line of drawn.refused ?? []) said.push(failing(`  native: a step did nothing: ${line}`))
     if (drawn.blurring) {
       said.push(`  native: ${drawn.blurring}`)
       process.exitCode = 1
