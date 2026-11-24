@@ -157,47 +157,13 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
   const routed = !who.session && who.apps && (await router(env, body, new URL(request.url).origin, who));
   if (routed) return withCookies(routed, who.cookies);
   const answer = await forward(env, body, { device: who.device }, [`${who.who}/`, NETWORK], request.headers, mode(new URL(request.url)), { signal: request.signal, ctx });
-  if (!(await nobodys(answer))) return withCookies(!who.session && who.apps ? await drawn(answer, body, new URL(request.url).origin, who.apps) : answer, who.cookies);
+  if (!(await nobodys(answer))) return withCookies(answer, who.cookies);
   if (who.challenge) return new Response(null, { status: 401, headers: { "www-authenticate": who.challenge } });
   // A browser is told why, which it shows where it signs in again (`clients/web/host.js`), where signing in again
   // brings it back here if its servers still don't know it.
   const name = who.who.replace(/^users\//, "");
   const why = `This browser signed in as ${name}, but the network's servers didn't know it as theirs. Sign in again, and if this happens again, tell whoever runs the network.`;
   return Response.json({ jsonrpc: "2.0", id: null, error: { code: NOBODY, message: why } }, { status: 401 });
-}
-
-/**
- * An app's page read by an assistant that shows it, as an MCP App, in a frame of its own: drawn by the renderer, as the
- * web client draws it, in the renderer's frame from here (`clients/web/renderer`), which loads it from where the
- * assistant's apps' files are (`apps`), in a frame of its own origin, as the web client's is. The page the assistant
- * shows only passes messages between them, as the renderer is WebAssembly, which an MCP App's own page may not compile,
- * and says the frame's origin is what it frames (`frameDomains`). Any other answer goes as it is.
- */
-async function drawn(answer: Response, body: string, origin: string, apps: string) {
-  if (answer.headers.get("content-type") !== "application/json") return answer;
-  const uri = (JSON.parse(body) as Call).params?.uri;
-  const read = await answer.clone().json<{ result?: { contents?: { uri: string; mimeType: string; text?: string; _meta?: object }[] } }>();
-  const [content] = read.result?.contents ?? [];
-  if (typeof uri !== "string" || content?.mimeType !== "text/html;profile=mcp-app" || content.uri !== uri) return answer;
-  const [, , app, version, ...path] = uri.split("/");
-  const frame = `${origin}/renderer/#${origin}${apps}/${app}/${app}@${version}/${path.join("/")}`;
-  const page = `<!doctype html>
-<meta charset="utf-8">
-<style>html, body { margin: 0; height: 100%; overflow: hidden; } iframe { display: block; border: 0; width: 100%; height: 100%; }</style>
-<iframe src="${frame}" sandbox="allow-scripts allow-forms" allow="clipboard-write"></iframe>
-<script>
-  const frame = document.querySelector("iframe");
-  addEventListener("message", ({ source, data }) => {
-    if (source === frame.contentWindow) {
-      // A host sizes a page by what it says, which a page of ours says only where it's asked to (\`sizeChanged\`).
-      if (data?.method === "ui/notifications/initialized") parent.postMessage({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: ${HEIGHT} } }, "*");
-      parent.postMessage(data, "*");
-    } else if (source === parent) frame.contentWindow.postMessage(data, "*");
-  });
-</script>
-`;
-  const ui = { csp: { frameDomains: [origin] } };
-  return Response.json({ ...read, result: { ...read.result, contents: [{ ...content, text: page, _meta: { ...content._meta, ui } }] } });
 }
 
 /**
@@ -236,9 +202,6 @@ body[data-unopened] iframe { display: none; } body[data-unopened]::before { cont
 
 /** What names the router's page, whatever its version. */
 const ROUTER = /^ui:\/\/one\/[^/]+\/app\.html$/;
-
-/** How tall an MCP App's page is in an assistant's chat, as its renderer's page says nothing of it. */
-const HEIGHT = 600;
 
 /** How an agent calls tools at `/mcp`: in code mode with `?code` (`OneCore.Mcp`), and otherwise as MCP's tools. */
 const mode = (url: URL) => (url.searchParams.has("code") ? "code" : undefined);
