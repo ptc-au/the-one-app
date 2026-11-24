@@ -4,7 +4,7 @@
 import { children, createContext, createEffect, createSignal, onSettled, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
-import { back as goBack, covers, go, keydown, link, place, safeArea, step, titled, touch, viewport } from "#bridge"
+import { back as goBack, covers, go, keydown, link, place, routed, safeArea, step, titled, touch, viewport } from "#bridge"
 import { BarEnd, Button, Icon } from "./button.tsx"
 import { messages } from "../words.ts"
 import { ListKeys, ListStyle } from "./list.tsx"
@@ -128,10 +128,11 @@ const Place = createContext<() => string[]>(() => [])
 const Named = createContext<((heading: string | undefined) => void) | null>(null)
 /** Each open split's place in its page, and what closes it. */
 const places = new Map<object, string[]>()
-/** The page's host is told the deepest open split's place, once what changed has settled. */
+/** The page's host is told the deepest open split's place, once what changed has settled: not a page whose screens are
+ * tools (`routed`), whose address is its screen's tool and arguments. */
 let telling = false
 function tellPlace() {
-  if (telling) return
+  if (telling || routed()) return
   telling = true
   queueMicrotask(() => {
     telling = false
@@ -394,7 +395,7 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
   // (`/settings/vault` is Settings' Vault section, `vault/accounts`).
   let opening = true
   createEffect(link, (to) => {
-    if (opening) return void (opening = false)
+    if (opening || routed()) return void (opening = false)
     const there = (to ?? "").split("&")[0].split("/").filter(Boolean)
     if (props.open && !at().every((part, index) => there[index] === part)) props.onClose?.()
   })

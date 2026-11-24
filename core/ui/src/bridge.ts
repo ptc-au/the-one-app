@@ -406,6 +406,9 @@ let assistantTool: string | undefined
 /** The screen the page shows: a link's tool and arguments, `week&start=2026-11-23`, its tool by its app's own name (as
  * the address `/my-week/week?start=2026-11-23` says it), or the call an assistant shows it for. */
 const [shownCall, setShownCall] = createSignal<string | Page.ToolCall>("")
+/** Whether the page's screens are tools (`toolInput`), whose splits then say nothing of where they are (`Split`). */
+let byTools = false
+export const routed = () => byTools
 /** The screens the page navigated from (`navigate`), the last on top, each with what stops the device's Back going there. */
 const navigated: { from: string; done: () => void }[] = []
 
@@ -444,6 +447,7 @@ function linked(to: string) {
 /// arguments, where nothing names one: the app's first screen. Every screen is a tool that only reads, and answers all
 /// it first draws: `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`.
 export const toolInput: typeof Page.toolInput = (first) => {
+  byTools = true
   const now = shownCall()
   if (typeof now !== "string") return now
   const [tool, ...said] = now.split("&")
@@ -452,10 +456,19 @@ export const toolInput: typeof Page.toolInput = (first) => {
 }
 /// `navigate("my-week_week", { start: week().next })`: shows another of the app's screens, by its tool and arguments,
 /// as a link to it would (`toolInput`). It's a step Back goes back from: the device's, and a browser's, whose address
-/// says it (`/my-week/week?start=2026-11-30`), so it's kept, loaded again and shared as a link.
+/// says it (`/my-week/week/2026-11-30`), so it's kept, loaded again and shared as a link. To the screen it last came
+/// from, it's that Back, as a split's detail closing goes back to its list.
 export const navigate: typeof Page.navigate = (name, inputs = {}) => {
   const [from, to] = [linkOfShown(), linkTo(name, inputs)]
   if (from === to) return
+  // To the screen it last navigated from is Back to it, as a split's detail closing goes back to its list.
+  const last = navigated.at(-1)
+  if (last?.from === to) {
+    navigated.pop()
+    last.done()
+    setShownCall(to)
+    return place(to, true)
+  }
   const one = { from, done: () => {} }
   one.done = step(() => {
     const at = navigated.indexOf(one)
