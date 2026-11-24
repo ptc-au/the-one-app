@@ -10,7 +10,7 @@ import { type Owner, badgeOf, findAll, type From, launch, opens, press, opener }
 import { Card, Tile } from "./tiles.tsx"
 import { type Cell, HomePage } from "./pages.tsx"
 import { Library } from "./library.tsx"
-import { OwnerPill, DotsPill, TipsPill } from "./pills.tsx"
+import { OwnerPill, DotsPill, TipsPill, LibraryButton } from "./pills.tsx"
 import { type Screens } from "./screens.ts"
 import { type Paging } from "./paging.ts"
 import { lingering } from "./lingering.ts"
@@ -475,22 +475,7 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
           </View>
           {/* To the App Library and back, in one click, in the same place: its corner of the dots' row. */}
           <View inert={!browsing() || editingNow() || undefined} style={[looks.corner, looks.bottom(0), looks.tall(PILLS), looks.opacity(browsing() ? (editingNow() ? 0.35 : 1) : 0)]}>
-            <View style={[looks.pill, looks.glass, looks.ownerPill]}>
-              <Button variant="ghost" shape="capsule" onPress={toggleLibrary}>
-                <Show
-                  when={showing() === "library"}
-                  fallback={
-                    <>
-                      <Icon name="squares-four" along />
-                      App Library
-                    </>
-                  }
-                >
-                  <Icon name="caret-left" along />
-                  Home
-                </Show>
-              </Button>
-            </View>
+            <LibraryButton library={showing() === "library"} onPress={toggleLibrary} />
           </View>
         </View>
     </>

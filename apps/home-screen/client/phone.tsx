@@ -1,18 +1,18 @@
 // A phone's Home Screen: every owner's pages one above another, each a row of screenfuls, the App Library after them,
 // and the owner pill and dots over them.
-import { For, untrack } from "solid-js"
-import { reducedMotion, View } from "ui"
-import { lefts, TOP_ROW } from "./layout.ts"
+import { For, Show, untrack } from "solid-js"
+import { reducedMotion, touch, View } from "ui"
+import { DOTS, lefts, TOP_ROW } from "./layout.ts"
 import { looks } from "./looks.ts"
 import { state, at, editingNow, room, laidPage } from "./store.ts"
 import { type Owner } from "./owners.ts"
 import { HomePage } from "./pages.tsx"
 import { Library } from "./library.tsx"
-import { OwnerPill, DotsPill, TipsPill } from "./pills.tsx"
+import { OwnerPill, DotsPill, TipsPill, LibraryButton } from "./pills.tsx"
 import { type Screens } from "./screens.ts"
 import { type Paging } from "./paging.ts"
 
-export function Phone(props: { owners: Owner[]; layout: Screens; paging: Paging }) {
+export function Phone(props: { owners: Owner[]; layout: Screens; paging: Paging; toggleLibrary: () => void }) {
   const { homes, pages, laid, library } = props.layout
   const { downY, xOf, opacityOf, sectionsX, dragged, swipes, along, wheel } = props.paging
   // The owner shown, how far along their pages and the App Library are, and how wide their Home is.
@@ -89,9 +89,16 @@ export function Phone(props: { owners: Owner[]; layout: Screens; paging: Paging 
         {/* The dots, floating over Home as an iPhone's are, and going with it to the App Library, which has none. */}
         <View inert={library() || undefined} style={[looks.bottomRow, ...withHome(), looks.bottom(room().safe.bottom + 16)]}>
           <View style={[looks.live, looks.opacity(opacity())]}>
-            <DotsPill owners={props.owners} laid={laid().screens} />
+            <DotsPill owners={props.owners} laid={laid().screens} glyph={touch()} />
           </View>
         </View>
+        {/* On a computer, the way to the App Library and back, in the corner of the dots' row, where it's the same one as the
+            launcher's. */}
+        <Show when={!touch()}>
+          <View inert={editingNow() || undefined} style={[looks.corner, looks.bottom(room().safe.bottom + 16), looks.tall(DOTS), looks.opacity(editingNow() ? 0.35 : 1)]}>
+            <LibraryButton library={library()} onPress={props.toggleLibrary} />
+          </View>
+        </Show>
     </>
   )
 }

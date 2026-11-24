@@ -1,4 +1,5 @@
-// The pills: the owner's name, which opens the list of every owner, and the page dots with the App Library's glyph.
+// The pills: the owner's name, which opens the list of every owner, the page dots with the App Library's glyph (a
+// phone's), and the App Library's button (a computer's).
 import { createEffect, createSignal, For, Show, untrack } from "solid-js"
 import { Avatar, Button, type Element, haptic, Icon, Menu, Pressable, type Pressed, ReorderList, Sheet, Text, type Tip, Tips, View } from "ui"
 import { BAR, DOTS } from "./layout.ts"
@@ -240,6 +241,29 @@ export function TipsPill() {
   return (
     <View style={[looks.pill, looks.glass, looks.ownerPill]}>
       <Tips tips={tips()} action={onboarded() ? { label: "Show Onboarding Again", icon: "arrow-counter-clockwise", onAction: showOnboarding } : undefined} />
+    </View>
+  )
+}
+
+/// To the App Library and back, in one click, a pill of glass as the others are: the way there on a computer, where the
+/// page dots are small to hit and a swipe is a trackpad's. `library` is whether it's shown now, which it says Home for.
+export function LibraryButton(props: { library: boolean; onPress: () => void }) {
+  return (
+    <View style={[looks.pill, looks.glass, looks.ownerPill]}>
+      <Button variant="ghost" shape="capsule" onPress={props.onPress}>
+        <Show
+          when={props.library}
+          fallback={
+            <>
+              <Icon name="squares-four" along />
+              App Library
+            </>
+          }
+        >
+          <Icon name="caret-left" along />
+          Home
+        </Show>
+      </Button>
     </View>
   )
 }

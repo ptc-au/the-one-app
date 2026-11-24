@@ -393,6 +393,13 @@
       }
     }
   },
+  "Home on a computer": {
+    "like": "Home, two pages",
+    "size": [
+      1280,
+      800
+    ]
+  },
   "Home, swiped": {
     "like": "Home, two pages",
     "touch": true,

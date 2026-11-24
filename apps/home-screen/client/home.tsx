@@ -177,7 +177,7 @@ function HomeScreenShown(props: { owners: Owner[]; layout: ReturnType<typeof cre
       <>
         <Show
           when={launcher()}
-          fallback={<Phone owners={props.owners} layout={layout} paging={paging} />}
+          fallback={<Phone owners={props.owners} layout={layout} paging={paging} toggleLibrary={launching.toggleLibrary} />}
         >
           <LauncherPanel owners={props.owners} layout={layout} paging={paging} launching={launching} />
         </Show>
