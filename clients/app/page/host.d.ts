@@ -47,6 +47,12 @@ export interface View {
   first?: boolean
   /** Whether the device's status bar shows while it does: unless it asked otherwise (`client({ statusBar })`). */
   statusBar?: boolean
+  /** What its page asked since it was last loaded that isn't answered yet, by its request's id, and how many it asked:
+   * what a page that doesn't draw says it waited on (`page-machine.js`). */
+  asking?: Map<unknown, string>
+  asked?: number
+  /** How far its renderer's frame got loading it, as a browser's frame says each step (`clients/web/renderer`). */
+  loaded?: Set<string>
 }
 
 /** What moves an open app's page (`page-machine.js`): it drew, didn't, showed an error, was loaded against a version that's

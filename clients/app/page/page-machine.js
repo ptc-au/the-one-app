@@ -17,7 +17,7 @@ const NEVER = 15000
 /// another has the keyboard (`unused`), and in a browser it says so quietly, "Updated · Reload", and loads again once
 /// its person presses Reload (`asksToReload`). One that's showing an
 /// error loads again at once, as its old version meeting what's new is likely why, and there's nothing of theirs under
-/// it. A page that doesn't draw in 15 s on screen has failed, with Try Again, until it draws after all, as a page
+/// it. A page that doesn't draw in 15 s on screen has failed, saying what it waited on (`waitedOn`), with Try Again, until it draws after all, as a page
 /// loaded again behind another app may only once it's shown, when it's current. A page has drawn as a browser's Largest
 /// Contentful Paint says a page is shown: once it has rendered and what it first asked for is answered (`render` in the
 /// UI library tells, `notifications/one/drawn`), not at its first answered request, so a page that stays blank or on its
@@ -37,10 +37,29 @@ const waiting = {
       entry: "counts",
       exit: "stops",
       on: { away: "away" },
-      after: { never: { target: "#page.failed", actions: assign({ why: ({ context }) => `${context.view.entrypoint} didn't draw in ${NEVER / 1000} s.` }) } },
+      after: { never: { target: "#page.failed", actions: assign({ why: ({ context }) => `${context.view.entrypoint} didn't draw in ${NEVER / 1000} s: ${waitedOn(context.view)}.` }) } },
     },
     away: { on: { seen: { guard: "front", target: "seen" }, opened: "seen" } },
   },
+}
+/// The steps of a browser's renderer frame loading a page (`step` in clients/web/renderer/renderer.js), each as what
+/// it waits on until it's done, in the order it takes them: each but the last two waits on the one before.
+const STEPS = [
+  ["page", "its page's HTML"],
+  ["tables", "its styles"],
+  ["renderer", "the renderer"],
+  ["module", "its page's script"],
+  ["drawn", "the renderer's first frame"],
+]
+/// What a page that hasn't drawn waits on, as far as the window knows: what it asked that's unanswered, how far its
+/// frame got loading it, or that it was answered all it asked and never said it had drawn.
+/** @param {View} view */
+function waitedOn(view) {
+  const asking = [...new Set(view.asking?.values())]
+  if (asking.length) return `no answer yet to ${asking.join(", ")}`
+  const step = view.loaded && STEPS.find(([step]) => !view.loaded?.has(step))
+  if (step) return `its frame is still waiting on ${step[1]}`
+  return view.asked ? `it was answered all ${view.asked} things it asked, and didn't say it had drawn` : "it asked nothing, and didn't say it had drawn"
 }
 export const pageMachine = setup({
   types: /** @type {{ context: { view: View, why?: string, errored?: boolean, waited: number, since: number }, input: View, events: Paged }} */ ({}),
@@ -69,6 +88,8 @@ export const pageMachine = setup({
     tellFailed: sendParent(({ context }) => ({ type: "failed", key: context.view.key, why: context.why ?? "" })),
     // The wait for it to draw starts afresh as it's loaded, counts while it's on screen, and stops while it isn't.
     unwaited: assign({ waited: 0 }),
+    // What it asked and how far it got are its load's own.
+    forgets: ({ context }) => Object.assign(context.view, { asking: new Map(), asked: 0, loaded: undefined }),
     counts: assign({ since: () => performance.now() }),
     stops: assign({ waited: ({ context }) => context.waited + performance.now() - context.since }),
     busy: ({ context }) => context.view.frame.setAttribute("aria-busy", "true"),
@@ -85,7 +106,7 @@ export const pageMachine = setup({
     // Loaded against what's gone before it's even drawn, as a kept launcher is when the list that's come since
     // names a newer one, it loads again at once: there's nothing of its person's on it yet.
     loading: {
-      entry: ["unwaited", "busy"],
+      entry: ["unwaited", "forgets", "busy"],
       exit: "idle",
       on: { drawn: "current", stale: "reloading", retry: "reloading", unopened: { target: "failed", actions: "unopened" } },
       ...waiting,
@@ -104,7 +125,7 @@ export const pageMachine = setup({
       on: { away: "reloading", unused: { guard: "unused", target: "reloading" }, opened: "reloading", reload: "reloading", errored: "reloading" },
     },
     reloading: {
-      entry: ["clear", "load", "unwaited", "busy"],
+      entry: ["clear", "forgets", "load", "unwaited", "busy"],
       exit: "idle",
       on: { drawn: "current", stale: { target: "reloading", reenter: true }, retry: { target: "reloading", reenter: true }, unopened: { target: "failed", actions: "unopened" } },
       ...waiting,

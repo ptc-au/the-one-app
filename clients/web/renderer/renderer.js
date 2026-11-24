@@ -14,17 +14,18 @@
   // native host's frame is drawn in its page's window: this is only its JS, as a native host's runs on a thread of its
   // own. Its client knows it by its number (`frame`), as its own app's.
   const framed = new URLSearchParams(location.search).get("frame")
-  const pageHtml = fetch(page).then((response) => response.text())
+  const pageHtml = got(page).then((response) => response.text())
   if (framed) return frame(page, pageHtml, framed)
   // What takes longest starts at once, each beside the others: the renderer, downloaded and compiled as it comes (and
   // preloaded by index.html), the page's own HTML, and the UI library's tables, which are at the network's root.
   const here = /** @type {HTMLScriptElement} */ (document.currentScript).src
   const compiled = WebAssembly.compileStreaming(fetch(new URL("web_renderer_bg.wasm", here)))
-  const libraryTables = Promise.all(["/ui/client/tokens.json", "/ui/client/styles.json"].map(async (table) => (await fetch(new URL(table, page))).text()))
-  /// How long each step took, from the frame's script, which its first frame tells (`seen`).
+  const libraryTables = Promise.all(["/ui/client/tokens.json", "/ui/client/styles.json"].map(async (table) => (await got(new URL(table, page))).text()))
+  /// How long each step took, from the frame's script, which its first frame tells (`seen`), and each step as it's
+  /// done, which its client says a page that doesn't draw waits on (`waitedOn` in clients/app/page/page-machine.js).
   /** @type {Record<string, number>} */
   const took = {}
-  const step = (/** @type {string} */ name) => void (took[name] = Math.round(performance.now() - started))
+  const step = (/** @type {string} */ name) => seen(name, (took[name] = Math.round(performance.now() - started)))
   /// What happened, said once of each kind to the frame's client, which may tell Telemetry (check.js): the first
   /// frame, the edits its real field had, a screen reader's presses.
   /** @type {Set<string>} */
@@ -37,15 +38,16 @@
   /** Where the renderer can't open the page: its client shows that it didn't open, and why. */
   const unopened = (/** @type {unknown} */ why) => {
     console.warn("the renderer didn't open this page:", why)
-    seen("unopened", String(why))
+    seen("unopened", why instanceof Error ? why.message : String(why))
   }
+  step("script")
   try {
     if (!navigator.gpu) throw new Error("this browser has no WebGPU")
     const { base, script } = mapped(page, await pageHtml)
     step("page")
     // Its tables: the UI library's tokens and styles, and its app's styles, which its build writes beside every page.
     const [tables, [renderer, { textInput }, { semantics }, { videos }]] = await Promise.all([
-      Promise.all([libraryTables, fetch(new URL("styles.json", base)).then((response) => response.text())]).then(([library, own]) => (step("tables"), [...library, own])),
+      Promise.all([libraryTables, got(new URL("styles.json", base)).then((response) => response.text())]).then(([library, own]) => (step("tables"), [...library, own])),
       Promise.all([import("./web_renderer.js"), import("./text-input.js"), import("./semantics.js"), import("./video.js")]),
     ])
     await renderer.default({ module_or_path: await compiled.then((module) => (step("compiled"), module)) })
@@ -241,6 +243,14 @@
     unopened(error)
   }
 })()
+
+/** `url`'s answer, or what it answered instead, as a page loaded from a server that couldn't give it (a 404's "There's
+ * nothing at", or no server answering) is that, and not a page. @param {URL} url */
+async function got(url) {
+  const response = await fetch(url)
+  if (response.ok) return response
+  throw new Error(`${url.pathname.split("/").slice(-3).join("/").replace(/@[^/]+/, "")} answered ${response.status}: ${(await response.text()).slice(0, 300)}`)
+}
 
 /**
  * The page's own HTML, `html`, at `page`: the import map a server serves it with written here, before any module

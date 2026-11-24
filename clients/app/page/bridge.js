@@ -255,14 +255,21 @@ addEventListener("message", async ({ source, data }) => {
       gestures()
     }
     if (errored) page(view, { type: "errored" })
-    // The renderer's frame couldn't open its page (clients/web/renderer), and says why.
+    // The renderer's frame says each step of loading its page (clients/web/renderer), or that it couldn't open it, and why.
+    if (method === "notifications/one/seen") for (const step of Object.keys(params)) (view.loaded ??= new Set()).add(step)
     if (method === "notifications/one/seen" && typeof params.unopened === "string") page(view, { type: "unopened", why: params.unopened })
     return
   }
+  // Kept as unanswered until it is, in the list its page had as it asked: loaded again, the page has one of its own.
+  const asking = (view.asking ??= new Map())
+  asking.set(id, method === "tools/call" && typeof params.name === "string" ? params.name : method)
+  view.asked = (view.asked ?? 0) + 1
   try {
     post(view, { id, result: await respond(view, method, params) })
   } catch (error) {
     const { code, message } = /** @type {{ code?: number, message?: string }} */ (error)
     post(view, { id, error: { code: code ?? -32000, message: message ?? String(error) } })
+  } finally {
+    asking.delete(id)
   }
 })
