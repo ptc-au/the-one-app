@@ -578,11 +578,14 @@ defmodule OneCore.Sandbox do
             "unicode:characters_to_binary(filename:join(os:getenv(\"TMPDIR\"), \"runtime\")), " <>
             "[{return_diagnostics, true}]), "
 
+    # Its time zones are this server's: the database its VM uses (`OneCore.Application`), whose library is among those.
+    zones = "application:set_env(elixir, time_zone_database, '#{Calendar.get_time_zone_database()}'), "
+
     arguments =
       ~w(-noshell -noinput +fnu +S 1:1 +SDcpu 1:1 +SDio 1 +A 1 +MIscs 128 -boot) ++
         [boot, "-boot_var", "RELEASE_LIB", Path.join(root, "lib")] ++
         Enum.flat_map(List.wrap(cache) ++ ebins, &["-pa", &1]) ++
-        ["-eval", "application:ensure_all_started([elixir, logger]), #{compile}'Elixir.OneCore.Sandbox.Child':main()."]
+        ["-eval", "application:ensure_all_started([elixir, logger]), #{zones}#{compile}'Elixir.OneCore.Sandbox.Child':main()."]
 
     env = %{
       "ROOTDIR" => root,
