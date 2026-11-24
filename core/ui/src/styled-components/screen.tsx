@@ -418,7 +418,11 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
     tellPlace()
     return () => (places.delete(self), tellPlace())
   })
+  // The link the page was opened to isn't one: its app opened what it names, and may open it deeper than it says
+  // (`/settings/vault` is Settings' Vault section, `vault/accounts`).
+  let opening = true
   createEffect(link, (to) => {
+    if (opening) return void (opening = false)
     const there = (to ?? "").split("&")[0].split("/").filter(Boolean)
     if (props.open && !at().every((part, index) => there[index] === part)) props.onClose?.()
   })
