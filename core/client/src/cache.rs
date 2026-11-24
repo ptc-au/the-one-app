@@ -108,11 +108,19 @@ impl Client {
     /// Keeps `answer` as what `method` was last answered with. A tool's error isn't kept, as HTTP's `stale-if-error`
     /// has it: it says why it failed then, so a view opened later shows what was answered before it, and asks again,
     /// where it showed a day-old "couldn't be reached" as if it were now.
+    /// An answer that says no device may keep it (`unkept`) isn't, and what was kept of it before goes.
     pub(crate) fn keep(&self, method: &str, params: &Value, response: &Value) -> Result<()> {
         if response["isError"] == true {
             return Ok(());
         }
-        write(&self.cache_file(method, params), response.to_string().as_bytes())
+        let file = self.cache_file(method, params);
+        if unkept(response) {
+            return match fs::remove_file(&file) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+                _ => Ok(()),
+            };
+        }
+        write(&file, response.to_string().as_bytes())
     }
 
     /// What a server last answered `method` with.
@@ -176,6 +184,12 @@ impl Client {
         sent.await.context("The file couldn't be sent. Check this device is online, then try again.")?;
         Ok(name.to_owned())
     }
+}
+
+/// Whether an answer says no device may keep it, as HTTP's `Cache-Control: no-store`: what an encrypted item holds
+/// (an app's tool that says `no_store`).
+fn unkept(response: &Value) -> bool {
+    response["_meta"]["noStore"] == true
 }
 
 /// Writes a file whole, under a name no other write has, then gives it its name: another ask, or another program
@@ -315,6 +329,10 @@ impl Subscription {
                 (self.client.fresh(method, &params).await?, false)
             }
         };
+        // What no device may keep isn't kept for the view either: it's asked for each time.
+        if unkept(&response) {
+            return Ok(response);
+        }
         let mut responses = self.responses.lock().expect("no view panics");
         // Another read of the same may have been answered meanwhile, and asked again behind it.
         if let Some(query) = responses.get(&key) {
@@ -355,7 +373,13 @@ impl Subscription {
                 }
                 // With no server answering, what was kept stays what's shown. Ignore any out-of-order response
                 // started before a newer invalidation or fetch.
-                if let Ok(fresh) = fresh
+                if let Ok(fresh) = &fresh
+                    && unkept(fresh)
+                {
+                    // Kept before its tool said not to: the view asks again, and is answered by a server.
+                    responses.remove(&key);
+                    notify = true;
+                } else if let Ok(fresh) = fresh
                     && generation >= query.invalidated
                     && generation >= query.fetched
                 {

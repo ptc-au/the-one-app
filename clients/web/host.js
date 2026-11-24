@@ -276,6 +276,14 @@ function fetchEntry(view, entry, generation) {
   const done = mcp(entry.method, entry.params).then(
     (fresh) => {
       if (entry.fetching?.generation === generation) entry.fetching = undefined
+      // Kept before its tool said not to: it goes, and the app asks again, answered by a server.
+      if (unkept(fresh)) {
+        responses(view).delete(JSON.stringify([entry.method, entry.params]))
+        delete kept.reads[view]?.[JSON.stringify([entry.method, entry.params])]
+        keep()
+        emit("changed", view)
+        return true
+      }
       if (generation < entry.invalidated || generation < entry.fetched) return true
       entry.fetched = generation
       ;(kept.reads[view] ??= {})[JSON.stringify([entry.method, entry.params])] = fresh
@@ -296,6 +304,11 @@ function fetchEntry(view, entry, generation) {
   return done
 }
 
+/// Whether an answer says no device may keep it, as HTTP's `Cache-Control: no-store`: what an encrypted item holds (an
+/// app's tool that says `no_store`), which this browser neither keeps nor shows again.
+/** @param {any} response */
+const unkept = (response) => response?._meta?.noStore === true
+
 /** @param {string} view @param {string} method @param {Record<string, unknown>} params @returns {Promise<any>} */
 async function read(view, method, params) {
   const request = JSON.stringify([method, params])
@@ -309,6 +322,7 @@ async function read(view, method, params) {
     return entry.response
   }
   const response = await mcp(method, params)
+  if (unkept(response)) return response
   if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0 })
   ;(kept.reads[view] ??= {})[request] = response
   keep()
