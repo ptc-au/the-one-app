@@ -41,7 +41,7 @@ defmodule GitRepos do
   def own, do: :installed
 
   @impl true
-  def hooks, do: ["soft-delete.moved", "permissions.transferred"]
+  def hooks, do: ["soft-delete.moved", "permissions.transferred", "source"]
 
   # A repo kept in step with another host, as GitHub Sync keeps one with GitHub, has its say on each change before
   # it's kept, as a git server's pre-receive hook has: there, the change goes to the host first.
@@ -364,6 +364,18 @@ defmodule GitRepos do
   def hook("soft-delete.moved", %{"artifact" => name, "to" => to} = about, _call) do
     if name =~ @repo, do: indexed(name, to, about["as"] || name)
     nil
+  end
+
+  # A repo an app was deployed from, as git clones it (`one::users/alice/made/git-repos/notes`, by whichever
+  # program's name), for a server looking for the app's update: all of it as a bundle, where whoever the app is may
+  # read it.
+  def hook("source", %{"source" => source}, call) do
+    with [_, name] <- Regex.run(~r/^[a-z][a-z0-9+.-]*::(.+)$/, source), true <- name =~ @repo do
+      {folder, _state} = read(call, name)
+      %{"bundle" => Base.encode64(Mirror.git!(folder, ["bundle", "create", "--quiet", "-", "--all"], binary: true))}
+    else
+      _ -> nil
+    end
   end
 
   # A repo moved to another owner is listed at its new name, with what was kept of it.

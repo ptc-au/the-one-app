@@ -7,6 +7,11 @@ defmodule OneCore.Apps.Git do
   may fetch it. For an untrusted one, git fetches over https alone, signed in as nobody (git's `protocol.allow` and
   an empty `credential.helper`): what the machine's user may reach isn't the app's. What's named after an option
   (`--`, `--end-of-options`) is never taken as one.
+
+  A source git reaches through a remote helper, `<transport>::<address>`, as a repo of the network's Git Repos is
+  cloned (`one::users/alice/made/git-repos/notes`), is the apps' that hold it: they give it as a git bundle, where
+  whoever the app is may read it (the hook `source`, which `OneCore.Apps.Lifecycle` asks), kept beside the copy as
+  `<copy>.bundle`, which git fetches as any remote. No server has a remote helper signed in, and none is needed to read what the network holds.
   """
   alias OneCore.{Command, Programs, Server}
 
@@ -22,40 +27,56 @@ defmodule OneCore.Apps.Git do
   @timeout 600
 
   @doc """
-  Fetches `source` (a URL, `owner/repo` on GitHub, or for a trusted app a path), for an app that's `trusted` or not:
-  `{:ok, copy}`, or `{:error, why}`. A copy is used with the other functions here as it was fetched.
+  Fetches `source` (a URL, `owner/repo` on GitHub, `<transport>::<address>`, or for a trusted app a path), for an
+  app that's `trusted` or not: `{:ok, copy}`, or `{:error, why}`. `bundle.(source)` gives a
+  `<transport>::<address>`'s bundle, `{:ok, bundle}` or `{:error, why}`. A copy is used with the other functions
+  here as it was fetched.
   """
-  def fetch(source, trusted) do
+  def fetch(source, trusted, bundle \\ &{:error, "Nothing gives #{&1}"}) do
     hash = Base.encode16(:crypto.hash(:sha256, "#{trusted}\n#{source}"), case: :lower)
     copy = Path.join([Server.home(), "git", if(trusted, do: hash, else: "untrusted-" <> hash)])
+    File.mkdir_p!(Path.dirname(copy))
 
-    if File.dir?(copy) do
-      fetch = ["fetch", "--quiet", "--prune", "--force"]
-      with {:ok, _} <- git(copy, if(trusted, do: fetch, else: @untrusted ++ fetch)), do: {:ok, copy}
-    else
-      # Cloned beside it, then renamed into place, so a clone cut short never leaves a copy that looks whole. Another
-      # fetch may have cloned it meanwhile, which is as good.
-      File.mkdir_p!(Path.dirname(copy))
-      cloning = copy <> "." <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
-      clone = ["clone", "--quiet", "--mirror", "--filter=blob:none", "--", url(source, trusted), cloning]
+    # A bundle is a file this server wrote, which git reads as it would any: only a fetch from elsewhere is limited.
+    with {:ok, url} <- url(source, trusted, bundle, copy),
+         limit = if(trusted or url == copy <> ".bundle", do: [], else: @untrusted) do
+      if File.dir?(copy) do
+        with {:ok, _} <- git(copy, limit ++ ["fetch", "--quiet", "--prune", "--force"]), do: {:ok, copy}
+      else
+        # Cloned beside it, then renamed into place, so a clone cut short never leaves a copy that looks whole.
+        # Another fetch may have cloned it meanwhile, which is as good.
+        cloning = copy <> "." <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+        clone = ["clone", "--quiet", "--mirror", "--filter=blob:none", "--", url, cloning]
 
-      case git(Path.dirname(copy), if(trusted, do: clone, else: @untrusted ++ clone)) do
-        {:ok, _} ->
-          with {:error, _} <- File.rename(cloning, copy), do: File.rm_rf!(cloning)
-          {:ok, copy}
+        case git(Path.dirname(copy), limit ++ clone) do
+          {:ok, _} ->
+            with {:error, _} <- File.rename(cloning, copy), do: File.rm_rf!(cloning)
+            {:ok, copy}
 
-        error ->
-          File.rm_rf!(cloning)
-          error
+          error ->
+            File.rm_rf!(cloning)
+            error
+        end
       end
     end
   end
 
-  # What git fetches a source from: `owner/repo` is on GitHub, as `one install` reads it.
-  defp url(source, trusted) do
-    if source =~ ~r{^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$} and not (trusted and File.exists?(source)),
-      do: "https://github.com/#{source}.git",
-      else: source
+  # What git fetches a source from: `owner/repo` is on GitHub, as `one install` reads it, and `<transport>::<address>`
+  # its bundle.
+  defp url(source, trusted, bundle, copy) do
+    cond do
+      source =~ ~r{^[a-z][a-z0-9+.-]*::.} ->
+        with {:ok, bundle} <- bundle.(source) do
+          File.write!(copy <> ".bundle", bundle)
+          {:ok, copy <> ".bundle"}
+        end
+
+      source =~ ~r{^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$} and not (trusted and File.exists?(source)) ->
+        {:ok, "https://github.com/#{source}.git"}
+
+      true ->
+        {:ok, source}
+    end
   end
 
   @doc "The commit `ref` is in a copy, or what the repo has by default where it's `nil`."

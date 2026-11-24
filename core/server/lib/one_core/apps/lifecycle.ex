@@ -697,7 +697,7 @@ defmodule OneCore.Apps.Lifecycle do
 
     with %{"source" => source, "commit" => commit} = from <- about["from"] || :none,
          false <- from["dirty"] == true,
-         {:ok, offer} when offer != nil <- newer(source, from["ref"], commit, Path.basename(artifact), Store.trusted?(about)),
+         {:ok, offer} when offer != nil <- newer(source, from["ref"], commit, artifact, Store.trusted?(about)),
          %{} = record <-
            doing({:update, artifact}, Store.whose(artifact), "apps_update", fn task ->
              with %{} = record <- Update.change(artifact, {:newer, offer, Store.trusted?(about), Server.key(), task}) do
@@ -748,10 +748,10 @@ defmodule OneCore.Apps.Lifecycle do
 
   # The newest commit at a git source that comes after `commit` and changed the app's folder, with the commits
   # between, or `nil`.
-  defp newer(source, ref, commit, name, trusted) do
-    path = "apps/#{name}"
+  defp newer(source, ref, commit, artifact, trusted) do
+    path = "apps/#{Path.basename(artifact)}"
 
-    with {:ok, copy} <- Git.fetch(source, trusted),
+    with {:ok, copy} <- Git.fetch(source, trusted, &bundle(&1, Store.whose(artifact))),
          {:ok, newest} <- Git.commit(copy, ref) do
       cond do
         newest == commit ->
@@ -769,6 +769,18 @@ defmodule OneCore.Apps.Lifecycle do
           with {:ok, commits} <- Git.commits(copy, commit, newest, path),
                do: {:ok, %{"commit" => newest, "source" => source, "ref" => ref, "commits" => commits}}
       end
+    end
+  end
+
+  # A git source that's a repo an app holds, as the network's Git Repos does, as the bundle it gives for `whose`, the
+  # app deployed from it (the hook `source`).
+  defp bundle(source, whose) do
+    case Hooks.collect("source", %{"source" => source}, {nil, whose}) do
+      {:ok, parts, failed} when map_size(parts) == 0 ->
+        {:error, "Nothing here gives #{source}#{Enum.map_join(failed, fn {app, why} -> "; #{app}: #{why}" end)}"}
+
+      {:ok, parts, _failed} ->
+        {:ok, Base.decode64!(hd(Map.values(parts))["bundle"])}
     end
   end
 
@@ -795,7 +807,7 @@ defmodule OneCore.Apps.Lifecycle do
       try do
         stage("Getting #{title}'s code")
 
-        with {:ok, copy} <- Git.fetch(source, Store.trusted?(Store.about(artifact))),
+        with {:ok, copy} <- Git.fetch(source, Store.trusted?(Store.about(artifact)), &bundle(&1, whose)),
              {:ok, files} <- Git.files(copy, commit, "apps/#{name}") do
           step(artifact, "building")
           stage("Building #{title}")

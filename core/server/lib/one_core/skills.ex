@@ -47,7 +47,8 @@ defmodule OneCore.Skills do
   anyone in it. Someone who isn't asks one of them to, themselves: the network takes no requests.
 
   `one install <owner>/<repo> --list` fetches the repo, lists its apps and says the folder it's in on this device,
-  and the commit: install `<owner>/<repo>@<commit>`, so what's installed is what you read. Then read it, and use
+  and the commit; a repo of the network's own Git Repos is named as git clones it, `one::users/<name>/made/git-repos/<repo>`,
+  and the network looks for its updates there as it does at a URL: install `<owner>/<repo>@<commit>`, so what's installed is what you read. Then read it, and use
   your judgment as you go. What matters:
 
   - What it requires. Its `requires/0` names the other apps whose tools it calls, each with why, and untrusted
