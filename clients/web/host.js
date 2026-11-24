@@ -516,6 +516,15 @@ const NO_KEY = "A browser can't hold your key. Use the app on your phone or comp
 
 /// Where this tab keeps the link it was opened with while its person signs in.
 const OPEN = "open"
+// The address it was opened at is read as this file loads, before the window's page has run: its first launcher
+// replaces the address (`restart` in client.js), which `start` below would find already gone where the network answers
+// before the browser says it has WebGPU. The address goes back to the Home Screen's, which the app's own is pushed over
+// (`go` in client.js), so Back goes home.
+const linked = new URLSearchParams(location.search).get("open") ?? linkOf(location.pathname, location.search)
+if (linked) {
+  sessionStorage.setItem(OPEN, linked)
+  history.replaceState(null, "", "/")
+}
 /// When this tab last came back from being stopped, its device asleep or the tab frozen in the background: a timer that
 /// came 4 s or more late, so an open across it isn't told.
 let stopped = 0
@@ -532,20 +541,14 @@ const commands = {
   /// signed in here, or sent to sign in, and whether its network answers. A browser keeps nothing of a network's, so
   /// with its address not answering it's still opening, and asks again by itself (`tryAgain`).
   /// Where the address it was opened at is, an app's place (`/settings/vault/accounts?request=4`, as `pathOf` makes
-  /// it), is opened once it's signed in, as a link to it (`settings#vault/accounts&request=4`): it's kept in this tab
-  /// while its person signs in, and the address goes back to the Home Screen's, which the app's own is pushed over
-  /// (`go` in client.js), so Back goes home. A request's link in Vault still leads to `/?open=<one: link>`, as a
+  /// it), is opened once it's signed in, as a link to it (`settings#vault/accounts&request=4`), kept in this tab
+  /// while its person signs in (`OPEN`). A request's link in Vault still leads to `/?open=<one: link>`, as a
   /// phone's app follows it there (clients/app/src/mobile.rs), until phones read a path.
   async start() {
     const asked = opening
     if (!(await webgpu)) {
       location.replace("/unsupported")
       return new Promise(() => {})
-    }
-    const linked = new URLSearchParams(location.search).get("open") ?? linkOf(location.pathname, location.search)
-    if (linked) {
-      sessionStorage.setItem(OPEN, linked)
-      history.replaceState(null, "", "/")
     }
     // Signed in when it last opened, it opens as it was while its network says whether it still is.
     if (!kept.apps) await asked
