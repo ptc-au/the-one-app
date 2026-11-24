@@ -3,7 +3,7 @@
 // what's slowest and what AI cost, over the range picked above them, and last what's kept. An alert opens beside the list, saying when it fired and cleared; a failure opens its trace, as a
 // waterfall; a slow tool opens how long it took over time. What's fine is silent: with nothing failing, there's no Failing.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { call, changed, Empty, Icon, List, plural, Problem, render, Row, Screen, Section, since, size, Spinner, Split, styles, Tabs, Text, tokens, View } from "ui"
+import { call, changed, Empty, Icon, List, navigate, plural, Problem, render, Row, Screen, Section, since, size, Spinner, Split, styles, Tabs, Text, tokens, toolInput, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -126,7 +126,27 @@ const alerts = createMemo(() => call("telemetry_alerts", { hours: Number(hours()
 changed(() => (refresh(overview), refresh(alerts)))
 
 /// What's open beside the list: an alert, `{ alert }`, a failure's trace, `{ failure }`, or a slow tool or app, `{ slow }`.
-const [open, setOpen] = createSignal<{ alert?: Alert & { about?: string }; failure?: Failure; slow?: Slowest & { key: string } }>()
+/// An alert and a failure's trace are screens of their own, tools and their arguments (`telemetry_alert { id }` at
+/// /telemetry/alerts/12, `telemetry_trace { id }` at /telemetry/traces/<id>); what has none, a slow tool or a failure
+/// with no trace, is the page's own.
+type Open = { alert?: Alert & { about?: string }; failure?: Failure; slow?: Slowest & { key: string } }
+const [own, setOwn] = createSignal<Open>()
+const open = (): Open | undefined => {
+  const { name, arguments: inputs } = toolInput("telemetry_overview")
+  if (name === "telemetry_trace") return { failure: { where: "Trace", count: 1, at: 0, trace: String(inputs.id) } }
+  if (name === "telemetry_alert") {
+    const alert = alerts().alerts.find((one) => one.id === inputs.id)
+    return alert && { alert: { ...alert, about: alerts().kinds.find((kind) => kind.kind === alert.kind)?.about } }
+  }
+  return own()
+}
+/// Opens it beside the list, as a step Back goes back from where it's a screen of its own, or closes what's open.
+function setOpen(shown?: Open) {
+  if (shown?.failure?.trace) return (setOwn(), navigate("telemetry_trace", { id: shown.failure.trace }))
+  if (shown?.alert) return (setOwn(), navigate("telemetry_alert", { id: shown.alert.id }))
+  navigate("telemetry_overview")
+  setOwn(shown)
+}
 const keyOf = (failure: Failure) => `${failure.where}|${failure.message}`
 
 const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 })
@@ -338,7 +358,7 @@ function Telemetry(props: { all: Overview }) {
   const opened = () => {
     const shown = open()
     if (shown?.slow) return { slow: slowest().find((slow) => slow.key === shown.slow!.key) ?? shown.slow }
-    if (shown?.failure) return { failure: failing().find((failure) => keyOf(failure) === keyOf(shown.failure!)) ?? shown.failure }
+    if (shown?.failure) return { failure: failing().find((failure) => (shown.failure!.trace ? failure.trace === shown.failure!.trace : keyOf(failure) === keyOf(shown.failure!))) ?? shown.failure }
     return shown
   }
   return (
@@ -378,7 +398,7 @@ function Telemetry(props: { all: Overview }) {
                   heading={failure().span ? named(failure().where, all().names) : failure().where}
                   text={`${failure().message || "Failed"}${failure().count > 1 ? ` · ${many(failure().count, "time")}` : ""}`}
                   end={since(failure().at, "narrow")}
-                  current={!!open()?.failure && keyOf(open()!.failure!) === keyOf(failure())}
+                  current={!!open()?.failure && (open()!.failure!.trace ? open()!.failure!.trace === failure().trace : keyOf(open()!.failure!) === keyOf(failure()))}
                   onPress={() => setOpen({ failure: failure() })}
                 />
               )}

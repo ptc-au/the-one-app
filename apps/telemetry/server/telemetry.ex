@@ -29,7 +29,7 @@ defmodule Telemetry do
   @impl true
   def requires,
     do: %{
-      "core" => ">= 0.32.167",
+      "core" => ">= 0.34.604",
       "database" => "to keep its schedule and its alerts"
     }
 
@@ -139,6 +139,8 @@ defmodule Telemetry do
       %{
         name: "overview",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
           "What's failing, what's slow and what AI cost, over the last hours: what Telemetry' screen shows. Each failure has a trace to read with `trace`",
         inputs: %{type: "object", properties: %{hours: hours}},
@@ -193,6 +195,9 @@ defmodule Telemetry do
       %{
         name: "trace",
         read_only: true,
+        ui: "client/index.html",
+        path: "traces/{id}",
+        runtime_version: 4,
         description:
           "One trace whole, across every server it went through: each span with its depth, server, start and duration in milliseconds, outcome and events",
         inputs: %{
@@ -345,6 +350,20 @@ defmodule Telemetry do
           required: ["records"]
         },
         outputs: %{type: "object", properties: %{recorded: %{type: "integer", description: "How many"}}, required: ["recorded"]}
+      },
+      %{
+        name: "alert",
+        read_only: true,
+        ui: "client/index.html",
+        path: "alerts/{id}",
+        runtime_version: 4,
+        description: "One alert of the last 2 weeks, by its id, as `alerts` lists it, with what fires its kind (`about`): Telemetry's screen of it, at /telemetry/alerts/12",
+        inputs: %{type: "object", properties: %{id: %{type: "integer", description: "Its id, as `alerts` gives it"}}, required: ["id"]},
+        outputs: %{
+          type: "object",
+          properties: %{alert: %{type: "object", description: "As `alerts` lists it"}, about: %{type: ["string", "null"], description: "What fires its kind"}},
+          required: ["alert"]
+        }
       },
       %{
         name: "alerts",
@@ -537,6 +556,15 @@ defmodule Telemetry do
     Forward.set(call, endpoint, inputs["item"], inputs["headers"])
   end
   def call("alerts", inputs, call), do: Alerts.list(call, inputs["hours"] || 24)
+
+  def call("alert", %{"id" => id}, call) do
+    listed = Alerts.list(call, 336)
+
+    case Enum.find(listed.alerts, &(&1["id"] == id)) do
+      nil -> raise OneCore.Call.Refused, "There's no alert #{id} in the last 2 weeks."
+      alert -> %{alert: alert, about: Enum.find_value(listed.kinds, &(&1.kind == alert["kind"] && &1.about))}
+    end
+  end
   def call("evaluate", _inputs, call) do
     Alerts.evaluate(call)
     %{}
