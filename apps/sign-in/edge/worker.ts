@@ -244,14 +244,24 @@ async function appsSession(auth: Auth, url: URL): Promise<Signed | null> {
   return signed;
 }
 
+/** The list a server's token says it's on (`OneCore.Edge.token/2`), or null. */
+function listOf(token: string) {
+  try {
+    return (JSON.parse(atob(token.replace(/-/g, "+").replace(/_/g, "/"))) as { list?: string }).list ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** The key that signed what was asked, as the pieces of the edge check it, or null. */
 const signerKey = (request: Request, body: string) => env.NETWORK.verifiedKey(request.url, Object.fromEntries(request.headers), body);
 
 /**
- * What a server asks for a person in the app: one acting for them, or for the network, which acts for everyone, as
- * servers have it themselves (`OneCore.Servers.covering/1`). Nothing else is believed about who that is. An
- * invitation, the first owner's included, is only the network's to make, since it can make someone nobody acts for
- * yet, and so is taking someone out and listing everyone, which a person's own server isn't told.
+ * What a server asks for a person in the app: one acting for them, their own or a group's they're in, or for the
+ * network, which acts for everyone, as servers have it themselves (`OneCore.Apps.covering/1`). Nothing else is
+ * believed about who that is. An invitation, the first owner's included, is only the network's to make, since it can
+ * make someone nobody acts for yet, and so is taking someone out and listing everyone, which a person's own server
+ * isn't told.
  */
 async function ask(request: Request, auth: Auth, url: URL) {
   const body = await request.text();
@@ -265,7 +275,15 @@ async function ask(request: Request, auth: Auth, url: URL) {
     return Response.json({ error: "An ask is JSON" }, { status: 400 });
   }
   const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "network", "whose"].includes(what.ask ?? "");
-  const acting = (await Promise.all([env.NETWORK.servers(), ...(ofNetwork ? [] : [env.NETWORK.servers(`${what.who}/`)])])).flat();
-  if (!acting.includes(server)) return Response.json({ error: "Only a server acting for them asks this" }, { status: 403 });
+  const theirs = `${what.who}/`;
+  // A server of a group they're in acts for them by the network's word, a token it shows with every ask, as it does
+  // the presigner (`OneCore.Edge.token/2`).
+  const vouched = ofNetwork ? [] : (request.headers.get("one-tokens") ?? "").split(" ").filter((token) => listOf(token) === theirs);
+  const [network, own, ...words] = await Promise.all([
+    env.NETWORK.servers(),
+    ofNetwork ? ([] as string[]) : env.NETWORK.servers(theirs),
+    ...vouched.map((token) => env.NETWORK.admits(server, token)),
+  ]);
+  if (!network.includes(server) && !own.includes(server) && !words.some(Boolean)) return Response.json({ error: "Only a server acting for them asks this" }, { status: 403 });
   return Response.json(await asked(auth, url.origin, what));
 }

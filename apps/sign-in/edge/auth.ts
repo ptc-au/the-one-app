@@ -38,6 +38,7 @@ declare global {
         verifiedKey(url: string, headers: Record<string, string>, body: string): Promise<string | null>;
         unsigned(url: string, headers: Record<string, string>): Promise<Response>;
         servers(of?: string): Promise<string[]>;
+        admits(key: string, token: string | null): Promise<{ until?: number } | null>;
         owner(): Promise<string | null>;
       };
       RELAY: {
