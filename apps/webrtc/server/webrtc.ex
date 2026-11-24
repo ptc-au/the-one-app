@@ -271,7 +271,7 @@ defmodule WebRTC do
         answered(body)
 
       %{"status" => status, "body" => body} ->
-        raise "Cloudflare refused the SFU's #{what} (#{status}), so live video can't connect.\n\n#{body}"
+        raise "Cloudflare refused the SFU's #{what} (#{status}), so live voice can't connect.\n\n#{body}"
     end
   end
 
@@ -292,8 +292,10 @@ defmodule WebRTC do
 
   # Without it there's nothing to ask Cloudflare, and what a person reads says who can add it.
   defp needed!(call, item) do
-    if not Enum.any?(vault(call, "items", %{}, item <> " key")["items"], &(&1["name"] == item)),
-      do: raise("Live video needs a #{item} key, which the network's owners add in the Vault and switch on for WebRTC.")
+    if not Enum.any?(vault(call, "items", %{}, item <> " key")["items"], &(&1["name"] == item)) do
+      what = if item == @sfu, do: "Live voice", else: "Live video"
+      raise "#{what} needs a #{item} key, which the network's owners add in the Vault and switch on for WebRTC."
+    end
   end
 
   # A tool's error is what a person reads first, its first paragraph, and the rest is for support (`ui`'s `Problem`).
@@ -301,7 +303,8 @@ defmodule WebRTC do
     Call.tool(call, "vault", tool, inputs)
   rescue
     error in RuntimeError ->
-      reraise "Live video can't use the network's #{what}, which its owners can check in the Vault.\n\n#{error.message}",
+      kind = if String.starts_with?(what, @sfu), do: "Live voice", else: "Live video"
+      reraise "#{kind} can't use the network's #{what}, which its owners can check in the Vault.\n\n#{error.message}",
               __STACKTRACE__
   end
 
