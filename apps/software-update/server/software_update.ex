@@ -262,24 +262,19 @@ defmodule SoftwareUpdate do
 
   @impl true
   def hook("edge", %{"build" => build}, call) do
-    case token(call) do
-      {:ok, token} ->
-        # A deploy takes minutes, and a hook ten seconds at most.
-        Task.start(fn ->
-          # A deploy that raises says why it failed, as one that went back does: left unsaid, the update waits out its ten minutes.
-          result =
-            try do
-              deploy(build, token)
-            rescue
-              error -> {:error, Exception.message(error)}
-            end
+    # A deploy takes minutes, and a hook ten seconds at most, and so does reading its token from the Vault, which
+    # waits while a server it needs restarts in the rollout that brought this build.
+    Task.start(fn ->
+      # A deploy that raises says why it failed, as one that went back does: left unsaid, the update waits out its ten minutes.
+      result =
+        try do
+          with {:ok, token} <- token(call), do: deploy(build, token)
+        rescue
+          error -> {:error, Exception.message(error)}
+        end
 
-          OneCore.Release.edge_deployed(build, result)
-        end)
-
-      {:setup, why} ->
-        OneCore.Release.edge_deployed(build, {:setup, why})
-    end
+      OneCore.Release.edge_deployed(build, result)
+    end)
 
     :ok
   end
