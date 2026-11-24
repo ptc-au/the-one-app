@@ -213,7 +213,8 @@ export function controlsApart(nodes) {
 }
 
 /// The controls at the ends of a list's rows form a column, as iOS's and Raycast's do: each row's last control, where
-/// it ends the row, ends as far from the row's end as every other's. → what's wrong, a line each.
+/// it ends the row, ends as far from the row's end as every other's. A row pressed as a whole isn't a control at its
+/// end. → what's wrong, a line each.
 export function rowEnds(nodes) {
   return pages(nodes).flatMap(({ here, byId, below }) =>
     here
@@ -223,7 +224,7 @@ export function rowEnds(nodes) {
           .map((child) => byId.get(child))
           .filter((row) => row?.rect && row.opacity >= 0.99 && row.seen >= 0.99)
           .flatMap((row) => {
-            const last = below(row).filter((one) => one.actions?.includes("click") && one.rect && one.opacity >= 0.99).reduce((end, one) => (!end || one.rect.x + one.rect.width > end.rect.x + end.rect.width ? one : end), undefined)
+            const last = below(row).filter((one) => one.actions?.includes("click") && one.rect && one.rect.width < row.rect.width / 2 && one.opacity >= 0.99).reduce((end, one) => (!end || one.rect.x + one.rect.width > end.rect.x + end.rect.width ? one : end), undefined)
             const from = last && row.rect.x + row.rect.width - (last.rect.x + last.rect.width)
             return last && from <= row.rect.width / 4 ? [{ row, last, from }] : []
           })
@@ -270,14 +271,17 @@ export function unbroken(nodes) {
 /// How much room a text cut short with "…" may have beside it, in points, as the padding of what it's in.
 const ROOM = 24
 /// No text is cut short with room beside it to show it whole: from its end to the next thing drawn on its line, or to
-/// the end of what it's in. → what's wrong, a line each.
+/// the end of what it's in. Words in a box that clips them, no wider than they are, have only that box's room, as an
+/// event's title in a calendar's block of its time. → what's wrong, a line each.
 export function roomy(nodes) {
   return pages(nodes).flatMap(({ here, above, below }) =>
     here.flatMap((node) => {
       if (node.kind !== "text" || !node.cut || !seen(node)) return []
       const end = node.rect.x + node.rect.width
-      const within = above(node).find((up) => up.rect && up.rect.width > node.rect.width + ROOM)
-      if (!within) return []
+      const ups = above(node)
+      const at = ups.findIndex((up) => up.rect && up.rect.width > node.rect.width + ROOM)
+      if (at < 0 || ups.slice(0, at).some((up) => up.resolved?.overflow === "hidden")) return []
+      const within = ups[at]
       const mine = new Set([node, ...below(node), ...above(node)])
       const onItsLine = (one) => one.rect && one.rect.width > 0 && one.rect.x >= end - 1 && one.rect.y < node.rect.y + node.rect.height && one.rect.y + one.rect.height > node.rect.y
       const beside = below(within).filter((one) => !mine.has(one) && onItsLine(one) && (one.actions || ["text", "raw-text", "image", "path", "picture", "input"].includes(one.kind)))
