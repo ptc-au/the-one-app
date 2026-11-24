@@ -25,12 +25,12 @@ defmodule OneCore.Apps.Version.Checks do
     } =
       description
 
-    %{offers: offers, jobs: jobs, requires: requires, own: own} = description
+    %{offers: offers, jobs: jobs, events: events, requires: requires, own: own} = description
 
     prefix = if app, do: Version.own_name(app) <> ".", else: ""
 
     problems =
-      Enum.flat_map([:tools, :entrypoints, :widgets, :offers], &Shape.problems(&1, description[&1], prefix)) ++
+      Enum.flat_map([:tools, :entrypoints, :widgets, :offers, :events], &Shape.problems(&1, description[&1], prefix)) ++
         tool_problems(tools, rest, prefix) ++
         entrypoint_problems(entrypoints, rest, prefix) ++
         widget_problems(widgets, tools, prefix) ++
@@ -52,6 +52,7 @@ defmodule OneCore.Apps.Version.Checks do
                   | exports: exports,
                     hooks: Enum.uniq(hooks),
                     offers: offers,
+                    events: Enum.map(events, &Map.put_new(&1, :delivery, [:poll, :webhook])),
                     jobs: jobs,
                     own: own,
                     requires: Map.delete(requires, "core"),
@@ -239,6 +240,7 @@ defmodule OneCore.Apps.Version.Checks do
       hooks: [],
       offers: [],
       jobs: [],
+      events: [],
       code: nil
     }
   end

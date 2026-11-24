@@ -30,6 +30,10 @@ defmodule OneCore.Mcp do
   them (`OneCore.Tasks`), and every call is in a state while it runs (`OneCore.Call.State`): a client cancels one
   that isn't a task with `notifications/cancelled`, and is told what it's doing in its progress notifications.
 
+  What happens in an app, which its `events/0` declares, is MCP's Events (`OneCore.Events`): `events/list` lists the
+  events of the apps installed for whoever asks, `events/poll` says what happened since a cursor, and
+  `events/subscribe` has each one sent to an address, as Standard Webhooks says.
+
   An agent's client chooses how it calls tools, by what its requests say (`_meta.mode`), which the CLI says for
   `one mcp --code` and the network's address for `/mcp?code`. With none, every tool is listed, and `skills`, and the
   client finds tools itself, as Claude Code's tool search and the model APIs' deferred tools do. In code mode, as
@@ -44,6 +48,7 @@ defmodule OneCore.Mcp do
     Artifact,
     Builds,
     Edge,
+    Events,
     Hooks,
     Apps,
     Protocol,
@@ -76,7 +81,8 @@ defmodule OneCore.Mcp do
   @capabilities %{
     tools: %{},
     resources: %{},
-    extensions: Map.merge(%{"io.modelcontextprotocol/skills" => %{}}, Tasks.extension())
+    extensions:
+      Map.merge(%{"io.modelcontextprotocol/skills" => %{}}, Map.merge(Tasks.extension(), Events.extension()))
   }
 
   # What a client keeps a list or a file of these for, before it asks again: none of it, since who's asking and
@@ -499,6 +505,13 @@ defmodule OneCore.Mcp do
 
   defp result("skills/list", _params, _from, principal, _forwarded),
     do: {:ok, %{resultType: "complete", skills: skills(principal)}}
+
+  # MCP's Events, as its extension has them (`OneCore.Events`): the events of the apps installed for whoever asks,
+  # what happened since a cursor, and an address that's sent each one.
+  defp result("events/list", params, _from, {_actor, subject}, _forwarded), do: Events.list(params, subject)
+  defp result("events/poll", params, _from, principal, _forwarded), do: Events.poll(params, principal)
+  defp result("events/subscribe", params, _from, principal, _forwarded), do: Events.subscribe(params, principal)
+  defp result("events/unsubscribe", params, _from, principal, _forwarded), do: Events.unsubscribe(params, principal)
 
   defp result("skills/get", params, _from, principal, _forwarded) do
     case Enum.find(skills(principal), &(&1.uri == params["uri"])) do

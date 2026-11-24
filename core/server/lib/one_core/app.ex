@@ -29,7 +29,7 @@ defmodule OneCore.App do
   `OneCore.Call`'s `tool` (with `on_behalf_of`), `make`, `reach`, `reaches?`, `member?`, `owns?`, `apps`, `deployed`, `process`,
   `forward_to`, `changed`, `stage` and `ask`; `OneCore.App.file/2`; `OneCore.Nif`; `Logger`; and hooks it observes, and collects that say it may (`untrusted: true`). The apps
   it requires whose code runs inside it run in its VM too, as it, `database` among them, where their code can run
-  there. It has no services, no hooks it mutates or validates, no other apps' functions but those (it calls the
+  there. It has no services, no hooks it mutates or validates, no events it says happened, no other apps' functions but those (it calls the
   tools of the apps it requires), no programs, no network and no website, and no files but its `folder`, which goes
   when the VM stops, a minute after its last call. Deploying an untrusted one that uses what isn't offered says each,
   with its file and line, and what to do instead.
@@ -375,6 +375,29 @@ defmodule OneCore.App do
     `call.subject` them, and answers `{:ok, %{status: status, headers: headers, body: body}}`: the status to answer
     with, 100 to 599 and 200 unless it says, each header a name and a value, as a list, and the text to send. One whose
     app isn't installed for whoever it leads to, or that app has no `webhook/2`, is answered 404.
+
+  What happens in an app is followed by whoever is told it, rather than asked for: `events/0` says what happens in
+  it, and `OneCore.Events.emit/4` says one happened:
+
+      @impl true
+      def events do
+        [%{
+          name: "message_posted",
+          description: "Someone posted a message",
+          inputs: %{type: "object", properties: %{channel: %{type: "string"}}, required: ["channel"]},
+          outputs: %{type: "object", properties: %{text: %{type: "string"}}, required: ["text"]}
+        }]
+      end
+
+      OneCore.Events.emit(call, "message_posted", %{"channel" => "general", "text" => "Lunch is at noon"})
+
+  - An event is named `<app>.<event>`, as the app is installed there, as an offered hook is:
+    `board.message_posted`. Its `inputs` are what a subscriber filters by, which `emit` matches against what
+    happened, and its `outputs` are what happened, as a tool's are.
+  - What's emitted is kept for whoever the call runs for, for seven days and the last 1,000 of them, and an agent
+    follows it as MCP's Events: `events/list` lists what the apps installed for it say, `events/poll` says what
+    happened since a cursor, and `events/subscribe` has each one sent to an address, as a Standard Webhooks webhook.
+    `delivery` says how an event is followed, `[:poll]` for one that's never sent, and both unless it says.
 
   What of an app runs in a client is its folder `client/`, as the server built it, which reaches each client from
   the server. Its other files that aren't Elixir or skills stay on servers: the source of a program a service brings,

@@ -1,7 +1,7 @@
 defmodule OneCore.Apps.Version.Shape do
   @moduledoc """
-  The shape of each list an app says of itself (`OneCore.App`): `tools/0`, `entrypoints/0`, `widgets/0`, `offers/0` and
-  `jobs/0`, each item a JSON Schema, and the problems `problems/3` finds in one, each saying where
+  The shape of each list an app says of itself (`OneCore.App`): `tools/0`, `entrypoints/0`, `widgets/0`, `offers/0`,
+  `jobs/0` and `events/0`, each item a JSON Schema, and the problems `problems/3` finds in one, each saying where
   (`Glance.widgets()[0].sizes[0]`), what was given and what's expected, as a schema validator does.
   """
   alias ExJsonSchema.Validator.Error
@@ -92,6 +92,29 @@ defmodule OneCore.Apps.Version.Shape do
         "tool" => %{"type" => "string", "description" => "the name of one of this app's tools"},
         "every" => %{"type" => "integer", "minimum" => 1, "description" => "how many seconds apart"},
         "inputs" => %{"type" => "object", "description" => "what the tool takes, if it takes any"}
+      }
+    },
+    events: %{
+      "type" => "object",
+      "required" => ["name", "description", "inputs", "outputs"],
+      "properties" => %{
+        "name" => @name,
+        "description" => %{"type" => "string", "description" => "a sentence saying what happened"},
+        "inputs" => %{"type" => "object", "description" => "a JSON Schema of an object: what a subscriber filters by"},
+        "outputs" => %{
+          "type" => "object",
+          "required" => ["type"],
+          "properties" => %{
+            "type" => %{"enum" => ["object"], "description" => "outputs are a JSON Schema of an object"}
+          },
+          "description" => "a JSON Schema of the object that happened: %{type: \"object\", properties: ...}"
+        },
+        "delivery" => %{
+          "type" => "array",
+          "minItems" => 1,
+          "items" => %{"enum" => ["poll", "webhook"]},
+          "description" => "how it's followed, of poll and webhook, both unless it says"
+        }
       }
     }
   }

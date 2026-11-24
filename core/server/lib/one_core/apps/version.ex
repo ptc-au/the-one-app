@@ -26,8 +26,10 @@ defmodule OneCore.Apps.Version do
 
   `services` lists its services: each one's `name`, which is its module's as the app wrote it, what it's `called`
   where a person reads it, what it `needs` of a machine, the `os` it runs on, as npm's `os` names them, or `nil` for any, and whether it runs by itself (`auto`), as its `lacks/0` says. `hooks` names the hooks it hooks into, `offers` lists the
-  hooks it offers, each one's `name`, `kind` and `description`, and `jobs` lists its scheduled jobs: each one's `tool`,
-  the `inputs` it's called with, and `every` how many seconds. `requires` names the other apps it needs, each with
+  hooks it offers, each one's `name`, `kind` and `description`, `jobs` lists its scheduled jobs: each one's `tool`,
+  the `inputs` it's called with, and `every` how many seconds, and `events` lists what happens in it: each one's
+  `name`, `description`, the `inputs` a subscriber filters by, the `outputs` that happened, and its `delivery`, of
+  `:poll` and `:webhook`. `requires` names the other apps it needs, each with
   why, and `core` the lowest version of the platform it runs on, as an Elixir requirement (`>= 0.15.0`), or `nil` for
   any, both from its `requires/0` (`OneCore.App`). `own` says whose its own artifact is (`OneCore.Apps.Calls.own/3`):
   `:subject`, whoever each call runs for, or `:installed`, whoever it was installed for. `exports` are the functions its module provides other apps, as name/arity, which run inside
@@ -42,7 +44,7 @@ defmodule OneCore.Apps.Version do
   alias OneCore.Builds
   alias OneCore.Apps.LoadedVersion
 
-  @enforce_keys [:under, :app, :tools, :entrypoints, :widgets, :services, :hooks, :offers, :jobs, :code]
+  @enforce_keys [:under, :app, :tools, :entrypoints, :widgets, :services, :hooks, :offers, :jobs, :events, :code]
   defstruct [
     :under,
     :app,
@@ -53,6 +55,7 @@ defmodule OneCore.Apps.Version do
     :hooks,
     :offers,
     :jobs,
+    :events,
     :code,
     :ui,
     :artifact,

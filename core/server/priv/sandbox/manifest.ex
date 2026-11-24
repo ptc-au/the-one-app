@@ -22,6 +22,7 @@ defmodule OneCore.App.Manifest do
     hooks: [],
     offers: [],
     jobs: [],
+    events: [],
     requires: %{},
     own: :subject
   ]
@@ -32,7 +33,8 @@ defmodule OneCore.App.Manifest do
     entrypoints: ~w(name page icon category subject badge runtime_version)a,
     widgets: ~w(name tool sizes)a,
     offers: ~w(name kind description untrusted)a,
-    jobs: ~w(tool every inputs)a
+    jobs: ~w(tool every inputs)a,
+    events: ~w(name description inputs outputs delivery)a
   }
 
   # Every function an app may define, each optional, which the compiler holds `callbacks/0` to.
@@ -46,6 +48,7 @@ defmodule OneCore.App.Manifest do
     webhook: 2,
     offers: 0,
     jobs: 0,
+    events: 0,
     schedule: 3,
     icon: 0,
     requires: 0,
@@ -56,6 +59,7 @@ defmodule OneCore.App.Manifest do
   @task_support [:optional, :required]
   @owns [:subject, :installed]
   @hook_kinds [:observe, :mutate, :validate, :collect]
+  @delivery [:poll, :webhook]
 
   @doc """
   Defines `OneCore.App`'s callbacks, in the server's `OneCore.App` and in an untrusted app's VM's, which an app is
@@ -74,6 +78,15 @@ defmodule OneCore.App.Manifest do
                   %{name: String.t(), kind: :observe | :mutate | :validate | :collect, description: String.t()}
                 ]
       @callback jobs() :: [%{tool: String.t(), every: pos_integer}]
+      @callback events() :: [
+                  %{
+                    required(:name) => String.t(),
+                    required(:description) => String.t(),
+                    required(:inputs) => map,
+                    required(:outputs) => map,
+                    optional(:delivery) => [:poll | :webhook]
+                  }
+                ]
       @callback schedule(OneCore.Call.t(), jobs :: [map], fire :: (map -> term)) :: term
       @callback icon() :: String.t()
       @callback requires() :: %{String.t() => String.t()}
@@ -145,6 +158,9 @@ defmodule OneCore.App.Manifest do
 
   defp atoms(%{task_support: support} = tool) when is_binary(support),
     do: %{tool | task_support: atom(support, @task_support)}
+
+  defp atoms(%{delivery: delivery} = event) when is_list(delivery),
+    do: %{event | delivery: for(step <- delivery, do: atom(step, @delivery))}
 
   defp atoms(map), do: map
 
