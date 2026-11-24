@@ -341,6 +341,7 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "deploy",
       exempts_app: true,
+      installs: true,
       task_support: :optional,
       description: """
       Adds an app for you, or updates it, from its files.
@@ -436,6 +437,7 @@ defmodule OneCore.Tools.Definitions do
     },
     %{
       name: "apps",
+      installs: true,
       read_only: true,
       description: """
       Lists the apps installed for you and for the network, as `npm ls` does packages: asked for a group, for it
@@ -488,13 +490,14 @@ defmodule OneCore.Tools.Definitions do
     },
     %{
       name: "install",
+      installs: true,
       task_support: :optional,
       description: """
       Adds an app someone else deployed for you: asked for a group or for the network, for them. Also tries
       again one that failed to install. It's installing, a stage at a time, until it answers: installed, with what
       it requires, or not installed, saying why.
-      Anyone installs for themselves; for the network or a group, its owners and installers do, and anyone else asks
-      one of them to, themselves. Its code runs on a server of whoever it's for, unless it's untrusted.
+      Anyone installs for themselves; for the network, a group or a person, their owners and installers do (a
+      network's owner for anyone in it), and anyone else asks one of them to, themselves. Its code runs on a server of whoever it's for, unless it's untrusted.
       `one install <owner>/<repo> --app <name>` installs one from a git repo instead, as a copy of your own.
       It's the same app, with its one version and whether it's trusted, for everyone who has it, with an artifact of
       its own for whoever it's installed for. An app has one copy: installed for a group or the network, it supersedes
@@ -516,6 +519,7 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "uninstall",
       exempts_app: true,
+      installs: true,
       description: """
       Removes an app from what's installed for you. It waits in Recently Deleted with what it kept and made for
       you, as one item, for 30 days, when Recently Deleted's restore brings it back as it was (`soft-delete
@@ -536,6 +540,7 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "apps_update",
       exempts_app: true,
+      installs: true,
       task_support: :optional,
       description: """
       Updates an untrusted app you have to the newer commit `apps` offers (Update), for everyone who has it, or
@@ -549,6 +554,7 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "apps_retry",
       exempts_app: true,
+      installs: true,
       task_support: :optional,
       description: "Tries again what failed (Try Again): installing an app of yours, or its update.",
       inputs: @named,

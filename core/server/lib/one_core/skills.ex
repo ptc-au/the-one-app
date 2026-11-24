@@ -42,8 +42,9 @@ defmodule OneCore.Skills do
   check it for them, as a colleague would before running a stranger's script, and install it only once they say yes:
   the sandbox limits where its data can go, not what it does with what it's given.
 
-  Installing for the person themselves needs nothing more; for a group or the network, its owners or an `installer`
-  of it do it. Someone who isn't asks one of them to, themselves: the network takes no requests.
+  Installing for the person themselves needs nothing more; for a group, the network or one other person, their
+  owners or an `installer` of them do it, as an admin assigns an app to one user: the network's owners may for
+  anyone in it. Someone who isn't asks one of them to, themselves: the network takes no requests.
 
   `one install <owner>/<repo> --list` fetches the repo, lists its apps and says the folder it's in on this device,
   and the commit: install `<owner>/<repo>@<commit>`, so what's installed is what you read. Then read it, and use
@@ -68,8 +69,9 @@ defmodule OneCore.Skills do
 
   Then tell the person in plain words, before they decide: what it does, what it may reach ("It uses Gmail to
   read your mail"), whether it's untrusted, and anything that surprised you. Install it on
-  their yes: `one install <owner>/<repo>@<commit> --app <name>`, with `ONE_SUBJECT=groups/<name>` or `network` for a
-  group or everyone. It's their own copy, theirs to change, and the network keeps where it came from. In a network's
+  their yes: `one install <owner>/<repo>@<commit> --app <name>`, with `ONE_SUBJECT=groups/<name>`, `network` or
+  `users/<name>` for a group, everyone or one person, who then has it as an app of their own and removes it as one
+  (`one uninstall --name <name>`, with the same `ONE_SUBJECT` for their installer). It's their own copy, theirs to change, and the network keeps where it came from. In a network's
   repo, `apps.lock` records it at that commit, and `one install` there installs everything it records again.
 
   An app has one version, the same for everyone who has it, and the network looks for a newer one itself: a new

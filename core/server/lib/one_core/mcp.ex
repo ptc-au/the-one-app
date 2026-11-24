@@ -125,7 +125,8 @@ defmodule OneCore.Mcp do
 
           with :ok <- speaks(version),
                :ok <- talks(method, params),
-               {:ok, principal, forwarded} <- Principal.asking(from, asking(method, meta(params)), question?(method, params)),
+               {:ok, principal, forwarded} <-
+                 Principal.asking(from, asking(method, meta(params)), question?(method, params), relations(method, params)),
                :ok <- reloaded(meta(params)),
                {:ok, result} <- result(method, params, from, principal, forwarded) do
             JSON.encode!(%{jsonrpc: "2.0", id: id, result: complete(result, method, version)})
@@ -266,6 +267,19 @@ defmodule OneCore.Mcp do
   # (`OneCore.Mcp.Principal.asking/3`).
   defp question?("hooks/call", %{"kind" => kind}), do: kind in ["validate", "mutate"]
   defp question?(_method, _params), do: false
+
+  # What whoever asked is to be of whoever else a request is for: their member, or for a tool of One Core's that
+  # changes what's installed for them, their installer too (`OneCore.Mcp.Principal`), who lists their tools as a
+  # client does before it calls one.
+  defp relations("tools/list", _params), do: ["member", "installer"]
+
+  defp relations("tools/call", %{"name" => name}) do
+    if Enum.find(OneCore.Tools.Definitions.tools(), &(&1.name == name))[:installs],
+      do: ["member", "installer"],
+      else: ["member"]
+  end
+
+  defp relations(_method, _params), do: ["member"]
 
   defp asking("tasks/" <> _method, %{"actor" => _actor} = meta), do: meta
   defp asking("tasks/" <> _method, meta), do: Map.delete(meta, "subject")

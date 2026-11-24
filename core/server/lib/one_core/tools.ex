@@ -5,11 +5,13 @@ defmodule OneCore.Tools do
   They're called as an app's tools are, through the same hooks (`OneCore.Apps.Calls.tool/5`): the apps that
   mutate a call's inputs mutate theirs, the ones that validate a call validate theirs, and the ones that observe
   are told. One that says `exempts_app: true` removes or deploys over the app its input `name` names, which has no
-  say in it (`OneCore.Hooks`): that's how an app that breaks is undone. What each changes it reaches as an app reaches an artifact, so the apps that validate `reach` say
+  say in it (`OneCore.Hooks`): that's how an app that breaks is undone. One that says `installs: true` changes or lists
+  what's installed for whoever it's asked for, so their `installer` asks it for them, as a member does
+  (`OneCore.Mcp.Principal`). What each changes it reaches as an app reaches an artifact, so the apps that validate `reach` say
   whether whoever asked may: an `editor` of an app deploys over it, a `viewer` reads its code and installs it, and
   so does a `member` of the group or the network it's whoever's or installed for, since what's in use is open to
   everyone it's in use for. An `installer` of a user, a group or the network adds apps for them, which an `owner`
-  is, and only an `owner` removes them and says which servers act for them. An app is added only where a server
+  is (a network's owner of each person in it), and only an `owner` removes them and says which servers act for them. An app is added only where a server
   would run it (`OneCore.Apps.runs?/3`): for a user or a group, one of their own. A server is its owner's: who it was started for, and only their `owner` says
   who else it acts for and what it runs. Nothing is asked about what's whoever's asked, which is what their name
   starts. With no app validating `reach`, they're the network's first owner's alone.

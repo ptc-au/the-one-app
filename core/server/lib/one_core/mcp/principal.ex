@@ -5,9 +5,11 @@ defmodule OneCore.Mcp.Principal do
   the apps that mutate `device` (`OneCore.Hooks.whose/1`). A device no app places is nobody's, and nobody is
   refused everything: so with no app signing anyone in, a network answers nobody.
 
-  A request is for whoever it's from, unless it says who else: a group, or the network. It then runs for them,
-  with their artifacts, once the apps that validate `reach` say whoever asked is their `member`, and an app's tool
-  only as far as whoever asked may what that app made for them (`OneCore.Apps.Calls`).
+  A request is for whoever it's from, unless it says who else: a group, the network, or a person. It then runs for
+  them, with their artifacts, once the apps that validate `reach` say whoever asked is their `member`, or, for a tool
+  of One Core's that says `installs` (what's installed for them), their `installer`, as a network's owner is of each
+  person, as Google Workspace's admin assigns an app to one user. An app's tool runs only as far as whoever asked may
+  what that app made for them (`OneCore.Apps.Calls`).
   """
   alias OneCore.{Hooks, Servers, User}
 
@@ -35,13 +37,14 @@ defmodule OneCore.Mcp.Principal do
   - `device`, in what came in at the network's address, is the device the edge says it's from: it proved
     that there, as a connection proves a key here. Over a connection, it's the device a run of a client runs for,
     with `attestation` (`OneCore.User.device/2`).
-  - `subject` names who else the request is for: a group, or the network.
+  - `subject` names who else the request is for: a group, the network, or for a tool that `installs`, a person.
 
-  Otherwise it's from whoever's device `from` is.
+  Otherwise it's from whoever's device `from` is. `relations` are what whoever asked is to be of whoever else it's
+  for, any one of them.
   """
-  def asking(from, meta, question \\ false)
+  def asking(from, meta, question \\ false, relations \\ ["member"])
 
-  def asking(from, %{"actor" => actor} = meta, question) when is_binary(actor) or is_nil(actor) do
+  def asking(from, %{"actor" => actor} = meta, question, relations) when is_binary(actor) or is_nil(actor) do
     subject = meta["subject"]
     whose = User.owner(actor || subject || "") || "network"
     asks = question and actor == nil and is_binary(from) and Servers.acts_for(from) != []
@@ -54,16 +57,16 @@ defmodule OneCore.Mcp.Principal do
         {:error, "Only a server acting for #{whose} says it asks for them"}
 
       true ->
-        with :ok <- if(actor, do: acts(actor, subject), else: :ok),
+        with :ok <- if(actor, do: acts(actor, subject, relations), else: :ok),
              do: {:ok, {actor, subject}, if(meta["forwarded"] == "to", do: :to, else: meta["forwarded"] == true)}
     end
   end
 
-  def asking(from, meta, _question) do
+  def asking(from, meta, _question, relations) do
     with {:ok, actor} <- by(from, meta),
          :ok <- here(actor),
          subject = Map.get(meta, "subject", actor),
-         :ok <- acts(actor, subject),
+         :ok <- acts(actor, subject, relations),
          do: {:ok, {actor, subject}, false}
   end
 
@@ -99,11 +102,11 @@ defmodule OneCore.Mcp.Principal do
       else: {:error, "This server doesn't act for #{owner}. The ones that do are the ones to ask."}
   end
 
-  # Whether a request by `by` runs for `asked`: themselves, or whoever the apps that validate `reach` say they're a
-  # member of.
-  defp acts(by, by), do: :ok
+  # Whether a request by `by` runs for `subject`: themselves, or whoever the apps that validate `reach` say they're one
+  # of `relations` of. Where they're none, it's why they aren't the first.
+  defp acts(by, by, _relations), do: :ok
 
-  defp acts(by, subject) do
+  defp acts(by, subject, relations) do
     cond do
       not User.owner?(subject) ->
         {:error, "A request is for a user, a group or the network: users/<name>, groups/<name> or network"}
@@ -112,9 +115,12 @@ defmodule OneCore.Mcp.Principal do
         {:error, "A sharing link's holder asks for nobody else"}
 
       true ->
-        with {:refuse, why} <-
-               Hooks.validate("reach", %{"who" => by, "relation" => "member", "artifact" => subject}, {by, subject}),
-             do: {:error, why}
+        Enum.reduce_while(relations, nil, fn relation, refused ->
+          case Hooks.validate("reach", %{"who" => by, "relation" => relation, "artifact" => subject}, {by, subject}) do
+            :ok -> {:halt, :ok}
+            {:refuse, why} -> {:cont, refused || {:error, why}}
+          end
+        end)
     end
   end
 end
