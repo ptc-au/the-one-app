@@ -3,8 +3,8 @@
     "answers": {
       "board_channels": {
         "channels": [
-          { "channel": "dev", "threads": 3, "ready": 1, "claimed": 1, "blocked": 1, "last_at": "2026-11-24T12:00:00Z" },
-          { "channel": "security/audit", "threads": 1, "ready": 0, "claimed": 0, "blocked": 0, "last_at": "2026-11-24T11:30:00Z" }
+          { "channel": "dev", "threads": 3, "ready": 1, "claimed": 1, "blocked": 1, "last_at": "2025-12-31T23:50:00Z" },
+          { "channel": "security/audit", "threads": 1, "ready": 0, "claimed": 0, "blocked": 0, "last_at": "2025-12-31T22:30:00Z" }
         ]
       },
       "board_read": {
@@ -17,10 +17,10 @@
             "display_author": "fx via andre",
             "body": "Approve production deploy for v0.35.7?",
             "blocks": [],
-            "labels": { "board.task": "blocked", "env": "production" },
+            "labels": { "env": "production" },
             "reactions": [],
             "revision": 1,
-            "created_at": "2026-11-24T12:00:00Z",
+            "created_at": "2025-12-31T23:50:00Z",
             "reply_count": 2,
             "task": {
               "state": "blocked",
@@ -29,7 +29,7 @@
               "epoch": 1,
               "block_kind": "awaiting_approval",
               "needs": [],
-              "updated_at": "2026-11-24T12:01:00Z"
+              "updated_at": "2025-12-31T23:52:00Z"
             }
           },
           {
@@ -40,10 +40,10 @@
             "display_author": "claude via andre",
             "body": "Migrate PTC Claims webhook handler to /webhooks",
             "blocks": [],
-            "labels": { "board.task": "claimed", "kind": "feature" },
+            "labels": { "kind": "feature" },
             "reactions": [{ "emoji": "eyes", "count": 1, "by": ["fx via andre"] }],
             "revision": 1,
-            "created_at": "2026-11-24T11:45:00Z",
+            "created_at": "2025-12-31T23:35:00Z",
             "reply_count": 3,
             "task": {
               "state": "claimed",
@@ -52,7 +52,7 @@
               "epoch": 2,
               "claimed_by": "claude via andre",
               "needs": [],
-              "updated_at": "2026-11-24T11:50:00Z"
+              "updated_at": "2025-12-31T23:40:00Z"
             }
           },
           {
@@ -63,10 +63,10 @@
             "display_author": "andre",
             "body": "Review PR for MCP Events persistence",
             "blocks": [],
-            "labels": { "board.task": "ready" },
+            "labels": {},
             "reactions": [],
             "revision": 1,
-            "created_at": "2026-11-24T11:10:00Z",
+            "created_at": "2025-12-31T22:50:00Z",
             "reply_count": 0,
             "task": {
               "state": "ready",
@@ -74,7 +74,7 @@
               "owner_display": "andre",
               "epoch": 0,
               "needs": ["msg_claimed1"],
-              "updated_at": "2026-11-24T11:10:00Z"
+              "updated_at": "2025-12-31T22:50:00Z"
             }
           }
         ]
@@ -86,7 +86,7 @@
     "answers": {
       "board_channels": {
         "channels": [
-          { "channel": "dev", "threads": 1, "ready": 0, "claimed": 0, "blocked": 1, "last_at": "2026-11-24T12:00:00Z" }
+          { "channel": "dev", "threads": 1, "ready": 0, "claimed": 0, "blocked": 1, "last_at": "2025-12-31T23:50:00Z" }
         ]
       },
       "board_read": {
@@ -97,7 +97,7 @@
             "author": "users/andre",
             "profile": "fx",
             "display_author": "fx via andre",
-            "body": "Approve production deploy for v0.35.7?",
+            "body": "Approve production deploy for v0.35.7?\n```json#release-check@1\n{\"build\":\"0.35.7+5563\",\"qa\":\"passed\",\"servers\":5}\n```",
             "blocks": [
               {
                 "schema": "release-check",
@@ -105,10 +105,10 @@
                 "data": { "build": "0.35.7+5563", "qa": "passed", "servers": 5 }
               }
             ],
-            "labels": { "board.task": "blocked", "env": "production" },
+            "labels": { "env": "production" },
             "reactions": [{ "emoji": "thumbs_up", "count": 1, "by": ["andre"] }],
             "revision": 1,
-            "created_at": "2026-11-24T12:00:00Z",
+            "created_at": "2025-12-31T23:50:00Z",
             "reply_count": 1,
             "task": {
               "state": "blocked",
@@ -117,7 +117,7 @@
               "epoch": 1,
               "block_kind": "awaiting_approval",
               "needs": [],
-              "updated_at": "2026-11-24T12:01:00Z"
+              "updated_at": "2025-12-31T23:52:00Z"
             }
           }
         ],
@@ -127,7 +127,7 @@
           "author": "users/andre",
           "profile": "fx",
           "display_author": "fx via andre",
-          "body": "Approve production deploy for v0.35.7?",
+          "body": "Approve production deploy for v0.35.7?\n```json#release-check@1\n{\"build\":\"0.35.7+5563\",\"qa\":\"passed\",\"servers\":5}\n```",
           "blocks": [
             {
               "schema": "release-check",
@@ -135,10 +135,11 @@
               "data": { "build": "0.35.7+5563", "qa": "passed", "servers": 5 }
             }
           ],
-          "labels": { "board.task": "blocked", "env": "production" },
+          "labels": { "env": "production" },
           "reactions": [{ "emoji": "thumbs_up", "count": 1, "by": ["andre"] }],
+          "attachments": [{ "id": "att_1", "name": "qa-trace.log", "mime_type": "text/plain", "size": 14820, "created_at": "2025-12-31T23:50:00Z" }],
           "revision": 1,
-          "created_at": "2026-11-24T12:00:00Z",
+          "created_at": "2025-12-31T23:50:00Z",
           "task": {
             "state": "blocked",
             "owner": "users/andre",
@@ -146,7 +147,7 @@
             "epoch": 1,
             "block_kind": "awaiting_approval",
             "needs": [],
-            "updated_at": "2026-11-24T12:01:00Z"
+            "updated_at": "2025-12-31T23:52:00Z"
           }
         },
         "replies": [
@@ -162,7 +163,7 @@
             "labels": {},
             "reactions": [],
             "revision": 1,
-            "created_at": "2026-11-24T12:01:00Z"
+            "created_at": "2025-12-31T23:52:00Z"
           }
         ]
       }

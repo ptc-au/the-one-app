@@ -1,6 +1,6 @@
 // Board: shared message board and task queue for people and agents. Channels and threads sit beside the open thread
 // where there's room (`Split`), and push on a phone. Every screen is tool-routed (`toolInput("board_read")`).
-import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import {
   Badge,
   Button,
@@ -22,6 +22,7 @@ import {
   Section,
   Sheet,
   since,
+  size,
   Spinner,
   Split,
   styles,
@@ -56,6 +57,14 @@ interface ReactionInfo {
   by: string[]
 }
 
+interface AttachmentInfo {
+  id: string
+  name: string
+  mime_type: string
+  size: number
+  created_at: string
+}
+
 interface TaskInfo {
   state: "waiting" | "ready" | "claimed" | "blocked" | "completed" | "failed" | "canceled"
   owner: string
@@ -82,9 +91,9 @@ interface BoardMessage {
   blocks?: SchemaBlock[]
   labels?: Record<string, string>
   reactions?: ReactionInfo[]
+  attachments?: AttachmentInfo[]
   revision: number
   deleted?: boolean
-  no_sync?: boolean
   created_at: string
   edited_at?: string | null
   reply_count?: number
@@ -158,9 +167,34 @@ changed(() => {
 
 const [composing, setComposing] = createSignal(false)
 
+const EMOJI: Record<string, string> = {
+  thumbs_up: "👍",
+  thumbs_down: "👎",
+  check: "✅",
+  eyes: "👀",
+  fire: "🔥",
+  rocket: "🚀",
+  tada: "🎉",
+  heart: "❤️",
+  pray: "🙏",
+  warning: "⚠️",
+}
+
+const FENCE_RE = /```json#[a-z][a-z0-9-]*@[1-9][0-9]*\r?\n[\s\S]*?```/g
+
+function cleanBody(body?: string) {
+  if (!body) return ""
+  return body.replace(FENCE_RE, "").trim()
+}
+
+function emojiGlyph(name: string) {
+  return EMOJI[name] || `:${name}:`
+}
+
 function firstLine(body?: string) {
-  if (!body) return "(Deleted)"
-  const line = body.split("\n").find((l) => l.trim().length > 0) || body
+  const cleaned = cleanBody(body)
+  if (!cleaned) return "(Deleted)"
+  const line = cleaned.split("\n").find((l) => l.trim().length > 0) || cleaned
   return line.replace(/^#+\s*/, "").slice(0, 96)
 }
 
@@ -196,6 +230,10 @@ function ComposeSheet() {
   const [body, setBody] = createSignal("")
   const [asTask, setAsTask] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
+
+  createEffect(composing, (open) => {
+    if (open) setChannel(selectedChannel() || "general")
+  })
 
   const submit = async () => {
     const ch = channel().trim()
@@ -251,7 +289,8 @@ function SchemaCard(props: { block: SchemaBlock }) {
 }
 
 function MessageCard(props: { msg: BoardMessage }) {
-  const visibleLabels = () => Object.entries(props.msg.labels || {}).filter(([k]) => !k.startsWith("board."))
+  const visibleLabels = () => Object.entries(props.msg.labels || {})
+  const prose = () => cleanBody(props.msg.body)
   return (
     <View style={look.card}>
       <View style={look.rowBetween}>
@@ -259,9 +298,18 @@ function MessageCard(props: { msg: BoardMessage }) {
         <Text style={look.meta}>{since(props.msg.created_at, "narrow")}</Text>
       </View>
       <Show when={!props.msg.deleted} fallback={<Text style={look.deleted}>Deleted</Text>}>
-        <Text style={look.body}>{props.msg.body}</Text>
+        <Show when={prose().length > 0}>
+          <Text style={look.body}>{prose()}</Text>
+        </Show>
         <Show when={(props.msg.blocks || []).length > 0}>
           <For each={props.msg.blocks}>{(block) => <SchemaCard block={block} />}</For>
+        </Show>
+        <Show when={(props.msg.attachments || []).length > 0}>
+          <View style={look.rowWrap}>
+            <For each={props.msg.attachments || []}>
+              {(att) => <Badge variant="outline">{`${att.name} · ${size(att.size)}`}</Badge>}
+            </For>
+          </View>
         </Show>
         <Show when={visibleLabels().length > 0 || (props.msg.reactions || []).length > 0}>
           <View style={look.rowWrap}>
@@ -269,7 +317,7 @@ function MessageCard(props: { msg: BoardMessage }) {
               {([k, v]) => <Badge variant="secondary">{`${k}=${v}`}</Badge>}
             </For>
             <For each={props.msg.reactions || []}>
-              {(r) => <Badge variant="secondary">{`:${r.emoji}: ${r.count}`}</Badge>}
+              {(r) => <Badge variant="secondary">{`${emojiGlyph(r.emoji)} ${r.count}`}</Badge>}
             </For>
           </View>
         </Show>
@@ -377,6 +425,7 @@ function ThreadDetail(props: { id: string }) {
 const STATES = [
   { value: "", label: "All" },
   { value: "blocked", label: "Blocked" },
+  { value: "ready", label: "Ready" },
   { value: "claimed", label: "Active" },
   { value: "completed", label: "Done" },
 ]

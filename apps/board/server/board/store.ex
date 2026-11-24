@@ -95,7 +95,19 @@ defmodule Board.Store do
       created_at text not null
     )
     """,
-    "create index schedules_by_due on schedules (next_run_at)"
+    "create index schedules_by_due on schedules (next_run_at)",
+    """
+    create table attachments (
+      id text primary key,
+      message_id text not null,
+      blob text not null,
+      name text not null,
+      mime_type text not null,
+      size integer not null,
+      created_at text not null
+    )
+    """,
+    "create index attachments_by_message on attachments (message_id, created_at)"
   ]
 
   @channel_re ~r"\A[a-z0-9_-]+(?:/[a-z0-9_-]+)*\z"
@@ -262,13 +274,21 @@ defmodule Board.Store do
     e -> {:error, "Schema #{schema_name} validation error: #{Exception.message(e)}"}
   end
 
-  @doc "Expires any claimed tasks whose lease has elapsed, returning the newly ready task IDs."
+  @doc "Expires any claimed tasks whose lease has elapsed, returning details of the newly ready tasks."
   def expire_leases(db) do
     now = now_ms()
     iso = now_iso()
 
     expired =
-      query(db, "select root_id from tasks where state = 'claimed' and lease_until is not null and lease_until <= ?", [now])
+      query(
+        db,
+        """
+        select t.root_id, m.channel, m.body, t.owner_actor, t.assigned_profile
+        from tasks t join messages m on m.id = t.root_id
+        where t.state = 'claimed' and t.lease_until is not null and t.lease_until <= ?
+        """,
+        [now]
+      )
 
     for %{"root_id" => root_id} <- expired do
       query(
@@ -281,15 +301,11 @@ defmodule Board.Store do
         """,
         [iso, root_id]
       )
-
-      set_board_task_label(db, root_id, "ready")
     end
 
-    Enum.map(expired, & &1["root_id"])
-  end
-
-  def set_board_task_label(db, root_id, state) do
-    query(db, "insert or replace into labels (message_id, key, value) values (?, 'board.task', ?)", [root_id, state])
+    for %{"root_id" => id, "channel" => ch, "body" => body, "owner_actor" => owner, "assigned_profile" => assigned} <- expired do
+      %{id: id, channel: ch, body: body, owner: owner, assigned_profile: assigned}
+    end
   end
 
   @doc "Returns true if adding `task_id -> needs_id` would create a cycle in `task_deps`."
@@ -343,7 +359,6 @@ defmodule Board.Store do
 
     for id <- candidates, deps_satisfied?(db, id) do
       query(db, "update tasks set state = 'ready', updated_at = ? where root_id = ?", [iso, id])
-      set_board_task_label(db, id, "ready")
       id
     end
   end
@@ -362,6 +377,13 @@ defmodule Board.Store do
   def deps_for(db, root_id) do
     query(db, "select needs_id from task_deps where task_id = ? order by needs_id", [root_id])
     |> Enum.map(& &1["needs_id"])
+  end
+
+  def attachments_for(db, message_id) do
+    for %{"id" => id, "name" => name, "mime_type" => mime, "size" => sz, "created_at" => at} <-
+          query(db, "select id, name, mime_type, size, created_at from attachments where message_id = ? order by created_at asc", [message_id]) do
+      %{id: id, name: name, mime_type: mime, size: sz, created_at: at}
+    end
   end
 
   def task_row(db, root_id) do
@@ -418,7 +440,6 @@ defmodule Board.Store do
         "body" => body,
         "blocks" => blocks_raw,
         "revision" => rev,
-        "no_sync" => no_sync,
         "created_at" => created_at,
         "edited_at" => edited_at,
         "deleted_at" => deleted_at
@@ -450,8 +471,8 @@ defmodule Board.Store do
         blocks: JSON.decode!(blocks_raw),
         labels: labels_for(db, id),
         reactions: reactions_for(db, id),
+        attachments: attachments_for(db, id),
         revision: rev,
-        no_sync: no_sync == 1,
         created_at: created_at,
         edited_at: edited_at
       }
