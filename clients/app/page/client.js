@@ -204,10 +204,14 @@ let quiet = 0
 /// window's history and address follow where it says one (`addressed`): somewhere new is an entry of its own
 /// (`/settings/vault`), so Back goes back to where it was, and back where the entry before it was, as its own Back
 /// goes, the window goes back to that entry too.
-/** @param {View} view @param {string} place */
-export function reached(view, place) {
+/// A page that navigated to a screen that's a tool (the UI library's `navigate`) says its arguments too
+/// (`week&start=2026-11-30`); one that says only its place where its link said more (Settings' `vault/accounts` of
+/// `vault/accounts&request=4`) is still where its entry is.
+/** @param {View} view @param {string} place @param {boolean} [navigated] */
+export function reached(view, place, navigated) {
   const now = stack[depth]
   if (!addressed || now?.key !== view.key || (now.place ?? "") === place) return
+  if (!navigated && (now.place ?? "").split("&")[0] === place) return
   const before = stack[depth - 1]
   if (before?.key === view.key && (before.place ?? "") === place) {
     quiet += 1
@@ -371,7 +375,7 @@ export function go(link, subject, behind, from) {
   // is (`addressed`), as an address loaded again or a notification opens it, its first screen is the entry under that
   // place's, as a browser's Back goes to an app's start before it leaves it.
   if (here() !== next.key) {
-    const place = fragment?.split("&")[0]
+    const place = fragment
     for (const [at, path] of addressed && place ? [["", pathOf(page)], [place, pathOf(link)]] : [[place, addressed ? pathOf(link) : undefined]]) {
       depth += 1
       history.pushState(depth, "", path)
@@ -381,7 +385,7 @@ export function go(link, subject, behind, from) {
     rail()
   } else if (addressed && fragment) {
     history.replaceState(depth, "", pathOf(link))
-    stack[depth].place = fragment.split("&")[0]
+    stack[depth].place = fragment
   }
   on({ type: "show", to: next, back: false, icon: from, tapped })
   return true

@@ -246,7 +246,7 @@ addEventListener("message", async ({ source, data }) => {
       if (!view.frame.inert) opened(view)
     }
     // Where its page is in itself (the UI library's `place`), which the window's history and address follow.
-    if (method === "notifications/one/place" && typeof params.place === "string") reached(view, params.place)
+    if (method === "notifications/one/place" && typeof params.place === "string") reached(view, params.place, params.navigated === true)
     // Something is open over its page, or nothing is any more, and whether it's on its first screen.
     if (method === "notifications/one/over") {
       view.over = params.over === true
