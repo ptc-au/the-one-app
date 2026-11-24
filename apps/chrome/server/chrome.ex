@@ -879,12 +879,12 @@ defmodule Chrome do
   end
 
   # The browsers whoever this call is for may use: their containers called chrome-<session> or chrome.2-<session>,
-  # of the image desktop.
+  # of the image desktop. A container on a machine that's off is listed by its name alone, with no image.
   defp containers(call),
     do:
       Enum.filter(
         Call.tool(call, "containers", "list", %{})["containers"],
-        &(session(&1["name"]) && &1["image"] =~ "containers-desktop")
+        &(session(&1["name"]) && is_binary(&1["image"]) && &1["image"] =~ "containers-desktop")
       )
 
   defp session("chrome-" <> session), do: session
