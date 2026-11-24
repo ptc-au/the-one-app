@@ -9,6 +9,8 @@ import { createButton } from "../headless-components/button.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 import type { Laid, Located } from "../types/ui.d.ts"
+import arrowDown from "@phosphor-icons/core/assets/regular/arrow-down.svg?raw"
+import arrowUp from "@phosphor-icons/core/assets/regular/arrow-up.svg?raw"
 import arrowCounterClockwise from "@phosphor-icons/core/assets/regular/arrow-counter-clockwise.svg?raw"
 import arrowElbowDownLeft from "@phosphor-icons/core/assets/regular/arrow-elbow-down-left.svg?raw"
 import calendarBlank from "@phosphor-icons/core/assets/regular/calendar-blank.svg?raw"
@@ -16,12 +18,16 @@ import caretLeft from "@phosphor-icons/core/assets/regular/caret-left.svg?raw"
 import caretRight from "@phosphor-icons/core/assets/regular/caret-right.svg?raw"
 import caretUpDown from "@phosphor-icons/core/assets/regular/caret-up-down.svg?raw"
 import check from "@phosphor-icons/core/assets/regular/check.svg?raw"
+import checkCircle from "@phosphor-icons/core/assets/regular/check-circle.svg?raw"
+import checkCircleFill from "@phosphor-icons/core/assets/fill/check-circle-fill.svg?raw"
 import copy from "@phosphor-icons/core/assets/regular/copy.svg?raw"
 import cornersIn from "@phosphor-icons/core/assets/regular/corners-in.svg?raw"
 import cornersOut from "@phosphor-icons/core/assets/regular/corners-out.svg?raw"
 import dotsThree from "@phosphor-icons/core/assets/regular/dots-three.svg?raw"
 import dotsThreeCircle from "@phosphor-icons/core/assets/regular/dots-three-circle.svg?raw"
 import downloadSimple from "@phosphor-icons/core/assets/regular/download-simple.svg?raw"
+import flag from "@phosphor-icons/core/assets/regular/flag.svg?raw"
+import flagFill from "@phosphor-icons/core/assets/fill/flag-fill.svg?raw"
 import file from "@phosphor-icons/core/assets/regular/file.svg?raw"
 import gearSix from "@phosphor-icons/core/assets/fill/gear-six-fill.svg?raw"
 import list from "@phosphor-icons/core/assets/regular/list.svg?raw"
@@ -49,6 +55,8 @@ import x from "@phosphor-icons/core/assets/regular/x.svg?raw"
 // The Phosphor icons the UI library draws with, by Phosphor's own names: each one path in a 256 square.
 const svgs = {
   "arrow-counter-clockwise": arrowCounterClockwise,
+  "arrow-down": arrowDown,
+  "arrow-up": arrowUp,
   "arrow-elbow-down-left": arrowElbowDownLeft,
   "calendar-blank": calendarBlank,
   "caret-down": caretDown,
@@ -56,6 +64,8 @@ const svgs = {
   "caret-right": caretRight,
   "caret-up-down": caretUpDown,
   check,
+  "check-circle": checkCircle,
+  "check-circle-fill": checkCircleFill,
   copy,
   "corners-in": cornersIn,
   "corners-out": cornersOut,
@@ -69,6 +79,8 @@ const svgs = {
   "dots-three-circle": dotsThreeCircle,
   "download-simple": downloadSimple,
   file,
+  flag,
+  "flag-fill": flagFill,
   "gear-six": gearSix,
   list,
   "magnifying-glass": magnifyingGlass,
