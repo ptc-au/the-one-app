@@ -3,7 +3,7 @@
 // press shows an item beside the list (pushed over it on a phone), where Restore and Delete Now are rows of their own;
 // the same two are in its row's menu, and Delete All is for everything.
 import { createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
-import { call, changed, confirm, Empty, Image, List, Menu, Problem, Row, Screen, Skeleton, Spinner, Split, styles, Text, toast, tokens, View } from "ui"
+import { call, changed, confirm, Empty, Image, List, Menu, Problem, Row, Screen, Spinner, Split, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   note: { color: tokens.colour.secondaryLabel, maxWidth: tokens.length.readable },
@@ -184,7 +184,7 @@ function Deleted(props: { items: Item[] }) {
 export default function RecentlyDeleted() {
   return (
     <Errored fallback={(error) => <Screen heading="Recently Deleted" back><Problem heading="Can't show what's deleted" text={error() as Error} /></Screen>}>
-      <Loading fallback={<Screen heading="Recently Deleted" back><Skeleton rows={3} /></Screen>}>
+      <Loading fallback={<Screen heading="Recently Deleted" back><Spinner delay /></Screen>}>
         <Deleted items={items()} />
       </Loading>
     </Errored>
