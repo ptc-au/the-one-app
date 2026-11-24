@@ -291,7 +291,12 @@ async function allowed(env: Env, by: string, token: string | null, tokens: strin
   const first = operation === "write" && key === NETWORK + "servers" && same(claims(token ?? "").first, env.FIRST_SERVER);
   // Every list that could let it is read at once, each once: one trip to the bucket.
   const lists = reader(env);
-  const vouched = tokens.filter((shown) => owner(key) && claims(shown.split(".")[0]).list === owner(key));
+  // Another server's word counts for whoever the key is under, and for whoever it says deployed or installed an app:
+  // so a group's server, which runs its members' apps, deploys them too.
+  const vouched = tokens.filter((shown) => {
+    const list = claims(shown.split(".")[0]).list;
+    return list !== undefined && (list === owner(key) || (installer && list === installer + "/"));
+  });
   const [network, owners, open, installed, ...words] = await Promise.all([
     servers(lists, NETWORK),
     servers(lists, owner(key)),
