@@ -18,6 +18,7 @@ const GLYPH = 3
 /// with what it needs, why, and that fill.
 const EXCEPT = {
   "core/ui/src/styled-components/field.tsx:tick": [TEXT, "its tick is drawn only ticked, on `ticked`'s blue", "blue"],
+  "core/ui/src/styled-components/time-grid.tsx:todayText": [TEXT, "today's date is drawn only in `today`'s red circle", "red"],
   "apps/settings/client/app.tsx:initials": [TEXT, "on its `avatar`'s fill", "secondaryLabel"],
   "apps/home-screen/client/looks.ts:installing": [0, "a progress ring over an app's icon, on that icon's picture, which screenshot.js's contrast judges as drawn"],
   "core/ui/src/styled-components/list.tsx:chevron": [0, "a row's chevron says nothing its row doesn't, as iOS's tertiary one"],

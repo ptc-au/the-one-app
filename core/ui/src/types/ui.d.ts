@@ -459,6 +459,15 @@ export declare function ActionBar(props: { start?: Element; actions?: Action[] }
 
 export declare const Metadata: ((props: { children?: Element }) => Element) & { Label: (props: { title: Element; text?: Element }) => Element }
 
+/** One event of a `TimeGrid`: where it starts and ends in its day, in minutes from midnight, its title, a grey line,
+ * its own colour from data, whether it's over, something to do with it, and what a press does. */
+export type TimeGridEvent = { id: string; start: number; end: number; title: string; text?: string; colour?: `#${string}` | null; over?: boolean; action?: Element; onPress?: () => void }
+/** A day's column of a `TimeGrid`, with its events. */
+export type TimeGridDay = { key: string; weekday: string; date: number | string; today?: boolean; events: TimeGridEvent[] }
+/** What takes whole days, from the column `from` to the column `to`. */
+export type TimeGridAllDay = { id: string; title: string; from: number; to: number; colour?: `#${string}` | null; onPress?: () => void }
+export declare function TimeGrid(props: { days: TimeGridDay[]; hours?: [number, number]; allDay?: TimeGridAllDay[]; now?: number | null; selected?: string; onSelect?: (key: string) => void; header?: boolean }): Element
+
 export declare const Menu: {
   Root: (props: { open?: boolean; onOpenChange?: (open: boolean) => void; onSelect?: (value: string) => void; children?: Element }) => Element
   Trigger: (props: { variant?: ButtonProps["variant"]; size?: "icon"; shape?: ButtonProps["shape"]; "aria-label"?: string; children?: Element }) => Element
