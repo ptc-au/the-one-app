@@ -519,13 +519,14 @@ export declare function Widget(props: {
 // (`alone`: something over the page), drawn edge to edge in its window, as a whole screen is, rather than inset in it
 // (`layout: "fullscreen"`, as Storybook's), how big its window is (`size`, a phone's 390 × 844 unless said) and whether a
 // finger points at it (`touch`: a window under 600 wide is a phone's unless it says `false`), what its window keeps at each
-// edge (`safeArea`, top, right, bottom and left: a phone's status bar and home indicator, an iPhone's for a touch scene), the gestures played on it, frame by frame (`motions`, clients/app/renderer/tests/animation.js), and what
+// edge (`safeArea`, top, right, bottom and left: a phone's status bar and home indicator, an iPhone's for a touch scene), whether it's a Mac's
+// app window with its title row over the page (`titleRow`), where a press on what's empty moves the window, the gestures played on it, frame by frame (`motions`, clients/app/renderer/tests/animation.js), and what
 // people do with it and what must hold as they do (`checks`, `bun animation.js --checks`), with the seeds a check once
 // failed on (`seeds`). A page that logs an error fails the scene, as a browser's console does a test, but for the
 // words a scene that shows an error says it logs (`errors`: "Couldn't reach the network"). Its name is its family's and its own: "Buttons/Variants".
 export type Scene =
   | (() => Element)
-  | { render: () => Element; taps?: Tap[]; alone?: boolean; layout?: "fullscreen"; size?: [number, number]; touch?: boolean; errors?: string[]; safeArea?: [number, number, number, number]; motions?: Record<string, Motion>; checks?: Record<string, CheckStep[]>; seeds?: number[] }
+  | { render: () => Element; taps?: Tap[]; alone?: boolean; layout?: "fullscreen"; size?: [number, number]; touch?: boolean; errors?: string[]; safeArea?: [number, number, number, number]; titleRow?: boolean; motions?: Record<string, Motion>; checks?: Record<string, CheckStep[]>; seeds?: number[] }
 /** A step of a check, as a test's (Playwright's, the UI SDK's): what's done, as a tap is (pressed, a key, typed), a
  * press held `hold` ms or tapped `clicks` times (an `agent`'s comes as an agent's request to a device's window does, by the inspector, though
  * nobody could press it, as on a panel put away), the pointer moved onto something (`hover`), a button held `down` on something and let go (`up`), input played as
@@ -567,8 +568,9 @@ export type CheckStep = Tap | { press: Tap; hold?: number; clicks?: number; agen
  * past its rounding, as CSS clips it (`rounded`: `{ of, radius }`), and the same material to its corners as along its edges, none of what's
  * drawn outside its arc pulled in by a blur (`even`: `{ of, radius, most }`, levels of a channel), and a press reaching what's drawn where it
  * lands, everywhere in the window, however what's pressed is moved, grown, scrolled, clipped or stacked (`hits`: each pressable
- * square, in a colour of its own, with nothing of another colour over it). */
-export type Expect = { shown?: Tap; gone?: Tap; focused?: Tap; text?: string; states?: { of: Tap; is: Record<string, boolean | string> }; drawn?: { of: Tap; opacity: number }; blur?: boolean; dimmed?: boolean; keyboard?: Record<string, unknown>; margins?: number; tall?: { of: Tap; height: number }; whole?: true | Tap; unbroken?: string; monospace?: string[]; unclipped?: Tap; apart?: { of: Tap; from: Tap }; bleeds?: Tap; aligned?: { of: Tap; with?: Tap; at?: "start" | "end" | "middle" }; centred?: Tap; widest?: { of: Tap; most: number }; contrast?: { of: Tap; least?: number; most?: number }; located?: Tap[]; textMenu?: { items?: string[] } | false; handles?: number; magnifier?: boolean; js?: number; asked?: Record<string, number>; settled?: boolean; at?: { of: Tap; x?: number; y?: number; width?: number }; rounded?: { of: Tap; radius: number }; even?: { of: Tap; radius: number; most: number }; hits?: true }
+ * square, in a colour of its own, with nothing of another colour over it), and what's selected of the text that isn't a field, as
+ * it would be copied, or nothing (`selected`: the words, or false). */
+export type Expect = { shown?: Tap; gone?: Tap; focused?: Tap; text?: string; states?: { of: Tap; is: Record<string, boolean | string> }; drawn?: { of: Tap; opacity: number }; blur?: boolean; dimmed?: boolean; keyboard?: Record<string, unknown>; margins?: number; tall?: { of: Tap; height: number }; whole?: true | Tap; unbroken?: string; monospace?: string[]; unclipped?: Tap; apart?: { of: Tap; from: Tap }; bleeds?: Tap; aligned?: { of: Tap; with?: Tap; at?: "start" | "end" | "middle" }; centred?: Tap; widest?: { of: Tap; most: number }; contrast?: { of: Tap; least?: number; most?: number }; located?: Tap[]; textMenu?: { items?: string[] } | false; handles?: number; magnifier?: boolean; js?: number; asked?: Record<string, number>; settled?: boolean; at?: { of: Tap; x?: number; y?: number; width?: number }; rounded?: { of: Tap; radius: number }; even?: { of: Tap; radius: number; most: number }; hits?: true; selected?: string | false }
 /** A press that goes down on what `from` names (as a tap does) and moves as `gesture` says, or input played as a device
  * delivered it (a `trace` file of events, as a check's `trace`), with what's watched move (`follow`, named as a tap is;
  * what scrolls under it is always watched). `steady`: what moves never goes back against its way before its input
@@ -599,11 +601,13 @@ export type Gesture =
   | { moves: { dx?: number; dy?: number; ms: number }[]; lift?: boolean }
   | { trace: string }
 /** What's done, in order (clients/app/renderer/tests/screenshot.js runs them): pressed by what it's named or says, or that and its role
- * where a name alone is two things (a field's label and its select), or by its role alone (the menu open); a point pressed; a key as the DOM names it, with
+ * where a name alone is two things (a field's label and its select), or by its role alone (the menu open), or by the words it
+ * says (`text`), each in its middle or `position` points from its top left, as Playwright's; a point pressed; a key as the DOM names it, with
  * any of `ctrl`, `shift`, `alt` or `meta` held; or text typed where the keyboard is. */
 export type Tap =
   | string
-  | { role: string; name?: string }
+  | { role: string; name?: string; position?: { x: number; y: number } }
+  | { text: string; position?: { x: number; y: number } }
   | { x: number; y: number }
   | { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }
   | { type: string }

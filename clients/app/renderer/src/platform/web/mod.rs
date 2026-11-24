@@ -150,7 +150,7 @@ fn turn() {
         windows.turn();
         let window = windows.windows.get(&WINDOW);
         let screen = window.and_then(|window| window.screen.as_ref().ok());
-        let (semantics, selected) = (screen.map(semantics), screen.and_then(Screen::selection_text));
+        let (semantics, selected) = (screen.map(semantics), screen.and_then(Screen::selected_text));
         let frames = window.and_then(|window| window.renderer.as_ref()).map(|renderer| (renderer.frames(), renderer.finished()));
         (windows.due(), semantics, selected, frames)
     });

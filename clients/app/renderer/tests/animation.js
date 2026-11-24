@@ -87,7 +87,7 @@ export { cached, judged } from "./animation/cache.js"
 export { changed } from "./animation/changed.js"
 export { moves, selector } from "./animation/gesture.js"
 export { monospaced } from "./animation/judges.js"
-export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf } from "./animation/headless.js"
+export { COMPACT, IPHONE, mac, panel, phone, runThere, scenesOf, TITLE_ROW } from "./animation/headless.js"
 export { build, COMPONENTS, copied, library, pageFolder, stale, usedFolder } from "./animation/pages.js"
 
 /// Every folder with motions, or with `--checks` every folder with scenes: the gallery, and each app's.

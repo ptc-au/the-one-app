@@ -29,6 +29,12 @@ impl Shown {
         self.content.origin.x + (self.width - width).max(0.0) * self.align * self.grown
     }
 
+    /// Where each of its lines' words are in the window.
+    pub fn lines(&self) -> impl Iterator<Item = Bounds<f32>> + '_ {
+        let height = self.paragraph.line_height * self.grown;
+        self.paragraph.lines.iter().enumerate().map(move |(at, line)| Bounds { origin: Point { x: self.left(at), y: self.content.origin.y + at as f32 * height }, size: crate::geometry::Size { width: line.width * self.grown, height } })
+    }
+
     /// The byte of its words a point is at, on the line it's beside.
     fn index_at(&self, at: Point<f32>) -> usize {
         let line_height = self.paragraph.line_height * self.grown;
@@ -106,8 +112,9 @@ impl Screen {
         }
     }
 
-    /// What's selected of a text that isn't a field, where something is.
-    pub(super) fn selected_text(&self) -> Option<String> {
+    /// What's selected of a text that isn't a field, where something is: the web mirrors it in the page, for the
+    /// browser's own Copy, and the inspector says it.
+    pub(crate) fn selected_text(&self) -> Option<String> {
         let selected = self.editing.selected?;
         let shown = self.editing.texts.get(&selected.id)?;
         let (start, end) = selected.range();

@@ -54,7 +54,7 @@ import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
 import { rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
-import { build, built, cached, changed, judged, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, work } from "./animation.js"
+import { build, built, cached, changed, judged, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, TITLE_ROW, work } from "./animation.js"
 
 const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 /// A line that fails the run, marked ✗ after its indent, as animation.js's checks mark theirs.
@@ -559,10 +559,9 @@ async function windowed(drawn, scene, folder) {
   return { picture: join(folder, "window.png") }
 }
 
-/// A Mac's app window's title row, as the app opens one (clients/app/src/native `BAR`), and how far after the traffic
-/// lights what's in it starts at least: about the 9 points between the lights themselves, nearer than which it reads
-/// as on top of them (Settings' title, 2 points after the zoom button on macOS 27, 23 Nov).
-const TITLE_ROW = 52
+/// How far after the traffic lights what's in a Mac's title row (TITLE_ROW) starts at least: about the 9 points between
+/// the lights themselves, nearer than which it reads as on top of them (Settings' title, 2 points after the zoom button
+/// on macOS 27, 23 Nov).
 const LIGHTS_CLEAR = 8
 
 /// An app's scene on a computer drawn natively again as a Mac's app window has it, `mac.png`: its app's name in a title

@@ -73,5 +73,8 @@ pub(crate) fn point_of(windows: &mut Windows, id: renderer::platform::WindowId, 
         windows.run(1000.0 / 60.0);
     };
     let at = |edge: &str| rect[edge].as_f64().unwrap_or_default() as f32;
-    Ok((at("x") + at("width") / 2.0, at("y") + at("height") / 2.0))
+    // Where in it, from its top left, where it says (Playwright's `position`), else its middle.
+    let position = request.inputs.get("position");
+    let along = |side: &str, size: &str| position.and_then(|position| position[side].as_f64()).map_or(at(size) / 2.0, |offset| offset as f32);
+    Ok((at("x") + along("x", "width"), at("y") + along("y", "height")))
 }

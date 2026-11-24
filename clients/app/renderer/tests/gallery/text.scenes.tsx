@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Button, plural, type Scenes, ScrollView, styles, Text, tokens, View } from "ui"
+import { Button, Field, Input, List, plural, Problem, Row, type Scenes, Screen, ScrollView, styles, Text, tokens, View } from "ui"
 
 const look = styles({
   column: { gap: tokens.grid[2] },
@@ -30,6 +30,30 @@ const look = styles({
   tilted: { rotate: 20 },
   flies: (x: number, y: number, scale: number) => ({ translateX: x, translateY: y, scale, transitionProperty: ["translateX", "translateY", "scale"], transition: tokens.motion.smooth }),
 })
+
+/// Words that read as content, which a pointer selects and copies as a web page's, beside a row it presses: an error's
+/// title and its message, a sentence, a screen's title (one opened from another, with Back, where it says), and a field
+/// to paste into, which says what it holds.
+function Selectable(props: { back?: boolean }) {
+  const [pasted, setPasted] = createSignal("")
+  const [pressed, setPressed] = createSignal(0)
+  return (
+    <Screen heading="Backups stopped: the disk is full" back={props.back}>
+      <Problem heading="Git Repos didn't open" text="Its server didn't answer in time." />
+      <Text>Every word that reads as content can be copied.</Text>
+      <List>
+        <Row heading={`Pressed ${pressed()} times`} onPress={() => setPressed((times) => times + 1)} />
+      </List>
+      <Field label="Paste here">
+        <Input value={pasted()} onChangeText={setPasted} />
+      </Field>
+      <Text>{`Holds: ${pasted()}`}</Text>
+    </Screen>
+  )
+}
+
+/// Dragged across the words `text` names, from its start to past its end on its first line.
+const across = (text: string) => [{ down: { text, position: { x: 1, y: 8 } } }, { hover: { text, position: { x: 560, y: 8 } } }, { up: true as const }]
 
 /// A link in a sentence's words, which says how often it's been pressed.
 function InlineLink() {
@@ -126,6 +150,39 @@ export default {
       </Text>
     </View>
   ),
+  // Words that read as content are selected by a pointer's drag and copied, as a web page's are: an error's title, a
+  // sentence, a screen's title; a press on a row presses it and selects nothing.
+  "Text/Selected and copied": {
+    render: () => <Selectable />,
+    size: [600, 600],
+    checks: {
+      "An error's title is selected by a drag, and copied": [
+        ...across("Git Repos didn't open"),
+        { expect: { selected: "Git Repos didn't open" } },
+        { key: "c", ctrl: true },
+        { role: "textbox", name: "Paste here" },
+        { key: "v", ctrl: true },
+        { expect: { text: "Holds: Git Repos didn't open" } },
+      ],
+      "A sentence is selected by a drag": [...across("Every word that reads"), { expect: { selected: "Every word that reads as content can be copied." } }],
+      "The screen's title is selected by a drag": [...across("Backups stopped"), { expect: { selected: "Backups stopped: the disk is full" } }],
+      "A press on a row presses it, selecting nothing": [
+        { down: { text: "Pressed 0 times", position: { x: 1, y: 8 } } },
+        { hover: { text: "Pressed 0 times", position: { x: 80, y: 8 } } },
+        { up: true },
+        { expect: { selected: false, text: "Pressed 1 times" } },
+      ],
+    },
+  },
+  // In a Mac's app window a screen opened from another has its bar in the title row, which moves the window where it's
+  // held, but its title's words are selected there, as a page's are.
+  "Text/Selected in a title row": {
+    render: () => <Selectable back />,
+    layout: "fullscreen",
+    size: [600, 600],
+    titleRow: true,
+    checks: { "The screen's title is selected by a drag": [...across("Backups stopped"), { expect: { selected: "Backups stopped: the disk is full" } }] },
+  },
   "Text/Inline link": () => <InlineLink />,
   "Text/Inline link, pressed": { render: () => <InlineLink />, taps: ["terms of use"] },
   "Text/Runs wrapping": () => (

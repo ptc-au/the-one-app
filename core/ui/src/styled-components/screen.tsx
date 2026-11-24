@@ -18,7 +18,7 @@ const look = styles({
   // The bar keeps clear of what the device keeps for itself at the top under a finger (its status bar). On a computer
   // it is the window's title row, where the window has one, which is what's kept at its top there: it's in that row,
   // after the window's controls and title (`atStart`), not under it.
-  bar: { paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight, userSelect: "none" },
+  bar: { paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight },
   // Under a finger, what's in it scrolls under the bar, as UINavigationBar's and Android's top app bar's does: clear of
   // it where it's scrolled to its top (`clear`), and the bar takes its material and a hairline as what's in it goes
   // under, as a scroll edge's appearance gives way to the standard one.
@@ -66,7 +66,7 @@ const look = styles({
   parts: { flexGrow: 1, gap: tokens.length.gutter, paddingTop: tokens.grid[2], paddingInline: tokens.length.gutter, paddingBottom: tokens.length.gutter },
   section: { gap: tokens.grid[1.5], minWidth: 0 },
   // Raycast's on a computer, 11px; iOS's on a phone, its footnote inset to the rows' words.
-  heading: { font: tokens.type.small, color: tokens.colour.secondaryLabel, userSelect: "none" },
+  heading: { font: tokens.type.small, color: tokens.colour.secondaryLabel },
   touchHeading: { paddingInline: tokens.grid[4] },
   // Above a card in grouped cards: the group's name, as Raycast's Settings heads one, in line with the card's words.
   groupedHeading: { font: tokens.type.medium, fontWeight: tokens.weight.medium, color: tokens.colour.label, paddingInline: tokens.grid[3], paddingTop: tokens.grid[2], paddingBottom: tokens.grid[1] },

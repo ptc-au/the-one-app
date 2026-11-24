@@ -175,7 +175,7 @@ export function judgedRun(at, folder, scene, requests, seed, by, judge, passed) 
 
 /// What a run is given, written into `folder`: the headless renderer's arguments and requests, and the environment it runs in.
 function prepare(at, folder, scene, requests, seed) {
-  const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch } } } }
+  const answers = { ...scene.answers, "ui/initialize": scene.answers?.["ui/initialize"] ?? { hostContext: { link: scene.link, containerDimensions: { width: scene.size[0], height: scene.size[1] }, deviceCapabilities: { touch: scene.touch, hover: !scene.touch }, ...(scene.titleRow ? { titled: true } : {}) } } }
   writeFileSync(join(folder, "answers.json"), JSON.stringify(answers))
   const lines = requests.map((request, id) => JSON.stringify({ v: 1, id: id + 1, ...request })).join("\n")
   writeFileSync(join(folder, "requests.jsonl"), lines)
@@ -183,7 +183,7 @@ function prepare(at, folder, scene, requests, seed) {
   // that one's device pixels a point, where it's drawn at one here; on a device, as that decodes them.
   const slowest = devices.tiers.find((tier) => tier.name === (scene.touch ? "low-end Android" : "Intel UHD laptop at 4K"))
   const slower = hostScore && !ssh ? ["--slower", String((hostScore / slowest.cpu) * slowest.scale ** 2)] : []
-  const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", join(folder, "requests.jsonl"), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower, ...Object.entries(scene.opens ?? {}).flatMap(([app, by]) => ["--open", `${app}=${join(at, by, "client")}`])]
+  const args = [at, join(folder, "end.png"), join(folder, "end.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", String(scene.scale ?? device?.scale ?? 1), "--requests", join(folder, "requests.jsonl"), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.reducedMotion ? ["--reduced-motion"] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), ...(scene.titleRow ? ["--title", scene.name ?? "Scene", "--safe-area", `${TITLE_ROW},0,0,0`] : []), ...(scene.latency ? ["--latency", String(scene.latency)] : []), "--time-zone", scene.timeZone ?? "UTC", ...(scene.hz ? ["--hz", String(scene.hz)] : []), ...(seed ? ["--seed", String(seed)] : []), ...panel(scene), ...slower, ...Object.entries(scene.opens ?? {}).flatMap(([app, by]) => ["--open", `${app}=${join(at, by, "client")}`])]
   // Its pipelines compile as slowly as the Surface's (`open.pipelines_ms`), so a frame that waits for some is a long one.
   return { args, lines, env: { ...env, ONE_PIPELINES_MS: String(devices.measured.surface.open.pipelines_ms) } }
 }
@@ -197,6 +197,9 @@ async function headlessRun(at, folder, { args, lines, env }) {
   return { answers: stdout.split("\n").filter(Boolean).map((line) => JSON.parse(line)), said: [stderr.trim(), stopped(exitCode)].filter(Boolean).join("\n"), failed: exitCode !== 0 }
 }
 
+
+/// A Mac's app window's title row, as the app opens one (clients/app/src/native `BAR`).
+export const TITLE_ROW = 52
 
 /// A phone's safe area, top, right, bottom and left, as an iPhone with a Dynamic Island has it upright (14 Pro to 17):
 /// its status bar and its home indicator.
@@ -235,5 +238,5 @@ export async function scenesOf(target, built, folder, all = false) {
   if (!text) throw new Error(`The gallery listed no scenes: ${listed.said}`)
   return JSON.parse(JSON.parse(`"${text}"`))
     .filter((scene) => all || (checking ? scene.checks : scene.motions))
-    .map(({ name, taps = [], size = [390, 844], touch, safeArea, errors, motions, checks, seeds }) => phone({ name, page: "index.html", link: name, answers: {}, taps, size, touch, safeArea, errors, motions, checks, seeds }))
+    .map(({ name, taps = [], size = [390, 844], touch, safeArea, titleRow, errors, motions, checks, seeds }) => phone({ name, page: "index.html", link: name, answers: {}, taps, size, touch, safeArea, titleRow, errors, motions, checks, seeds }))
 }

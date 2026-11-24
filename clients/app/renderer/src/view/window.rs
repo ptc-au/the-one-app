@@ -143,7 +143,8 @@ impl Screen {
     }
 
     /// Its title row, where its window has one over its page (a unified toolbar): how tall it is, and where in it
-    /// something takes a press, which the rest of it doesn't, so the window moves held there, as a title bar does.
+    /// something takes a press (a button, a field, words that select), which the rest of it doesn't, so the window
+    /// moves held there, as a title bar does.
     /// What its page says moves the window (`appRegion`) is part of it too, with or without a title row.
     pub fn title_row(&self) -> Option<TitleRow> {
         let height = if self.title.is_some() { self.insets.top } else { 0.0 };
@@ -158,6 +159,11 @@ impl Screen {
         let over = |at: usize, placed: &Placed| placed.shown.origin.y < height || regions.iter().any(|(region, bounds)| *region < at && bounds.intersects(&placed.shown));
         let takes = |id: &Id, placed: &Placed| placed.pointer && (placed.pressable || placed.input || self.tree.nodes.get(id).is_some_and(|node| node.listens("pointerdown")));
         let mut taken: Vec<Bounds<f32>> = self.placed.iter().enumerate().filter(|(at, (id, placed))| takes(id, placed) && over(*at, placed)).map(|(_, (_, placed))| placed.shown).collect();
+        // Words in the row are selected where they're pressed, as a page's are, so its title can be copied; the rest
+        // of the row moves the window.
+        if !crate::mutants::mutant("title-words-move") {
+            taken.extend(self.editing.texts.values().flat_map(super::selection::Shown::lines).filter(|line| line.origin.y < height));
+        }
         taken.extend(self.chrome.kept_regions.iter().copied());
         taken.extend(self.chrome.buttons.iter().map(|(_, bounds)| *bounds));
         taken.extend(self.chrome.action);
