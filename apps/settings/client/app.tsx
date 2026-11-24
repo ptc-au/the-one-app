@@ -4,7 +4,7 @@
 // component (`settings.sections`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
 // Vault draws an item type's. Updates and an app's page are Settings' own.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, link, List, ListStyle, Problem, render, Row, Screen, Search, Section, Skeleton, Split, styles, Switch, Text, toast, tokens, View, viewport } from "ui"
+import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, link, List, ListStyle, Problem, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, View, viewport } from "ui"
 
 /** What an app adds to Settings, as `settings_sections` answers it. */
 interface Added {
@@ -208,7 +208,7 @@ function Drawn(props: { section: Added }) {
   const heading = () => props.section.name ?? props.section.title
   return (
     <Errored fallback={(error) => <Screen heading={heading()} back><Problem heading={`Can't show ${heading()}`} text={error() as Error} /></Screen>}>
-      <Loading fallback={<Screen heading={heading()} back><Skeleton rows={4} /></Screen>}>
+      <Loading fallback={<Screen heading={heading()} back><Spinner delay /></Screen>}>
         <Show when={drawn()} keyed>
           {(Drawn) => <Drawn groups={Groups} />}
         </Show>
@@ -252,7 +252,7 @@ function Group(props: { added: Added; device?: string; server?: string }) {
   const drawn = createMemo(() => component(props.added.app, props.added.component).then((module) => module.default))
   return (
     <Errored fallback={(error) => <Problem heading={`Can't show ${props.added.title}`} text={error() as Error} />}>
-      <Loading fallback={<Skeleton rows={1} />}>
+      <Loading fallback={<Spinner delay />}>
         <Show when={drawn()} keyed>
           {(Drawn) => <Drawn device={props.device} server={props.server} />}
         </Show>
@@ -296,7 +296,7 @@ function Updates() {
   return (
     <Screen heading="Updates" back>
       <Errored fallback={(error) => <Problem heading="Can't show what's waiting to update" text={error() as Error} />}>
-        <Loading fallback={<Skeleton rows={2} />}>
+        <Loading fallback={<Spinner delay />}>
           <List>
             <Row
               heading="This Device"
@@ -473,7 +473,7 @@ let choosing = (id: string) => void setOpen(id)
 
 render(() => (
   <Errored fallback={(error, retry) => <Screen heading="Settings"><Problem heading="Can't show Settings" text={error() as Error} action={<Button onPress={() => ([added, apps].forEach(refresh), retry())}>Try Again</Button>} /></Screen>}>
-    <Loading fallback={<Screen heading="Settings"><Skeleton rows={6} /></Screen>}>
+    <Loading fallback={<Screen heading="Settings"><Spinner delay /></Screen>}>
       <Settings />
     </Loading>
   </Errored>
