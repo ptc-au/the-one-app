@@ -265,12 +265,14 @@ defmodule OneCore.Tools.Apps do
     app
   end
 
-  # Raises where an app named `name` is installed for someone else whoever asked is in, whose apps they find
-  # too: a new one would answer first for whoever it's deployed for, empty, as a second copy.
+  # Raises where an app named `name` is installed for someone else whoever finds the new one is in, whose apps they
+  # find too: a new one would answer first for whoever it's deployed for, empty, as a second copy. That's the person
+  # it's for, or for a group or the network, whoever asked.
   defp elsewhere!({actor, subject}, name) do
-    member = &(Hooks.validate("reach", %{"who" => actor, "relation" => "member", "artifact" => &1}, {actor, &1}) == :ok)
+    finds = if match?("users/" <> _, subject), do: subject, else: actor
+    member = &(Hooks.validate("reach", %{"who" => finds, "relation" => "member", "artifact" => &1}, {finds, &1}) == :ok)
     groups = for {"groups/" <> _ = group, %{^name => _}} <- Apps.installed(), member.(group), do: group
-    others = for owner <- Enum.uniq([User.owner(actor), "network" | groups]), owner not in [nil, subject], do: owner
+    others = for owner <- Enum.uniq([User.owner(finds), "network" | groups]), owner not in [nil, subject], do: owner
 
     case for(owner <- others, Apps.app(owner, name), do: owner) do
       [] ->
