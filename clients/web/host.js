@@ -87,6 +87,8 @@ const hex = (bytes) => Array.from(crypto.getRandomValues(new Uint8Array(bytes)),
 
 /** Which client this is, to a server (`OneCore.Call.client/1`). */
 const CLIENT = { name: "one-web" }
+/// The JSON-RPC error the edge answers a browser whose servers don't know it as anyone's (`core/edge/mcp/mcp.ts`).
+const NOBODY = -32003
 
 /// Asks the network's servers `method`, as this browser's person. → its result. A browser that's no longer
 /// signed in goes to sign in again.
@@ -118,8 +120,13 @@ async function mcp(method, params = {}) {
   }
   if (response.status === 401) {
     forget()
-    location.replace(await signIn())
-    throw new Error("Sign in again.")
+    // Signed in, but its servers didn't know it as anyone's: the edge's word for why is shown where it signs in again.
+    const { error } = await response.json().catch(() => ({}))
+    const why = error?.code === NOBODY ? error.message : undefined
+    const to = new URL(await signIn(), location.href)
+    if (why) to.searchParams.set("error_description", why)
+    location.replace(to)
+    throw new Error(why ?? "Sign in again.")
   }
   answered(response.status !== 503)
   const { result, error } = await response.json()

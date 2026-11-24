@@ -465,7 +465,7 @@ const devices = () => ({
     // The web client sends a person who isn't signed in to the authorization endpoint the metadata names, with no
     // OAuth client of its own: what it shows them is the page they sign in on.
     if (url.pathname === AUTHORIZE && request.method === "GET" && !url.searchParams.has("client_id"))
-      return { response: Response.redirect(new URL(SIGN_IN, url.origin).href, 302) };
+      return { response: Response.redirect(new URL(SIGN_IN + url.search, url.origin).href, 302) };
     if (url.pathname !== DEVICE_CODE && url.pathname !== TOKEN) return;
     // A device asks with a form, as RFC 8628 has it.
     const body = await request.clone().text();

@@ -73,7 +73,8 @@ fetch("/sign-in/auth/social-providers")
   .then((response) => response.json())
   .then(({ providers }) => setGoogle(providers.includes("google")))
   .catch(() => {})
-/// Why Google's sign-in didn't let someone in, as Better Auth sends them back here.
+/// Why someone is here again: Google's sign-in didn't let them in, as Better Auth sends them back, or the web client
+/// was signed in but its servers didn't know it as anyone's (`clients/web/host.js`).
 const refused = params.get("error_description") ?? params.get("error") ?? undefined
 
 /// How the page was opened, which picks what it does: someone joining with an invitation, someone who has joined
@@ -572,7 +573,7 @@ function shows(): Shows {
         case "checking":
           return { heading: "Approve a device", status: "Checking you're signed in…" }
         case "needsSignIn":
-          return google() ? { heading: "Sign in", problem: refused, ...withGoogleFirst("Use a Passkey") } : { heading: "Sign in", button: "Sign in", onSignIn: signIn }
+          return google() ? { heading: "Sign in", problem: refused, ...withGoogleFirst("Use a Passkey") } : { heading: "Sign in", problem: refused, button: "Sign in", onSignIn: signIn }
         case "claiming":
           return { heading: "Approve a device", status: "Finding the device…" }
         case "comparing":
@@ -653,9 +654,9 @@ function shows(): Shows {
       }
     }
     case "join":
-      return google() ? { heading: "Join", problem: refused, ...withGoogleFirst("Create a Passkey"), asksName: true } : { heading: "Join", button: "Create a passkey", onSignIn: signIn, asksName: true }
+      return google() ? { heading: "Join", problem: refused, ...withGoogleFirst("Create a Passkey"), asksName: true } : { heading: "Join", problem: refused, button: "Create a passkey", onSignIn: signIn, asksName: true }
     case "signIn":
-      return google() ? { heading: "Sign in", problem: refused, ...withGoogleFirst("Use a Passkey") } : { heading: "Sign in", button: "Sign in", onSignIn: signIn }
+      return google() ? { heading: "Sign in", problem: refused, ...withGoogleFirst("Use a Passkey") } : { heading: "Sign in", problem: refused, button: "Sign in", onSignIn: signIn }
   }
 }
 

@@ -156,7 +156,12 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
   const body = await request.text();
   const answer = await forward(env, body, { device: who.device }, [`${who.who}/`, NETWORK], request.headers, mode(new URL(request.url)), { signal: request.signal, ctx });
   if (!(await nobodys(answer))) return withCookies(!who.session && who.apps ? await drawn(answer, body, new URL(request.url).origin, who.apps) : answer, who.cookies);
-  return who.challenge ? new Response(null, { status: 401, headers: { "www-authenticate": who.challenge } }) : refuse(401, "Sign in again");
+  if (who.challenge) return new Response(null, { status: 401, headers: { "www-authenticate": who.challenge } });
+  // A browser is told why, which it shows where it signs in again (`clients/web/host.js`), where signing in again
+  // brings it back here if its servers still don't know it.
+  const name = who.who.replace(/^users\//, "");
+  const why = `This browser signed in as ${name}, but the network's servers didn't know it as theirs. Sign in again, and if this happens again, tell whoever runs the network.`;
+  return Response.json({ jsonrpc: "2.0", id: null, error: { code: NOBODY, message: why } }, { status: 401 });
 }
 
 /**
