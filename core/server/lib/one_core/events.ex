@@ -7,11 +7,12 @@ defmodule OneCore.Events do
   `outputs` that happened, and says one happened with `OneCore.Events.emit/4`. An event is named as an offered hook
   is, the app's name where it's installed and the event's: `board.message_posted`.
 
-  What's emitted is kept here, for whoever the call that emitted it ran for, in the order it happened: the last 1,000
-  events of the last seven days. A client reads them from a cursor, `ev_<n>`, which only moves forward. One that isn't
-  one this server gave is refused, and one whose events have since gone is answered `truncated`, since some between
-  it and what's kept aren't there any more. `events/list` says the events of the apps installed for whoever asks,
-  `events/poll` what happened since a cursor, and `events/subscribe` has each one sent to an address.
+  What's emitted and who subscribed are kept in the bucket, under `<subject>/events/` (`log.json` and
+  `subscriptions.json`), updated with conditional writes so every server acting for `subject` sees the same order and
+  subscriptions survive restarts. The last 1,000 events of the last seven days are kept. A client reads them from a
+  cursor, `ev_<n>`, which only moves forward. One whose events have since gone is answered `truncated`, since some
+  between it and what's kept aren't there any more. `events/list` says the events of the apps installed for whoever
+  asks, `events/poll` what happened since a cursor, and `events/subscribe` has each one sent to an address.
 
   A subscription is a webhook, delivered as Standard Webhooks says (`OneCore.Events.Webhook`). Its id is made from who
   subscribed, who for, the address, the event and what it's filtered by, so the same subscription asked again is the
@@ -19,8 +20,7 @@ defmodule OneCore.Events do
   signed with both. A subscription stops when it's unsubscribed, when what it lasts is over (`ttlMs`), or when the app
   that says the event is no longer installed for whoever it was subscribed for, whose address is told so.
   """
-  use GenServer
-  alias OneCore.Apps
+  alias OneCore.{Apps, Bucket}
   alias OneCore.Events.Webhook
 
   @extension "io.modelcontextprotocol/events"
@@ -49,22 +49,13 @@ defmodule OneCore.Events do
   @doc "What a server says it has of events, among its capabilities' extensions."
   def extension, do: %{@extension => %{}}
 
-  @doc "Starts what keeps what happened, and what is sent it."
-  def start_link(_args), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
-
-  @impl true
-  def init(nil) do
-    :ets.new(__MODULE__, [:named_table, :public, :ordered_set, read_concurrency: true])
-    {:ok, nil}
-  end
-
   @doc """
   Says `event` happened in the app whose call is `call`, with `data` about it, for whoever that call runs for: it's
   kept from now on, and each webhook subscribed to it is sent it in the background.
 
   `opts` says what a subscription's `arguments` are matched against (`match`, which is `data` unless it says, for what
-  a subscriber filters by that the app chose not to put in it), and the event's `_meta`. Raises where the app has no
-  such event of its own, as `tools/0` says.
+  a subscriber filters by that the app chose not to put in it), `event_id` (a stable id for deduplication), and the
+  event's `_meta`. Raises where the app has no such event of its own, as `tools/0` says.
   """
   def emit(%OneCore.Call{app: app, subject: subject}, event, data, opts \\ []) do
     name = "#{app}.#{event}"
@@ -72,12 +63,16 @@ defmodule OneCore.Events do
     case declared(name, subject) do
       {:ok, _event} ->
         now = System.system_time(:millisecond)
-        seq = :ets.update_counter(__MODULE__, :seq, 1, {:seq, 0})
         normalized = OneCore.JSON.normalize(data)
         matched = if opts[:match], do: OneCore.JSON.normalize(opts[:match]), else: normalized
-        occurrence = occurrence(name, normalized, seq, opts[:event_id], opts[:meta])
-        :ets.insert(__MODULE__, {{:event, subject, seq}, now, occurrence})
-        pruned(subject, now)
+
+        occurrence =
+          update_blob(log_path(subject), %{"seq" => 0, "events" => []}, fn %{"seq" => seq, "events" => events} ->
+            next = seq + 1
+            occ = occurrence(name, normalized, next, opts[:event_id], opts[:meta])
+            kept = prune(events ++ [[next, now, occ]], now)
+            {%{"seq" => next, "events" => kept}, occ}
+          end)
 
         for sub <- subscribed(subject, name), matches?(sub["arguments"], matched), do: told(sub, occurrence)
 
@@ -128,7 +123,8 @@ defmodule OneCore.Events do
          {:ok, age} <- aged(params["maxAgeMs"]),
          {:ok, most} <- capped(params["maxEvents"]),
          {:ok, _event} <- declared(name, subject) do
-      answered(name, arguments, from, age, most, logged(subject))
+      %{"seq" => seq, "events" => events} = read_log(subject)
+      answered(name, arguments, from, age, most, seq, events)
     end
   end
 
@@ -150,22 +146,27 @@ defmodule OneCore.Events do
          {:ok, from} <- cursor_of(params["cursor"]) do
       now = System.system_time(:millisecond)
       id = id(actor, subject, url, name, arguments)
+      %{"seq" => seq, "events" => events} = read_log(subject)
 
       record =
-        upserted(existing(id, subject, name), %{
-          id: id,
-          actor: actor,
-          subject: subject,
-          name: name,
-          url: url,
-          secret: secret,
-          ttl: ttl,
-          arguments: arguments,
-          from: from,
-          now: now
-        })
+        update_blob(subs_path(subject), %{}, fn subs ->
+          fresh = %{
+            id: id,
+            actor: actor,
+            subject: subject,
+            name: name,
+            url: url,
+            secret: secret,
+            ttl: ttl,
+            arguments: arguments,
+            from: from,
+            head: seq,
+            now: now
+          }
 
-      :ets.insert(__MODULE__, {{:subscription, subject, name, id}, record})
+          rec = upserted(subs[id], fresh)
+          {Map.put(subs, id, rec), rec}
+        end)
 
       {:ok,
        %{
@@ -173,7 +174,7 @@ defmodule OneCore.Events do
          id: id,
          refreshBefore: if(record["expiresAt"], do: iso(record["expiresAt"])),
          cursor: cursor(record["cursor"]),
-         truncated: truncated?(record["cursor"], logged(subject)),
+         truncated: truncated?(record["cursor"], seq, events),
          deliveryStatus: record["deliveryStatus"]
        }}
     end
@@ -184,7 +185,8 @@ defmodule OneCore.Events do
     with {:ok, name} <- asked(params["name"]),
          {:ok, url} <- url(params["delivery"]),
          {:ok, arguments} <- arguments(params["arguments"]) do
-      :ets.delete(__MODULE__, {:subscription, subject, name, id(actor, subject, url, name, arguments)})
+      sub_id = id(actor, subject, url, name, arguments)
+      update_blob(subs_path(subject), %{}, fn subs -> {Map.delete(subs, sub_id), :ok} end)
       {:ok, %{resultType: "complete"}}
     end
   end
@@ -204,30 +206,30 @@ defmodule OneCore.Events do
   end
 
   # What a client polled for, from its params: `events/poll`'s answer.
-  defp answered(_name, _arguments, nil, _age, _most, _events) do
-    {:ok, polled([], head(), false, false)}
+  defp answered(_name, _arguments, nil, _age, _most, seq, _events) do
+    {:ok, polled([], seq, false, false)}
   end
 
-  defp answered(name, arguments, from, age, most, events) do
+  defp answered(name, arguments, from, age, most, seq, events) do
     now = System.system_time(:millisecond)
 
     matched =
-      for {seq, at, occurrence} <- events,
-          seq > from,
+      for [ev_seq, at, occurrence] <- events,
+          ev_seq > from,
           at >= now - age,
           occurrence["name"] == name,
           matches?(arguments, occurrence["data"]),
-          do: {seq, occurrence}
+          do: {ev_seq, occurrence}
 
     {given, more} = Enum.split(matched, most)
 
     last =
       case List.last(given) do
-        {seq, _occurrence} -> seq
-        nil -> head()
+        {ev_seq, _occurrence} -> ev_seq
+        nil -> seq
       end
 
-    {:ok, polled(Enum.map(given, &elem(&1, 1)), last, truncated?(from, events), more != [])}
+    {:ok, polled(Enum.map(given, &elem(&1, 1)), last, truncated?(from, seq, events), more != [])}
   end
 
   defp polled(events, last, truncated, has_more) do
@@ -284,45 +286,61 @@ defmodule OneCore.Events do
   defp refused(cursor),
     do: {:error, -32602, "A cursor is one this server gave, as ev_12, and #{given(cursor)} isn't one."}
 
-  # The last cursor given out here, whether or not anything happened for this owner.
-  defp head do
-    case :ets.lookup(__MODULE__, :seq) do
-      [{:seq, seq}] -> seq
-      [] -> 0
+  defp log_path(subject), do: "#{subject}/events/log.json"
+  defp subs_path(subject), do: "#{subject}/events/subscriptions.json"
+
+  defp read_log(subject), do: read_blob(log_path(subject), %{"seq" => 0, "events" => []})
+  defp read_subs(subject), do: read_blob(subs_path(subject), %{})
+
+  defp read_blob(path, default) do
+    case Bucket.read(path) do
+      {:ok, data, _tag} -> JSON.decode!(data)
+      :absent -> default
     end
   end
 
-  # What happened for `subject`, in the order it happened: `{seq, when it happened, event}`.
-  defp logged(subject) do
-    :ets.select(__MODULE__, [{{{:event, subject, :"$1"}, :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
-    |> Enum.sort()
+  # Changes a JSON blob in the bucket with conditional writes (ETags), retrying if another server wrote meanwhile.
+  defp update_blob(path, default, change) do
+    {was, tag} =
+      case Bucket.read(path) do
+        {:ok, data, tag} -> {JSON.decode!(data), tag}
+        :absent -> {default, nil}
+      end
+
+    {now, result} = change.(was)
+
+    cond do
+      now == was -> result
+      write_or_replace(path, JSON.encode!(now), tag) == :ok -> result
+      true -> update_blob(path, default, change)
+    end
   end
 
-  # Whether some of what happened after the cursor `from` has gone: it's older than the oldest that's kept.
-  defp truncated?(nil, _events), do: false
+  defp write_or_replace(path, data, nil), do: Bucket.write(path, data)
+  defp write_or_replace(path, data, tag), do: Bucket.replace(path, data, tag)
 
-  defp truncated?(from, events) do
+  # Whether some of what happened after the cursor `from` has gone: it's older than the oldest that's kept.
+  defp truncated?(nil, _seq, _events), do: false
+
+  defp truncated?(from, seq, events) do
     oldest =
       case events do
-        [{seq, _at, _occurrence} | _] -> seq
-        [] -> head() + 1
+        [[ev_seq, _at, _occurrence] | _] -> ev_seq
+        [] -> seq + 1
       end
 
     from < oldest - 1
   end
 
-  # What's kept of what happened for `subject`: the newest, and the last seven days' of them.
-  defp pruned(subject, now) do
-    events = logged(subject)
-    expired = for {seq, at, _occurrence} <- events, at < now - @kept, do: seq
-    excess = for {seq, _at, _occurrence} <- Enum.take(events, max(length(events) - @most, 0)), do: seq
-
-    for seq <- Enum.uniq(expired ++ excess), do: :ets.delete(__MODULE__, {:event, subject, seq})
+  # What's kept of what happened for a subject: the newest `@most`, and the last seven days' of them.
+  defp prune(events, now) do
+    fresh = for [seq, at, occ] <- events, at >= now - @kept, do: [seq, at, occ]
+    Enum.drop(fresh, max(length(fresh) - @most, 0))
   end
 
   # The subscriptions that say `name` happened for `subject`, each as it's kept.
   defp subscribed(subject, name) do
-    :ets.select(__MODULE__, [{{{:subscription, subject, name, :_}, :"$1"}, [], [:"$1"]}])
+    for {_id, sub} <- read_subs(subject), sub["name"] == name, do: sub
   end
 
   # Whether what happened is what a subscription's arguments filter by: each of them, by its name, is what happened's.
@@ -385,8 +403,7 @@ defmodule OneCore.Events do
   end
 
   defp forgotten(sub) do
-    :ets.delete(__MODULE__, key(sub))
-    :ok
+    update_blob(subs_path(sub["subject"]), %{}, fn subs -> {Map.delete(subs, sub["id"]), :ok} end)
   end
 
   defp expired?(sub) do
@@ -396,16 +413,7 @@ defmodule OneCore.Events do
 
   defp installed?(sub), do: match?({:ok, _event}, declared(sub["name"], sub["subject"]))
 
-  defp subscription(sub), do: stored(key(sub))
-
-  defp stored(key) do
-    case :ets.lookup(__MODULE__, key) do
-      [{_key, record}] -> record
-      [] -> nil
-    end
-  end
-
-  defp key(sub), do: {:subscription, sub["subject"], sub["name"], sub["id"]}
+  defp subscription(sub), do: read_subs(sub["subject"])[sub["id"]]
 
   defp status(sub, status), do: update(sub, fn _stored -> status end)
 
@@ -416,10 +424,12 @@ defmodule OneCore.Events do
 
   # What a subscription's deliveries have been like, where it's still subscribed.
   defp update(sub, change) do
-    case subscription(sub) do
-      nil -> :ok
-      stored -> :ets.insert(__MODULE__, {key(stored), %{stored | "deliveryStatus" => change.(stored["deliveryStatus"])}})
-    end
+    update_blob(subs_path(sub["subject"]), %{}, fn subs ->
+      case subs[sub["id"]] do
+        nil -> {subs, :ok}
+        stored -> {Map.put(subs, sub["id"], %{stored | "deliveryStatus" => change.(stored["deliveryStatus"])}), :ok}
+      end
+    end)
   end
 
   defp upserted(nil, fresh) do
@@ -434,7 +444,7 @@ defmodule OneCore.Events do
       "previousSecretUntil" => nil,
       "arguments" => fresh.arguments,
       "expiresAt" => expires(fresh),
-      "cursor" => fresh.from || head(),
+      "cursor" => fresh.from || fresh.head,
       "deliveryStatus" => active()
     }
   end
@@ -462,15 +472,13 @@ defmodule OneCore.Events do
       "previousSecretUntil" => until,
       "arguments" => fresh.arguments,
       "expiresAt" => expires(fresh),
-      "cursor" => fresh.from || (live && live["cursor"]) || head(),
+      "cursor" => fresh.from || (live && live["cursor"]) || fresh.head,
       "deliveryStatus" => (live && live["deliveryStatus"]) || active()
     }
   end
 
   defp expires(fresh), do: if(fresh.ttl, do: fresh.now + fresh.ttl)
   defp active, do: %{"active" => true, "lastDeliveryAt" => nil, "lastError" => nil, "failedSince" => nil}
-
-  defp existing(id, subject, name), do: stored({:subscription, subject, name, id})
 
   # A subscription's id: the same for the same subscriber, address, event and filter, on any server that speaks this.
   defp id(actor, subject, url, name, arguments) do

@@ -2,7 +2,7 @@ defmodule OneCore.Application do
   @moduledoc false
   use Application
   require Logger
-  alias OneCore.{Iroh, Jobs, Apps, Events, Release, Server, Servers, Services}
+  alias OneCore.{Iroh, Jobs, Apps, Release, Server, Servers, Services}
   alias OneCore.Apps.Deploy
 
   # A server is started for its owner, its `:owner` setting: a user, a group or the network. One that isn't on
@@ -41,8 +41,6 @@ defmodule OneCore.Application do
       children = [
         {Registry, keys: :duplicate, name: OneCore.Waiting},
         {Task.Supervisor, name: OneCore.Asks},
-        # What happened in apps, which a client follows, and the addresses each is sent to (`OneCore.Events`).
-        Events,
         # It's starting at the network's edge from before it's reached there until it's ready, its apps started
         # and answering by its key, so nobody asks it what it would answer only once they have: another server's
         # lease it held before it stopped among them. `Servers.Report` says so as it starts, before them.
