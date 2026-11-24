@@ -89,8 +89,11 @@ defmodule Vault.Requests do
     missing = for %{"name" => name} <- wanted, values[name] in [nil, ""], do: name
     if missing != [], do: raise("It needs #{Enum.join(missing, ", ")} too.")
     name = free(call, db, request["title"], 1)
+    hosts = JSON.decode!(request["hosts"])
+    # One of a type its app registers is made as that type, the app's to say how it is; any other is a password.
+    made = if request["app"] not in [nil, "agents"] and Items.type_of(call, request["app"], name), do: Items.kept_by(call, request["app"], name, hosts), else: Items.password(hosts)
 
-    Items.write!(call, db, name, Items.password(JSON.decode!(request["hosts"])), :person, fn record ->
+    Items.write!(call, db, name, made, :person, fn record ->
       Enum.reduce(wanted, record, &Items.put_field(&2, &1["name"], values[&1["name"]], &1["secret"]))
     end)
   end

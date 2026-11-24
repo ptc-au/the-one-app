@@ -26,7 +26,9 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   `status` and its `artifact`; every request kept, with its `state`; the apps that use the Vault, by name and title;
   and the kinds of item they keep.
 - `request` asks for an item by its `title` and the `fields` it needs, for an `app` or, with none, for you. For an app
-  installed for the network or a group, the item is in that Vault, as the app finds it, one for everyone it serves.
+  installed for the network or a group, the item is in that Vault, as the app finds it, one for everyone it serves,
+  but for one of a type the app registers (Item types, below, by its name's prefix), which is the person's own, in
+  their Vault, made as that type, as ClickUp's key is.
   Give the person the link it answers with: it opens Vault on their device, where it asks as an alert, "<you> wants
   to use a key", with Don't Allow and Allow, and waits under Requests too. A request moves once, from `waiting` to
   `allowed`, `declined` or, after a week, `expired`, which `list` says by its `id`. Allowing it gives whoever asked

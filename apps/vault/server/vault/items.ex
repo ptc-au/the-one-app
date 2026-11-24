@@ -55,11 +55,14 @@ defmodule Vault.Items do
   with access for it alone.
   """
   def kept_by(call, app, name, hosts \\ []) do
-    case Enum.find(types(call), &(&1.artifact == app and String.starts_with?(name, &1.prefix))) do
+    case type_of(call, app, name) do
       nil -> blank("account", nil, app, hosts, [app])
       type -> blank("app_item", %{"app" => app, "name" => type.name}, app, hosts, [app])
     end
   end
+
+  @doc "The type `app` registered (`types/1`) that an item named `name` is of, by its prefix, or nil."
+  def type_of(call, app, name), do: Enum.find(types(call), &(&1.artifact == app and String.starts_with?(name, &1.prefix)))
 
   defp blank(kind, type, app, hosts, access) do
     %{

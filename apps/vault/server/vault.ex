@@ -958,8 +958,13 @@ defmodule Vault do
 
   def call("request", %{"title" => title, "fields" => fields} = inputs, call) do
     app = if name = inputs["app"], do: Access.who!(call, name)
-    # An app's items are in the Vault of whoever it's installed for, as it finds them: the network's, for one that serves everyone.
-    call = with true <- app not in [nil, "agents"], {at, _name} <- OneCore.Apps.installed(call.subject, app), do: %{call | subject: at}, else: (_ -> call)
+    # An item of a type its app registers is its person's own, in their Vault, as the type's others are (`vault.types`).
+    # Any other an app's is in the Vault of whoever it's installed for, as it finds them: the network's, for one that
+    # serves everyone.
+    call =
+      with true <- app not in [nil, "agents"], nil <- Items.type_of(call, app, title), {at, _name} <- OneCore.Apps.installed(call.subject, app),
+           do: %{call | subject: at},
+           else: (_ -> call)
     db = Store.own(call)
     by = with %{agent: agent} <- SignIns.began(call), do: agent, else: (_ -> nil)
     id = Requests.create(call, db, title, fields, Map.get(inputs, "hosts", []), app, by, inputs["why"])
