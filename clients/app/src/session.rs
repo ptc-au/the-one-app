@@ -118,45 +118,70 @@ pub(crate) async fn opens() {
 
     // A server said something changed, so every view on screen asks again, and the window is told which open apps
     // were loaded against a version it says is gone (`stale`). Servers tell this client for as long as it runs, so a
-    // notification reaches it with its window hidden.
+    // notification reaches it with its window hidden. What came while the last was asked about is taken together and
+    // asked about once, as a busy network says many things a second and asking again for each would never catch up.
     let mut notifications = client.notifications();
     spawn(async move {
         loop {
-            let message = match notifications.recv().await {
-                Ok(message) => message,
-                // What came while the runtime was held, as a Mac's locked app napping: the oldest are dropped and the
-                // rest still come. Ending here would leave the app hearing nothing more, whatever it runs until.
-                Err(broadcast::error::RecvError::Lagged(missed)) => {
-                    eprintln!("the network said {missed} things while this client was behind, so it hears what came after them");
-                    continue;
-                }
+            let mut heard = Vec::new();
+            // What the channel dropped, as the oldest are when it's full, was something that changed as well: it
+            // asks everything again, which is what a change without an app says.
+            let mut dropped = false;
+            match notifications.recv().await {
+                Ok(message) => heard.push(message),
+                Err(broadcast::error::RecvError::Lagged(_)) => dropped = true,
+                // Ending anywhere else would leave the app hearing nothing more, whatever it runs until.
                 Err(broadcast::error::RecvError::Closed) => return,
-            };
-            if message["method"] == "notifications/one/update" {
-                spawn(updater::heard(message["params"].clone()));
+            }
+            loop {
+                match notifications.try_recv() {
+                    Ok(message) => heard.push(message),
+                    Err(broadcast::error::TryRecvError::Lagged(_)) => dropped = true,
+                    Err(_) => break,
+                }
+            }
+            let mut changes = Vec::new();
+            for message in heard {
+                match message["method"].as_str() {
+                    Some("notifications/one/update") => {
+                        spawn(updater::heard(message["params"].clone()));
+                    }
+                    Some("notifications/one/changed") => changes.push(message["params"].clone()),
+                    _ => {}
+                }
+            }
+            if dropped {
+                changes.push(json!({}));
+            }
+            if changes.is_empty() {
                 continue;
             }
-            if message["method"] != "notifications/one/changed" {
-                continue;
-            }
-            for (app, began) in message["params"]["deployed"].as_object().into_iter().flatten() {
+            for (app, began) in changes.iter().flat_map(|changed| changed["deployed"].as_object().into_iter().flatten()) {
                 if let Some(began) = began.as_u64() {
                     views.deploys.lock().expect("no view panics").insert(app.clone(), began);
                 }
             }
             let listed = views.listed(None).await.unwrap_or_default();
-            let stale = views.stale(&message["params"], &listed);
+            let stale: Vec<String> = changes.iter().flat_map(|changed| views.stale(changed, &listed)).collect();
             if !stale.is_empty() {
                 eprintln!("a server said {stale:?} were loaded against what's gone");
                 app.shell.emit("stale", json!(stale));
             }
             if views.on_screen() {
                 eprintln!("a server said something changed");
-                let app = message["params"]["app"].as_str();
-                if app.is_none() {
-                    views.client.refresh_listed();
+                // Every app's tools, if any change said no app's, or else each app's that one did.
+                let apps: Option<HashSet<&str>> = changes.iter().map(|changed| changed["app"].as_str()).collect();
+                match apps {
+                    Some(apps) => {
+                        for app in apps {
+                            views.refresh(Some(app)).await
+                        }
+                    }
+                    None => {
+                        views.client.refresh_listed();
+                        views.refresh(None).await
+                    }
                 }
-                views.refresh(app).await
             } else {
                 views.missed.store(true, Ordering::Relaxed)
             }
