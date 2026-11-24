@@ -215,9 +215,14 @@ function Detail(props: { id: string }) {
   const section = createMemo(() => added().find((one) => one.id === props.id && one.in === "settings"), {
     equals: (a, b) => a?.id === b?.id && a?.app === b?.app && a?.component === b?.component && a?.name === b?.name && a?.title === b?.title,
   })
-  const app = () => apps().find((one) => props.id === `app:${one.for}:${one.name}`)
+  // The same page while it's the same app: `apps` asked again gives new objects, and a page keyed on one would be drawn
+  // from scratch on every change, flashing it. `AppPage` reads `apps` again itself, so what changed in it still shows.
+  const identity = createMemo(() => {
+    const one = apps().find((one) => props.id === `app:${one.for}:${one.name}`)
+    return one && `${one.for}:${one.name}`
+  })
   return (
-    <Show when={section()} keyed fallback={<Show when={props.id === "updates"} fallback={<Show when={app()} keyed>{(app) => <AppPage app={app} />}</Show>}><Updates /></Show>}>
+    <Show when={section()} keyed fallback={<Show when={props.id === "updates"} fallback={<Show when={identity()} keyed>{(identity) => <AppPage identity={identity} />}</Show>}><Updates /></Show>}>
       {(section) => <Drawn section={section} />}
     </Show>
   )
@@ -271,7 +276,11 @@ function Groups(props: { in: Added["in"]; device?: string; kind?: string; server
 }
 
 function Group(props: { added: Added; device?: string; server?: string }) {
-  const drawn = createMemo(() => component(props.added.app, props.added.component).then((module) => module.default))
+  // `added` asked again gives a new object for the same section: drawing it again for that returns a new promise, which
+  // drops what's drawn for a spinner. Only a different app or component draws it anew.
+  const app = createMemo(() => props.added.app)
+  const comp = createMemo(() => props.added.component)
+  const drawn = createMemo(() => component(app(), comp()).then((module) => module.default))
   return (
     <Errored fallback={(error) => <Problem heading={`Can't show ${props.added.title}`} text={error() as Error} />}>
       <Loading fallback={<Spinner delay />}>
@@ -360,8 +369,8 @@ changed(() => refresh(serving))
 const notifying = createMemo(() => json<{ apps: { app: string; allowed: boolean }[] }>("notifications_apps").then(({ apps }) => apps, () => undefined))
 
 /// An app's page: who it's for, whether it's trusted, its notifications, its update, what it adds here, and Remove App.
-function AppPage(props: { app: App }) {
-  const app = () => props.app
+function AppPage(props: { identity: string }) {
+  const app = () => apps().find((one) => `${one.for}:${one.name}` === props.identity)!
   const [working, setWorking] = createSignal<string>()
   const allowed = () => notifying()?.find((one) => one.app === app().app)
   // Each of the app's services that runs somewhere or can't where it should, with its machines: running, or what each lacks.
