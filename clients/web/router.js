@@ -32,7 +32,7 @@ let greeted
 /// What the tool was given and answered, which its page is told, and whether the page shown is its.
 /** @type {object | undefined} */
 let input
-/** @type {{ _meta?: { page?: unknown } } | undefined} */
+/** @type {{ _meta?: { page?: unknown, tool?: unknown } } | undefined} */
 let result
 let tools = false
 
@@ -75,7 +75,11 @@ addEventListener("message", ({ source, data }) => {
   if (source !== frame.contentWindow) return
   // A page shown is greeted with what the assistant answered this one, and the tool's is told what it was given and
   // answered, once it says it's ready, as a host tells an MCP App's.
-  if (data.method === "ui/initialize") return toPage({ id: data.id, result: greeted })
+  // The tool's page is told which tool it shows (MCP Apps' `toolInfo`), which an assistant may not say.
+  if (data.method === "ui/initialize") {
+    const tool = tools && typeof result?._meta?.tool === "string" ? { toolInfo: { tool: { name: result._meta.tool } } } : {}
+    return toPage({ id: data.id, result: greeted && { ...greeted, hostContext: { ...tool, ...greeted.hostContext } } })
+  }
   if (data.method === "ui/notifications/initialized") {
     if (tools && input) toPage({ method: "ui/notifications/tool-input", params: input })
     if (tools && result) toPage({ method: "ui/notifications/tool-result", params: result })
