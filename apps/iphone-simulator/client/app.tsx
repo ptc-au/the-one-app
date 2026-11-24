@@ -1,6 +1,6 @@
 // iPhone Simulator: your simulators on every Mac, and one of them live, to use as an iPhone, start, stop or remove.
 import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, Problem, render, Row, Screen, since, Skeleton, Split, Status, Steps, toast } from "ui"
+import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast } from "ui"
 
 /** A simulator, as `iphone-simulator_list` answers it. */
 interface Simulator {
@@ -106,7 +106,7 @@ function App() {
   const opened = () => simulators().find((e) => e.name === open())
   return (
     <Errored fallback={(error, reset) => <Screen heading="iPhone Simulator"><Problem heading="Couldn't list your simulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} /></Screen>}>
-      <Loading fallback={<Skeleton rows={3} />}>
+      <Loading fallback={<Spinner delay />}>
         <Split open={!!opened()} onClose={() => setOpen()} pick="Pick a simulator to use it." detail={<Show when={opened()}><Detail simulator={opened()!} /></Show>}>
           <Screen heading="iPhone Simulator">
             <Show when={simulators().length} fallback={<Empty>No simulators. Your agents create them as they need them.</Empty>}>
