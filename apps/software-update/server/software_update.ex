@@ -265,7 +265,17 @@ defmodule SoftwareUpdate do
     case token(call) do
       {:ok, token} ->
         # A deploy takes minutes, and a hook ten seconds at most.
-        Task.start(fn -> OneCore.Release.edge_deployed(build, deploy(build, token)) end)
+        Task.start(fn ->
+          # A deploy that raises says why it failed, as one that went back does: left unsaid, the update waits out its ten minutes.
+          result =
+            try do
+              deploy(build, token)
+            rescue
+              error -> {:error, Exception.message(error)}
+            end
+
+          OneCore.Release.edge_deployed(build, result)
+        end)
 
       {:setup, why} ->
         OneCore.Release.edge_deployed(build, {:setup, why})
@@ -292,6 +302,7 @@ defmodule SoftwareUpdate do
          {:ok, bun} <- OneCore.Programs.path(:bun) do
       folder = Path.join([OneCore.Server.home(), "edge", build])
       File.rm_rf!(folder)
+      File.mkdir_p!(Path.dirname(folder))
       File.cp_r!(from, folder)
       env = [{"CLOUDFLARE_API_TOKEN", token}]
 
