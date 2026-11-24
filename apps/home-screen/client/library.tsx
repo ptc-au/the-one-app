@@ -5,7 +5,7 @@ import { ScrollView, Empty, Icon, Image, type Located, Pressable, type Rect, red
 import { BAR, corner, TOP_ROW } from "./layout.ts"
 import { type Category, type Listed, src } from "./types.ts"
 import { looks } from "./looks.ts"
-import { along, home, state, launcher, room, tapping, libraryScroll } from "./store.ts"
+import { along, home, state, launcher, room, tapping } from "./store.ts"
 import { type Owner, badgeOf, findIn, type From, launch, opens, press } from "./owners.ts"
 import { Count } from "./tiles.tsx"
 import { holds } from "./holds.ts"
@@ -212,7 +212,7 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
           </View>
         </View>
       </Show>
-      <ScrollView onScroll={(event) => (libraryScroll.scrollTop = event.currentTarget.scrollTop)} style={[looks.libraryScroll, looks.libraryPadding(inline(), props.size ? 0 : 12, props.size ? 0 : 96 + room().safe.bottom)]}>
+      <ScrollView style={[looks.libraryScroll, looks.libraryPadding(inline(), props.size ? 0 : 12, props.size ? 0 : 96 + room().safe.bottom)]}>
         <View role="region" aria-label="Apps" style={[looks.libraryColumn, looks.wide(Math.min(width(), block()))]}>
           <Show when={searching() ? found(false).length || found(true).length : props.owner.library.length} fallback={<Empty>{searching() ? "No apps match." : "No apps yet."}</Empty>}>
             <Show when={searching()} fallback={<Show when={apps().length}><Categories list={apps()} prefix="" /></Show>}>

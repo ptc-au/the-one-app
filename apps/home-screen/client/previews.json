@@ -1752,7 +1752,7 @@
       }
     },
     "motions": {
-      "A mouse's wheel turns a page": {
+      "A mouse's Shift+wheel turns a page": {
         "gesture": {
           "trace": "traces/mouse-wheel-down.json"
         },
@@ -1761,7 +1761,7 @@
           "name": "Notes"
         }
       },
-      "A mouse's wheel spun on to the App Library": {
+      "A mouse's Shift+wheel spun on to the App Library": {
         "gesture": {
           "trace": "traces/mouse-wheel-spin.json"
         },

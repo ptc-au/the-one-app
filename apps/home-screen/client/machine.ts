@@ -167,7 +167,7 @@ export type Event =
   | { type: "laid"; owners: string[]; screens: Kind[][]; fit: number }
   /** The Home Screen came to rest here, as a finger or a scroll left it. */
   | { type: "settled"; at: At }
-  /** One screenful along, or one owner: a key, a wheel or a trackpad. */
+  /** One screenful along (a key, a wheel or a trackpad), or one owner (a key). */
   | { type: "step"; screen: 1 | -1 }
   | { type: "step"; owner: 1 | -1 }
   /** The focus moved to what's on this screenful, which is shown, as a swipe would show it. */
