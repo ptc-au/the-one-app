@@ -69,6 +69,14 @@ export default {
       { part: "chart", grow: true, height: 96, values: [6200, 9100, 4300, 10400, 7600, 12100, 8412], labels: ["M", "T", "W", "T", "F", "S", "S"], label: "Steps this week" },
     ],
   }),
+  // This week's bar picked out of the eight, as My Tasks' Closed per week has it.
+  "Widgets/A stat over a chart with this week picked out, 2x2": cell("2x2", "Closed per week", {
+    part: "column",
+    parts: [
+      { part: "stat", value: 2, label: "Closed this week" },
+      { part: "chart", grow: true, values: [3, 5, 2, 6, 4, 7, 1, 2], highlight: 7, label: "Closed per week" },
+    ],
+  }),
   "Widgets/A list of items, 4x4": cell("4x4", "Inbox", {
     part: "column",
     parts: [

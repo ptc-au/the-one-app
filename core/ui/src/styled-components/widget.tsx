@@ -2,10 +2,10 @@
 // the same on every host. It fills the cells a Home Screen page gives it, and what doesn't fit is cut
 // off, never scrolled. Its name is small and grey, low in its order. Colour is for what needs someone.
 import { createContext, createSignal, For, Match, Show, Switch as Which, useContext } from "solid-js"
-import type { JSX } from "@solidjs/web"
 import { Image, Path, Pressable, Svg, Text, View } from "#primitives"
 import type { Laid, Located, Rect } from "../types/ui.d.ts"
 import { Spinner } from "./button.tsx"
+import { along, at, band, Chart, Drawn, rounded } from "./chart.tsx"
 import { Switch } from "./field.tsx"
 import { styles, type Styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
@@ -81,10 +81,7 @@ const look = styles({
   progress: { gap: tokens.grid[1], minWidth: 0 },
   bar: { position: "relative", height: tokens.grid[2] },
   drawn: { position: "relative", flexShrink: 0 },
-  chart: { flexShrink: 0, gap: tokens.grid[1] },
-  bars: { position: "relative", flexGrow: 1, minHeight: 0 },
-  labels: { flexDirection: "row" },
-  label: { flexGrow: 1, flexBasis: 0, minWidth: 0, font: tokens.type.small, color: tokens.colour.secondaryLabel, textAlign: "center", lineClamp: 1 },
+  chart: { flexShrink: 0 },
   // A row of a list, a hairline above it but the first.
   item: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2], minWidth: 0, paddingBlock: tokens.grid[1], borderTopWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   first: { borderTopWidth: 0 },
@@ -167,6 +164,7 @@ export interface Layout {
   labels?: unknown[]
   max?: unknown
   kind?: string
+  highlight?: unknown
   subtitle?: string
   trailing?: string
   url?: string
@@ -189,8 +187,6 @@ function number(value: unknown, or?: number) {
 }
 const share = (value: unknown) => Math.max(0, Math.min(1, number(value, 0)))
 const figure = (value: unknown) => (typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value ?? "–"))
-/** A coordinate, short. */
-const at = (value: number) => Math.round(value * 100) / 100
 
 /// When something was, as a widget says it.
 function time(when: unknown, style?: string) {
@@ -211,57 +207,9 @@ const room = (part: Layout) => [!!part.grow && look.grow, !!part.dim && look.dim
 const tone = (part: Layout) => (part.tone ? tones[part.tone] : undefined)
 const sized = (part: Layout, height?: number) => [number(part.width) !== undefined && look.width(number(part.width)!), height !== undefined && look.height(height)]
 
-/** Points along a box `width` by `height`, one for each value up to `max`, from the left edge to the right. */
-const along = (values: number[], max: number, width: number, height: number) =>
-  values.map((value, index) => [values.length > 1 ? (index / (values.length - 1)) * width : width / 2, height - 1 - (Math.min(value, max) / max) * (height - 2)] as const)
-
-/** A line through `points`, `thick` across, as a shape to fill: its two edges, each a half's width out, mitred at
- * each turn. */
-function band(points: readonly (readonly [number, number])[], thick: number) {
-  if (points.length < 2) return ""
-  const normal = (from: readonly [number, number], to: readonly [number, number]) => {
-    const [dx, dy] = [to[0] - from[0], to[1] - from[1]]
-    const length = Math.hypot(dx, dy) || 1
-    return [-dy / length, dx / length] as const
-  }
-  const out = points.map((point, index) => {
-    const before = index > 0 ? normal(points[index - 1], point) : undefined
-    const after = index < points.length - 1 ? normal(point, points[index + 1]) : undefined
-    const [a, b] = [before ?? after!, after ?? before!]
-    const [x, y] = [a[0] + b[0], a[1] + b[1]]
-    const length = Math.hypot(x, y) || 1
-    // How far out the mitre is, no more than twice the half's width at a sharp turn.
-    const mitre = Math.min(2, 1 / Math.max(0.5, (x / length) * a[0] + (y / length) * a[1])) * (thick / 2)
-    return [(x / length) * mitre, (y / length) * mitre] as const
-  })
-  const edge = (side: 1 | -1, order: number[]) => order.map((index) => `${at(points[index][0] + side * out[index][0])} ${at(points[index][1] + side * out[index][1])}`)
-  const indices = points.map((_, index) => index)
-  return `M${[...edge(1, indices), ...edge(-1, indices.reverse())].join("L")}Z`
-}
-
-/** A rectangle with round corners, as a path. */
-const rounded = (x: number, y: number, width: number, height: number, radius: number) => {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2))
-  return `M${at(x + r)} ${at(y)}H${at(x + width - r)}A${r} ${r} 0 0 1 ${at(x + width)} ${at(y + r)}V${at(y + height - r)}A${r} ${r} 0 0 1 ${at(x + width - r)} ${at(y + height)}H${at(x + r)}A${r} ${r} 0 0 1 ${at(x)} ${at(y + height - r)}V${at(y + r)}A${r} ${r} 0 0 1 ${at(x + r)} ${at(y)}Z`
-}
-
 /** A circle, as a path: clockwise, or with `back` the other way, which cuts it out of one around it. */
 const circle = (x: number, y: number, radius: number, back = false) =>
   `M${at(x - radius)} ${at(y)}A${at(radius)} ${at(radius)} 0 1 ${back ? 0 : 1} ${at(x + radius)} ${at(y)}A${at(radius)} ${at(radius)} 0 1 ${back ? 0 : 1} ${at(x - radius)} ${at(y)}Z`
-
-/// A box its shapes fill, drawn once it's laid out, in its own pixels, so a line is as thick however wide it is.
-function Drawn(props: { label?: string; style?: Styles; draw: (width: number, height: number) => JSX.Element }) {
-  const [size, setSize] = createSignal<Rect>()
-  const laid = (event: Laid) => {
-    const { width, height } = event.currentTarget.getBoundingClientRect()
-    if (width !== size()?.width || height !== size()?.height) setSize({ x: 0, y: 0, width, height })
-  }
-  return (
-    <View role={props.label ? "img" : undefined} aria-label={props.label} onLayout={laid} style={props.style}>
-      <Show when={size()?.width && size()?.height ? size() : undefined}>{(box) => props.draw(box().width, box().height)}</Show>
-    </View>
-  )
-}
 
 function Spark(props: { part: Layout }) {
   const values = () => (Array.isArray(props.part.values) ? props.part.values.map((value) => number(value, 0)) : [])
@@ -280,39 +228,6 @@ function Spark(props: { part: Layout }) {
         </Show>
       )}
     />
-  )
-}
-
-function Chart(props: { part: Layout }) {
-  const values = () => (Array.isArray(props.part.values) ? props.part.values.map((value) => number(value, 0)) : [])
-  const max = () => number(props.part.max, Math.max(...values(), 1))
-  /// Bars, each in its own slot, the labels' under it, at three fifths of its width.
-  const bars = (width: number, height: number) => {
-    const slot = width / Math.max(values().length, 1)
-    return values()
-      .map((value, index) => {
-        const tall = (Math.min(value, max()) / max()) * height
-        return tall > 0 ? rounded(index * slot + slot * 0.2, height - tall, slot * 0.6, tall, 3) : ""
-      })
-      .join("")
-  }
-  return (
-    <View style={[look.chart, ...room(props.part), look.height(number(props.part.height, 70))]}>
-      <Drawn
-        label={props.part.label}
-        style={look.bars}
-        draw={(width, height) => (
-          <Svg viewBox={`0 0 ${at(width)} ${at(height)}`} style={look.over}><Path d={props.part.kind === "line" ? band(along(values(), max(), width, height), 1.5) : bars(width, height)} /></Svg>
-        )}
-      />
-      <Show when={Array.isArray(props.part.labels)}>
-        <View style={look.labels}>
-          <For each={props.part.labels} keyed={false}>
-            {(label) => <Text style={look.label}>{String(label() ?? "")}</Text>}
-          </For>
-        </View>
-      </Show>
-    </View>
   )
 }
 
@@ -515,7 +430,16 @@ function Part(props: { part: Layout; root?: boolean; row?: boolean; first?: bool
         <Spark part={part()} />
       </Match>
       <Match when={part().part === "chart"}>
-        <Chart part={part()} />
+        <View style={[look.chart, ...room(part()), look.height(number(part().height, 70))]}>
+          <Chart
+            values={Array.isArray(part().values) ? part().values!.map((value) => number(value, 0)) : []}
+            labels={Array.isArray(part().labels) ? part().labels!.map((label) => String(label ?? "")) : undefined}
+            kind={part().kind === "line" ? "line" : "bar"}
+            max={number(part().max)}
+            highlight={number(part().highlight)}
+            label={part().label}
+          />
+        </View>
       </Match>
       <Match when={part().part === "item"}>
         <Item part={part()} first={props.first} />

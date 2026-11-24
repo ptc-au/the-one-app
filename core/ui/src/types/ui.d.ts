@@ -459,6 +459,18 @@ export declare function ActionBar(props: { start?: Element; actions?: Action[] }
 
 export declare const Metadata: ((props: { children?: Element }) => Element) & { Label: (props: { title: Element; text?: Element }) => Element }
 
+/** Values as bars over their labels, or with `kind="line"` a line, up to `max`, in the text's colour: `highlight` picks
+ * one bar out, the rest fainter; `figures` says each bar's value over it. It fills its room, which `style`'s `height` sets. */
+export declare function Chart(props: {
+  values: number[]
+  labels?: string[]
+  kind?: "bar" | "line"
+  max?: number
+  highlight?: number
+  figures?: boolean
+  label?: string
+  style?: Styles<"height" | "flexGrow" | "alignSelf" | "marginTop">
+}): Element
 /** One event of a `TimeGrid`: where it starts and ends in its day, in minutes from midnight, its title, a grey line,
  * its own colour from data, whether it's over, something to do with it, and what a press does. */
 export type TimeGridEvent = { id: string; start: number; end: number; title: string; text?: string; colour?: `#${string}` | null; over?: boolean; action?: Element; onPress?: () => void }
