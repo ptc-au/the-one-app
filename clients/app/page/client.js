@@ -9,7 +9,7 @@
 // `launcher`, which a network has exactly one of. It's the one this page shows first, under every other, and it
 // opens the rest (`one/open`).
 import { address, asksToReload, invoke, listen, pathOf, sandbox } from "./host.js"
-import { appStore, files, first, launcher, list, listed, names, needs, settings } from "./apps.js"
+import { appStore, bySubject, files, first, launcher, list, listed, names, needs, settings } from "./apps.js"
 import { post } from "./bridge.js"
 import { opens } from "./path.js"
 import { chosen, dress, heardTheme, titled } from "./chrome.js"
@@ -329,7 +329,14 @@ export function opened(view) {
 /// here.
 /** @param {string} link @param {string} [subject] @param {boolean} [behind] @param {Rect} [from] */
 export function go(link, subject, behind, from) {
-  const to = opens(link, { first, files, settings })
+  // A group's apps aren't in this user's own list (`files`), so check that group's list where it's been listed,
+  // or list it first when the link names only an app (as App Store's Open does) rather than a page.
+  const scope = subject ? bySubject.get(subject) : { first, files }
+  if (subject && !scope && !link.split("#", 1)[0].includes("/")) {
+    if (!behind) list(subject).then(() => bySubject.has(subject) && go(link, subject, false, from))
+    return true
+  }
+  const to = opens(link, { first: scope?.first ?? new Map(), files: scope?.files ?? new Set(), settings })
   if (!to) return false
   const { page, fragment } = to
   link = to.link

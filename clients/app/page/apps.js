@@ -22,6 +22,9 @@ export let first = new Map()
 /// Every file of every app listed, by `<app>/<path>`: what a link to a page can open.
 /** @type {Set<string>} */
 export let files = new Set()
+/// Each group's or the network's listed apps (`first`, `files`), by subject, once listed.
+/** @type {Map<string, { first: Map<string, string>, files: Set<string> }>} */
+export const bySubject = new Map()
 /// Each app's name and icon, by its page, as this user's apps list them.
 /** @type {Map<string, string>} */
 export let names = new Map()
@@ -95,6 +98,15 @@ export async function list(subject) {
     }
     if (!launcher && !own) on(late ? { type: "tooOld" } : { type: "none", only: await only() })
     on({ type: "updateReady", ready: !phone && late })
+  } else {
+    const { pages, first: theirs, files: theirFiles } = pagesOf(resources)
+    bySubject.set(subject, { first: theirs, files: theirFiles })
+    for (const { uri, name, icons: listedIcons, _meta } of pages) {
+      const page = named(uri)
+      if (!names.has(page)) names.set(page, name ?? "")
+      if (listedIcons?.[0] && !icons.has(page)) icons.set(page, listedIcons[0].src)
+      if (typeof _meta?.runtimeVersion === "number") needs.set(page, _meta.runtimeVersion)
+    }
   }
 }
 
