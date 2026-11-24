@@ -35,7 +35,7 @@ defmodule OneCore.Cache do
   end
 
   # Fetches `key`, or waits for the process already fetching it, which tells those waiting (`OneCore.Waiting`) how it
-  # went. One that registers to wait after it was told finds it gone, and asks again.
+  # went, each at the alias it waits at. One that registers to wait after it was told finds it gone, and asks again.
   defp flight(cache, key, generations, fetch) do
     flight = {:flight, cache, key, generations}
     ref = make_ref()
@@ -50,7 +50,7 @@ defmodule OneCore.Cache do
           :ets.delete(__MODULE__, flight)
         end
 
-      Registry.dispatch(OneCore.Waiting, {__MODULE__, ref}, fn waiting -> for {pid, _} <- waiting, do: send(pid, {__MODULE__, ref, went}) end)
+      Registry.dispatch(OneCore.Waiting, {__MODULE__, ref}, fn waiting -> for {_, waiter} <- waiting, do: send(waiter, {__MODULE__, ref, went}) end)
       fetched(went)
     else
       waited(cache, key, fetch, flight)
@@ -59,7 +59,11 @@ defmodule OneCore.Cache do
 
   defp waited(cache, key, fetch, flight) do
     with [{^flight, fetching, ref}] when fetching != self() <- :ets.lookup(__MODULE__, flight) do
-      {:ok, _} = Registry.register(OneCore.Waiting, {__MODULE__, ref}, nil)
+      # A reply is to an alias that's let go of when it stops waiting, as a GenServer call's is (Process.alias/1), so
+      # one that's told as it stops is dropped by the VM, not left in the mailbox of a process that never waits for it
+      # again, as `OneCore.Servers.Aside`'s.
+      waiter = Process.alias()
+      {:ok, _} = Registry.register(OneCore.Waiting, {__MODULE__, ref}, waiter)
       monitor = Process.monitor(fetching)
 
       went =
@@ -73,6 +77,14 @@ defmodule OneCore.Cache do
         end
 
       Process.demonitor(monitor, [:flush])
+      Process.unalias(waiter)
+
+      receive do
+        {__MODULE__, ^ref, _} -> :ok
+      after
+        0 -> :ok
+      end
+
       Registry.unregister(OneCore.Waiting, {__MODULE__, ref})
       if went == :again, do: fetch(cache, key, fetch), else: fetched(went)
     else
