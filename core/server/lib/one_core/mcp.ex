@@ -770,9 +770,10 @@ defmodule OneCore.Mcp do
   end
 
   # What an app's tool with a page of its own answered says which page shows it (`_meta.page`, `<app>/<path>`), which
-  # the page an assistant shows every app's tool in opens (`router/0`).
+  # the page an assistant shows every app's tool in opens (`router/0`), and which tool it was (`_meta.tool`), which
+  # that page is told as MCP Apps' `toolInfo`, as the screen it shows is that tool and what it was given.
   defp paged({:ok, %{} = result}, name, %{ui: ui}) when is_binary(ui),
-    do: {:ok, Map.put(result, :_meta, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}"})}
+    do: {:ok, Map.put(result, :_meta, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name})}
 
   defp paged(outcome, _name, _tool), do: outcome
 
