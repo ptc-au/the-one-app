@@ -5,6 +5,7 @@ defmodule OneCore.Edge do
   """
   alias OneCore.{Cache, Iroh, Server}
   alias OneCore.Edge.Unreachable
+  require Logger
 
   # The list this server is on: its owner's, whom it was started for.
   defp list, do: Application.get_env(:one_core, :owner, "network") <> "/"
@@ -24,11 +25,17 @@ defmodule OneCore.Edge do
   or didn't answer, which isn't the fault of whatever asked. A request Req sends again (`retry`) says so only in
   this server's own log, at `info`: one answered at a later try worked, and one that failed every time raises,
   which is the error.
+
+  One whose connection is closed partway is sent again at once on a new one (`run/1`), unless it says `resend:
+  false`: one that changes something each time it's sent, which a second send could do twice.
   """
   def send!(request) do
+    {resend, request} = Keyword.pop(request, :resend, true)
+
     request
     |> Keyword.update(:finch, @pool, &Keyword.merge(@pool, &1))
     |> Keyword.put(:retry_log_level, :info)
+    |> Keyword.put(:adapter, if(resend, do: __MODULE__, else: Req.Finch))
     |> Req.request!()
   rescue
     error in Req.TransportError ->
@@ -46,6 +53,33 @@ defmodule OneCore.Edge do
       reraise Unreachable,
               "#{host} #{how}, so this server couldn't do what was asked. Check this server is online, then try again.",
               __STACKTRACE__
+  end
+
+  @doc """
+  Req's adapter for what's sent to the edge (`send!/1`), which sends a request whose connection was closed partway
+  again, at once and once, on a new connection.
+
+  Cloudflare closes connections partway, on its side: in the same minutes for servers in different places, and for
+  unrelated networks (24 Nov). The connections this server keeps open to it go together: Req sending one again on
+  another of them (`retry`) was closed too, 4 times over 7 s, while a new connection was answered at once. So it's sent again in a pool of its own (Finch's `pool_tag`), whose connections are made for
+  that. Every request to the edge is safe to send again (reads, signs, a bucket's conditional writes and removals,
+  and saying what this server is) but one that says otherwise (`send!/1`). What answers it is marked `resent`, so a
+  conditional write refused then can tell whether its own first send made it (`OneCore.Bucket.S3`).
+  """
+  def run(request) do
+    case Req.Finch.run(request) do
+      {request, %Req.TransportError{reason: :closed}} ->
+        Logger.info("#{request.url.host} closed the connection partway, so it's sent again on a new one")
+        finch = Keyword.put(request.options.finch, :pool_tag, :resent)
+
+        case Req.Finch.run(Req.Request.put_option(request, :finch, finch)) do
+          {request, %Req.Response{} = response} -> {request, Req.Response.put_private(response, :resent, true)}
+          failed -> failed
+        end
+
+      ran ->
+        ran
+    end
   end
 
   @doc """

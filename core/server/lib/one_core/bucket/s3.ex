@@ -52,7 +52,7 @@ defmodule OneCore.Bucket.S3 do
   def write(address, key, data) do
     case request(address, %{write: key}, data) do
       %{status: 200} -> :ok
-      %{status: 412} -> :exists
+      %{status: 412} = refused -> if made?(refused, address, key, data), do: :ok, else: :exists
       refused -> raise refusal(refused)
     end
   end
@@ -60,11 +60,21 @@ defmodule OneCore.Bucket.S3 do
   @impl true
   def replace(address, key, data, tag) do
     case request(address, %{replace: key, tag: tag}, data) do
-      %{status: 200} -> :ok
-      %{status: status} when status in [404, 412] -> :changed
-      refused -> raise refusal(refused)
+      %{status: 200} ->
+        :ok
+
+      %{status: status} = refused when status in [404, 412] ->
+        if made?(refused, address, key, data), do: :ok, else: :changed
+
+      refused ->
+        raise refusal(refused)
     end
   end
+
+  # A write sent again, as one whose connection was closed partway is (`OneCore.Edge.run/1`), is refused if its first
+  # send was made: it was if what's there is what it wrote.
+  defp made?(refused, address, key, data),
+    do: Req.Response.get_private(refused, :resent) == true and match?({:ok, ^data, _tag}, read(address, key))
 
   @impl true
   def list(address, prefix), do: for({key, _tag} <- list_tagged(address, prefix), do: key)
