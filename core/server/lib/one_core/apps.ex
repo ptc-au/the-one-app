@@ -241,7 +241,7 @@ defmodule OneCore.Apps do
   `at`'s own by default: it allows the app's code (`allows?/3`) and acts for whose data it is
   (`OneCore.Servers.here?/1`). Of the servers that do, the narrowest that's up takes a call (`first?/3`).
   """
-  def runs?(at, trusted, whose \\ nil), do: allowed?(Servers.here(), at, trusted) and here?(whose || at)
+  def runs?(at, trusted, whose \\ nil), do: (not trusted or loads?(at)) and here?(whose || at)
 
   @doc """
   Whether the server whose key is `key` acts for `who`, a user, a group or the network, as scopes nest: for them or
@@ -299,15 +299,14 @@ defmodule OneCore.Apps do
   @doc """
   Whether the server whose key is `key` allows the code of an app installed for `at`, which is `trusted` or not: an
   untrusted one runs anywhere, in its sandbox, and a trusted one with its machine's access where it's the network's,
-  or installed for whoever the server acts for as its own (`OneCore.Servers.acts_for/1`).
+  or wherever a call for whoever it's installed for runs (`acts_for?/2`): their own server, one of their group's, or
+  the network's, the narrowest that's up taking it (`first?/3`). A network is trusted, and its people aren't assumed
+  to mean it harm (PRIOR-ART's Trust): keeping their apps apart is the sandbox's, for an app nobody vouches for.
   """
-  def allows?(key, at, trusted), do: allowed?(Servers.acts_for(key), at, trusted)
-
-  defp allowed?(scopes, at, trusted),
-    do: not trusted or at == @network or at in scopes
+  def allows?(key, at, trusted), do: not trusted or at == @network or acts_for?(key, at)
 
   @doc "Whether this server loads the code of the apps installed for `owner`: it allows a trusted one's (`allows?/3`)."
-  def loads?(owner), do: allowed?(Servers.here(), owner, true)
+  def loads?(owner), do: owner == @network or here?(owner)
 
   @doc """
   The keys of the servers that run a call of an app installed for `at`, `trusted` or not, that keeps `whose` data,

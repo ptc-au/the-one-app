@@ -48,9 +48,9 @@ An app's own words are defined in that app's `SKILL.md`.
 - **App Store**: the app that installs and removes apps, in the category `app-store`, which a client opens itself
   where there's no launcher yet to open it from.
 - **Trusted**, **Untrusted**: the state of an installed app, apart from where it is in its lifecycle, and either
-  can become the other. A trusted app runs in its server's VM, on a server of whoever it's installed for. An
-  untrusted app runs in a sandbox: a VM of its own, for each user, group or network whose data it keeps, by any of
-  the network's servers. So installing a stranger's app needs no server of one's own. The sandbox is only where an
+  can become the other. A trusted app runs in its server's VM, on the narrowest server that's up and acts for whoever
+  it's installed for: their own, else one of their group's, else the network's. An untrusted app runs in a sandbox:
+  a VM of its own, for each user, group or network whose data it keeps, by any of the network's servers. The sandbox is only where an
   untrusted app runs (bubblewrap, Seatbelt, AppContainer), never what an app is. Avoid: sandboxed, sandbox mode.
 - **Widget**: what an app shows on a Home Screen page at a glance. The app returns a layout from a fixed list of parts, in
   a phone's own sizes, and each client draws it. So one widget shows in the client, on a phone's own home screen, and to

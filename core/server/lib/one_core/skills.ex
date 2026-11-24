@@ -32,11 +32,11 @@ defmodule OneCore.Skills do
   description: Read before installing an app from a git repo (`one install <owner>/<repo> --app <name>`), or updating one (`one apps update`). It says how to check it for the person first.
   ---
 
-  An app from a git repo is code someone else wrote. Installed as it is, its server code runs on the person's
-  own machines with everything they can reach: their files, the network, their other apps' tools and the Vault
-  items it asks for. An untrusted app runs in a sandbox instead, a VM of its own on any of the network's servers,
-  and reaches only its own data, what it's shared, and the tools of the apps its `requires/0` names, and no
-  website; it needs no server of the person's. A stranger's app, as `one install` takes any repo's to be, is untrusted unless someone
+  An app from a git repo is code someone else wrote. Installed trusted, its server code runs on a server acting
+  for the person (their own, else their group's, else the network's) with everything that server can reach: its
+  files, the network, the person's other apps' tools and the Vault items it asks for. An untrusted app runs in a
+  sandbox instead, a VM of its own on any of the network's servers, and reaches only its own data, what it's
+  shared, and the tools of the apps its `requires/0` names, and no website. A stranger's app, as `one install` takes any repo's to be, is untrusted unless someone
   who may install for them says otherwise (`--trusted`). Keep an app you didn't write untrusted, and say so when it
   can't run that way (installing it says why). Either way, you
   check it for them, as a colleague would before running a stranger's script, and install it only once they say yes:

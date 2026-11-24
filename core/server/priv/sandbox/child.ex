@@ -488,7 +488,7 @@ defmodule OneCore.Sandbox.Check do
   @programs [{System, :cmd}, {System, :shell}, {Port, :open}, {:os, :cmd}, {:erlang, :open_port}]
   @network [:gen_tcp, :gen_udp, :gen_sctp, :ssl, :httpc, :socket, Req, Finch, Mint.HTTP, HTTPoison, Tesla]
 
-  # Core's hooks that mutate or validate what happens, which only an app on a server of its owner's may.
+  # Core's hooks that mutate or validate what happens, which only a trusted app may.
   @deciding for {hook, kind} <- OneCore.App.Manifest.kinds(), kind in [:mutate, :validate], do: hook
 
   # Which of the apps it requires, by their names, run in its VM as it: those whose code can run there. One that
@@ -508,21 +508,20 @@ defmodule OneCore.Sandbox.Check do
           hook in @deciding,
           do:
             "#{where(app)}: hooks/0 names `#{hook}`, which changes or decides what happens. An untrusted " <>
-              "app only observes: hook `changed` instead, or run it trusted, on a server of its owner's."
+              "app only observes: hook `changed` instead, or run it trusted."
 
     offering =
       if offers == [],
         do: [],
         else: [
-          "#{where(app)}: offers/0 offers hooks, which an untrusted app doesn't: run it trusted, on a server " <>
-            "of its owner's."
+          "#{where(app)}: offers/0 offers hooks, which an untrusted app doesn't: run it trusted."
         ]
 
     serving =
       for service <- services,
           do:
             "#{service} is a service, which runs on particular machines: an untrusted app has none. An app " <>
-              "with one runs trusted, on a server of its owner's."
+              "with one runs trusted."
 
     calls ++ hooking ++ offering ++ serving
   end
@@ -594,8 +593,7 @@ defmodule OneCore.Sandbox.Check do
         if f not in offered, do: "#{name} isn't offered to an untrusted app. #{instead(m, f)}"
 
       m == OneCore.Service ->
-        "#{name} reaches a service, which an untrusted app has none of: an app with one runs trusted, on a " <>
-          "server of its owner's."
+        "#{name} reaches a service, which an untrusted app has none of: an app with one runs trusted."
 
       String.starts_with?(inspect(m), "OneCore.") ->
         "#{name} is One Core's own, which an app doesn't call."
@@ -604,8 +602,7 @@ defmodule OneCore.Sandbox.Check do
         "#{name} starts a program, which an untrusted app doesn't: it has none to start."
 
       m in @network ->
-        "#{name} reaches the network, which an untrusted app doesn't, nor any website: run it trusted, on a " <>
-          "server of its owner's."
+        "#{name} reaches the network, which an untrusted app doesn't, nor any website: run it trusted."
 
       m == Jason ->
         "#{name} is a package that isn't here. Elixir's own `JSON` encodes and decodes."
@@ -625,7 +622,7 @@ defmodule OneCore.Sandbox.Check do
   defp instead(OneCore.Call, :run_hook), do: "An untrusted app offers no hooks."
 
   defp instead(OneCore.Call, :fetch),
-    do: "An untrusted app reaches no website: run it trusted, on a server of its owner's."
+    do: "An untrusted app reaches no website: run it trusted."
 
   defp instead(OneCore.Call, f) when f in [:forward, :run_elsewhere, :refused], do: "One Core does that itself."
   defp instead(OneCore.Artifact, :link), do: "Answer a blob as `{:file, kind, artifact, name}` instead."

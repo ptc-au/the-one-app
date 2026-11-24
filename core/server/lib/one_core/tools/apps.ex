@@ -166,12 +166,6 @@ defmodule OneCore.Tools.Apps do
       not trusted ->
         forward.(owner)
 
-      Apps.servers(owner) == [] ->
-        raise "An app for #{owner} needs a server of their own, since its code runs there and never on the network's. " <>
-                "Set one up in Devices, ask whoever may install apps for everyone to install it for everyone, " <>
-                "or deploy it untrusted (trusted: false), to run in a sandbox, which any of the network's servers " <>
-                "runs for anyone."
-
       true ->
         forward.({:running, owner})
     end

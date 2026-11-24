@@ -10,10 +10,11 @@ defmodule OneCore.App do
   installed from a git repo also takes the repo's newer commits by itself, and an untrusted one offers them as its
   update (`apps`).
 
-  Its server code runs with all of its machine's access, so it runs only on servers of whoever it's installed for:
-  the network's servers for the network, and for a user or a group a server of their own, set up in Devices to act
-  for them alone (or the network's, for the network's owners). So deploying or installing one for yourself takes a
-  server of your own, and for the network its owners or an `installer` of it (`permissions`); anyone else asks them
+  Its server code runs with all of its machine's access, on the narrowest server that's up and acts for whoever it's
+  installed for: their own, set up in Devices, else one of their group's, else the network's, as a call for them runs
+  (`OneCore.Apps.allows?/3`). A network is trusted, and its people aren't assumed to mean it harm: keeping apps apart
+  is the sandbox's, for an app nobody vouches for. Anyone deploys or installs one for themselves; for a group, a
+  person or the network, their owners or an `installer` of them do (`permissions`), and anyone else asks them
   by the network's launcher, whose skill says how. While none of the servers it runs on is on, a call to it says so. Calls already running finish on the version they started on, and the next call
   gets the new one. An app a program ships with can have native code that the clients are built with, in
   `client/native/`, which is never deployed.
