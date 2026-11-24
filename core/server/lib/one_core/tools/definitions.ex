@@ -563,9 +563,10 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "apps_trust",
       exempts_app: true,
+      installs: true,
       task_support: :optional,
       description: """
-      Makes an app trusted, running on servers of whoever has it with everything they can reach, or untrusted,
+      Makes an app trusted, running on a server acting for whoever has it with everything it can reach, or untrusted,
       running in a sandbox with only what it's given, for everyone who has it: it's deployed again the other way.
       Whoever owns the app switches it.
       """,
