@@ -108,8 +108,20 @@ defmodule OneCore.Builds do
   `%{\"one\" => ..., \"server-runtime\" => ..., \"server-code\" => ...}`, with whichever there's one of. Every network
   takes the core's builds from there, as a new network's first server is installed from it
   (`clients/cli/src/serving.rs`), so a release reaches every network without naming any (`core/edge/updater/core.ts`).
+
+  `:now` reads the list as it is now, where `:cached` may give one read up to a minute before: what a server takes as
+  it updates, which its network's edge read after it was published (`OneCore.Release`). A server told to prepare a
+  build in the minute after it last read the list was given the one before, found nothing newer, and was told again,
+  two or three times a second until the minute was up (24 Nov, every server in every release).
   """
-  def download(target) do
+  def download(target, read \\ :cached)
+
+  def download(target, :now) do
+    Cache.invalidate(__MODULE__, target)
+    download(target)
+  end
+
+  def download(target, :cached) do
     case listed(target) do
       {:ok, list} -> list
       {:error, why} -> raise "The core's builds for #{target} couldn't be read: #{why}"

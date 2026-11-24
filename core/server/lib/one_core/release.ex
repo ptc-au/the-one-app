@@ -85,10 +85,10 @@ defmodule OneCore.Release do
   end
 
   # Says the latest builds for the kind of machine `target`, as the program keeping this server running asks before it
-  # takes them: read from the network's bucket by this server, so that taking a build asks no other server, and so
-  # none of their apps, which may be restarting in the same release.
+  # takes them: read from the core's release by this server as it is now, so that taking a build asks no other server,
+  # and so none of their apps, which may be restarting in the same release.
   defp latest(target) do
-    say(%{"latest" => %{"builds" => Builds.download(target)}})
+    say(%{"latest" => %{"builds" => Builds.download(target, :now)}})
   rescue
     error -> say(%{"no_latest" => %{"why" => Exception.message(error)}})
   end
