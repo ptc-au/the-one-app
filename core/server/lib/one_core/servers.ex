@@ -406,7 +406,18 @@ defmodule OneCore.Servers do
         await(coming, System.monotonic_time(:millisecond) + @back)
       after
         Registry.unregister(OneCore.Waiting, :seen)
+        seen()
       end
+    end
+  end
+
+  # Takes the `:seen` said while it waited that it didn't read, so none is left for the process it waited in: a
+  # GenServer that takes no `:seen` stops on it, as a hook's observer did in every update (24 Nov).
+  defp seen do
+    receive do
+      :seen -> seen()
+    after
+      0 -> :ok
     end
   end
 
