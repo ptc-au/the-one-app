@@ -1,6 +1,6 @@
 defmodule GoogleDrive do
   @moduledoc """
-  Google Drive: the person's own Drive, through Drive's API (v3) by its own names (files_get, files_list,
+  Google Drive: the person's own Drive, through Drive's API (v3) by its own names (files_get, files_list, drives_list,
   files_create, files_upload, files_update, generate_ids), which agents already know. Signing in and the accounts
   are the `google-account` app's, the same for every Google app.
   """
@@ -12,6 +12,7 @@ defmodule GoogleDrive do
   # What each tool gives when fields is left out: what an agent uses, without Drive's kind on everything.
   @one_file "id,name,mimeType,parents,modifiedTime,size,webViewLink,trashed"
   @list "nextPageToken,files(id,name,mimeType,parents,modifiedTime,webViewLink)"
+  @drives "drives(id,name)"
   @file_fields "id,name,mimeType,parents,webViewLink"
   @fields_hint "fields is Drive's field list, like id,name,mimeType,parents,modifiedTime,webViewLink"
   @no_folder "No folder among its parents: folder ids come from google-drive_files_list (root is My Drive)."
@@ -80,10 +81,42 @@ defmodule GoogleDrive do
         outputs: file
       },
       %{
+        name: "drives_list",
+        read_only: true,
+        description:
+          "The shared drives you can read, by name, as Drive's drives.list gives them: each one's id and name. Give one's id to files_list with corpora drive to search its files.",
+        inputs:
+          with_account.(
+            %{
+              q: string.("Drive's search for shared drives, like name = 'PTC Systems', or name contains 'Systems'. Every one if left out"),
+              pageSize: %{type: "integer", description: "At most this many, 1 to 100. 10 if left out"},
+              fields: fields.(@drives)
+            },
+            nil
+          ),
+        outputs: %{
+          type: "object",
+          description: "As Drive's drives.list gives it, with the fields asked for",
+          properties: %{
+            drives:
+              %{
+                type: "array",
+                items:
+                  %{
+                    type: "object",
+                    properties: %{id: %{type: "string"}, name: %{type: "string"}},
+                    required: ["id", "name"]
+                  }
+              }
+          },
+          required: ["drives"]
+        }
+      },
+      %{
         name: "files_list",
         read_only: true,
         description:
-          "Finds and searches files and folders with Drive's search (files.list): each one's id, name, mimeType, parents, modifiedTime and webViewLink if fields is left out. When nextPageToken is there, give it as pageToken, with the same q, for the rest.",
+          "Finds and searches files and folders with Drive's search (files.list): each one's id, name, mimeType, parents, modifiedTime and webViewLink if fields is left out. When nextPageToken is there, give it as pageToken, with the same q, for the rest. A shared drive's files are only listed with corpora drive and its driveId, from drives_list.",
         inputs:
           with_account.(
             %{
@@ -97,7 +130,18 @@ defmodule GoogleDrive do
                   "How to sort, like modifiedTime desc, or folder,name, or name. Keys: createdTime, folder, modifiedByMeTime, modifiedTime, name, quotaBytesUsed, recency, sharedWithMeTime, starred, viewedByMeTime"
                 ),
               pageSize: %{type: "integer", description: "At most this many files, 1 to 1000. 100 if left out"},
-              pageToken: string.("The nextPageToken the last files_list gave, with the same q, for the next page")
+              pageToken: string.("The nextPageToken the last files_list gave, with the same q, for the next page"),
+              corpora: %{
+                type: "string",
+                enum: ["user", "domain", "drive", "allDrives"],
+                description:
+                  "Which drives to search, as Drive's corpora: user (My Drive and what's shared with you, the default), domain, drive (only the shared drive driveId names), or allDrives"
+              },
+              driveId: string.("The shared drive to search, with corpora drive: from drives_list"),
+              includeItemsFromAllDrives: %{
+                type: "boolean",
+                description: "Search shared drives too, with corpora user or domain. False, Drive's default, if left out"
+              }
             },
             nil
           ),
@@ -187,9 +231,22 @@ defmodule GoogleDrive do
   end
 
   defp run("files_list", inputs, at) do
+    query =
+      inputs
+      |> Map.take(~w(q orderBy pageSize pageToken corpora driveId includeItemsFromAllDrives))
+      |> Map.put("fields", inputs["fields"] || @list)
+      |> Map.put("supportsAllDrives", true)
+
     api(at, "GET", "files",
-      query: inputs |> Map.take(~w(q orderBy pageSize pageToken)) |> Map.put("fields", inputs["fields"] || @list),
-      hint: "q is Drive's search syntax, like name contains 'budget' and trashed = false, with values in single quotes; orderBy is like modifiedTime desc; " <> @fields_hint
+      query: query,
+      hint: "q is Drive's search syntax, like name contains 'budget' and trashed = false, with values in single quotes; orderBy is like modifiedTime desc; a shared drive's files need corpora drive and its driveId; " <> @fields_hint
+    )
+  end
+
+  defp run("drives_list", inputs, at) do
+    api(at, "GET", "drives",
+      query: %{q: inputs["q"], pageSize: inputs["pageSize"], fields: inputs["fields"] || @drives},
+      hint: "q is Drive's search for shared drives, like name = 'PTC Systems'; " <> @fields_hint
     )
   end
 
