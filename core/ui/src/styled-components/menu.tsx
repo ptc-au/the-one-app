@@ -76,20 +76,23 @@ const look = styles({
 /// `Button`'s, `outline` unless said) that says them, and `size="icon"` keeps one with an icon in it to its icon. An
 /// item starts with an `<Icon />` if it's given one, and `destructive` is for what can't be undone. A press outside,
 /// Escape and choosing an item close it. In a `Row`'s `end`, a long press or a right-click on the row opens it too,
-/// and a finger swipes the row to its `destructive` item.
+/// with no `Menu.Trigger` where the row shows no button (`<Show when={!touch()}>`), and a finger swipes the
+/// row to its `destructive` item.
 export const Menu = {
   Root: (props: MenuProps & { children?: JSX.Element }) => {
     const [destructive, setDestructive] = createSignal<{ value: string; label: JSX.Element }>()
-    return <Opened value={Object.assign(createMenu(props), { destructive, setDestructive })}>{props.children}</Opened>
-  },
-  Trigger: (props: { variant?: ButtonProps["variant"]; size?: "icon"; shape?: ButtonProps["shape"]; "aria-label"?: string; children?: JSX.Element }) => {
-    const menu = useContext(Opened)!
-    // In a row, the row opens it too.
+    const menu = Object.assign(createMenu(props), { destructive, setDestructive })
+    // In a row, the row opens it, on a long press or a right-click, with or without a trigger.
     const row = useContext(RowMenu)
     if (row) {
       row({ open: menu.open, items: menu.items, destructive: menu.destructive, select: menu.select })
       onCleanup(() => row(undefined))
     }
+    return <Opened value={menu}>{props.children}</Opened>
+  },
+  Trigger: (props: { variant?: ButtonProps["variant"]; size?: "icon"; shape?: ButtonProps["shape"]; "aria-label"?: string; children?: JSX.Element }) => {
+    const menu = useContext(Opened)!
+    const row = useContext(RowMenu)
     // Where the screen has an action panel, as a plain list's does on a computer, its items are the panel's, the
     // screen's in its bar or the row's where it's chosen, and a right-click on the row opens it: it draws no button
     // there. Anywhere else it's the ⋯ it always was.
