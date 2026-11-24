@@ -429,21 +429,28 @@ async function file(request: Request, env: Env, url: URL, ctx: ExecutionContext)
   if ("refused" in who) return new Response("Sign in again", { status: 401 });
   const [, ...whose] = host.split(".");
   const meta = whose.length ? { _meta: { subject: whose.reverse().join("/") } } : {};
-  const ask = async <Result,>(method: string, params: object): Promise<Result | null> => {
+  // Where it is, as its page says it didn't load: its session is this browser's alone, and isn't said.
+  const where = [host, named, ...path].join("/");
+  // Its servers' answer, or what they said instead, as the page is answered: none answering is a 503 that says so,
+  // not a page that isn't there.
+  const ask = async <Result,>(method: string, params: object): Promise<Result | Response> => {
     const answer = await forward(env, JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: { ...params, ...meta } }), { device: who.device }, [`${who.who}/`, NETWORK]);
-    if (answer.status !== 200) return null;
-    return (await answer.json<{ result: Result }>()).result;
+    const { result, error } = await answer.json<{ result?: Result; error?: { message?: string } }>().catch(() => ({}) as { result?: Result; error?: { message?: string } });
+    if (answer.ok && result) return result;
+    return new Response(error?.message ?? `There's nothing at ${where}`, { status: answer.ok ? 404 : answer.status });
   };
   const listed = pinned ? null : await ask<{ resources: { uri: string }[] }>("resources/list", {});
+  if (listed instanceof Response) return listed;
   const version = pinned ?? listed?.resources.map(({ uri }) => uri.split("/")).find(([scheme, , of]) => scheme === "ui:" && of === app)?.[3];
-  if (!version) return new Response(`There's nothing at ${url.pathname}`, { status: 404 });
+  if (!version) return new Response(`There's nothing at ${where}`, { status: 404 });
   // Kept for whoever it was read for, as a server may answer another person otherwise.
   const kept = new Request(`${url.origin}/apps/${who.who}/${host}/${app}@${version}/${path.join("/")}`);
   let found = await caches.default.match(kept);
   if (!found) {
     const read = await ask<{ contents: { blob?: string; text?: string; mimeType: string }[] }>("resources/read", { uri: `ui://${app}/${version}/${path.join("/")}` });
-    const content = read?.contents?.[0];
-    if (!content) return new Response(`There's nothing at ${url.pathname}`, { status: 404 });
+    if (read instanceof Response) return read;
+    const content = read.contents?.[0];
+    if (!content) return new Response(`There's nothing at ${where}`, { status: 404 });
     const body = content.blob ? Uint8Array.from(atob(content.blob), (char) => char.charCodeAt(0)) : content.text;
     found = new Response(body, { headers: { "content-type": content.mimeType.replace(";profile=mcp-app", ""), "cache-control": "public, max-age=31536000, immutable" } });
     ctx.waitUntil(caches.default.put(kept, found.clone()));
