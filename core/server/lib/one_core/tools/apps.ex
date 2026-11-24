@@ -6,7 +6,8 @@ defmodule OneCore.Tools.Apps do
 
   # An app is whoever's deployed it. Deploying over one is changing it, and a new one is installed for whoever it's
   # deployed for. Either way it's loaded where it will run.
-  # An untrusted app runs on any server acting for whoever it's for, the network's among them.
+  # An untrusted app runs on any server acting for whoever it's for whose machine has the sandbox's wall, the
+  # network's among them (`OneCore.Apps.walled?/1`).
   @doc "Runs its tool `name` with `inputs`, as `OneCore.Tools.call/5` hands it on."
   # What's live is a commit: changes not committed are deployed only to a network being built (`:development`), as a
   # local network is, where they're tried before they're committed (19 Nov).
@@ -160,16 +161,13 @@ defmodule OneCore.Tools.Apps do
     cond do
       # A server behind the network builds nothing, as it would against what's older (`OneCore.Servers.behind?/0`).
       Apps.runs?(owner, trusted) and OneCore.Servers.behind?() ->
-        forward.({:running, owner})
+        forward.({:running, owner, trusted})
 
       Apps.runs?(owner, trusted) ->
         true
 
-      not trusted ->
-        forward.(owner)
-
       true ->
-        forward.({:running, owner})
+        forward.({:running, owner, trusted})
     end
   end
 

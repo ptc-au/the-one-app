@@ -56,10 +56,11 @@ defmodule OneCore.Tools do
       tool ->
         # What's passed on is what was asked, so the server it's passed to hooks into the same thing.
         ask = {"tools/call", %{name: name, arguments: inputs}}
-        # To a server acting for someone, or with `{:running, owner}` to one that runs their apps.
+        # To a server acting for someone, or with `{:running, owner, trusted}` to one that runs their apps, trusted or not.
         forward = fn
-          {:running, owner} ->
-            Call.run_elsewhere(ask, principal, forwarded, {owner, OneCore.Apps.servers(owner)}, "An app for #{owner}")
+          {:running, owner, trusted} ->
+            servers = OneCore.Apps.servers(owner, trusted)
+            Call.run_elsewhere(ask, principal, forwarded, {owner, servers}, "An app for #{owner}")
           owner -> Call.forward(ask, principal, forwarded, owner)
         end
 

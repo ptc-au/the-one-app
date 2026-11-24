@@ -516,7 +516,9 @@ defmodule OneCore.Apps.Calls do
 
     cond do
       not Apps.runs?(at, trusted, whose) or Version.runs(versions[name]) == :elsewhere ->
-        Call.run_elsewhere(call, Apps.servers(at, trusted, whose))
+        servers = Apps.servers(at, trusted, whose)
+        if servers == [] and not trusted, do: raise(Apps.unwalled(name, whose))
+        Call.run_elsewhere(call, servers)
 
       forwarded != false or Apps.first?(at, trusted, whose) ->
         call

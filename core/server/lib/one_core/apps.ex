@@ -24,6 +24,9 @@ defmodule OneCore.Apps do
   alias OneCore.Apps.{Installed, LoadedVersion, Store, Version}
 
   @network "network"
+  # The app whose services say which servers can run untrusted apps (`walled?/1`): the network's, which One Core asks
+  # for the wall (`OneCore.Sandbox`).
+  @sandbox "#{@network}/apps/sandbox"
 
   # How long after looking at someone a request for them has this server look again, behind it, in milliseconds.
   @looks_after :timer.minutes(5)
@@ -241,7 +244,8 @@ defmodule OneCore.Apps do
   `at`'s own by default: it allows the app's code (`allows?/3`) and acts for whose data it is
   (`OneCore.Servers.here?/1`). Of the servers that do, the narrowest that's up takes a call (`first?/3`).
   """
-  def runs?(at, trusted, whose \\ nil), do: (not trusted or loads?(at)) and here?(whose || at)
+  def runs?(at, trusted, whose \\ nil),
+    do: if(trusted, do: loads?(at), else: walled?(Server.key())) and here?(whose || at)
 
   @doc """
   Whether the server whose key is `key` acts for `who`, a user, a group or the network, as scopes nest: for them or
@@ -298,12 +302,30 @@ defmodule OneCore.Apps do
 
   @doc """
   Whether the server whose key is `key` allows the code of an app installed for `at`, which is `trusted` or not: an
-  untrusted one runs anywhere, in its sandbox, and a trusted one with its machine's access where it's the network's,
-  or wherever a call for whoever it's installed for runs (`acts_for?/2`): their own server, one of their group's, or
-  the network's, the narrowest that's up taking it (`first?/3`). A network is trusted, and its people aren't assumed
-  to mean it harm (PRIOR-ART's Trust): keeping their apps apart is the sandbox's, for an app nobody vouches for.
+  untrusted one runs on any whose machine has the sandbox's wall (`walled?/1`), and a trusted one with its machine's
+  access where it's the network's, or wherever a call for whoever it's installed for runs (`acts_for?/2`): their own
+  server, one of their group's, or the network's, the narrowest that's up taking it (`first?/3`). A network is
+  trusted, and its people aren't assumed to mean it harm (PRIOR-ART's Trust): keeping their apps apart is the
+  sandbox's, for an app nobody vouches for.
   """
-  def allows?(key, at, trusted), do: not trusted or at == @network or acts_for?(key, at)
+  def allows?(key, at, trusted), do: if(trusted, do: at == @network or acts_for?(key, at), else: walled?(key))
+
+  @doc """
+  Whether the machine of the server whose key is `key` has the wall an untrusted app runs behind (`OneCore.Sandbox`):
+  the network's app `sandbox` has a service there, which runs by itself on each server whose machine lacks nothing it
+  needs, and says what it lacks on each other (`OneCore.Servers.lacking/1`).
+  """
+  def walled?(key), do: Enum.any?(Servers.installed(key), &match?({@sandbox, _service}, &1))
+
+  @doc """
+  Why the untrusted app `name`, keeping `whose` data, runs on none of the servers acting for them: none has the wall
+  (`walled?/1`), and each says what its machine lacks.
+  """
+  def unwalled(name, whose) do
+    lacks = for key <- covering(whose), {@sandbox, _service, why} <- Servers.lacking(key), do: "#{Servers.name(key) || key}: #{why}"
+    "#{name} is untrusted, and none of the servers that would run it for #{whose} has the sandbox it runs behind" <>
+      if(lacks == [], do: ".", else: ": " <> Enum.join(lacks, "; ") <> ".")
+  end
 
   @doc "Whether this server loads the code of the apps installed for `owner`: it allows a trusted one's (`allows?/3`)."
   def loads?(owner), do: owner == @network or here?(owner)
