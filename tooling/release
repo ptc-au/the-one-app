@@ -222,7 +222,8 @@ getting_dev_builds() {
 # (`tooling/testflight`), each built from its network's repo (`tooling/networks`; the PTC pilot had its upload only when
 # someone remembered, 23 Nov: 5208). The release ends once Apple has taken every upload, and fails if one isn't taken.
 # Every network's installers are made once the release has ended, published or covered by another, from the builds the
-# core has then (`tooling/installers`).
+# core has then (`tooling/installers`), while the uploads go on: a desktop app takes its network's installer, so
+# waiting for Apple first (24 Nov: 17 min) held it back that long.
 iphones=() networks=()
 if [[ $part == client && " ${wanted[*]} " == *" client "* && -z $dry ]]; then
   mapfile -t networks < <(tooling/networks)
@@ -238,12 +239,12 @@ fi
 iphone_done() {
   local status=$1 failed= at network
   exec 9>&-
-  for at in "${!iphones[@]}"; do
-    wait "${iphones[at]}" || { echo "$(basename "${networks[at]}")'s iPhone app didn't reach TestFlight." >&2 && failed=1; }
-  done
   [[ $status != 0 ]] || for network in "${networks[@]}"; do
     tooling/installers "$network" > >(sed "s|^|installers $(basename "$network"): |") 2>&1 ||
       { echo "$(basename "$network")'s installers weren't published." >&2 && failed=1; }
+  done
+  for at in "${!iphones[@]}"; do
+    wait "${iphones[at]}" || { echo "$(basename "${networks[at]}")'s iPhone app didn't reach TestFlight." >&2 && failed=1; }
   done
   [[ -z $failed ]] || exit 1
 }
