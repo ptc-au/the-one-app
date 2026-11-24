@@ -581,6 +581,7 @@ defmodule OneCore.Tools.Definitions do
     },
     %{
       name: "apps_check",
+      installs: true,
       description: """
       Looks now for newer versions of the apps you have, as servers do once a day: a new commit at the git source
       each was deployed from. A trusted app takes it at once, and an untrusted one offers it as its `update`.

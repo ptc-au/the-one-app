@@ -5,7 +5,7 @@ defmodule OneCore.Tools do
   They're called as an app's tools are, through the same hooks (`OneCore.Apps.Calls.tool/5`): the apps that
   mutate a call's inputs mutate theirs, the ones that validate a call validate theirs, and the ones that observe
   are told. One that says `exempts_app: true` removes or deploys over the app its input `name` names, which has no
-  say in it (`OneCore.Hooks`): that's how an app that breaks is undone. One that says `installs: true` changes or lists
+  say in it (`OneCore.Hooks`): that's how an app that breaks is undone. One that says `installs: true` changes, checks or lists
   what's installed for whoever it's asked for, so their `installer` asks it for them, as a member does
   (`OneCore.Mcp.Principal`). What each changes it reaches as an app reaches an artifact, so the apps that validate `reach` say
   whether whoever asked may: an `editor` of an app deploys over it, a `viewer` reads its code and installs it, and
