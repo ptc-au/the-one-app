@@ -649,6 +649,18 @@ export interface ToolResult {
 /** `createEffect(toolResult, (shown) => shown && setWeek(shown.structuredContent.offset))`: what a tool answered, where
  * the page is shown for it, as an assistant shows a tool's page as an MCP App; none in an app's own window. */
 export declare function toolResult(): ToolResult | undefined
+/** A tool and its arguments, as MCP's `tools/call` names them: a screen of an app (`toolInput`). */
+export interface ToolCall {
+  name: string
+  arguments: Record<string, unknown>
+}
+/** `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`: the screen the page shows, as the tool that answers it and its arguments,
+ * as it changes: what a link to the page names, what an assistant called, or where the page navigated; `first`, with
+ * no arguments, where nothing names one. */
+export declare function toolInput(first: string): ToolCall
+/** `navigate("my-week_week", { start })`: shows another of the app's screens, a step Back goes back from, which a
+ * browser's address says (`/my-week/week?start=2026-11-30`). */
+export declare function navigate(name: string, inputs?: Record<string, unknown>): void
 export declare function component(app: string, name: string): Promise<Record<string, (props: Record<string, unknown>) => Element>>
 export declare function showRecoveryKey(options?: Subject): Promise<boolean>
 export declare function useRecoveryKey(options?: Subject): Promise<boolean>

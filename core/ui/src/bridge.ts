@@ -46,6 +46,7 @@ let passing = { press: undefined as number | undefined, used: false }
     else if (message.method === "notifications/one/memory_warning") for (const listener of warned) listener()
     else if (message.method === "ui/notifications/host-context-changed") dress((message as { params?: object }).params)
     else if (message.method === "ui/notifications/tool-result") setToolResult((message as { params?: Page.ToolResult }).params)
+    else if (message.method === "ui/notifications/tool-input" && assistantTool) setShownCall({ name: assistantTool, arguments: (message as { params?: { arguments?: Record<string, unknown> } }).params?.arguments ?? {} })
     // The device's own back, where something is open over the page: the topmost shuts.
     else if (message.method === "notifications/one/back") topmost()?.shut()
     else if (message.id !== undefined) waiting.get(message.id)?.(message)
@@ -116,6 +117,8 @@ interface Context {
   reducedMotion?: boolean
   /** The link the page was opened to: what follows `#` in a page's address (`link()`). */
   link?: string
+  /** MCP Apps' own: the tool an assistant shows the page for. */
+  toolInfo?: { tool?: { name?: string } }
   /** MCP Apps' own: whether a finger points at it, and a mouse hovers. */
   deviceCapabilities?: { touch?: boolean; hover?: boolean }
   /** Whether its window is on screen, as a computer's launcher put away isn't: the DOM's `visibilityState`. */
@@ -172,7 +175,8 @@ const [fingered, setFingered] = createSignal(navigator.maxTouchPoints > 0)
 // Told again, the same link is news too: Back to where the page was opened is a link to it again (`place`).
 const [opened, setOpened] = createSignal<string | undefined>(undefined, { equals: false })
 function dress(context?: Context) {
-  if (context && typeof context.link === "string") setOpened(context.link)
+  if (context && typeof context.link === "string") (setOpened(context.link), linked(context.link))
+  if (typeof context?.toolInfo?.tool?.name === "string") assistantTool = context.toolInfo.tool.name
   if (context?.deviceCapabilities && "touch" in context.deviceCapabilities) setFingered(context.deviceCapabilities.touch === true)
   if (context && "titled" in context) setTitled(context.titled === true)
   if (context?.connection) setConnected(context.connection)
@@ -307,10 +311,10 @@ let placed: string | undefined
 /** `place("vault/accounts")`: says where the page is in itself, as its splits have it, which its host hears of as it
  * changes (`notifications/one/place`): a browser's address and history follow it, and its host's link takes it back
  * there (`link`). */
-export const place = (at: string) => {
+export const place = (at: string, navigated = false) => {
   if (at === placed) return
   placed = at
-  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at } }))
+  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at, navigated } }))
 }
 /** Opening something is a step back closes, as the device's back closes what covers the page: a screen pushed over the
  * last, which isn't drawn over the page as a sheet or a menu is (a layer), as the DOM's history step isn't one. */
@@ -396,3 +400,71 @@ const [shownResult, setToolResult] = createSignal<Page.ToolResult | undefined>(u
 /// `structuredContent`, and its `content`. The page shows what it answered, as it shows a place a link opens.
 /// None where it isn't, as in an app's own window.
 export const toolResult: typeof Page.toolResult = () => shownResult()
+
+/** The tool an assistant shows the page for (MCP Apps' `toolInfo`), whose input it's told (`ui/notifications/tool-input`). */
+let assistantTool: string | undefined
+/** The screen the page shows: a link's tool and arguments, `week&start=2026-11-23`, its tool by its app's own name (as
+ * the address `/my-week/week?start=2026-11-23` says it), or the call an assistant shows it for. */
+const [shownCall, setShownCall] = createSignal<string | Page.ToolCall>("")
+/** The screens the page navigated from (`navigate`), the last on top, each with what stops the device's Back going there. */
+const navigated: { from: string; done: () => void }[] = []
+
+/** A link's arguments, as an address's query has them: a string as it is, and anything else, or a string that would
+ * read as something else (`"42"`), as JSON, so it reads back as it was. */
+const typed = (said: string): unknown => {
+  if (/^(-?\d|["[{]|true$|false$|null$)/.test(said))
+    try {
+      return JSON.parse(said)
+    } catch {}
+  return said
+}
+/** The link to `name` (`my-week_week`) with `inputs`: its tool by its app's own name, then its arguments (`week&start=2026-11-23`). */
+const linkTo = (name: string, inputs: Record<string, unknown>) => {
+  const said = new URLSearchParams()
+  for (const [key, value] of Object.entries(inputs)) if (value !== undefined) said.set(key, typeof value === "string" && typed(value) === value ? value : JSON.stringify(value))
+  return `${name.slice(name.indexOf("_") + 1)}${said.size ? `&${said}` : ""}`
+}
+const linkOfShown = () => {
+  const now = shownCall()
+  return typeof now === "string" ? now : linkTo(now.name, now.arguments)
+}
+/** A link the page is told: Back to the screen it navigated from, or anywhere else, from where nothing is navigated. */
+function linked(to: string) {
+  const last = navigated.at(-1)
+  if (last?.from === to) (navigated.pop(), last.done())
+  else for (const one of navigated.splice(0)) one.done()
+  placed = to
+  setShownCall(to)
+}
+
+/// `toolInput("my-week_week")`: the screen the page shows, as the tool that answers what it shows and its
+/// arguments, `{ name: "my-week_week", arguments: { start: "2026-11-23" } }`, as it changes: what a link to the page
+/// names (`one:my-week#week&start=2026-11-23`, which a browser's address says as `/my-week/week?start=2026-11-23`), what
+/// an assistant called where it shows the page as an MCP App, or where the page navigated (`navigate`). `first`, with no
+/// arguments, where nothing names one: the app's first screen. Every screen is a tool that only reads, and answers all
+/// it first draws: `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`.
+export const toolInput: typeof Page.toolInput = (first) => {
+  const now = shownCall()
+  if (typeof now !== "string") return now
+  const [tool, ...said] = now.split("&")
+  if (!tool) return { name: first, arguments: {} }
+  return { name: `${first.slice(0, first.indexOf("_") + 1)}${tool}`, arguments: Object.fromEntries([...new URLSearchParams(said.join("&"))].map(([key, value]) => [key, typed(value)])) }
+}
+/// `navigate("my-week_week", { start: week().next })`: shows another of the app's screens, by its tool and arguments,
+/// as a link to it would (`toolInput`). It's a step Back goes back from: the device's, and a browser's, whose address
+/// says it (`/my-week/week?start=2026-11-30`), so it's kept, loaded again and shared as a link.
+export const navigate: typeof Page.navigate = (name, inputs = {}) => {
+  const [from, to] = [linkOfShown(), linkTo(name, inputs)]
+  if (from === to) return
+  const one = { from, done: () => {} }
+  one.done = step(() => {
+    const at = navigated.indexOf(one)
+    if (at < 0) return
+    for (const later of navigated.splice(at)) later.done()
+    setShownCall(from)
+    place(from, true)
+  })
+  navigated.push(one)
+  setShownCall(to)
+  place(to, true)
+}
