@@ -236,15 +236,18 @@ export function rowEnds(nodes) {
 
 /// What stops at a readable width (a column, a form, a page's content, `maxWidth` a token) sits in the middle of what
 /// it's in, as macOS's System Settings' column does, where it's narrower: never hugging its start with the room at its
-/// end, as forms on a computer did (L12, L40, L80). → what's wrong, a line each.
+/// end, as forms on a computer did (L12, L40, L80). Side by side in a row, as a list with its cards beside it, they sit
+/// in the middle together. → what's wrong, a line each.
 export function centred(nodes) {
   return pages(nodes).flatMap(({ here, parent, covered }) =>
     here.flatMap((node) => {
       // A sidebar and a split's list column are at the start of their window by design.
       if (!node.resolved?.maxWidth?.token || ["sidebar", "column", "column-min"].includes(node.resolved.maxWidth.token) || !seen(node) || covered(node)) return []
       const within = parent.get(node.node)
-      if (!within?.rect || within.rect.width - node.rect.width < 2) return []
-      const off = node.rect.x + node.rect.width / 2 - (within.rect.x + within.rect.width / 2)
+      const beside = within?.resolved?.flexDirection === "row" ? here.filter((other) => other.rect && parent.get(other.node) === within) : [node]
+      const [start, end] = [Math.min(...beside.map((one) => one.rect.x)), Math.max(...beside.map((one) => one.rect.x + one.rect.width))]
+      if (!within?.rect || within.rect.width - (end - start) < 2) return []
+      const off = (start + end) / 2 - (within.rect.x + within.rect.width / 2)
       return Math.abs(off) > 1 ? [`${said(node)} (${box(node.rect)}), as wide as its ${node.resolved.maxWidth.token} at most, is ${Math.round(off)} pt off the middle of what it's in (${box(within.rect)})`] : []
     }),
   )
