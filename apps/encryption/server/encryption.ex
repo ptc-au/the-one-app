@@ -365,6 +365,7 @@ defmodule Encryption do
       %{
         name: "key",
         read_only: true,
+        no_store: true,
         description: "Says which of your devices are trusted, which want to be, what this device holds of your key, and which servers hold the keys of what's encrypted for you, and which should",
         inputs: %{type: "object", properties: %{device: device}},
         outputs: %{

@@ -109,6 +109,7 @@ defmodule Vault do
       %{
         name: "list",
         read_only: true,
+        no_store: true,
         description: """
         Lists the Vault's items: each one's fields (a secret one never with its value), the sites its secrets are
         sent to, the apps switched on for it and whether agents may use it. With them, the requests still
@@ -379,6 +380,7 @@ defmodule Vault do
       %{
         name: "items",
         read_only: true,
+        no_store: true,
         description: """
         For an app's code: the items switched on for the app that calls this, each with the service whose
         sign-in made it, if one did: [{"name": "Google a@example.com", "sign_in": "Google"}].
@@ -489,6 +491,7 @@ defmodule Vault do
       %{
         name: "names",
         read_only: true,
+        no_store: true,
         description:
           "What items are called, by their artifacts, deleted ones too: an item's artifact is named by an id, as its name is encrypted. Recently Deleted asks it",
         inputs: %{
@@ -560,6 +563,7 @@ defmodule Vault do
       %{
         name: "security",
         read_only: true,
+        no_store: true,
         description: """
         Says everything about the key that keeps your Vault, in one answer: how ready it is, the devices that hold
         the key and those asking to, and which servers open the Vault and which may be chosen to. `readiness` is
