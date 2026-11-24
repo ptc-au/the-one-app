@@ -24,7 +24,7 @@ defmodule SignIn do
   def icon, do: "client/security.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.32.167", "database" => "to keep a copy of whose each device is"}
+  def requires, do: %{"core" => ">= 0.34.595", "database" => "to keep a copy of whose each device is"}
 
   # Whose each device is, as the edge last said, and which version of that it was (`changed` in `edge/auth.ts`).
   @schema [
@@ -938,12 +938,17 @@ defmodule SignIn do
       raise "People sign in at a network's address, and this network has none."
   end
 
+  # What's asked that changes something once isn't sent again if its connection is closed partway
+  # (`OneCore.Edge.send!/1`): a code approved twice is refused the second time, a device or passkey removed twice
+  # isn't there to remove, and an invitation or a passkey's link asked for twice is made twice.
+  @once ~w(approve remove_device remove_passkey remove_person invite owner passkey)
+
   defp ask(what) do
     # A network being built acts as whoever a client says, who joined nowhere, so the edge makes them as it's asked.
     body = JSON.encode!(Map.put(what, :building, Application.get_env(:one_core, :development, false)))
 
     # Signed as every ask of the edge is, so one refused for this server's clock is signed again by the edge's.
-    case Edge.ask!([method: :post, url: address() <> "/sign-in/ask", body: body, retry: false], "/sign-in/ask") do
+    case Edge.ask!([method: :post, url: address() <> "/sign-in/ask", body: body, retry: false, resend: what.ask not in @once], "/sign-in/ask") do
       %{status: 200, body: %{"error" => why}} -> raise why
       %{status: 200, body: response} -> response
       %{status: status} -> raise "The network's edge answered #{status}"
