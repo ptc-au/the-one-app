@@ -82,12 +82,10 @@
   --grabber: 0px;
   --grabber-gap: 0px;
   --pill: 2.25rem;
-  --footer: 3.5rem;
   --form-label: 9.5rem;
   --key: 1.125rem;
   --tips: 17rem;
   --tip-picture: 6.75rem;
-  --action-panel: 20rem;
   --row: 2.375rem;
   --grouped-row: 2.875rem;
   --sidebar-row: 2.0625rem;
@@ -115,7 +113,6 @@
   --shadow-field: inset 0px 0px 0px 0.5px oklch(0 0 0 / 14%);
   --shadow-tick: inset 0px 0px 0px 1px oklch(0 0 0 / 45%);
   --shadow-keycap: 0px 1px 2px 0px oklch(0 0 0 / 6%);
-  --shadow-key: inset 0px 0px 0px 1px oklch(0 0 0 / 16%);
   --shadow-edge: inset 0px 0px 0px 0.5px oklch(0 0 0 / 10%), inset 0px 0.5px 0px 0px oklch(1 0 0 / 90%);
   --shadow-wrong-edge: inset 0px 0px 0px 1px oklch(0.525 0.204 25.56);
   --shadow-wrong-focus: 0px 0px 0px 3px oklch(0.525 0.204 25.56 / 30%);
@@ -177,7 +174,6 @@
   --shadow-pill: inset 0px 0px 0px 0.5px oklch(1 0 0 / 12%), inset 0px 0.5px 0px 0px oklch(1 0 0 / 18%);
   --shadow-field: inset 0px 0px 0px 0.5px oklch(1 0 0 / 12%);
   --shadow-tick: inset 0px 0px 0px 1px oklch(1 0 0 / 40%);
-  --shadow-key: inset 0px 0px 0px 1px oklch(1 0 0 / 20%);
   --shadow-edge: inset 0px 0px 0px 0.5px oklch(1 0 0 / 14%), inset 0px 0.5px 0px 0px oklch(1 0 0 / 12%);
   --shadow-wrong-edge: inset 0px 0px 0px 1px oklch(0.745 0.191 23.4);
   --shadow-wrong-focus: 0px 0px 0px 3px oklch(0.745 0.191 23.4 / 30%);
@@ -193,7 +189,6 @@
     --shadow-pill: inset 0px 0px 0px 0.5px oklch(1 0 0 / 12%), inset 0px 0.5px 0px 0px oklch(1 0 0 / 18%);
     --shadow-field: inset 0px 0px 0px 0.5px oklch(1 0 0 / 12%);
     --shadow-tick: inset 0px 0px 0px 1px oklch(1 0 0 / 40%);
-    --shadow-key: inset 0px 0px 0px 1px oklch(1 0 0 / 20%);
     --shadow-edge: inset 0px 0px 0px 0.5px oklch(1 0 0 / 14%), inset 0px 0.5px 0px 0px oklch(1 0 0 / 12%);
     --shadow-wrong-edge: inset 0px 0px 0px 1px oklch(0.745 0.191 23.4);
     --shadow-wrong-focus: 0px 0px 0px 3px oklch(0.745 0.191 23.4 / 30%);

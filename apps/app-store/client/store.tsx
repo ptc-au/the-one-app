@@ -329,7 +329,7 @@ function Where(props: { market: Market; all: Owners; owner: Owner; listed: Liste
   // Each state's controls stay as they are while what's listed is asked for again, so an open menu stays open.
   const now = () => done()!
   const may = () => !only(props.all, props.owner)
-  // Drawn where the row asks for it, so a menu in it is the row's (a right-click, a swipe, the action panel).
+  // Drawn where the row asks for it, so a menu in it is the row's (a right-click, a long press, a swipe).
   const end = () => (
     <Switch>
       <Match when={state() === "installing"}>

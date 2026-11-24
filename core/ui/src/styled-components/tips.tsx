@@ -4,9 +4,9 @@ import { createSignal, For, onSettled, Show } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Image, Modal, Pressable, Text, View } from "#primitives"
 import { client, direction, keydown, open as openLink, touch, viewport } from "#bridge"
-import { Button, Icon } from "./button.tsx"
+import { Button, Icon, type IconName } from "./button.tsx"
 import { Sheet } from "./sheet.tsx"
-import { type Action, askMac, mac, shown } from "./actions.tsx"
+import { askMac, mac, shown } from "./keys.ts"
 import { messages } from "../words.ts"
 import { createDismissable } from "../behavior-primitives/dismissable.ts"
 import { computePlacement } from "../behavior-primitives/placement.ts"
@@ -17,12 +17,20 @@ import type { Rect } from "../drawing-primitives/renderer.ts"
 import type { Dragged, Keyed, Laid } from "../types/ui.d.ts"
 
 /** One tip: one idea in a few words (`title`), a sentence (`body`), and what's drawn above them: keys as keycaps
- * (`["mod", "K"]`, as `Keys` names them) or a picture of the app's own (`picture`). */
+ * (`["mod", "enter"]`: `mod` is ⌘ on a Mac and Ctrl on a PC, `enter` ↵, a letter in capitals) or a picture of the app's
+ * own (`picture`). */
 export interface Tip {
   title: string
   body: string
   keys?: string[]
   picture?: string
+}
+
+/** One thing to do at the tips' foot: what it says, an icon, and what does it. */
+export interface Action {
+  label: string
+  icon?: IconName
+  onAction: () => void
 }
 
 const look = styles({

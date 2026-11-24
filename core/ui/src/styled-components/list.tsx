@@ -1,14 +1,11 @@
 // A list and its rows: written once on the drawing primitives, the same on every host.
-import { children, createContext, createEffect, createSignal, For, onCleanup, Show, useContext } from "solid-js"
+import { children, createContext, createEffect, createSignal, For, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, Text, textOf, View, VirtualizedList } from "#primitives"
 import { direction, reducedMotion, touch } from "#bridge"
 import { Icon } from "./button.tsx"
 import { RowMenu, type RowMenu as Menu } from "./menu.tsx"
-import { Choose } from "./collect.ts"
 import { Room } from "./screen.tsx"
-import { messages } from "../words.ts"
-import type { Action } from "./actions.tsx"
 import { negative, styles } from "../styles.ts"
 import { duration, tokens } from "../tokens.ts"
 import type { Located } from "../types/ui.d.ts"
@@ -197,8 +194,7 @@ function createSlots<X>(values: () => readonly X[], key: (value: X) => unknown) 
 /// the usual, is Raycast's rows on a computer and a card of rows under a finger. `insetGrouped` is cards of rows on
 /// every device, each row its heading over its grey line, and one that opens with a chevron, as Raycast's Settings and
 /// iOS's Settings draw them. `sidebar` is a window's sidebar: rows on the window with their icons, the one open beside
-/// it filled, as macOS's and Raycast's Settings' sidebars; under a finger, as `insetGrouped`. A screen whose lists
-/// aren't plain has no action bar, as Raycast's Settings window has none.
+/// it filled, as macOS's and Raycast's Settings' sidebars; under a finger, as `insetGrouped`.
 export const ListStyle = createContext<"plain" | "insetGrouped" | "sidebar">("plain")
 
 /** Whether a row is an option of a listbox, which its list's slot is for it. */
@@ -348,20 +344,8 @@ export function Row(props: RowProps): JSX.Element {
   // What a press that was a swipe, a held press, or put the row back would otherwise do as it lifts: open the row.
   const pressed = (event: Located) => !hold.swallows(event) && !swipe.swallows(event) && props.onPress?.(event)
 
-  // On a computer, what it can do is the screen's action panel's while it's chosen: under the pointer, as Raycast's
-  // rows are, or open beside the list. Open, then its menu's items.
   // In a listbox its list's slot is the option, which says so.
   const inListbox = useContext(InListbox)
-  const choose = useContext(Choose)
-  const actions = (): Action[] => [
-    ...(props.onPress ? [{ label: messages.open, onAction: () => props.onPress!() }] : []),
-    ...(menu()?.items() ?? []).map((item) => ({ label: item.label, destructive: item.destructive, disabled: item.disabled, menu: true, onAction: () => menu()!.select(item.value) })),
-  ]
-  const chosen = () => choose?.set(actions, actions().length ? actions : undefined)
-  if (choose) {
-    createEffect(() => !!props.current, (now) => void (now && chosen()))
-    onCleanup(() => choose.clear(actions))
-  }
 
   const style = useContext(ListStyle)
   const room = useContext(Room)
@@ -423,7 +407,6 @@ export function Row(props: RowProps): JSX.Element {
         role={inListbox ? undefined : "listitem"}
         {...together(hold.gesture, swipe.gesture)}
         onContextMenu={(event) => menu()?.open(at(event))}
-        onPointerEnter={chosen}
         style={[look.row, !touch() && !grouped() && look.flatRow, grouped() && look.groupedRow, !!props.action && look.wraps, props.current && !grouped() && look.current, !!menu() && look.held]}
       >
         <Show when={grouped()}>
@@ -442,7 +425,7 @@ export function Row(props: RowProps): JSX.Element {
             aria-current={props.current ? "true" : undefined}
             tabIndex={keyboard?.tabIndex}
             autoFocus={keyboard?.autoFocus}
-            onFocus={() => (keyboard?.onFocus(), chosen())}
+            onFocus={keyboard?.onFocus}
             onBlur={keyboard?.onBlur}
             onPress={pressed}
             style={[look.inside, look.pressable, !touch() && look.flatInside, flat() && !beside() && look.stackedInside, !touch() && look.flatPressable, grouped() && look.groupedInside, sidebar() && look.sidebarInside, inListbox && look.quiet, !!props.control && look.after, props.current && look.openFocused, full() && look.full, moving()]}>

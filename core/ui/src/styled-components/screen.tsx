@@ -7,11 +7,9 @@ import { Pressable, ScrollView, Text, View } from "#primitives"
 import { back as goBack, covers, go, keydown, link, place, safeArea, step, titled, touch, viewport } from "#bridge"
 import { BarEnd, Button, Icon } from "./button.tsx"
 import { messages } from "../words.ts"
-import { ActionBar, type Action } from "./actions.tsx"
 import { ListKeys, ListStyle } from "./list.tsx"
 import { Empty } from "./states.tsx"
 import { Tips, type Tip } from "./tips.tsx"
-import { Choose, Collect } from "./collect.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { pixels, tokens } from "../tokens.ts"
 
@@ -66,8 +64,6 @@ const look = styles({
   // What's in it keeps clear of what the device keeps for itself at its other edges.
   safe: { flexGrow: 1, paddingStart: tokens.length.safeLeft, paddingEnd: tokens.length.safeRight, paddingBottom: tokens.length.safeBottom },
   parts: { flexGrow: 1, gap: tokens.length.gutter, paddingTop: tokens.grid[2], paddingInline: tokens.length.gutter, paddingBottom: tokens.length.gutter },
-  // What's last keeps clear of the footer's pills.
-  footed: { paddingBottom: tokens.length.footer },
   section: { gap: tokens.grid[1.5], minWidth: 0 },
   // Raycast's on a computer, 11px; iOS's on a phone, its footnote inset to the rows' words.
   heading: { font: tokens.type.small, color: tokens.colour.secondaryLabel, userSelect: "none" },
@@ -184,8 +180,9 @@ export const Middle = createContext<() => boolean>(() => true)
 export const Blank = createContext<(change: number) => void>(() => {})
 
 /// `<Screen heading="Notes" action={<Button>Add</Button>}>...</Screen>`: a whole view of an app: a bar across its
-/// top that stays as what's under it scrolls, with its `heading` and what it does (`action`: its one main button, or a
-/// menu), then what's in it, one part under another. With `back` the bar starts with a Back button, which calls
+/// top that stays as what's under it scrolls, with its `heading` and what it does (`action`: its one main button, at
+/// the bar's end on every device as a Mac's toolbar and GitHub's New have it, with any others in a ⋯ `Menu` before it),
+/// then what's in it, one part under another. With `back` the bar starts with a Back button, which calls
 /// `onBack`, as the device's own back gesture does: a screen with `back` says where it goes, but in a split's detail,
 /// which it closes. A split's list closes what's open beside it first. An
 /// app's first screen has no Back: the window's rail and the device's back leave the app. Where the window's title
@@ -194,8 +191,8 @@ export const Blank = createContext<(change: number) => void>(() => {})
 /// the bar's small one taking its place, every step of it following the scroll; what scrolls under the bar gives it
 /// its material and a hairline. With `largeTitle` the screen's page draws its name large itself, as iOS's App Store's
 /// pages do, and the bar's shows as that scrolls away. With `tips` (2 to 4 `Tip`s: `{ title, body, keys?, picture? }`)
-/// its bar has a ? that shows them (`Tips`): at the end of a computer's title bar, where it stays, never in the
-/// footer's pills, and under a finger just before `action`. What's in it keeps a readable width in the middle of its
+/// its bar has a ? that shows them (`Tips`): at the end of a computer's title bar, where it stays, and under a finger
+/// just before `action`. What's in it keeps a readable width in the middle of its
 /// room; with `readable={false}` it fills the room, as a calendar's week or a grid of photos does (UIKit's
 /// readableContentGuide, not followed).
 export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: JSX.Element }) {
@@ -215,15 +212,12 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   createEffect(() => !!props.back && !!props.onBack, (now) => (now ? covers(back, { layer: false }) : undefined))
   const backed = () => !!props.back && !inDetail()
   const history = useContext(Went)
-  const style = useContext(ListStyle)
   const edge = useContext(Edge)
   // In a split beside its list, its tips are the window's, drawn by the split at the window's end; else its own.
   const hand = useContext(HandTips)
   const splitTips = useContext(TipsDrawn)
   if (hand) onSettled(() => hand(() => props.tips))
   const tips = () => (splitTips().drawn ? undefined : props.tips?.length ? props.tips : undefined)
-  // On a computer, as Raycast's: the bar's buttons and menus' items are the screen's actions, in the footer's pills and
-  // its action panel (⌘K), after what the row chosen can do; under a finger they stay in the bar.
   const computer = !touch()
   // Under a finger, a first screen draws its heading large itself.
   const large = !computer && !props.back && !props.largeTitle
@@ -242,21 +236,6 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   // in over the second, so the two are never drawn at once.
   const titleShown = () => (!props.back && titled() ? 0 : large || props.largeTitle ? Math.max(0, 2 * under() - 1) : 1)
   const named = () => titleShown() > 0
-  // Its action panel is where a list's rows and the bar's buttons go on a computer; a window of grouped cards has none,
-  // as Raycast's Settings window has none, so they stay in the bar and on their rows.
-  const panelled = computer && style === "plain"
-  const [bar, setBar] = createSignal<Action[]>([])
-  const [chosen, setChosen] = createSignal<{ row: object; actions: () => Action[] }>()
-  const collect = (action: Action) => {
-    setBar((now) => [...now, action])
-    return () => setBar((now) => now.filter((one) => one !== action))
-  }
-  const choose = {
-    set: (row: object, actions: (() => Action[]) | undefined) => setChosen(actions ? { row, actions } : undefined),
-    clear: (row: object) => chosen()?.row === row && setChosen(undefined),
-  }
-  const actions = () => [...(chosen()?.actions() ?? []).map((action) => ({ ...action, section: action.section ?? "chosen" })), ...bar()]
-  const footed = () => panelled && actions().length > 0
   // On a computer, a screen that says nothing in its bar, in a window whose title bar already names it (a dialog's),
   // has no bar; under a finger the bar keeps clear of the status bar.
   const barred = () => !computer || !!props.heading || !!props.action || !!tips() || backed() || titled() || (computer && !!history())
@@ -301,9 +280,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
           </Show>
           <Show when={props.action}>
             <BarEnd value={true}>
-              <Collect value={panelled ? collect : null}>
-                <View style={look.action}>{props.action}</View>
-              </Collect>
+              <View style={look.action}>{props.action}</View>
             </BarEnd>
           </Show>
           <Show when={computer && tips()}>
@@ -329,18 +306,13 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
               </Heading>
             </View>
           </Show>
-          <View style={[look.parts, footed() && look.footed]}>
+          <View style={look.parts}>
             <View style={[look.column, props.readable === false && look.filled]}>
-              <Choose value={panelled ? choose : null}>
-                <Middle value={() => false}>{props.children}</Middle>
-              </Choose>
+              <Middle value={() => false}>{props.children}</Middle>
             </View>
           </View>
         </View>
       </ScrollView>
-      <Show when={footed()}>
-        <ActionBar actions={actions()} />
-      </Show>
     </View>
   )
 }

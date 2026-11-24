@@ -18,7 +18,7 @@ import type { Keyed, Laid, Located } from "../types/ui.d.ts"
 /** Where something is drawn: what opens a menu, or where a row was held. */
 export type At = { x: number; y: number; width: number; height: number }
 
-/** An item, as the keyboard and the action panel see it. */
+/** An item, as the keyboard sees it. */
 export type MenuEntry = { value: string; label: string; disabled: boolean; destructive: boolean }
 
 const rectOf = (event: Laid | Located): At => {
@@ -80,7 +80,6 @@ export function createMenu(props: MenuProps) {
     open,
     close,
     select,
-    items,
     /** Adds an item, in order. → what takes it out. */
     add: (entry: MenuEntry) => (setItems((now) => [...now, entry]), () => setItems((now) => now.filter((item) => item !== entry))),
     /** Opens it under what was pressed, or closes it if it's open. */

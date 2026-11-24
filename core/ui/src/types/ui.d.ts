@@ -288,6 +288,8 @@ export declare function render(code: () => Element): () => void
 /** One of a screen's tips: one idea in a few words, a sentence, and keys drawn as keycaps or a picture of the app's own. */
 export type Tip = { title: string; body: string; keys?: string[]; picture?: string }
 export declare function Screen(props: { heading?: Element; action?: Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: Element }): Element
+/** One thing to do at the tips' foot: what it says, an icon, and what does it. */
+export type Action = { label: string; icon?: IconName; onAction: () => void }
 export declare function Tips(props: { tips: Tip[]; action?: Action }): Element
 export declare function Section(props: { heading?: Element; "aria-label"?: string; children?: Element }): Element
 /** A row that scrolls sideways from the window's edge to its edge, its first item where the screen's column starts (`style` may say its `gap`). */
@@ -452,12 +454,6 @@ export declare function Sheet(props: { heading?: Element; open?: boolean; onClos
 
 export declare const PresentationContext: Context<() => Rect | undefined>
 
-/** Something that can be done, as the action panel lists it: what it says, what does it, the keys that do it too
- * (`["mod", "enter"]`), an icon, whether it can't be undone, whether it can't be done now, and its section. */
-export type Action = { label: string; onAction: () => void; keys?: string[]; icon?: IconName; destructive?: boolean; disabled?: boolean; section?: string; menu?: boolean }
-export declare function Keys(props: { keys: string[] }): Element
-export declare function ActionPanel(props: { open: boolean; onOpenChange: (open: boolean) => void; actions: Action[] }): Element
-export declare function ActionBar(props: { start?: Element; actions?: Action[] }): Element
 
 export declare const Metadata: ((props: { children?: Element }) => Element) & { Label: (props: { title: Element; text?: Element }) => Element }
 

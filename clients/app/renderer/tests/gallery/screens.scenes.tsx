@@ -20,7 +20,23 @@ const More = () => (
 )
 
 const Devices = () => (
-  <Screen heading="Devices" action={<Button>Invite</Button>}>
+  <Screen
+    heading="Devices"
+    action={
+      <>
+        <Menu.Root onSelect={() => {}}>
+          <Menu.Trigger aria-label="More Actions" />
+          <Menu.Positioner>
+            <Menu.Content>
+              <Menu.Item value="export">Export List</Menu.Item>
+              <Menu.Item value="forget">Forget Old Devices</Menu.Item>
+            </Menu.Content>
+          </Menu.Positioner>
+        </Menu.Root>
+        <Button>Invite</Button>
+      </>
+    }
+  >
     <Section heading="Your Devices">
       <List>
         <Row heading="Alex's Laptop" text="This device" onPress={() => {}} />
@@ -106,6 +122,28 @@ export default {
       </View>
     ),
     checks: { "Its own line stands alone": [{ expect: { text: "Nothing is backed up yet." } }, { expect: { gone: "Pick a destination to see its backups." } }, { expect: { gone: "Its page." } }] },
+  },
+  // A computer's list, as Finder's and GitHub's are: the screen's main action a button at the end of its bar with the
+  // rest in a ⋯ menu beside it, and a row's actions in its own ⋯ menu (a right-click too); nothing floats at the foot.
+  "Screens/A list's actions": {
+    alone: true,
+    layout: "fullscreen",
+    size: [750, 475],
+    render: () => <View style={look.narrow}><Devices /></View>,
+  },
+  "Screens/A list's bar menu open": {
+    alone: true,
+    layout: "fullscreen",
+    size: [750, 475],
+    render: () => <View style={look.narrow}><Devices /></View>,
+    taps: [{ role: "button", name: "More Actions" }],
+  },
+  "Screens/A row's menu open": {
+    alone: true,
+    layout: "fullscreen",
+    size: [750, 475],
+    render: () => <View style={look.narrow}><Devices /></View>,
+    taps: [{ role: "button", name: "More" }],
   },
   "Screens/A large title": {
     alone: true,

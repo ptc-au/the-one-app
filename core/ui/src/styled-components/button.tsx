@@ -4,7 +4,6 @@ import { children, createContext, createSignal, onCleanup, Show, useContext } fr
 import type { JSX } from "@solidjs/web"
 import { Path, Pressable, Svg, Text, View } from "#primitives"
 import { messages } from "../words.ts"
-import { collected } from "./collect.ts"
 import { Middle } from "./screen.tsx"
 import { createButton } from "../headless-components/button.ts"
 import { negative, styles, type Styles } from "../styles.ts"
@@ -255,10 +254,6 @@ export function Button(props: ButtonProps) {
     const which = variant()
     return which && which !== "default" ? look[which] : undefined
   }
-  // In a computer's screen's bar, it's one of the screen's actions, in its footer and its action panel, and draws
-  // nothing there itself.
-  const words = () => inside.toArray().filter((part) => typeof part === "string").join(" ") || props["aria-label"] || ""
-  if (collected(() => ({ label: words(), onAction: () => props.onPress?.(undefined as never), destructive: variant() === "destructive", disabled: button.off() }))) return null
   return (
     <Pressable
       {...button.root()}

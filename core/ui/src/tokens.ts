@@ -242,7 +242,7 @@ const roles = {
   stripe: alpha(label, 2.5),
   /** What dims the page under a sheet or an alert. */
   overlay: colours.overlay,
-  /** A panel of glass, over the window or the desktop: the action panel, an alert, the launcher. Tinted as macOS's
+  /** A panel of glass, over the window or the desktop: a menu, an alert, the launcher. Tinted as macOS's
    * widgets and Control Center are, so text stays readable over any window behind it: secondary text holds WCAG AA's
    * 4.5:1 over a white one in dark. */
   panel: colour(opacity(zinc[991], 92), opacity(neutral[185], 92), [zinc[991], neutral[185]]),
@@ -299,7 +299,7 @@ const sizes = {
    * under a finger, a row's own. */
   groupedRow: length({ default: rem(0.84375), touch: rem(0.9375), phone: rem(15 / 17) }),
   sidebarRow: length({ default: rem(0.875), touch: rem(0.9375), phone: rem(15 / 17) }),
-  /** A footer pill's and a toast's: Raycast's 12px. */
+  /** A toast's and a small note's: Raycast's 12px. */
   caption: length({ default: rem(0.75), touch: rem(0.8125), phone: rem(13 / 17) }),
   largeTitle: length({ default: rem(1.25), phone: rem(34 / 17) }),
 }
@@ -362,18 +362,15 @@ export const tokens = {
     /** A sheet's grabber, which says under a finger that it can be pulled down, and is nothing under a mouse. */
     grabber: length({ default: px(0), touch: rem(0.25) }),
     grabberGap: length({ default: px(0), touch: rem(0.5) }),
-    /** A footer's pill, and what a window's foot keeps clear for its pills: Raycast's 36px, 10px off the edge. */
+    /** A toast's: Raycast's pill, 36px. */
     pill: length(rem(2.25)),
-    footer: length(rem(3.5)),
     /** A form's labels on a computer, beside what they name, as Raycast's and macOS's forms have them. */
     formLabel: length(rem(9.5)),
-    /** A key's chip, as ⌘ and K are shown beside what they do. */
+    /** A badge's height, as a count's. */
     key: length(rem(1.125)),
     /** A screen's tips' popover, and how tall a tip's keys or picture are, as a sheet draws them larger. */
     tips: length(rem(17)),
     tipPicture: length({ default: rem(6.75), touch: rem(8.25) }),
-    /** The action panel's width. */
-    actionPanel: length(rem(20)),
     /** How tall a row in a list is at least: what's pressed, and a little room. */
     row: length({ default: rem(2.375), touch: rem(3.25), phone: rem(52 / 17) }),
     /** A row in grouped cards, as Raycast's Settings and iOS's Settings draw them: 46px on a computer. */
@@ -402,7 +399,7 @@ export const tokens = {
     ),
     /** A window's, a sheet's or a menu's, as Raycast's: a hairline outside, three soft shadows under it, and its edge. */
     window: lightDark([...windowShadow.light, ...edge.light], [...windowShadow.dark, ...edge.dark]),
-    /** A floating pill's, as Raycast's footer has them: a hairline round it and a line of light along its top. */
+    /** A pill of glass's, as Raycast draws them: a hairline round it and a line of light along its top. */
     pill: lightDark(
       [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(black, 12) }, { x: 0, y: 1, blur: 3, spread: 0, colour: opacity(black, 6) }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 90), inset: true }],
       [{ x: 0, y: 0, blur: 0, spread: 0.5, colour: opacity(white, 12), inset: true }, { x: 0, y: 0.5, blur: 0, spread: 0, colour: opacity(white, 18), inset: true }],
@@ -414,8 +411,6 @@ export const tokens = {
     tick: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(black, 45), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(white, 40), inset: true }]),
     /** A keycap's, as a shortcut's keys are drawn: a soft shadow under it. */
     keycap: shadow({ x: 0, y: 1, blur: 2, spread: 0, colour: opacity(black, 6) }),
-    /** A key's chip: an outline, as Raycast draws ⌘ and K. */
-    key: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(black, 16), inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: opacity(white, 20), inset: true }]),
     /** A raised thing's edge inside: a half-pixel line, lit along the top. */
     edge: lightDark(edge.light, edge.dark),
     /** A field's edge, and where the keyboard is in it, where what's in it is wrong. */

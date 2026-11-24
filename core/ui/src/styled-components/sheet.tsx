@@ -8,7 +8,6 @@ import type { Rect } from "../drawing-primitives/renderer.ts"
 import { touch, viewport } from "#bridge"
 import { Button, Icon } from "./button.tsx"
 import { messages } from "../words.ts"
-import { Collect } from "./collect.ts"
 import { Room } from "./screen.tsx"
 import { negative, styles } from "../styles.ts"
 import { pixels, tokens } from "../tokens.ts"
@@ -66,8 +65,7 @@ function Over(props: DialogProps & { children: (dialog: ReturnType<typeof create
   const over = () => (
     <>
       <Pressable {...dialog.outside()} style={look.scrim} />
-      {/* What's over the page isn't the bar's, wherever it's written. */}
-      <Collect value={null}>{props.children(dialog)}</Collect>
+      {props.children(dialog)}
     </>
   )
   return (

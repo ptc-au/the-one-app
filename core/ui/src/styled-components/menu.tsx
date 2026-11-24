@@ -5,8 +5,7 @@ import type { JSX } from "@solidjs/web"
 import { Modal, Pressable, Text, View } from "#primitives"
 import { Button, Icon, type ButtonProps } from "./button.tsx"
 import { messages } from "../words.ts"
-import { Choose, Collect, collected } from "./collect.ts"
-import { createMenu, type At, type MenuEntry, type MenuProps } from "../headless-components/menu.ts"
+import { createMenu, type At, type MenuProps } from "../headless-components/menu.ts"
 import { styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 
@@ -14,8 +13,6 @@ import { tokens } from "../tokens.ts"
  * a swipe shows, and what chooses an item as pressing it does. */
 export interface RowMenu {
   open: (at: At) => void
-  /** Its items, as a computer's action panel lists them for the row chosen. */
-  items: () => MenuEntry[]
   destructive: () => { value: string; label: JSX.Element } | undefined
   select: (value: string) => void
 }
@@ -85,18 +82,13 @@ export const Menu = {
     // In a row, the row opens it, on a long press or a right-click, with or without a trigger.
     const row = useContext(RowMenu)
     if (row) {
-      row({ open: menu.open, items: menu.items, destructive: menu.destructive, select: menu.select })
+      row({ open: menu.open, destructive: menu.destructive, select: menu.select })
       onCleanup(() => row(undefined))
     }
     return <Opened value={menu}>{props.children}</Opened>
   },
   Trigger: (props: { variant?: ButtonProps["variant"]; size?: "icon"; shape?: ButtonProps["shape"]; "aria-label"?: string; children?: JSX.Element }) => {
     const menu = useContext(Opened)!
-    const row = useContext(RowMenu)
-    // Where the screen has an action panel, as a plain list's does on a computer, its items are the panel's, the
-    // screen's in its bar or the row's where it's chosen, and a right-click on the row opens it: it draws no button
-    // there. Anywhere else it's the ⋯ it always was.
-    if (useContext(Collect) || (row && useContext(Choose))) return null
     const inside = children(() => props.children)
     const words = () => inside.toArray().length > 0 && props.size !== "icon"
     const trigger = menu.trigger()
@@ -153,7 +145,6 @@ export const Menu = {
     const inside = children(() => props.children)
     const entry = { value: props.value, label: inside.toArray().filter((part) => typeof part === "string").join(" "), disabled: !!props.disabled, destructive: !!props.destructive }
     onCleanup(menu.add(entry))
-    collected(() => ({ label: entry.label, onAction: () => menu.select(props.value), destructive: entry.destructive, disabled: entry.disabled }))
     return (
       <Pressable {...menu.item(() => entry)} style={[look.item, props.destructive && look.destructive, props.disabled && look.disabled]}>
         {inside.toArray().map((part) => (typeof part === "string" ? <Text>{part}</Text> : part))}

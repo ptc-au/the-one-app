@@ -3,7 +3,6 @@ import { createStore } from "solid-js"
 
 /// The few words the UI library says itself, in English until a page says otherwise with `words`.
 export const [messages, setMessages] = createStore({
-  actions: "Actions",
   back: "Back",
   cantShowPage: "Can't show this page",
   cantShowHere: (what: string) => `Can't show this ${what.toLowerCase()} here yet`,
@@ -22,18 +21,15 @@ export const [messages, setMessages] = createStore({
   loading: "Loading",
   more: "More",
   nextTip: "Next Tip",
-  noActions: "No actions",
   notifications: "Notifications",
   notDrawnHere: "This One App doesn't draw it yet. It shows in a browser.",
   ok: "OK",
-  open: "Open",
   previousTip: "Previous Tip",
   progress: "Progress",
   reorder: (item: string) => `Reorder ${item}`,
   reorderHint: "Space to pick up, then the arrows to move",
   reordered: (step: "grab" | "move" | "drop" | "cancel", item: string, position: number, of: number) =>
     step === "grab" ? `Picked up ${item}, position ${position} of ${of}.` : step === "move" ? `${item}, position ${position} of ${of}.` : step === "drop" ? `Dropped ${item} at position ${position} of ${of}.` : `Moved ${item} back to position ${position} of ${of}.`,
-  searchActions: "Search for actions…",
   showDetails: "Show Details",
   stepDone: (step: string) => `${step}, done`,
   stepOf: (step: number, of: number) => `Step ${step} of ${of}`,
