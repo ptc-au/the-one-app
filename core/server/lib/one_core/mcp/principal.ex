@@ -32,6 +32,8 @@ defmodule OneCore.Mcp.Principal do
     `actor` is `nil`, and the server acts for its `subject`. A server is believed about who asked only: whether they
     may ask for their subject, a group or the network, is asked here again, as it is of a device.
   - `link` is a sharing link, and whoever shows one is its holder.
+  - `webhook` is an app's webhook, and it's from whoever its address leads to and for them: nobody's signed in at it,
+    and the token in its address is all whoever asks it knows (`OneCore.Apps.Webhooks`).
   - `as` names a user to act as. It's for a network being built, to show who may do what with nobody signing
     in, and is refused unless the server's `:development` setting is on.
   - `device`, in what came in at the network's address, is the device the edge says it's from: it proved
@@ -59,6 +61,19 @@ defmodule OneCore.Mcp.Principal do
       true ->
         with :ok <- if(actor, do: acts(actor, subject, relations), else: :ok),
              do: {:ok, {actor, subject}, if(meta["forwarded"] == "to", do: :to, else: meta["forwarded"] == true)}
+    end
+  end
+
+  # A public webhook is from whoever its address leads to, and for them, as a sharing link's holder is from the link:
+  # nobody's signed in at it, and it asks only for its own webhook (`OneCore.Mcp`'s `confined/2`, and
+  # `OneCore.Apps.Webhooks` for whose it is).
+  def asking(_from, %{"webhook" => webhook}, _question, _relations) when is_binary(webhook) do
+    case OneCore.Apps.Webhooks.named(webhook) do
+      {:ok, owner, _app, _token} ->
+        with :ok <- here(owner), do: {:ok, {owner, owner}, false}
+
+      {:error, why} ->
+        {:error, -32602, why}
     end
   end
 

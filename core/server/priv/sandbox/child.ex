@@ -256,6 +256,7 @@ defmodule OneCore.Sandbox.Child do
 
   defp run({:tool, tool, inputs}, call), do: app().call(tool, inputs, call)
   defp run({:hook, hook, about}, call), do: app().hook(hook, about, call)
+  defp run({:webhook, request}, call), do: app().webhook(call, request)
 
   # What `server-debug` asks: its own code to run here, and what to ask it, as it would run on a server for an app
   # there. A call here runs for whoever it says, and the app's processes kept between calls are its own. An app

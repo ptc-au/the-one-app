@@ -133,8 +133,8 @@ defmodule OneCore.Sandbox do
   end
 
   @doc """
-  Runs `what` of the app `name` among `versions` in its child: `{:tool, tool, inputs}` or `{:hook, hook, about}`,
-  for `call`. Gives what the app answered, or raises with why it didn't.
+  Runs `what` of the app `name` among `versions` in its child: `{:tool, tool, inputs}`, `{:hook, hook, about}` or a
+  webhook's `{:webhook, request}`, for `call`. Gives what the app answered, or raises with why it didn't.
   """
   def call(versions, name, what, %Call{} = call) do
     version = versions[name]

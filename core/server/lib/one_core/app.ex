@@ -357,6 +357,25 @@ defmodule OneCore.App do
     or doesn't answer within ten seconds holds that purge back a day, once: the next day it's purged whatever it
     answers, so no app keeps something someone deleted for ever.
 
+  What another service sends an app, as Slack and GitHub send it, arrives at the app's webhook: an address at the
+  network's edge, `/webhooks/<owner>/<app>/<token>`, which whoever holds it may ask with any method, and with nobody
+  signed in. `webhook/2` is called with the `OneCore.Call` and what came in, and answers the HTTP answer to give the
+  caller:
+
+      @impl true
+      def webhook(_call, %{method: "POST", body: body, token: token}) do
+        {:ok, %{status: 200, headers: [["content-type", "text/plain"]], body: "ok"}}
+      end
+
+  - What came in is the `method`, the `path` after the token (`""` for none), the `query` without its `?`, the
+    `headers` it sent, each a name and a value, its `body`, and the `token` from the address, which is the secret in
+    it: whoever has the address has the webhook, so an app checks what it's given as it does what any stranger sends
+    it, and keeps a token of its own to tell one sender's from another's.
+  - It's called for whoever the address leads to, a user, a group or the network, with `call.actor` and
+    `call.subject` them, and answers `{:ok, %{status: status, headers: headers, body: body}}`: the status to answer
+    with, 100 to 599 and 200 unless it says, each header a name and a value, as a list, and the text to send. One whose
+    app isn't installed for whoever it leads to, or that app has no `webhook/2`, is answered 404.
+
   What of an app runs in a client is its folder `client/`, as the server built it, which reaches each client from
   the server. Its other files that aren't Elixir or skills stay on servers: the source of a program a service brings,
   and its edge function. An app's icon is its own, as an Android package's is, and deploying one without it is

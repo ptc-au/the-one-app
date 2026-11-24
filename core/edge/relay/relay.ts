@@ -42,6 +42,11 @@ const coming = (here: Presence | null) =>
   (here?.connected === false && here.last_seen !== undefined && Date.now() - here.last_seen < LEFT);
 /** MCP's ping, which a server answers at once, whoever asks. */
 const MCP_PING = JSON.stringify({ jsonrpc: "2.0", id: 0, method: "ping" });
+/**
+ * The protocol a webhook came in with, which a server speaks from: one from before it knows no `webhooks/http`, so a
+ * webhook is asked of it none, since what it answered would be a method it has no rather than the app's.
+ */
+const WEBHOOKS = 3;
 /** The protocols the edge speaks, from `oldest` to `newest`. */
 const SPEAKS: Protocol = { oldest: PROTOCOL_CONFIG.oldest, newest: PROTOCOL_CONFIG.newest };
 /** Whether a part that speaks `theirs` talks with the edge: their ranges overlap. */
@@ -108,11 +113,14 @@ export async function forward(env: Env, servers: string[], message: string): Pro
   message = JSON.stringify({ ...call, params: { ...call.params, _meta: { ...call.params?._meta, protocol: SPEAKS, version: env.VERSION } } });
   const said = (attributes: Record<string, string | number>, error?: string) => console.log(JSON.stringify({ telemetry: { attributes, error } }));
 
-  // Only a server that talks with the edge is asked, and only one that's ready, or isn't known not to be.
+  // Only a server that talks with the edge is asked, and a webhook only of one that speaks the protocol it came in
+  // with; and only one that's ready, or isn't known not to be.
   const protocols = await relay(env, (relay) => relay.protocols(servers));
-  const talking = servers.filter((server) => talk(protocols[server]));
+  const webhook = call.method === "webhooks/http";
+  const talking = servers.filter((server) => talk(protocols[server]) && (!webhook || (protocols[server]?.newest ?? 0) >= WEBHOOKS));
   if (!talking.length) {
-    said({ "one.servers": servers.length }, `None of its ${servers.length} servers speaks a protocol the edge's ${named(SPEAKS)} does: ${servers.map((server) => `${server.slice(0, 8)} ${named(protocols[server])}`).join(", ")}`);
+    const speaks = webhook ? `${WEBHOOKS}, which a webhook came in with` : `a protocol the edge's ${named(SPEAKS)} does`;
+    said({ "one.servers": servers.length }, `None of its ${servers.length} servers speaks ${speaks}: ${servers.map((server) => `${server.slice(0, 8)} ${named(protocols[server])}`).join(", ")}`);
     return null;
   }
   let here = await presence(env, talking);

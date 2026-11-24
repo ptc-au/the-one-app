@@ -6,5 +6,6 @@
   "llms.txt": "mcp",
   "skills": "mcp",
   "apps": "mcp",
-  "link": "mcp"
+  "link": "mcp",
+  "webhooks": "mcp"
 }

@@ -12,6 +12,11 @@ defmodule OneCore.Mcp do
   call into its app (`apps/call`), of an app's hook (`hooks/call`) or of having an app's scheduled jobs
   called (`apps/schedule`).
 
+  A webhook is the other way in: an address at the network's edge that anyone a service is given it may ask, with
+  nobody signed in (`OneCore.Apps.Webhooks`). It's `webhooks/http`, which runs the app's `webhook/2` for whoever the
+  address leads to, and what came in at it is the app's to answer. A request that came in at one says which webhook it
+  is in `_meta`, and asks for that one and nothing else.
+
   What of an app runs in a client, its folder `client/`, is MCP resources: `ui://<app>/<code>/<path>`, where
   `code` names the set of files a version runs, so a file at an address never changes. What a page loads is listed,
   an app's entrypoints among it as an MCP App is, and the rest of `client/` is read by name. The UI library every app
@@ -54,7 +59,7 @@ defmodule OneCore.Mcp do
 
   alias OneCore.Call.State
   alias OneCore.Mcp.Principal
-  alias OneCore.Apps.{Calls, Icons, Store, Version}
+  alias OneCore.Apps.{Calls, Icons, Store, Version, Webhooks}
 
   # The rules every agent is told first, here and in the network's `/llms.txt` (`core/edge/mcp/mcp.ts`).
   @external_resource Path.expand("../../priv/rules.md", __DIR__)
@@ -125,6 +130,7 @@ defmodule OneCore.Mcp do
 
           with :ok <- speaks(version),
                :ok <- talks(method, params),
+               :ok <- confined(method, meta(params)),
                {:ok, principal, forwarded} <-
                  Principal.asking(from, asking(method, meta(params)), question?(method, params), relations(method, params)),
                :ok <- reloaded(meta(params)),
@@ -323,6 +329,20 @@ defmodule OneCore.Mcp do
     end
   end
 
+  # A request that came in at a public webhook's address (`OneCore.Apps.Webhooks`) says which webhook it is, and asks
+  # only for that one to run: nobody is signed in there, and everything else this server answers is for someone. A
+  # server that runs the app elsewhere passes on what it was asked, as it does any call (`OneCore.Call`).
+  defp confined("webhooks/http", %{"webhook" => _}), do: :ok
+  defp confined("webhooks/http", %{"actor" => _}), do: :ok
+
+  defp confined("webhooks/http", _meta),
+    do: {:error, -32024, "Only a webhook, or a server passing one on, asks for a webhook to be run"}
+
+  defp confined(method, %{"webhook" => _}),
+    do: {:error, -32024, "A webhook asks only for its own webhook to be run, and this asks for #{method}"}
+
+  defp confined(_method, _meta), do: :ok
+
   # A result to a client of a version that says what kind of result it is, and how long it may keep it.
   defp complete(result, _method, nil), do: result
 
@@ -385,6 +405,23 @@ defmodule OneCore.Mcp do
     between(forwarded, fn ->
       Calls.hook(at, app, String.to_existing_atom(kind), hook, params["about"], principal, true)
     end)
+  end
+
+  # A webhook, which came in at the app's address at the network's edge: it runs the app's `webhook/2` for whoever the
+  # address leads to, and what it answers is the HTTP answer the edge sends whoever asked (`OneCore.Apps.Webhooks`).
+  defp result("webhooks/http", %{"request" => request} = params, _from, {_actor, owner}, forwarded) do
+    with :ok <- if(forwarded != false or is_map_key(meta(params), "webhook"), do: :ok, else: {:error, :forbidden, "Only a webhook, or a server passing one on, asks for a webhook to be run"}),
+         {:ok, webhook, app, token} <- Webhooks.asked(params, owner),
+         {:ok, request} <- Webhooks.request(request, token) do
+      case Calls.webhook(app, webhook, request, {owner, owner}, forwarded) do
+        {:ok, answer} -> Webhooks.answered(answer)
+        {:error, :not_found, why} -> {:error, -32023, why}
+        {:error, why} -> {:error, why}
+      end
+    else
+      {:error, :forbidden, why} -> {:error, -32024, why}
+      {:error, :invalid, why} -> {:error, -32602, why}
+    end
   end
 
   defp result("tools/call", %{"name" => name} = params, from, {_actor, subject} = principal, forwarded) do

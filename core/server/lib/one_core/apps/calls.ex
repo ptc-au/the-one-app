@@ -1,10 +1,10 @@
 defmodule OneCore.Apps.Calls do
   @moduledoc """
-  Calling an app: one of its tools, a function of it for a service of its own, its `hook/3` at a hook, or having its
-  scheduled jobs called. A call runs on the version of the app that was latest when it began, and those of the
-  apps it requires whose code runs inside it, which stay loaded until it ends (`OneCore.Apps.run/3`). It runs on the
-  narrowest server that's up of those that allow the app's code and act for whose data it keeps
-  (`OneCore.Apps.runs?/3`): this one, or one it's passed on to.
+  Calling an app: one of its tools, a function of it for a service of its own, its `hook/3` at a hook, its `webhook/2`
+  for what another service sends it, or having its scheduled jobs called. A call runs on the version of the app that was
+  latest when it began, and those of the apps it requires whose code runs inside it, which stay loaded until it ends
+  (`OneCore.Apps.run/3`). It runs on the narrowest server that's up of those that allow the app's code and act for whose
+  data it keeps (`OneCore.Apps.runs?/3`): this one, or one it's passed on to.
   """
   require Logger
   alias ExJsonSchema.Validator.Error
@@ -13,7 +13,7 @@ defmodule OneCore.Apps.Calls do
   require OpenTelemetry.Tracer, as: Tracer
   require Histogram
   alias OneCore.Call.State
-  alias OneCore.Apps.Version
+  alias OneCore.Apps.{Version, Webhooks}
 
   @doc """
   Calls an app's tool for `asked`: who asked and who it's for, `{by, for}`, or one who that is both. Gives
@@ -355,6 +355,39 @@ defmodule OneCore.Apps.Calls do
   end
 
   @doc """
+  Runs the `webhook/2` of the app that `name` is for whoever `asked` is, with `request`, as the app's `webhook/2` is
+  given it, at the webhook `webhook` names (`OneCore.App.webhook/2`). Gives `{:ok, answer}` with what the app answered,
+  the HTTP answer its caller gets; `{:error, :not_found, why}` where there's no such app for them, or it has no
+  webhook; and otherwise what `call/5` does.
+  """
+  def webhook(name, webhook, request, principal, forwarded \\ false) do
+    principal = principal(principal)
+    {_actor, subject} = principal
+
+    if webhook?(name, subject) do
+      Apps.run(Apps.chain(subject), name, fn at, versions ->
+        ask = {"webhooks/http", %{app: name, webhook: webhook, request: Webhooks.said(request)}}
+        call = called(at, name, versions, ask, principal, forwarded)
+
+        invoked(versions, name, {:webhook, request}, call)
+      end)
+    else
+      {:error, :not_found, "There's no webhook of #{name} installed for #{subject}"}
+    end
+  end
+
+  # Whether the app `name` that `owner` has is one that answers a webhook: it's installed for them, or for the network,
+  # and it has a `webhook/2` where its code is here. One whose code runs in its sandbox is the sandbox's to say, as only
+  # there are its functions.
+  defp webhook?(name, owner) do
+    case Apps.running(owner) do
+      %{^name => %Version{app: nil}} -> true
+      %{^name => version} -> function_exported?(version.app, :webhook, 2)
+      _ -> false
+    end
+  end
+
+  @doc """
   Calls the `hook/3` of the app that `name` is for `at`, at `hook`, a hook of `kind`, for `asked`. Gives
   `{:ok, answer}` with its answer as `OneCore.Hooks.answer/3` gives it, and otherwise what `call/5` does. An app
   that no longer hooks into it has nothing to say. A hook gives no access of its own: an app that observes an
@@ -475,13 +508,14 @@ defmodule OneCore.Apps.Calls do
     end)
   end
 
-  # An app's tool or hook, run by its module here or, for an untrusted app, in its sandbox.
+  # An app's tool, hook or webhook, run by its module here or, for an untrusted app, in its sandbox.
   defp invoked(versions, name, what, call) do
     running(call, fn ->
       case {Version.runs(versions[name]), what} do
         {:sandbox, what} -> Sandbox.call(versions, name, what, call)
         {:here, {:tool, tool, inputs}} -> versions[name].app.call(tool, inputs, call)
         {:here, {:hook, hook, about}} -> versions[name].app.hook(hook, about, call)
+        {:here, {:webhook, request}} -> versions[name].app.webhook(call, request)
       end
     end)
   end

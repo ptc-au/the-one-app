@@ -43,6 +43,7 @@ defmodule OneCore.App.Manifest do
     widgets: 0,
     hooks: 0,
     hook: 3,
+    webhook: 2,
     offers: 0,
     jobs: 0,
     schedule: 3,
@@ -68,6 +69,7 @@ defmodule OneCore.App.Manifest do
       @callback widgets() :: [%{name: String.t(), tool: String.t(), sizes: [String.t()]}]
       @callback hooks() :: [String.t()]
       @callback hook(hook :: String.t(), about :: map, OneCore.Call.t()) :: term
+      @callback webhook(OneCore.Call.t(), request :: map) :: {:ok, map}
       @callback offers() :: [
                   %{name: String.t(), kind: :observe | :mutate | :validate | :collect, description: String.t()}
                 ]

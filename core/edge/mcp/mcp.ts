@@ -1,7 +1,8 @@
 // The network's front door: its MCP endpoint over the web (`/mcp`, or in code mode `/mcp?code`), what tells an
 // assistant how to come in (`/llms.txt`), the skills of whoever signed in (`/skills/<path>`), the web client's apps'
-// files (`/apps`), and the endpoint for whoever holds a sharing link (`/link/<link>`). Each call is passed through the relay to a server acting for whoever it's from, which is told
-// which device that is and decides whose it is itself.
+// files (`/apps`), the endpoint for whoever holds a sharing link (`/link/<link>`), and an app's webhooks, which anyone
+// a service shows one to asks (`/webhooks/<owner>/<app>/<token>`). Each call is passed through the relay to a server
+// acting for whoever it's from, which is told which device that is and decides whose it is itself.
 //
 // One of the network's own devices signs what it asks with its key, which is checked here. Anyone else has signed in,
 // and who they are is the app's to say that signs people in: it's bound here as WHO, by `edge.js`, and asked
@@ -35,7 +36,7 @@ declare global {
 
 const refuse = (status: number, why: string) => Response.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: why } }, { status });
 
-/** A sharing link starts with whose it leads to, as their prefix: that's whose servers answer its holder. */
+/** A sharing link, or a webhook, starts with whose it leads to, as their prefix: that's whose servers answer it. */
 const LEADS_TO = /^(?:(?:users|groups)\/[^/]+\/|network\/)/;
 /** The JSON-RPC error a server answers a device that's nobody's (`OneCore.Mcp`). */
 const NOBODY = -32003;
@@ -49,6 +50,9 @@ export default {
     if (url.pathname.startsWith("/skills/")) return skill(request, env, url);
     if (url.pathname === "/apps") return apps(request, env);
     if (url.pathname.startsWith("/apps/")) return file(request, env, url, ctx);
+    // A webhook is asked by whatever a service sends, with whatever method: Slack and GitHub both POST, and a service
+    // that checks one first may GET or HEAD it.
+    if (url.pathname.startsWith("/webhooks/")) return webhook(request, env, url);
     // MCP's streamable HTTP: each message is a POST, answered with JSON, or a stream of its progress and then its
     // answer. There's no stream to GET.
     if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
@@ -219,6 +223,83 @@ async function link(request: Request, env: Env, url: URL, ctx: ExecutionContext)
   return forward(env, await request.text(), { link }, [of, NETWORK], request.headers, undefined, { signal: request.signal, ctx });
 }
 
+/** An app's name, as a webhook's address says it. */
+const APP = /^[a-z0-9][a-z0-9-]*$/;
+/** A webhook's token: the secret in its address, which is all whoever asks one has to know. */
+const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
+/** How big a webhook's body may be, in bytes: a service may send more than an app can take, and is told so. */
+const LIMIT = 1_048_576;
+/**
+ * How long a webhook waits for a server's answer, in milliseconds: the longest a service waits for one, GitHub's 10
+ * seconds, so a server that's restarting is answered with a try again, which a service does, rather than the service
+ * waiting past its own limit for one.
+ */
+const WEBHOOK_WAIT = 10_000;
+/** What's said of a webhook's address that isn't one. */
+const WEBHOOKS_ARE = "A webhook's address is /webhooks/<owner>/<app>/<token>, where owner is users/<name>, groups/<name> or network";
+
+/** A body's bytes as base64, which is how a JSON-RPC message holds bytes. */
+function base64(bytes: Uint8Array) {
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(binary);
+}
+
+/** What a service that asked a webhook is told went wrong, as it would be by any address. */
+const failed = (status: number, why: string) => new Response(why, { status });
+
+/** The HTTP status a server's JSON-RPC error is answered as. */
+const STATUS: Record<number, number> = { [-32023]: 404, [-32024]: 403, [-32602]: 400 };
+
+/**
+ * A webhook: an address anyone a service is given it may ask, `/webhooks/<owner>/<app>/<token>[/<path>]`, with whatever
+ * method, as Slack and GitHub send one, and with nobody signed in. The token is the secret in it, and what the app
+ * answers is the HTTP answer (`OneCore.App.webhook/2`): a server passes on to the app what came in, and tells which
+ * webhook it is in `_meta`, which only the edge does.
+ */
+async function webhook(request: Request, env: Env, url: URL) {
+  const path = url.pathname.slice("/webhooks/".length);
+  const of = LEADS_TO.exec(path)?.[0];
+  const [app = "", token = "", ...rest] = of ? path.slice(of.length).split("/") : [];
+  if (!of || !APP.test(app) || !TOKEN.test(token)) return failed(400, WEBHOOKS_ARE);
+  // A body over the limit is refused before it's read whole where the caller says how big it is, and the rest of it
+  // doesn't stay here, as nothing of a webhook does.
+  if (Number(request.headers.get("content-length") ?? 0) > LIMIT) return failed(413, "A webhook's body is 1 MB or less");
+  const body = new Uint8Array(await request.arrayBuffer());
+  if (body.byteLength > LIMIT) return failed(413, "A webhook's body is 1 MB or less");
+  const at = `${of}${app}/${token}`;
+  const message = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "webhooks/http",
+    params: {
+      app,
+      webhook: at,
+      request: {
+        method: request.method,
+        path: rest.length ? `/${rest.join("/")}` : "",
+        query: url.search.slice(1),
+        // Fetch says a header's name in lowercase, as an app gets it, and each of the same name is kept.
+        headers: [...request.headers],
+        body: base64(body),
+      },
+    },
+  });
+  const answering = forward(env, message, { webhook: at }, [of, NETWORK]).catch((error) => {
+    // Never log the token: it's the secret in the webhook's address.
+    console.error(JSON.stringify({ webhook: `${of}${app}`, error: String(error) }));
+    return null;
+  });
+  const answer = await Promise.race([answering, scheduler.wait(WEBHOOK_WAIT).then(() => null)]);
+  if (!answer || answer.status === 503) return new Response("None of this network's servers answered. Try again in a moment.", { status: 503, headers: { "retry-after": "5" } });
+  const { result, error } = await answer.json<{ result?: { status?: number; headers?: [string, string][]; body?: string }; error?: { code?: number; message?: string } }>();
+  if (error) return failed(STATUS[error.code ?? 0] ?? 502, error.message ?? "The server couldn't say what happened");
+  const status = result?.status ?? 200;
+  const sent = Uint8Array.from(atob(result?.body ?? ""), (char) => char.charCodeAt(0));
+  // HTTP has statuses a Response takes no body with, as a webhook answers a service's first GET with 204.
+  return new Response([204, 304].includes(status) ? null : sent, { status, headers: result?.headers ?? [] });
+}
+
 /** What MCP says of a request in its `_meta`, under its own prefix: its version, and its client and what that can do. */
 const MCP = "io.modelcontextprotocol/";
 const VERSION = `${MCP}protocolVersion`;
@@ -228,15 +309,15 @@ const PROGRESS = 1_000;
 type Call = { id?: unknown; method?: unknown; params?: { _meta?: Record<string, unknown>; name?: unknown; uri?: unknown; taskId?: unknown } };
 
 /**
- * Passes one JSON-RPC message to a server acting for one of `of`, as from `from`, a device or a sharing link's
- * holder, and answers what the server did. What's asked says who it's from, who it's for and which app's page asked
+ * Passes one JSON-RPC message to a server acting for one of `of`, as from `from`, a device, a sharing link's holder
+ * or a webhook, and answers what the server did. What's asked says who it's from, who it's for and which app's page asked
  * (a device's), the span it's under and what MCP has it say, and nothing else of itself. `headers` are the HTTP request's, if it's one, and
  * `client` its client's connection, whose going before its answer the servers are told.
  */
 async function forward(
   env: Env,
   message: string,
-  from: { device: string } | { link: string },
+  from: { device: string } | { link: string } | { webhook: string },
   of: string[],
   headers?: Headers,
   mode?: string,
