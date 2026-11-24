@@ -198,6 +198,44 @@ export default {
       />
     </List>
   ),
+  // A row's grey line cut at its second line, beside two end controls, with its menu open, as a task in My Tasks: the
+  // page behind the menu is inert, and its rows are judged by what's drawn there all the same, the flag's button, not
+  // its icon, next to the words (a run read only what a screen reader reads, and said they had room, 24 Nov).
+  "Lists/A row's menu open under a finger": {
+    touch: true,
+    render: () => (
+      <List>
+        <Row
+          heading="Draft the comms plan for next term"
+          text="Comms & Tech / General Task Roles · Website and socials · due 26 Nov"
+          meta="Alice, Sam"
+          control={
+            <Button size="icon" variant="ghost" aria-label="Mark Draft the comms plan for next term complete">
+              <Icon name="check-circle" />
+            </Button>
+          }
+          onPress={() => {}}
+          end={
+            <View style={look.row}>
+              <Button size="icon" variant="ghost" aria-label="Priority off for Draft the comms plan for next term. Turn on">
+                <Icon name="flag" />
+              </Button>
+              <Menu.Root>
+                <Menu.Trigger aria-label="More" />
+                <Menu.Positioner>
+                  <Menu.Content>
+                    <Menu.Item value="a">To do</Menu.Item>
+                    <Menu.Item value="b">In progress</Menu.Item>
+                  </Menu.Content>
+                </Menu.Positioner>
+              </Menu.Root>
+            </View>
+          }
+        />
+      </List>
+    ),
+    taps: [{ role: "button", name: "More" }],
+  },
   "Lists/Rows coming and going": () => <Rows />,
   "Lists/A row added": { render: () => <Rows />, taps: ["Add Row"] },
   "Lists/A long list": () => (
