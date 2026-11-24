@@ -15,6 +15,16 @@
 // What an app's own window asks is answered by the futures the Home Screen's commands are, a deep nest of them (`hosts`).
 #![recursion_limit = "256"]
 
+/// `eprintln!`, as every line this program says to its log begins with the time in UTC, as the server's lines do, where a
+/// computer's app says it to a file nobody reads as it happens. It's what `std` has by this name for the modules below,
+/// which a phone's logs (Xcode's, `logcat`) already stamp.
+#[cfg(not(mobile))]
+macro_rules! eprintln {
+    ($($line:tt)*) => {
+        ::std::eprintln!("{} {}", ::jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%S%.3fZ"), format_args!($($line)*))
+    };
+}
+
 #[cfg(mobile)]
 use std::time::Instant;
 

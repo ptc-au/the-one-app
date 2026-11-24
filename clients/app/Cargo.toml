@@ -68,6 +68,8 @@ anyhow = { workspace = true, optional = true }
 renderer = { path = "renderer", optional = true }
 cli = { path = "../cli" }
 client = { path = "../../core/client" }
+# The time each line it says to its log begins with (`eprintln!` in `lib.rs`).
+jiff = "0.2"
 data-encoding = { version = "2", optional = true }
 # The window's page the network has: its version, the lowest build it runs on, and its files' hashes (`page`).
 semver = { version = "1", features = ["serde"], optional = true }

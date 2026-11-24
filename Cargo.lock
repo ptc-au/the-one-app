@@ -222,6 +222,7 @@ dependencies = [
  "gtk",
  "icns",
  "ico",
+ "jiff",
  "jni 0.21.1",
  "libc",
  "mach2",
