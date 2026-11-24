@@ -12,22 +12,29 @@ use iroh::SecretKey;
 use rustler::LocalPid;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
-use tokio::time::{Instant, interval, sleep, timeout};
+use tokio::time::{Instant, interval, sleep, sleep_until, timeout};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 /// The internet between a server and its network's address comes and goes, and what sits between them forgets a
-/// connection that says nothing. So the server says something this often, and connects again after this long.
-const EVERY: Duration = Duration::from_secs(30);
+/// connection that says nothing. So the server says something this often, takes one the edge hasn't answered for
+/// twice this long as gone, and tries to connect at most once this long.
+const EVERY: Duration = Duration::from_secs(10);
 
 /// Keeps the connection open for as long as it runs, which is while its endpoint is open, handing each call to `asked`
 /// as a client's is.
 pub async fn listen(network: Network, key: SecretKey, handler: LocalPid, aside: crate::Aside) {
     loop {
+        let tried = Instant::now();
         // Why it ended doesn't matter: the next one is the same either way.
         let _ = connect(&network, &key, &handler, &aside).await;
-        sleep(EVERY).await;
+        // Cloudflare drops the relay's connections where servers connect (Sydney, Melbourne, Auckland), every server's
+        // at once and every network's in the same minute, dozens of times a day (`loadShed` in its analytics, 24 Nov),
+        // and the next connection is answered at once. So one that was up connects again at once, and the address
+        // reaches this server again within seconds, where waiting first left the network unreachable for 30 to 90 s;
+        // only tries that fail at once wait.
+        sleep_until(tried + EVERY).await;
     }
 }
 
