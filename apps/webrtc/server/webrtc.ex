@@ -125,8 +125,8 @@ defmodule WebRTC do
       %{
         name: "sfu_session",
         description:
-          "For an app's code that streams over WebRTC through Cloudflare Realtime's SFU: a new session, with the SDP offer its end makes where it has one, as `sessionId` and Cloudflare's SDP. The app's code drives the session with the other SFU tools. Not for a person or an agent.",
-        inputs: %{type: "object", properties: %{sessionDescription: offer}},
+          "For an app's code that streams over WebRTC through Cloudflare Realtime's SFU: a new session, as `sessionId`. The page's SDP offer goes with the tracks, `sfu_tracks`. The app's code drives the session with the other SFU tools. Not for a person or an agent.",
+        inputs: %{type: "object"},
         outputs: %{
           type: "object",
           properties: %{
@@ -226,8 +226,7 @@ defmodule WebRTC do
     end
   end
 
-  def call("sfu_session", inputs, call),
-    do: sfu(call, "POST", "/sessions/new", sent(inputs, ~w(sessionDescription)), "new session")
+  def call("sfu_session", _inputs, call), do: sfu(call, "POST", "/sessions/new", %{}, "new session")
 
   def call("sfu_tracks", inputs, call) do
     session = session!(inputs["sessionId"])
@@ -258,13 +257,16 @@ defmodule WebRTC do
     call = %{call | subject: call.installed}
     needed!(call, @sfu)
 
+    # Cloudflare's `sessions/new` takes no body, and refuses `{}` ("Body JSON validation error:
+    # sessionDescription", 400): a session is made first, and its tracks' offer goes with `tracks/new`.
     request = %{
       "item" => @sfu,
       "method" => method,
       "url" => "https://rtc.live.cloudflare.com/v1/apps/{{app_id}}" <> path,
-      "headers" => %{"authorization" => "Bearer {{app_token}}", "content-type" => "application/json"},
-      "body" => JSON.encode!(body)
+      "headers" => %{"authorization" => "Bearer {{app_token}}", "content-type" => "application/json"}
     }
+
+    request = if body == %{}, do: request, else: Map.put(request, "body", JSON.encode!(body))
 
     case vault(call, "fetch", request, @sfu <> " key") do
       %{"status" => status, "body" => body} when status in 200..299 ->

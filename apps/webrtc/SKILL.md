@@ -18,8 +18,9 @@ says what it takes).
 
 Cloudflare Realtime's SFU is there too, for a stream it carries rather than TURN's two ends: `sfu_session` makes a
 session, `sfu_tracks` adds tracks to it, `sfu_renegotiate` renegotiates after tracks change, and `sfu_close` closes
-tracks. Each takes an SDP `sessionDescription` (its `type` and `sdp`) where it has one, and answers with Cloudflare's
-response: `sfu_renegotiate` takes the answer to the SFU's offer, the others an offer of the app end's. A `sessionId`
+tracks. A session takes nothing: its offer goes with its tracks. `sfu_tracks` and `sfu_close` take an SDP
+`sessionDescription` (its `type` and `sdp`) where they have one, and answer with Cloudflare's response:
+`sfu_renegotiate` takes the answer to the SFU's offer, the others an offer of the app end's. A `sessionId`
 is letters, digits, dashes and underscores.
 
 It needs the item `Cloudflare TURN` in the Vault of whoever it's installed for (the network's, most often): `key_id`
