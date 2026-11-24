@@ -3,7 +3,7 @@
 // closes. A file and a commit open in the repo's place, with Back.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { marked, type Token, type Tokens } from "marked"
-import { Avatar, Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Skeleton, Split, styles, Svg, Tabs, Text, toast, tokens, View, viewport } from "ui"
+import { Avatar, Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Spinner, Split, styles, Svg, Tabs, Text, toast, tokens, View, viewport } from "ui"
 
 /** A commit, as the tools answer it. */
 interface Commit {
@@ -391,17 +391,17 @@ function Repo(props: { repo: string }) {
           <Tabs.Indicator />
         </Tabs.List>
         <Tabs.Content value="code">
-          <Loading fallback={<Skeleton rows={5} />}>
+          <Loading fallback={<Spinner delay />}>
             <Code repo={props.repo} about={about()} branch={branch()} />
           </Loading>
         </Tabs.Content>
         <Tabs.Content value="history">
-          <Loading fallback={<Skeleton rows={6} />}>
+          <Loading fallback={<Spinner delay />}>
             <History repo={props.repo} branch={branch()} />
           </Loading>
         </Tabs.Content>
         <Tabs.Content value="pull_requests">
-          <Loading fallback={<Skeleton rows={3} />}>
+          <Loading fallback={<Spinner delay />}>
             <PullRequests repo={props.repo} pushes={about().pushes} />
           </Loading>
         </Tabs.Content>
@@ -826,7 +826,7 @@ function App() {
           <Show when={open()}>
             {(repo) => (
               <Errored fallback={(error) => <Problem heading="Can't show this repo" text={error() as Error} />}>
-                <Loading fallback={<Skeleton rows={6} />}>
+                <Loading fallback={<Spinner delay />}>
                   <Repo repo={repo()} />
                 </Loading>
               </Errored>
@@ -844,7 +844,7 @@ function App() {
 
 render(() => (
   <Errored fallback={(error) => <Screen heading="Git Repos"><Problem heading="Can't show your repos" text={error() as Error} /></Screen>}>
-    <Loading fallback={<Skeleton rows={4} />}>
+    <Loading fallback={<Spinner delay />}>
       <App />
     </Loading>
   </Errored>
