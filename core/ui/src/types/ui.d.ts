@@ -471,6 +471,9 @@ export declare function Chart(props: {
   label?: string
   style?: Styles<"height" | "flexGrow" | "alignSelf" | "marginTop">
 }): Element
+/** A count and what it counts, pressed to show those, as iOS Reminders' lists are: filled while it's `chosen`, a
+ * `colour` dot before its label, and a grey `note` under it. */
+export declare function Tile(props: { value: number; label: string; note?: string; colour?: `#${string}` | null; chosen?: boolean; onPress?: () => void }): Element
 /** One event of a `TimeGrid`: where it starts and ends in its day, in minutes from midnight, its title, a grey line,
  * its own colour from data, whether it's over, something to do with it, and what a press does. */
 export type TimeGridEvent = { id: string; start: number; end: number; title: string; text?: string; colour?: `#${string}` | null; over?: boolean; action?: Element; onPress?: () => void }
