@@ -100,9 +100,9 @@ defmodule Vault.SignIns do
     cond do
       device["kind"] == "assistant" -> %{agent: device["name"]}
       client["name"] == "one-cli" -> %{cli: true}
-      sign_in.screen?(call) -> %{screen: "settings#vault/accounts"}
+      sign_in.screen?(call) -> %{screen: "settings#section&app=vault&section=accounts"}
       said -> %{agent: said}
-      true -> %{screen: "settings#vault/accounts"}
+      true -> %{screen: "settings#section&app=vault&section=accounts"}
     end
   end
 

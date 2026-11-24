@@ -337,7 +337,7 @@ function Where(props: { market: Market; all: Owners; owner: Owner; listed: Liste
       </Match>
       {/* Restoring is Recently Deleted's, as for everything deleted: one place, as iOS has it. */}
       <Match when={state() === "recently_deleted" && may()}>
-        <Button variant="secondary" onPress={() => open("settings#soft-delete/deleted", { subject: props.owner.subject })}>Recently Deleted</Button>
+        <Button variant="secondary" onPress={() => open("settings#section&app=soft-delete&section=deleted", { subject: props.owner.subject })}>Recently Deleted</Button>
       </Match>
       <Match when={state() === "installed"}>
         <View style={look.busy}>

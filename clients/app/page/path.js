@@ -77,13 +77,13 @@ export function named(uri) {
 
 /// What a `one:` link opens, by what it says after its scheme, `<app>[/<page>][#<fragment>]`, among what's listed
 /// (`pagesOf`): its page, the place in it, and the link as it's opened. An app with no page of its own to open, or a
-/// page it no longer has (a link kept from before, an older phone's), opens where its settings are, at that app (its
-/// own `#<app>`). → nothing, where there's no page to open.
+/// page it no longer has (a link kept from before, an older phone's), opens where its settings are, at that app's
+/// first section (`settings_section { app }`). → nothing, where there's no page to open.
 /** @param {string} link @param {{ first: Map<string, string>, files: Set<string>, settings: string }} listed @returns {{ page: string, fragment?: string, link: string } | undefined} */
 export function opens(link, listed) {
   const [entrypoint, fragment] = link.split("#", 2)
   const page = entrypoint.includes("/") ? entrypoint : listed.first.get(entrypoint)
   const { files, settings } = listed
-  if (files.size && (!page || !files.has(page)) && settings && page !== settings) return opens(`${settings}#${entrypoint.split("/")[0]}${fragment ? `&${fragment}` : ""}`, listed)
+  if (files.size && (!page || !files.has(page)) && settings && page !== settings) return opens(`${settings}#section&app=${entrypoint.split("/")[0]}${fragment ? `&${fragment}` : ""}`, listed)
   return page ? { page, fragment, link } : undefined
 }

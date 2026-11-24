@@ -60,7 +60,7 @@ function Form(props: { given: Inputs }) {
             <Problem
               heading="Couldn't add it"
               text={why()}
-              action={why().message.startsWith("Sign in") ? <Button onPress={() => open("settings#vault/accounts")}>Sign In</Button> : undefined}
+              action={why().message.startsWith("Sign in") ? <Button onPress={() => open("settings#section&app=vault&section=accounts")}>Sign In</Button> : undefined}
             />
           )}
         </Show>

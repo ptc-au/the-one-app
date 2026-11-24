@@ -105,7 +105,7 @@ export default {
       const id = url.searchParams.get("id");
       // Whose Vault the request waits in: the person's own where the link says none.
       const owner = url.searchParams.get("owner");
-      const place = `settings#vault/accounts${id ? `&request=${id}` : ""}${id && owner ? `&owner=${encodeURIComponent(owner)}` : ""}`;
+      const place = `settings#section&app=vault&section=accounts${id ? `&request=${id}` : ""}${id && owner ? `&owner=${encodeURIComponent(owner)}` : ""}`;
       return Response.redirect(new URL(`/?open=${encodeURIComponent(place)}`, url).href, 302);
     }
     return env.ASSETS.fetch(request);

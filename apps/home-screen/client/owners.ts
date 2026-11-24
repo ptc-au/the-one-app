@@ -149,11 +149,11 @@ export const pending = () => {
 /// An app of an App Library as an entrypoint, which it opens, or nothing, for an app with none.
 export const opens = (listed: Listed): Entrypoint | undefined => (listed.entrypoint ? (listed as Entrypoint) : undefined)
 
-/// Opens an app of an App Library: its entrypoint, or for an app with none, its section in Settings, by a link
-/// (`one:settings#<app>`), growing out of its icon as any app does.
+/// Opens an app of an App Library: its entrypoint, or for an app with none, its page in Settings, by a link
+/// (`one:settings#app&name=<app>&for=<whose>`), growing out of its icon as any app does.
 export const press = (listed: Listed, owner: Owner, behind?: boolean, from?: From) => {
   if (opens(listed)) return launch(opens(listed)!, owner, behind, from)
-  if (!behind) open(`settings#${listed.installed.name}`, { from })
+  if (!behind) open(`settings#app&name=${encodeURIComponent(listed.installed.name)}&for=${encodeURIComponent(listed.installed.for)}`, { from })
 }
 
 /// Who a call about an install is for: a group or the network, or for a user's own, nobody said.

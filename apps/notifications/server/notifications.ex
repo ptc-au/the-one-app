@@ -399,7 +399,7 @@ defmodule Notifications do
 
   defp opens(app, _page, section) when is_binary(section) do
     [component | rest] = String.split(section, "#", parts: 2)
-    "settings/client/index.html#" <> Enum.join(["#{app}/#{component}" | rest], "&")
+    "settings/client/index.html#" <> Enum.join(["section&app=#{app}&section=#{component}" | rest], "&")
   end
 
   defp opens(app, page, _section) when is_binary(page), do: "#{app}/#{page}"
