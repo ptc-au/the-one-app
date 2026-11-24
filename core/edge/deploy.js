@@ -62,7 +62,8 @@ if (!domains.ok) throw new Error(`Cloudflare didn't say where the edge answers (
 const elsewhere = (await domains.json()).result.map((/** @type {{hostname: string}} */ domain) => domain.hostname).filter((hostname) => hostname !== at.hostname);
 if (elsewhere.length)
   throw new Error(`The edge answers at ${elsewhere.join(", ")}, not ${at.hostname}: nothing was deployed. Deploy to https://${elsewhere[0]}, or remove that name from the edge first to move the network`);
-const wrangler = (/** @type {string[]} */ ...args) => Bun.spawn(["bun", "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
+// Bun is run by its own path, as a server runs this where Bun is installed for it and isn't on its PATH.
+const wrangler = (/** @type {string[]} */ ...args) => Bun.spawn([process.execPath, "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
 const config = (/** @type {string} */ name, file = "wrangler.jsonc") => `workers/${name}/${file}`;
 
 /**
@@ -70,10 +71,10 @@ const config = (/** @type {string} */ name, file = "wrangler.jsonc") => `workers
  * the tag and `VERSION` it was deployed with, or `null` where there's none.
  */
 async function live(/** @type {string} */ name) {
-  const status = await $`bun x wrangler deployments status --name ${name} --json`.cwd(here).quiet().nothrow();
+  const status = await $`${process.execPath} x wrangler deployments status --name ${name} --json`.cwd(here).quiet().nothrow();
   const active = status.exitCode === 0 ? JSON.parse(status.text()).versions?.[0] : null;
   if (!active) return null;
-  const viewed = JSON.parse((await $`bun x wrangler versions view ${active.version_id} --name ${name} --json`.cwd(here).quiet()).text());
+  const viewed = JSON.parse((await $`${process.execPath} x wrangler versions view ${active.version_id} --name ${name} --json`.cwd(here).quiet()).text());
   const bound = viewed.resources?.bindings?.find((/** @type {{name: string}} */ binding) => binding.name === "VERSION");
   return { version: active.version_id, percentage: active.percentage, tag: viewed.annotations?.["workers/tag"], build: bound?.text };
 }
