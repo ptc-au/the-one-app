@@ -438,13 +438,21 @@ pub(super) async fn ran(command: std::process::Command, within: Duration) -> Res
 }
 
 /// The latest builds for this kind of machine, by what they are (`server-code`, `one`), each with a link to it, as this
-/// program takes them: a network's own app's `one` is its network's own build of itself (`networks_published`), which
-/// its Software Update has once `tooling/installers` has made it from the platform's build, minutes after the platform
-/// publishes that (`tooling/release`). So a network's own app is never told of a build its network has no app of, nor
-/// waits for one to be published: a build of the platform is the platform's own app's, and every other's.
+/// program takes them (`own`).
 pub(super) async fn download(client: &Client, program: &Path) -> Result<Map<String, Value>> {
     let response = tool(client, "download", json!({"target": target()})).await?;
-    let Value::Object(mut builds) = serde_json::from_str(&response)? else { bail!("the network didn't list its builds") };
+    let Value::Object(builds) = serde_json::from_str(&response)? else { bail!("the network didn't list its builds") };
+    own(client, program, builds).await
+}
+
+/// The platform's latest `builds`, with a network's own app's `one` its network's own build of itself
+/// (`networks_published`), which its Software Update has once `tooling/installers` has made it from the platform's
+/// build, minutes after the platform publishes that (`tooling/release`). So a network's own app is never told of a build
+/// its network has no app of, nor waits for one to be published: a build of the platform is the platform's own app's,
+/// and every other's. It holds for a server that's one as much as for the app: its pair, the server build and `one`
+/// (`latest_pair`), is the latest server build with the `one` its network has, so a server doesn't wait for a disk
+/// image that's yet to be made to take a build of the server.
+pub(super) async fn own(client: &Client, program: &Path, mut builds: Map<String, Value>) -> Result<Map<String, Value>> {
     if networks_own(program) {
         // What a server takes of it is the platform's (`serving`), which a device that's also one pairs with.
         let serving = builds.get(PROGRAM).and_then(|one| one.get("serving")).cloned();

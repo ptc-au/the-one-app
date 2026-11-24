@@ -120,10 +120,11 @@ pub(super) async fn prepare(
             record.next = None;
         })
         .await?;
-    let prepared = match latest_builds(server, said).await {
-        Ok(builds) => prepared(&reports.client, here, record, server, program, &builds).await,
-        Err(error) => Err(error),
-    };
+    let prepared = async {
+        let builds = own(&reports.client, program, latest_builds(server, said).await?).await?;
+        prepared(&reports.client, here, record, server, program, &builds).await
+    }
+    .await;
     let on = record.current.as_ref().map(|current| current.build.clone()).unwrap_or_default();
     *record = here
         .save(server, |record| match prepared {
@@ -198,8 +199,8 @@ pub(super) async fn go(here: &Here, record: &mut Record, server: &mut Child, pro
 }
 
 /// The latest builds for this kind of machine, by what they are (`server-code`, `one`), each with a link to it, as the
-/// server reads them for it: so taking a build asks no other server, or an app one runs, which may be restarting in the
-/// same release.
+/// server reads them for it: so taking a build asks no other server, which may be restarting in the same release. A
+/// network's own app's `one` is its network's own (`own`), which its Software Update says.
 pub(super) async fn latest_builds(server: &mut Child, said: &mut UnboundedReceiver<Heard>) -> Result<Map<String, Value>> {
     tell(server, &Told::Latest { latest: target() }).await;
     within("say the latest builds", async {
