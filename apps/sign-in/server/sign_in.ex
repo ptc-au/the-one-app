@@ -357,7 +357,7 @@ defmodule SignIn do
         name: "pictures",
         read_only: true,
         description:
-          "Gives the pictures people and the network are shown by, each a small square JPEG as a `data:` address, or null where there is none (a group has none): a person's own, or the one Google has for them. An app draws them with the UI library's `Avatar`",
+          "Gives the pictures people and the network are shown by, each a small square JPEG as a `data:` address, or null where there is none: a person's own, or the one Google has for them. A group has none: it's drawn with its members' faces, up to four people in it, those with a picture first, whose pictures come too. An app draws them with the UI library's `Avatar`",
         inputs: %{
           type: "object",
           properties: %{
@@ -365,15 +365,22 @@ defmodule SignIn do
               type: "array",
               items: %{type: "string"},
               maxItems: 100,
-              description: "Whose: users/<name> or network"
+              description: "Whose: users/<name>, network or groups/<name>"
             }
           },
           required: ["subjects"]
         },
         outputs: %{
           type: "object",
-          properties: %{pictures: %{type: "object", additionalProperties: %{type: ["string", "null"]}, description: "Each subject's picture, by the subject"}},
-          required: ["pictures"]
+          properties: %{
+            pictures: %{type: "object", additionalProperties: %{type: ["string", "null"]}, description: "Each subject's picture, by the subject, and each member's in `members`"},
+            members: %{
+              type: "object",
+              additionalProperties: %{type: "array", items: %{type: "string"}, maxItems: 4},
+              description: "Each group's members it's drawn with, users/<name>, by the group: none for a group you aren't in, as you don't see who is"
+            }
+          },
+          required: ["pictures", "members"]
         }
       },
       %{
@@ -693,7 +700,11 @@ defmodule SignIn do
   def call("pictures", %{"subjects" => subjects}, call) do
     if subjects -- [call.actor] != [] and not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
 
-    %{pictures: Map.new(kept(call, subjects), fn {subject, found} -> {subject, found && data_address(elem(found, 1))} end)}
+    in_groups = in_groups(call, Enum.filter(subjects, &String.starts_with?(&1, "groups/")))
+    found = kept(call, Enum.uniq(subjects ++ Enum.concat(Map.values(in_groups))))
+    members = Map.new(in_groups, fn {group, people} -> {group, people |> Enum.sort_by(&is_nil(found[&1])) |> Enum.take(4)} end)
+    shown = Enum.uniq(subjects ++ Enum.concat(Map.values(members)))
+    %{pictures: Map.new(shown, &{&1, found[&1] && data_address(elem(found[&1], 1))}), members: members}
   end
 
   # Anyone sets their own. It was sent to the bucket by itself (an upload), and the edge makes it square and small.
@@ -773,10 +784,21 @@ defmodule SignIn do
     Map.new(subjects, fn subject -> {subject, Enum.find_value(found, fn {^subject, source, blob} -> {source, blob}; _ -> nil end)} end)
   end
 
+  # The people in each of `groups` that you're in too, as Permissions has them: a group in a group, a link to it and
+  # everyone have no face of their own.
+  defp in_groups(_call, []), do: %{}
+
+  defp in_groups(call, groups) do
+    for %{"group" => group, "members" => members} <- Call.tool(call, "permissions", "groups", %{})["groups"], group in groups, into: %{},
+        do: {group, members |> Enum.filter(&person?/1) |> Enum.sort()}
+  end
+
+  defp person?(subject), do: Regex.match?(~r/^users\/[a-z][a-z0-9-]*$/, subject)
+
   defp picture_blobs("network"), do: [{"network", "pictures/network"}]
 
   defp picture_blobs("users/" <> name = subject) do
-    if Regex.match?(~r/^users\/[a-z][a-z0-9-]*$/, subject), do: [{"own", "pictures/#{name}/own"}, {"google", "pictures/#{name}/google"}], else: []
+    if person?(subject), do: [{"own", "pictures/#{name}/own"}, {"google", "pictures/#{name}/google"}], else: []
   end
 
   defp picture_blobs(_subject), do: []

@@ -44,7 +44,7 @@ that one question for it, and a new device when they also say the code it shows 
 - `people` says who people are: the name each goes by, chosen as they joined, their email where signing in
   has one, and whose picture they're shown by (`picture`: the one they set, `own`, or Google's, `google`, or none). `name` changes the name your person goes by, when they ask. `picture` sets the picture they go by, which wins over Google's (`--upload-from photo.jpg`: any picture up to 10 MB, made square and small from its middle), and with none takes it away. Signing in with Google gives
   their Google picture, taken again each time. `pictures` gives those of people (`users/<name>`) and the network (`network`, its icon, or the One App's) as `data:` addresses, which
-  the UI library's `Avatar` draws, with a person's initials where they have none. A group has none. `everyone` lists everyone in the network
+  the UI library's `Avatar` draws, with a person's initials where they have none. A group (`groups/<name>`) has none: it gives up to four of its members, those with a picture first, and their pictures, which `Avatar` draws together. `everyone` lists everyone in the network
   and everyone invited who hasn't joined yet. `remove_person` takes someone out, or ends an invitation: their
   devices, assistants and passkeys stop working, they're in no group and shared nothing, and what they made stays. Whoever invites does it.
 - A device that isn't in yet shows a code and a link at the network's address. Its person opens the link where
