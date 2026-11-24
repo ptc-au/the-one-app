@@ -148,12 +148,12 @@ defmodule Notifications do
             page: %{
               type: "string",
               description:
-                "Where an app notifies, one of its own pages a tap opens instead of its first, and what follows # there: client/index.html#waiting"
+                "Where an app notifies, one of its own pages a tap opens instead of its first, and what follows # there, the screen it opens to: client/index.html#week&start=2026-11-23"
             },
             section: %{
               type: "string",
               description:
-                "Where an app notifies, or one of its own sections in Settings a tap opens, by its component (settings.sections), and what follows # there: devices#waiting=7"
+                "Where an app notifies, or one of its own sections in Settings a tap opens, by its component (settings.sections), and what follows # there, the section's own arguments: accounts#request=4"
             }
           },
           required: ["title"]

@@ -17,9 +17,11 @@ App. Updates is its own: Software Update for the network's servers, this device,
 - `apps` lists the apps you have as the sidebar shows them; One Core's `apps` says the rest of each.
 - `badge` is the red count on Settings' icon: what waits in its sections, together.
 
-A link opens a section: `one:settings#<app>/<component>` (`one:settings#sign-in/devices`), `one:settings#updates`,
-or an app's page, `one:settings#app:<who it's for>:<name>`. What follows `&` is the section's own
-(`#sign-in/devices&waiting=<request>`), which its component reads from `link()`.
+Each of its screens is a tool that only reads and its arguments, which a link names and a browser's address shows:
+`section` (`one:settings#section&app=sign-in&section=devices`, /settings/sign-in/devices), `updates`
+(/settings/updates), or `app`, an app's page (`one:settings#app&name=<name>&for=<who it's for>`, /settings/apps/<name>).
+A link's other arguments are the section's own, which its component reads from `link()`: Vault's `request`
+(`one:settings#section&app=vault&section=accounts&request=<id>`).
 
 ## Sections
 

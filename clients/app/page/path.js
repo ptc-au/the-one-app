@@ -1,7 +1,7 @@
 // Where the window's address says it is, in a browser (`pathOf` in clients/web/host.js), as a web app's does.
 
 /// The address of an app's place, which a link to it names: at the launcher `/`, and at an app `/<app>`, then the
-/// place in it, `settings#vault/accounts&request=4` at `/settings/vault/accounts?request=4`, which loading it again
+/// screen in it, `settings#section&app=vault&section=accounts&request=4` at `/settings/vault/accounts?request=4`, which loading it again
 /// opens (`start` in clients/web/host.js). An app's page other than its first is its app's. A screen whose tool says
 /// its `path` among the tools listed (`_meta.path`, `week/{start}`, as OpenAPI's paths say theirs) is at that path,
 /// its arguments in it and the rest after `?`: `my-week#week&start=2026-11-23` at `/my-week/week/2026-11-23`.

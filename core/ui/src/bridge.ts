@@ -389,7 +389,7 @@ export const component: typeof Page.component = async (app, name) => {
   const url = `/${app}/client/${name}.js`
   return import(/* @vite-ignore */ (await host?.component?.(url)) ?? url)
 }
-/// `createEffect(link, (to) => ...)`: the link the page was opened to last, `one:settings#vault/accounts&request=4`'s `vault/accounts&request=4`, as it
+/// `createEffect(link, (to) => ...)`: the link the page was opened to last, `one:settings#section&app=vault&section=accounts&request=4`'s `section&app=vault&section=accounts&request=4`, as it
 /// changes: a link followed while the page is open is told too, the same one again as well. The page's address
 /// forgets it once it's read, so following it again is news. None until a link names more than the app.
 export const link: typeof Page.link = () => opened()

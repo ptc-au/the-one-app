@@ -421,7 +421,10 @@ defmodule OneCore.App do
     entrypoint does, for a native host to draw it. Its screen's address in a browser is its app's, then its `path`,
     with its inputs in braces, as OpenAPI's paths have them, and the rest after `?`: `path: "week/{start}"` is
     `/my-week/week/2026-11-23`, and `"{owner}/{name}"` is `/git-repos/james-woollett/my-tasks`, as GitHub's is. It's
-    listed as `_meta.path`. One that says none is at its name, its inputs after `?`.
+    listed as `_meta.path`. One that says none is at its name, its inputs after `?`. Every screen of an app's page is
+    such a tool, its first the app's first screen: the page reads which it shows with `toolInput("<app>_<first>")`,
+    the same whether a link opened it, an assistant called it or the page went there, and goes to another with
+    `navigate("<app>_<tool>", arguments)`, a step Back goes back from, never a place of its own.
   - An app is drawn on a home screen under its `name` and `icon`, natively on a computer, an iPhone and Android, and
     by the same renderer in a browser. It's written in Solid 2.0 with the UI library, and its source is the folder `client/`:
     each `.html` there is a page, whose script is the app's, and the rest is whatever the app's made of. Its look is
