@@ -109,16 +109,30 @@ async function scenesOf(target, built) {
   })
 }
 
-/// The background the real window's pages have, which its frames are painted with where they have none of their own
-/// (clients/app/page/client.css's `body` and `iframe`).
-const BACKGROUND = readFileSync(join(root, "core/ui/src/tokens.css"), "utf8").match(/^\s*--background:\s*(.+);/m)[1]
+/// The real window's page's files, at `/window/`, as the app's window and the web client have them in one folder
+/// (`frontendDist`): its stylesheets, which the stand-in client lays its frame out and paints it with.
+const windowFiles = new Map(JSON.parse(readFileSync(join(root, "clients/app/tauri.conf.json"), "utf8")).build.frontendDist.map((file) => [basename(file), join(root, "clients/app", file)]))
 
-/// A stand-in client for a page in a frame, as the real window is (`color-scheme: light dark`, its background from the
-/// theme's tokens on its page and its frames): it answers what the page asks from `answers`, as a client would. The
-/// frame is the page's own, or `src`, the renderer's frame that draws it (`web`), which the test starts (`openApp`) once
-/// the window alone has been seen, as an app is opened from a window that shows its background.
-const host = (page, link, answers, [width, height], touch, safeArea, src = `/${page}${link ? `#${encodeURIComponent(link)}` : ""}`) => `<!doctype html><meta charset="utf-8"><style>:root{color-scheme:light dark;--background:${BACKGROUND}}html,body{margin:0;background:var(--background)}iframe{border:0;width:${width}px;height:${height}px;display:block;background:var(--background)}</style>
-<script>window.openApp = () => document.body.append(Object.assign(document.createElement("iframe"), { id: "page", src: ${JSON.stringify(src)} }))</script>
+/// A stand-in client for a page in a frame, as the real window is (its stylesheets, client.css's `body` and `iframe`):
+/// it answers what the page asks from `answers`, as a client would. The frame is the page's own, or `src`, the
+/// renderer's frame that draws it (`web`), which the test starts (`openApp`) once the window alone has been seen, as an
+/// app is opened from a window that shows its background: sliding in from the end, as a link opens one there
+/// (move-machine.js's `moves` with no icon). Whether the window's page could scroll at any frame, wider or taller than
+/// the window, is `scrolled`: with Chrome's scroll bars shown, as a Mac's with a mouse, it showed one under the Home Screen.
+const host = (page, link, answers, [width, height], touch, safeArea, src = `/${page}${link ? `#${encodeURIComponent(link)}` : ""}`) => `<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/window/tokens.css"><link rel="stylesheet" href="/window/client.css">
+<script>
+window.openApp = () => {
+  const frame = Object.assign(document.createElement("iframe"), { id: "page", src: ${JSON.stringify(src)} })
+  document.body.append(frame)
+  frame.animate([{ translate: "100% 0px" }, { translate: "0px 0px" }], { duration: 300, easing: "ease-out" })
+}
+const watch = () => {
+  const { scrollWidth, scrollHeight, clientWidth, clientHeight } = document.scrollingElement
+  if (scrollWidth > clientWidth || scrollHeight > clientHeight) window.scrolled ??= [scrollWidth, scrollHeight, clientWidth, clientHeight]
+  requestAnimationFrame(watch)
+}
+requestAnimationFrame(watch)
+</script>
 <script>
 const answers = ${JSON.stringify(answers)}
 window.pending = 0
@@ -151,6 +165,7 @@ function server(built, target, used) {
       // Each to a frame's page too, whose origin is its own, as the edge serves an app's files, the UI library and the
       // renderer's frame (`file` in core/edge/mcp/mcp.ts, clients/web/_headers).
       const cors = { headers: { "access-control-allow-origin": "*" } }
+      if (path.startsWith("/window/") && windowFiles.has(path.slice("/window/".length))) return new Response(Bun.file(windowFiles.get(path.slice("/window/".length))))
       if (path.startsWith("/renderer/")) return new Response(Bun.file(join(rendererFrame, path.slice("/renderer/".length) || "index.html")), cors)
       const [, app, client, ...rest] = path.split("/")
       if (used.has(app) && client === "client") return new Response(Bun.file(join(used.get(app), rest.join("/"))), cors)
@@ -338,6 +353,11 @@ async function web(browser, serve, key, scene, folder) {
     for (let seconds = 0; seconds < Math.ceil(scene.wait / 1000); seconds++) await step()
     await settled()
   }
+  // Neither page scrolls, the window's at any frame as the app opened, nor the frame's own once it's drawn.
+  const scrolled = await page.evaluate(() => /** @type {any} */ (globalThis).scrolled)
+  if (scrolled) problems.push(failing(`the window's page scrolled as the app opened: ${scrolled[0]}×${scrolled[1]} in a ${scrolled[2]}×${scrolled[3]} window`))
+  const own = drawn && (await frame.evaluate(() => [document.scrollingElement.scrollWidth, document.scrollingElement.scrollHeight, innerWidth, innerHeight]))
+  if (own && (own[0] > own[2] || own[1] > own[3])) problems.push(failing(`the frame's page scrolls: ${own[0]}×${own[1]} in a ${own[2]}×${own[3]} frame`))
   for (const [url, times] of failed) {
     if (times > 1) continue
     problems.push(failing(`${url} failed on the network once and wasn't fetched again, so it's drawn broken`))
