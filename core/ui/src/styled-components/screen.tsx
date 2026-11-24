@@ -377,13 +377,14 @@ const open: (() => void)[] = []
 /// Beside its list with nothing open, its detail side says `pick` ("Pick a repo to see its code."), as Mail says "No
 /// Message Selected", where the app has a list to pick from: it's left out where there's none, and where the list is
 /// empty (an `Empty` in it, not in one of its sections), when its detail side says nothing and the list's own line stands alone, as Mail's does.
-export function Split(props: { open?: boolean; onClose?: () => void; pick?: string; place?: string; detail?: JSX.Element; children?: JSX.Element }) {
-  // Where what's open is in the page: its own place after its parents' (`place`, or its screen's heading), which the
-  // page's host hears as the page's place while it's the deepest open (`tellPlace`); a link to a place it isn't in, as
-  // a browser's Back sends, closes it.
+export function Split(props: { open?: boolean; onClose?: () => void; pick?: string; detail?: JSX.Element; children?: JSX.Element }) {
+  // Where what's open is in the page, in a page whose screens aren't tools yet (`routed`): its own place after its
+  // parents', its screen's heading, which the page's host hears as the page's place while it's the deepest open
+  // (`tellPlace`); a link to a place it isn't in, as a browser's Back sends, closes it. It goes once every app's screens
+  // are tools.
   const parent = useContext(Place)
   const [heading, setHeading] = createSignal<string>()
-  const at = () => [...parent(), ...((props.place ?? slug(heading()))?.split("/").filter(Boolean) ?? [])]
+  const at = () => [...parent(), ...(slug(heading())?.split("/").filter(Boolean) ?? [])]
   const self = {}
   createEffect(() => (props.open ? at().join("/") : undefined), (now) => {
     if (now === undefined) return

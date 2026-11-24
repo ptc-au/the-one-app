@@ -294,9 +294,9 @@ export declare function Tips(props: { tips: Tip[]; action?: Action }): Element
 export declare function Section(props: { heading?: Element; "aria-label"?: string; children?: Element }): Element
 /** A row that scrolls sideways from the window's edge to its edge, its first item where the screen's column starts (`style` may say its `gap`). */
 export declare function Shelf(props: { role?: "group" | "toolbar" | "list"; "aria-label"?: string; style?: Styles<"gap">; children?: Element }): Element
-/** `place`: where what's open is in the page, after the places of the splits it's in, as the page's address says it
- * (`vault/accounts`, in a browser `/settings/vault/accounts`), where its screen's heading isn't a good one. */
-export declare function Split(props: { open?: boolean; onClose?: () => void; pick?: string; place?: string; detail?: Element; children?: Element }): Element
+/** What's open in it is a screen of the page's: `open={toolInput("notes_list").name === "notes_note"}`, opened with
+ * `navigate("notes_note", { id })` and closed with `navigate("notes_list")`, which is Back to where it came from. */
+export declare function Split(props: { open?: boolean; onClose?: () => void; pick?: string; detail?: Element; children?: Element }): Element
 /** Where a window's Back and Forward go (`History`), which its screens draw in their bar. */
 export declare function History(props: { value: { back?: () => void; forward?: () => void } | null; children: Element }): Element
 /** A listbox: which of its rows is chosen, and what's typed in that drives it (`createListbox`). */
