@@ -1,5 +1,5 @@
 import { createEffect, createMemo, untrack } from "solid-js"
-import { link, safeArea, viewport } from "ui"
+import { link, safeArea, toolInput, viewport } from "ui"
 import { launcherRoom, measure } from "./layout.ts"
 import { type Kind, pack, type Page, shown, spans } from "./machine.ts"
 import { home, state, seen, at, screensOf, lastOf, editingNow, editing, drafts, editingOwner, launcher, room, setRoom, kept, setKept } from "./store.ts"
@@ -49,10 +49,10 @@ export function createScreens(props: { owners: Owner[] }) {
     { defer: true },
   )
   createEffect(laid, ({ owners, screens, fit }) => home.send({ type: "laid", owners, screens, fit }))
-  /// A link to the App Library, `one:home-screen#library`, shows the first of it, as its mark in the dots does, once
-  /// there is one.
+  /// A link to the App Library, `one:home-screen#library` (`home-screen_library`, at /home-screen/library), shows the
+  /// first of it, as its mark in the dots does, once there is one, each time it's followed.
   createEffect(
-    () => link() === "library" && { screens: laid().screens },
+    () => (link(), toolInput("home-screen_pages").name === "home-screen_library" && { screens: laid().screens }),
     (now) => {
       const library = now ? (now.screens[home.getSnapshot().context.at.owner]?.indexOf("library") ?? -1) : -1
       if (library >= 0) home.send({ type: "link", screen: library })

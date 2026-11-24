@@ -26,7 +26,7 @@ defmodule HomeScreen do
   def icon, do: "client/home.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.32.177"}
+  def requires, do: %{"core" => ">= 0.34.604"}
 
   alias OneCore.{Artifact, Call}
   alias OneCore.Apps.Icons
@@ -133,6 +133,8 @@ defmodule HomeScreen do
       %{
         name: "pages",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description: """
         Gives your Home Screen: its pages, in order, each what's on it and whether it's hidden (`pages`), its App
         Library, every app that runs for you by category, yours, your groups' and everyone's (`library`), the widgets
@@ -190,6 +192,17 @@ defmodule HomeScreen do
           },
           required: ["who", "arranges", "pages", "library", "widgets", "apps"]
         }
+      },
+      %{
+        name: "library",
+        read_only: true,
+        ui: "client/index.html",
+        path: "library",
+        runtime_version: 4,
+        description:
+          "Your App Library: every app that runs for you, yours, your groups' and everyone's, by category, as `pages` gives it: the Home Screen's App Library, at /home-screen/library.",
+        inputs: none,
+        outputs: %{type: "object", properties: %{library: %{type: "array", items: %{type: "object"}}}, required: ["library"]}
       },
       %{
         name: "reorder",
@@ -310,6 +323,8 @@ defmodule HomeScreen do
   end
 
   @impl true
+  def call("library", _inputs, call), do: %{library: library(call)}
+
   def call("pages", _inputs, call) do
     apps = Call.apps(call)
     stored = stored(call)
