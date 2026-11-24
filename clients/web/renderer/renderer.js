@@ -200,9 +200,13 @@
       (event) => {
         event.preventDefault()
         const legacy = /** @type {any} */ (event)
-        const [x, y] = [notch(event, event.deltaX, legacy.wheelDeltaX), notch(event, event.deltaY, legacy.wheelDeltaY)]
-        whole = Number.isInteger(event.deltaX) && Number.isInteger(event.deltaY)
-        streams.wheel(event, unit[event.deltaMode]) || renderer.wheel(event.offsetX, event.offsetY, event.deltaX * unit[event.deltaMode], event.deltaY * unit[event.deltaMode], x, y)
+        // Shift turns a wheel's vertical scroll to along, as a browser does with the scroll it's told not to make (a Mac's
+        // own system does it before the browser hears, so it's already along there).
+        const along = event.shiftKey && !event.deltaX
+        const [dx, dy] = along ? [event.deltaY, 0] : [event.deltaX, event.deltaY]
+        const [x, y] = [notch(event, dx, along ? legacy.wheelDeltaY : legacy.wheelDeltaX), notch(event, dy, along ? undefined : legacy.wheelDeltaY)]
+        whole = Number.isInteger(dx) && Number.isInteger(dy)
+        streams.wheel(event, unit[event.deltaMode]) || renderer.wheel(event.offsetX, event.offsetY, dx * unit[event.deltaMode], dy * unit[event.deltaMode], x, y)
       },
       { passive: false },
     )
