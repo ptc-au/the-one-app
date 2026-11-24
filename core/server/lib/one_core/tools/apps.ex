@@ -121,8 +121,10 @@ defmodule OneCore.Tools.Apps do
     moved!(subject, name, Installed.read(subject)[name])
   end
 
-  def run("apps_check", _inputs, {_actor, subject}, _pass, _request) do
+  # Checked where their apps run, which take their updates (`Lifecycle.takes?/1`): another server would skip them.
+  def run("apps_check", _inputs, {_actor, subject}, forward, _request) do
     owner = User.owner(subject) || "network"
+    runs(owner, true, forward)
     records = Installed.read(owner)
 
     apps = for {_name, %{"app" => app, "state" => "installed"}} <- records, Lifecycle.takes?(app), do: app
