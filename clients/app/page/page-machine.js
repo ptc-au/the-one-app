@@ -21,7 +21,7 @@ const NEVER = 15000
 /// loaded again behind another app may only once it's shown, when it's current. A page has drawn as a browser's Largest
 /// Contentful Paint says a page is shown: once it has rendered and what it first asked for is answered (`render` in the
 /// UI library tells, `notifications/one/drawn`), not at its first answered request, so a page that stays blank or on its
-/// skeleton hasn't, and one that shows its problem as a read failed has. Only time it's on screen counts: while
+/// spinner hasn't, and one that shows its problem as a read failed has. Only time it's on screen counts: while
 /// it's off screen, the 15 s wait (`away`), and go on from where they were once it's in front again (`seen`). It tells
 /// the window as it draws and as it fails, and the window follows each of its moves (`syncSnapshot`), which it says
 /// what the page needs of its person by. One that hasn't drawn loads again as it's tried again (`retry`), as once its

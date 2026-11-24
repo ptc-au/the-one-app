@@ -378,7 +378,6 @@ export declare function refreshAvatars(): void
 export declare function Badge(props: { variant?: "default" | "secondary" | "destructive" | "outline"; "aria-label"?: string; children?: Element }): Element
 
 export declare function Empty(props: { action?: Element; children?: Element }): Element
-export declare function Skeleton(props: { rows?: number }): Element
 export declare function Problem(props: { heading: Element; text?: Element | Error; action?: Element; warn?: boolean }): Element
 export declare function Status(props: { heading: Element; text?: Element; over?: boolean }): Element
 export declare function Steps(props: { steps: Element[]; at: number; text?: Element }): Element
