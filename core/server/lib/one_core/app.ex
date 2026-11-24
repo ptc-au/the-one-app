@@ -207,6 +207,9 @@ defmodule OneCore.App do
     takes a `requestedSchema` for more (`%{message: ..., requestedSchema: %{type: "object", properties: ...}}`).
   - A tool that only reads says `read_only: true` beside its name. A client keeps its answers, shows them at
     once, and asks again behind them. After any other tool is called, every client is told that something changed.
+    One whose answers hold what's kept encrypted (a Vault item's name and fields) says `no_store: true` too, as HTTP's
+    `Cache-Control: no-store`: its answers say so (`_meta.noStore`), and no device keeps them, so it opens as fast
+    as its server answers.
   - An app's module is what other apps call, so its public functions besides these are what it provides
     them, and its code runs inside every app that requires it. One whose module has none runs only as itself,
     and is called by its tools. One that only provides functions leaves out `tools/0` and `call/3`.

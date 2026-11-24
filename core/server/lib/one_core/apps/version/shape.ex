@@ -28,6 +28,7 @@ defmodule OneCore.Apps.Version.Shape do
           "description" => "a JSON Schema of the object the tool answers: %{type: \"object\", properties: ...}"
         },
         "read_only" => %{"type" => "boolean", "description" => "true for a tool that only reads"},
+        "no_store" => %{"type" => "boolean", "description" => "true for a tool whose answers a device mustn't keep: what an encrypted item holds"},
         "by_link" => %{"type" => "boolean"},
         "ui" => %{"type" => "string", "description" => "a page of client/"},
         "path" => %{

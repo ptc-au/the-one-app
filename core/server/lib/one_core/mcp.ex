@@ -396,7 +396,7 @@ defmodule OneCore.Mcp do
 
         run = fn ->
           inputs = Map.get(params, "arguments", %{})
-          paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found)
+          unkept(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found), found)
         end
 
         # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
@@ -777,6 +777,13 @@ defmodule OneCore.Mcp do
     do: {:ok, Map.put(result, :_meta, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name})}
 
   defp paged(outcome, _name, _tool), do: outcome
+
+  # What a tool that says `no_store` answered says no device may keep it (`_meta.noStore`), as HTTP's
+  # `Cache-Control: no-store` does: what an encrypted item holds.
+  defp unkept({:ok, %{} = result}, %{no_store: true}),
+    do: {:ok, Map.update(result, :_meta, %{noStore: true}, &Map.put(&1, :noStore, true))}
+
+  defp unkept(outcome, _tool), do: outcome
 
   # The tool `name` is for `who`, with what One Core's own take and give read as its schemas.
   defp tool(name, who), do: Calls.find(name, who, Tools.tools())
