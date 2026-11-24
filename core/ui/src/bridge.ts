@@ -45,6 +45,7 @@ let passing = { press: undefined as number | undefined, used: false }
     if (message.method === "notifications/one/changed") tell()
     else if (message.method === "notifications/one/memory_warning") for (const listener of warned) listener()
     else if (message.method === "ui/notifications/host-context-changed") dress((message as { params?: object }).params)
+    else if (message.method === "ui/notifications/tool-result") setToolResult((message as { params?: Page.ToolResult }).params)
     // The device's own back, where something is open over the page: the topmost shuts.
     else if (message.method === "notifications/one/back") topmost()?.shut()
     else if (message.id !== undefined) waiting.get(message.id)?.(message)
@@ -388,3 +389,10 @@ export const component: typeof Page.component = async (app, name) => {
 /// changes: a link followed while the page is open is told too, the same one again as well. The page's address
 /// forgets it once it's read, so following it again is news. None until a link names more than the app.
 export const link: typeof Page.link = () => opened()
+
+const [shownResult, setToolResult] = createSignal<Page.ToolResult | undefined>(undefined, { equals: false })
+/// `createEffect(toolResult, (shown) => shown && setWeek(shown.structuredContent.offset))`: what a tool answered, where the
+/// page is shown for it, as an assistant shows a tool's page as an MCP App (`ui/notifications/tool-result`): its
+/// `structuredContent`, and its `content`. The page shows what it answered, as it shows a place a link opens.
+/// None where it isn't, as in an app's own window.
+export const toolResult: typeof Page.toolResult = () => shownResult()

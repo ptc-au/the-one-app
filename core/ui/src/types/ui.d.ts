@@ -638,6 +638,15 @@ export declare function confirm(question: { heading: string; text?: string; acti
 export declare function open(app: string, options?: Subject & { behind?: boolean; from?: Rect & { radius?: number } }): Promise<unknown>
 export declare function leave(): Promise<void>
 export declare function link(): string | undefined
+/** What a tool answered, as MCP's `CallToolResult` has it, where the page is shown for it. */
+export interface ToolResult {
+  structuredContent?: any
+  content?: { type: string; text?: string }[]
+  isError?: boolean
+}
+/** `createEffect(toolResult, (shown) => shown && setWeek(shown.structuredContent.offset))`: what a tool answered, where
+ * the page is shown for it, as an assistant shows a tool's page as an MCP App; none in an app's own window. */
+export declare function toolResult(): ToolResult | undefined
 export declare function component(app: string, name: string): Promise<Record<string, (props: Record<string, unknown>) => Element>>
 export declare function showRecoveryKey(options?: Subject): Promise<boolean>
 export declare function useRecoveryKey(options?: Subject): Promise<boolean>
