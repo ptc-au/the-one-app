@@ -1,7 +1,7 @@
 // Holds Your Key, on a device's page in Settings: whether that device holds its person's key, which it's given only
 // by their passkey, with Unlock with Passkey there. One that holds it is switched off here, as `revoke` does.
 import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { call, changed, List, Problem, Row, Skeleton, Switch, toast } from "ui"
+import { call, changed, List, Problem, Row, Spinner, Switch, toast } from "ui"
 
 /** A device, as `encryption_key` names it. */
 interface Named {
@@ -27,7 +27,7 @@ export default function HoldsYourKey(props: { device: string }) {
   const text = () => (key().holds ? "Opens what's encrypted for you on its own." : "Your passkey lets it hold your key: Unlock with Passkey, in its Vault.")
   return (
     <Errored fallback={(error) => <Problem heading="Can't say whether it holds your key" text={error() as Error} />}>
-      <Loading fallback={<Skeleton rows={1} />}>
+      <Loading fallback={<Spinner delay />}>
         <Show when={key()}>
           <List>
             <Row
