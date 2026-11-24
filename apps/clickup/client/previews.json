@@ -1,0 +1,5 @@
+{
+  "Connect": { "page": "client/connect.html", "answers": { "clickup_connect": { "item": null } } },
+  "Connected": { "page": "client/connect.html", "answers": { "clickup_connect": { "item": "ClickUp sam@example.org" } } },
+  "Connect, on a computer": { "page": "client/connect.html", "size": [1000, 700], "answers": { "clickup_connect": { "item": null } } }
+}
