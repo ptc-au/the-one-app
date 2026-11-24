@@ -3,7 +3,7 @@
 // what's slowest and what AI cost, over the range picked above them, and last what's kept. An alert opens beside the list, saying when it fired and cleared; a failure opens its trace, as a
 // waterfall; a slow tool opens how long it took over time. What's fine is silent: with nothing failing, there's no Failing.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { call, changed, Empty, Icon, List, plural, Problem, render, Row, Screen, Section, since, size, Skeleton, Split, styles, Tabs, Text, tokens, View } from "ui"
+import { call, changed, Empty, Icon, List, plural, Problem, render, Row, Screen, Section, since, size, Spinner, Split, styles, Tabs, Text, tokens, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -209,7 +209,7 @@ function Trace(props: { id: string; names: Record<string, string> }) {
   const servers = () => new Set(trace().spans.filter((s) => !s.client).map((s) => s.server)).size
   return (
     <Errored fallback={(error) => <Problem heading="Can't show this trace" text={error() as Error} />}>
-      <Loading fallback={<Skeleton rows={4} />}>
+      <Loading fallback={<Spinner delay />}>
         <Text style={look.readableNote}>
           {took(total())}
           <Show when={servers() > 1}> across {plural(servers(), "server")}</Show>
@@ -414,7 +414,7 @@ function Telemetry(props: { all: Overview }) {
 function Alerted() {
   return (
     <Errored fallback={(error) => <Problem heading="Can't show alerts" text={error() as Error} />}>
-      <Loading fallback={<Skeleton rows={1} />}>
+      <Loading fallback={<Spinner delay />}>
         <Show when={alerts().alerts.length}>
           <Section heading="Alerts">
             <List each={alerts().alerts} keyed={(alert) => alert.id}>
@@ -439,7 +439,7 @@ function Alerted() {
 
 render(() => (
   <Errored fallback={(error) => <Screen heading="Telemetry"><Problem heading="Can't show Telemetry" text={error() as Error} /></Screen>}>
-    <Loading fallback={<Screen heading="Telemetry"><Skeleton rows={6} /></Screen>}>
+    <Loading fallback={<Screen heading="Telemetry"><Spinner delay /></Screen>}>
       <Telemetry all={overview()} />
     </Loading>
   </Errored>
