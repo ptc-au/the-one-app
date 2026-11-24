@@ -132,7 +132,7 @@ impl Painter<'_> {
                 Some(Measure::Input { words: if words.is_empty() { " ".into() } else { words }, text, multiline: node.is("multiline") })
             }
             Kind::Frame => Some(Measure::Frame { height: self.frames.get(&id).and_then(|child| child.screen.content_height) }),
-            Kind::Image | Kind::Path | Kind::Picker | Kind::Box | Kind::Scroll | Kind::List | Kind::Video => None,
+            Kind::Image | Kind::Path | Kind::Picker | Kind::Box | Kind::Scroll | Kind::List | Kind::Video | Kind::Voice => None,
         };
         let positioned = layout.position != taffy::style::Position::Static;
         if look.will_change {

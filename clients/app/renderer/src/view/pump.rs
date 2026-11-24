@@ -132,6 +132,7 @@ impl Screen {
         #[cfg(not(target_arch = "wasm32"))]
         {
             came |= self.video_pump();
+            came |= self.voice_pump();
         }
         let chosen = std::mem::take(&mut *self.chosen_files.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
         for (id, files) in chosen {
@@ -164,6 +165,8 @@ impl Screen {
                 Posted::Mutation(mutation) => match {
                     #[cfg(not(target_arch = "wasm32"))]
                     self.video_mutation(&mutation);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    self.voice_mutation(&mutation);
                     self.tree.apply([mutation])
                 } {
                     Err(error) => self.mismatched = Some(format!("{error:#}")),
@@ -263,6 +266,8 @@ impl Screen {
             self.sync_frames();
             #[cfg(not(target_arch = "wasm32"))]
             self.sync_videos();
+            #[cfg(not(target_arch = "wasm32"))]
+            self.sync_voices();
         }
         // The inspector's answers wait for what they did to have run.
         if !self.replies.is_empty() && !self.busy() {

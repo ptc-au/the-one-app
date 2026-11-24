@@ -43,6 +43,9 @@ pub enum Kind {
     /// A screen's live video over WebRTC, drawn in its box as big as fits: on the web the browser connects and plays it
     /// (`platform::web`, `clients/web/renderer/video.js`), and natively its own connection does (`video`).
     Video,
+    /// A call's audio over WebRTC (`voice`), which draws nothing: the node is the stream, sending the microphone's
+    /// one Opus track and playing the ones it receives.
+    Voice,
     /// Another app's page (`src`), for `subject`, drawn in its box by a sandbox of its own, as an iframe is (`Screen`'s
     /// frames): its own JS, calling as its own app.
     Frame,

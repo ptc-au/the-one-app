@@ -20,7 +20,8 @@
 /// `ScrollView` (a view whose content scrolls), `VirtualizedList` (a long list, of which only the rows near the window
 /// are drawn, which `List each` draws), `Text`, `Image`, `TextInput` (bare text to type, which `Input` draws in
 /// a field's box), `Modal` and `Portal` (what's drawn over the page), react-native-svg's `Svg` and `Path` (a vector
-/// shape), `Video` (a screen's live video, which `LiveScreen` draws) and `Frame` (another app's page, in a sandbox of
+/// shape), `Video` (a screen's live video, which `LiveScreen` draws), `Voice` (a call's audio, which draws nothing)
+/// and `Frame` (another app's page, in a sandbox of
 /// its own, as an iframe is, which only a trusted app's page shows), each styled by its `style`: styles from `styles()`, beside what uses them, whose values are the design tokens (`tokens`, from
 /// core/ui/src/tokens.ts), by role: name a role, never a value, and if none fits, add one in tokens.ts. A raw colour,
 /// length, shadow or font fails the check, but in an `illustration(why, …)`, a picture of what isn't ours:
@@ -68,7 +69,7 @@ export { Alert, confirm, PresentationContext, Sheet } from "./styled-components/
 export { SignIn } from "./styled-components/sign-in.tsx"
 export { toast } from "./styled-components/toast.tsx"
 export { Widget } from "./styled-components/widget.tsx"
-export { Frame, Image, Modal, Path, Portal, Pressable, ScrollView, Svg, Text, TextInput, Video, View, VirtualizedList } from "./drawing-primitives/primitives.tsx"
+export { Frame, Image, Modal, Path, Portal, Pressable, ScrollView, Svg, Text, TextInput, Video, View, VirtualizedList, Voice } from "./drawing-primitives/primitives.tsx"
 export { render } from "./render.tsx"
 export { createTheme, defineVars, illustration, negative, styles } from "./styles.ts"
 export { tokens } from "./tokens.ts"

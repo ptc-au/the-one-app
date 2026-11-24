@@ -847,6 +847,8 @@ fn mutations<'js>(ctx: &Ctx<'js>, posted: &Rc<RefCell<Vec<Posted>>>, nodes: &Rc<
     mutations.set("drop", Function::new(ctx.clone(), drop)?)?;
     // It draws a `video`, a screen's live video over WebRTC (`video`).
     mutations.set("video", true)?;
+    // It plays a `voice`, a call's audio over WebRTC (`voice`).
+    mutations.set("voice", true)?;
     // It draws a `frame`, another app's page in a sandbox of its own (`view::frames`).
     mutations.set("frame", true)?;
     // It draws a `list`, holding only the rows near the window, each at its own place (`view::list`): version 2.

@@ -27,7 +27,8 @@
  * values where a token isn't the point (`fontSize`, `boxShadow`'s text, `backgroundImage`) and keyframes that start
  * once drawn and end (`animationDelay` and the rest), which a host of 5 leaves out; a host of 7 says which press of
  * the keyboard each `keydown` is (`Event.press`), which a host of 6 leaves out, so a page on one hears every key as
- * it did; the tables say 6 once every host has it. */
+ * it did; the tables say 6 once every host has it. 8 added `voice`, a call's audio over WebRTC, which a host says it
+ * draws (`Mutations.voice`), as `video` did at 5: the tables need no more, and a page that draws one names 8. */
 export const RUNTIME_VERSION = 5
 
 /** A node, as the host knows it. `0` is the root, which the host makes: an app's window, or its frame. */
@@ -62,6 +63,13 @@ export type Id = number
  *   them), and what's typed or pasted, which takes a field of its own so a phone's keyboard comes up as it's pressed,
  *   or as its `autofocus` is set. The device's full screen keys (F11, ⌃⌘F) aren't sent: they go on as `keydown` to the node it's in. A host that
  *   doesn't draw it says so (`Mutations.video`), and the page's video shows a problem in its place.
+ * - `voice`: a call's audio over WebRTC, which draws nothing: the node is the stream, as a `video`'s is, and makes
+ *   the peer connection with its `ice`, sending one Opus track and receiving any, and a new `ice` is a new
+ *   connection, the last one closed. Its `offer` is the SDP offer it makes once it has gathered its candidates, and
+ *   its page sets its `answer`, the screen's; an `offer` its page sets is an SFU's, which it answers, as `answer`.
+ *   It sends `state` as it connects (`connecting`, then `connected`, or `lost`), and `speaking`, whether the person
+ *   is speaking, as its microphone's level says. Its `muted` turns the microphone off. A host that doesn't draw it
+ *   draws nothing in its place (`Mutations.voice`).
  * - `frame`: another app's page (`src`, `<app>/<page>[#<fragment>]`, for `subject`), drawn in its box as an iframe's
  *   is: its own JS in a sandbox of its own, asking its client as its own app, as tall as it says its content is
  *   (`ui/notifications/size-changed`) where its style says no height, and taking the pointer, the keyboard and Tab
@@ -75,7 +83,7 @@ export type Id = number
  *   them show (`shownFirst`, `shownLast`). A host that doesn't draw it says so (`Mutations.list`), and the page draws
  *   every row in a `box`.
  * A `raw-text` outside a `text` is drawn as if in one. */
-export type Type = "box" | "scroll" | "text" | "image" | "path" | "input" | "picker" | "video" | "frame" | "list" | "raw-text"
+export type Type = "box" | "scroll" | "text" | "image" | "path" | "input" | "picker" | "video" | "voice" | "frame" | "list" | "raw-text"
 
 /** What a native host gives an app's sandbox, as `globalThis.mutations`, before it loads the app's page: a function for
  * each mutation of its tree, called as Solid's renderer makes it, in order. The host applies what a turn of the
@@ -96,6 +104,8 @@ export interface Mutations {
   /** Whether it draws `video`. Where it doesn't, a page's video shows a problem in its place (primitives.native.tsx's
    * `undrawn`). */
   video?: boolean
+  /** Whether it draws `voice`, a call's audio. */
+  voice?: boolean
   /** Whether it draws a `frame`, as `video`. */
   frame?: boolean
   /** Which `list` it draws: 2 lays each row at its own place, so a page may reuse rows; one before (`true`) laid them
@@ -162,13 +172,16 @@ export interface Event {
   /** `wheel`'s, where a wheel turned by clicks (a mouse's): how many, along and down. */
   notchesX?: number
   notchesY?: number
-  /** A `video`'s `offer`: its SDP offer, with its candidates. */
+  /** A `video`'s `offer`: its SDP offer, with its candidates, and a `voice`'s. */
   sdp?: string
-  /** A `video`'s `state`: its data channel open (`connected`), or its connection lost. */
-  state?: "connected" | "lost"
+  /** A `video`'s `state`: its data channel open (`connected`), or its connection lost. A `voice`'s: `connecting` while
+   * its connection is made, then as a video's. */
+  state?: "connecting" | "connected" | "lost"
   /** A `video`'s `size`: its video's own, in its pixels. */
   width?: number
   height?: number
+  /** A `voice`'s `speaking`: whether the person is speaking, as its microphone's level says. */
+  speaking?: boolean
 }
 
 /** A trackpad's fingers' phase, by AppKit's names. */
@@ -193,8 +206,9 @@ export interface Rect {
  * Finder's, an Explorer's), each its `name` and its bytes as base64 (`body`), under `files`. */
 export type EventName = "click" | "input" | "action" | "focus" | "blur" | "keydown" | "pointerenter" | "pointerleave" | "scroll" | "layout" | "intersection" | "range" | "drop" | Moved | Streamed
 
-/** What a `video` tells its page of its stream: `offer`, `state` and `size`. */
-export type Streamed = "offer" | "state" | "size"
+/** What a `video` tells its page of its stream, and a `voice` of its call: `offer`, `answer`, `state`, `size` and
+ * `speaking`. */
+export type Streamed = "offer" | "answer" | "state" | "size" | "speaking"
 
 /** What a page that's moved by hand listens for, as the Home Screen's pages are, a finger's or a mouse's, as the DOM
  * names them: a pointer's (`pointerdown` to `pointercancel`) go to the node under it and to each node it's in that
@@ -294,10 +308,14 @@ export interface Props {
    * chosen. */
   options?: { value: string; label: string; disabled?: boolean }[]
   /** `video`: the ICE servers to connect with, as WebRTC's `RTCConfiguration` has them, and the policy to use them by.
-   * A new one is a new connection. */
+   * A new one is a new connection. A `voice`'s. */
   ice?: Ice
-  /** `video`: the screen's SDP answer to its `offer`. */
+  /** `video`: the screen's SDP answer to its `offer`. A `voice`'s. */
   answer?: string
+  /** `voice`: an SFU's SDP offer, which it answers, telling its page as `answer`. */
+  offer?: string
+  /** `voice`: its microphone is off, so the call hears nothing from it. */
+  muted?: boolean
   /** `video`: looked at only, so nothing done on it is sent. */
   watch?: boolean
   /** `video`: what it shows, its accessible name, as an `image`'s `alt`. */
@@ -366,8 +384,10 @@ export interface Props {
   layout?: boolean
   layoutId?: string
   onOffer?: true
+  onAnswer?: true
   onState?: true
   onSize?: true
+  onSpeaking?: true
 }
 
 /** What a `video` connects with, as WebRTC's `RTCConfiguration` has it. */

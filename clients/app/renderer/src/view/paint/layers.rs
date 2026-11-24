@@ -281,6 +281,8 @@ impl Painter<'_> {
             Kind::Path => self.paint_path(node, content, &look, text.color, opacity, mask),
             // Its latest frame, as the web's browser plays it, or as its connection decoded it natively.
             Kind::Video => self.paint_video(id, content, radii, opacity, mask),
+            // Nothing of a call's is drawn: it's its sound.
+            Kind::Voice => {}
             Kind::Picker => {}
             // A frame's page, drawn as it last drew itself, in its box, where the frame comes in this scene's order.
             Kind::Frame => {

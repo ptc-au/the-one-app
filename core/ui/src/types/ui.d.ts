@@ -226,6 +226,24 @@ export type VideoProps = {
 }
 export declare function Video(props: VideoProps): Element
 
+/** A call's audio over WebRTC, which the host connects and plays (renderer.ts's `voice`): the page does its
+ * signalling, a new `ice` connecting, its `offer` answered with the screen's `answer`, and an SFU's `offer` answered
+ * as `onAnswer`. It draws nothing. */
+export type VoiceProps = {
+  ice?: Ice
+  answer?: string
+  /** An SFU's SDP offer, which the host answers, telling `onAnswer`. */
+  offer?: string
+  /** The microphone isn't sent. */
+  muted?: boolean
+  onOffer?: (event: { sdp: string }) => void
+  onAnswer?: (event: { sdp: string }) => void
+  onState?: (event: { state: "connecting" | "connected" | "lost" }) => void
+  /** Whether the person is speaking, as the microphone's level says. */
+  onSpeaking?: (event: { speaking: boolean }) => void
+}
+export declare function Voice(props: VoiceProps): Element
+
 /** Another app's page, in a box of this one's, as an iframe is (renderer.ts's `frame`): `src` as a `one:` link names
  * it after its scheme, for `subject`, or whoever this page is for. Only a trusted app's page shows one. */
 export type FrameProps = {

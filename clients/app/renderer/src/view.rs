@@ -33,6 +33,8 @@ mod frames;
 mod list;
 #[cfg(not(target_arch = "wasm32"))]
 mod videos;
+#[cfg(not(target_arch = "wasm32"))]
+mod voices;
 mod paint;
 mod place;
 mod pictures;
@@ -138,6 +140,9 @@ pub struct Screen {
     video_keys: Option<Id>,
     #[cfg(not(target_arch = "wasm32"))]
     video_turned: Point<f32>,
+    /// Each voice's connection (`voices`), which plays a call's sound and sends the microphone's.
+    #[cfg(not(target_arch = "wasm32"))]
+    voices: HashMap<Id, crate::voice::Voice>,
     /// As Colour Mode says, or as the device is (`None`).
     pub theme: Option<Appearance>,
     /// As the device is, which the window says.
@@ -368,6 +373,8 @@ impl Screen {
             video_keys: None,
             #[cfg(not(target_arch = "wasm32"))]
             video_turned: point(0.0, 0.0),
+            #[cfg(not(target_arch = "wasm32"))]
+            voices: HashMap::new(),
             theme: None,
             appearance: Appearance::Light,
             reduced_motion: false,

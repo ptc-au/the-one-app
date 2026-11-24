@@ -171,6 +171,11 @@ export const Video: typeof Page.Video = (props) => {
   return primitive("video")(renamed(props, ["aria-label", "autoFocus"], { label: (it) => it["aria-label"], autofocus: (it) => it.autoFocus }))
 }
 
+/** A call's audio, which the host connects, plays and sends the microphone's to (renderer.ts's `voice`). It draws
+ * nothing, and a host that doesn't draw it draws nothing in its place. */
+export const Voice: typeof Page.Voice = (props) =>
+  ((globalThis as { mutations?: Mutations }).mutations?.voice ? primitive("voice")(props) : null) as unknown as Element
+
 /// `<Frame src="chrome-profiles/client/profile.html#work" title="Work" style={look.fill} />`: another app's page, in
 /// a sandbox of its own at its own app's address, which the client answers as that app's, as tall as its page says its content
 /// is where its style says no height. Only a trusted app's page shows one.

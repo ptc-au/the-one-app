@@ -46,9 +46,9 @@
     const { base, script } = mapped(page, await pageHtml)
     step("page")
     // Its tables: the UI library's tokens and styles, and its app's styles, which its build writes beside every page.
-    const [tables, [renderer, { textInput }, { semantics }, { videos }]] = await Promise.all([
+    const [tables, [renderer, { textInput }, { semantics }, { voices }, { videos }]] = await Promise.all([
       Promise.all([libraryTables, got(new URL("styles.json", base)).then((response) => response.text())]).then(([library, own]) => (step("tables"), [...library, own])),
-      Promise.all([import("./web_renderer.js"), import("./text-input.js"), import("./semantics.js"), import("./video.js")]),
+      Promise.all([import("./web_renderer.js"), import("./text-input.js"), import("./semantics.js"), import("./voice.js"), import("./video.js")]),
     ])
     await renderer.default({ module_or_path: await compiled.then((module) => (step("compiled"), module)) })
     step("renderer")
@@ -56,18 +56,20 @@
     const needs = Number(new URLSearchParams(location.search).get("runtime"))
     if (!(needs <= renderer.runtime_version())) throw new Error(`it needs runtime version ${needs}`)
     // What the page's JS draws through, and asks its client through, as a native host's sandbox has them; its videos
-    // are the browser's to connect and play too (video.js).
+    // are the browser's to connect and play too (video.js), and its voices (voice.js).
     const streams = videos(renderer)
+    const calls = voices()
     Object.assign(globalThis, {
       mutations: {
-        create: (/** @type {number} */ id, /** @type {string} */ type, /** @type {string} */ value) => (type === "video" && streams.created(id), renderer.create(id, type, value)),
-        set: (/** @type {number} */ id, /** @type {string} */ name, /** @type {unknown} */ value) => (streams.set(id, name, value), renderer.set(id, name, value)),
+        create: (/** @type {number} */ id, /** @type {string} */ type, /** @type {string} */ value) => (type === "video" && streams.created(id), type === "voice" && calls.created(id), renderer.create(id, type, value)),
+        set: (/** @type {number} */ id, /** @type {string} */ name, /** @type {unknown} */ value) => (streams.set(id, name, value), calls.set(id, name, value), renderer.set(id, name, value)),
         insert: renderer.insert,
         remove: renderer.remove,
-        drop: (/** @type {number} */ id) => (streams.dropped(id), renderer.drop(id)),
+        drop: (/** @type {number} */ id) => (streams.dropped(id), calls.dropped(id), renderer.drop(id)),
         frame: true,
         list: 2,
         video: true,
+        voice: true,
       },
       host: { post: (/** @type {object} */ message) => renderer.post(JSON.stringify(message)), component: styled(page, renderer.component) },
     })

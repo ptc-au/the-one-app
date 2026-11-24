@@ -2,69 +2,31 @@
 //! connects and plays one (clients/web/renderer/video.js). WebRTC is str0m's and H.264 OpenH264's, as WebRTC's sender
 //! has them (apps/webrtc/server/bin/stream), so the two ends are one stack, built from source for every kind of
 //! device, with no browser and no libwebrtc. Each connection is a thread of its own: it reaches the screen only
-//! through a TURN server's relay, over TCP, as the sender does, offers to receive video and the data channel both ends
-//! make (`input`, negotiated, id 0), takes the screen's answer, and decodes each frame that comes into the latest,
-//! which the window draws (`Video::tile`). What it says the page hears as events (`offer`, `state`, `size`).
+//! through a TURN server's relay, over TCP, as the sender does (`turn`), offers to receive video and the data channel
+//! both ends make (`input`, negotiated, id 0), takes the screen's answer, and decodes each frame that comes into the
+//! latest, which the window draws (`Video::tile`). What it says the page hears as events (`offer`, `state`, `size`).
 
-use std::collections::HashSet;
-use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::SocketAddr;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, anyhow, bail};
-use serde::Deserialize;
+use anyhow::{Context, anyhow};
 use serde_json::{Value, json};
 use str0m::change::{SdpAnswer, SdpPendingOffer};
 use str0m::channel::{ChannelConfig, ChannelId};
 use str0m::media::{Direction, KeyframeRequestKind, MediaKind, Mid};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event as RtcEvent, IceConnectionState, Input as RtcInput, Output, Rtc};
-use turn_client_proto::api::{TurnClientApi, TurnConfig, TurnEvent, TurnPollRet, TurnRecvRet};
-use turn_client_proto::prelude::DelayedTransmitBuild;
-use turn_client_proto::stun::agent::Transmit;
-use turn_client_proto::tcp::TurnClientTcp;
-use turn_client_proto::types::{TransportType, TurnCredentials};
 
 use crate::geometry::{Bounds, DevicePixels, Size};
 use crate::render::atlas::{Atlas, AtlasKey, AtlasTile};
-
-/// How long the TURN server has to give an allocation, as the sender's.
-const ALLOCATING: Duration = Duration::from_secs(4);
-
-/// What a connection was given: its ICE servers, as `RTCConfiguration` has them.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Ice {
-    ice_servers: Vec<IceServer>,
-}
-
-#[derive(Deserialize)]
-struct IceServer {
-    #[serde(deserialize_with = "one_or_many")]
-    urls: Vec<String>,
-    username: Option<String>,
-    credential: Option<String>,
-}
-
-fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Urls {
-        One(String),
-        Many(Vec<String>),
-    }
-    Ok(match Urls::deserialize(d)? {
-        Urls::One(url) => vec![url],
-        Urls::Many(urls) => urls,
-    })
-}
+use crate::turn::{Ice, Turn, candidates};
 
 /// What reaches a connection's thread: bytes from the TURN server, or what its page did.
 enum Command {
-    Turn(Vec<u8>),
-    TurnClosed,
+    /// The TURN server sent something, which the connection takes.
+    Wake,
     Answer(String),
     Send(String),
     Close,
@@ -263,11 +225,17 @@ fn connection(
 ) -> anyhow::Result<String> {
     let started = Instant::now();
     let ice: Ice = serde_json::from_value(ice).context("its ICE servers")?;
-    let mut turn = Turn::connect(&ice, commands)?;
-    let Some(relay) = turn.allocate(received)? else { return Ok("it was closed".into()) };
+    let wake = {
+        let commands = commands.clone();
+        Arc::new(move || {
+            let _ = commands.send(Command::Wake);
+        })
+    };
+    let mut turn = Turn::connect(&ice, wake)?;
+    let relay = turn.allocate()?;
 
     let mut rtc = Rtc::builder().clear_codecs().enable_h264(true).build(Instant::now());
-    rtc.add_local_candidate(Candidate::relayed(relay, turn.local, "udp")?);
+    rtc.add_local_candidate(Candidate::relayed(relay, turn.local(), "udp")?);
     let mut change = rtc.sdp_api();
     let mid = change.add_media(MediaKind::Video, Direction::RecvOnly, None, None, None);
     // Both ends make the data channel (id 0), so it opens with the connection, with nothing more to say.
@@ -323,8 +291,9 @@ impl Session {
             if let Some(why) = self.ended.take() {
                 return Ok(why);
             }
+            self.pump_turn(out)?;
             let at = self.drain(out)?;
-            while self.turn.client.poll_event().is_some() {}
+            self.turn.events();
             let wait = at.saturating_duration_since(Instant::now()).min(self.turn.wait());
             let command = if wait.is_zero() {
                 received.try_recv().map_err(|_| RecvTimeoutError::Timeout)
@@ -332,15 +301,6 @@ impl Session {
                 received.recv_timeout(wait)
             };
             match command {
-                Ok(Command::Turn(bytes)) => {
-                    for (peer, data) in self.turn.receive(&bytes) {
-                        let Ok(contents) = data.as_slice().try_into() else { continue };
-                        let receive = Receive { proto: Protocol::Udp, source: peer, destination: self.relay, contents };
-                        self.rtc.handle_input(RtcInput::Receive(Instant::now(), receive))?;
-                        self.drain(out)?;
-                    }
-                    self.turn.flush()?;
-                }
                 Ok(Command::Answer(sdp)) => {
                     let Some(pending) = self.pending.take() else { continue };
                     self.timings.answered = Some(self.timings.started.elapsed());
@@ -358,7 +318,8 @@ impl Session {
                         channel.write(false, input.as_bytes())?;
                     }
                 }
-                Ok(Command::TurnClosed) => return Ok("the TURN server closed its connection".into()),
+                // What the TURN server sent, which the next turn takes.
+                Ok(Command::Wake) => {}
                 Ok(Command::Close) | Err(RecvTimeoutError::Disconnected) => return Ok("it was closed".into()),
                 Err(RecvTimeoutError::Timeout) => {
                     self.rtc.handle_input(RtcInput::Timeout(Instant::now()))?;
@@ -366,6 +327,28 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// Takes what the TURN server sent since it was last asked: each peer's data into the connection.
+    fn pump_turn(&mut self, out: &Out) -> anyhow::Result<()> {
+        let mut heard = Vec::new();
+        while let Ok(one) = self.turn.heard().try_recv() {
+            heard.push(one);
+        }
+        for one in heard {
+            let Some(bytes) = one else {
+                self.ended = Some("the TURN server closed its connection".into());
+                return Ok(());
+            };
+            for (peer, data) in self.turn.receive(&bytes) {
+                let Ok(contents) = data.as_slice().try_into() else { continue };
+                let receive = Receive { proto: Protocol::Udp, source: peer, destination: self.relay, contents };
+                self.rtc.handle_input(RtcInput::Receive(Instant::now(), receive))?;
+                self.drain(out)?;
+            }
+            self.turn.flush()?;
+        }
+        Ok(())
     }
 
     /// Takes everything str0m has to do now, until the time it next has something: gives that time.
@@ -423,148 +406,5 @@ impl Session {
             out.tell("size", json!({"width": width, "height": height}));
         }
         out.frame(Size { width: width as u32, height: height as u32 }, pixels);
-    }
-}
-
-/// The IP addresses of the candidates in an SDP.
-fn candidates(sdp: &str) -> HashSet<IpAddr> {
-    sdp.lines()
-        .filter_map(|line| line.strip_prefix("a=candidate:"))
-        .filter_map(|candidate| candidate.split_whitespace().nth(4)?.parse().ok())
-        .collect()
-}
-
-/// A TURN server's relay, reached over TCP, by its IPv4 address, as WebRTC's sender reaches it (its `session.rs`).
-struct Turn {
-    client: TurnClientTcp,
-    stream: TcpStream,
-    server: SocketAddr,
-    local: SocketAddr,
-    base: Instant,
-    bound: HashSet<SocketAddr>,
-}
-
-impl Turn {
-    /// A TCP connection to the first TURN server over TCP it was given, with its bytes read on a thread of their own.
-    fn connect(ice: &Ice, commands: Sender<Command>) -> anyhow::Result<Self> {
-        let (url, server) = ice
-            .ice_servers
-            .iter()
-            .flat_map(|server| server.urls.iter().map(move |url| (url, server)))
-            .find(|(url, _)| url.starts_with("turn:") && url.ends_with("transport=tcp"))
-            .ok_or_else(|| anyhow!("no TURN server over TCP was given"))?;
-        let host = url["turn:".len()..].split('?').next().unwrap_or_default();
-        let address = host
-            .to_socket_addrs()
-            .with_context(|| format!("couldn't find {host}"))?
-            .find(SocketAddr::is_ipv4)
-            .ok_or_else(|| anyhow!("{host} has no IPv4 address"))?;
-        let stream = TcpStream::connect_timeout(&address, ALLOCATING)
-            .with_context(|| format!("couldn't reach TURN at {address}"))?;
-        stream.set_nodelay(true)?;
-        let mut reading = stream.try_clone()?;
-        std::thread::Builder::new().name("video turn".into()).spawn(move || {
-            let mut buffer = vec![0; 65536];
-            loop {
-                match reading.read(&mut buffer) {
-                    Ok(0) | Err(_) => break drop(commands.send(Command::TurnClosed)),
-                    Ok(n) => {
-                        if commands.send(Command::Turn(buffer[..n].to_vec())).is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-        })?;
-        let local = stream.local_addr()?;
-        let credentials =
-            TurnCredentials::new(server.username.as_deref().unwrap_or(""), server.credential.as_deref().unwrap_or(""));
-        let client = TurnClientTcp::allocate(local, address, TurnConfig::new(credentials));
-        Ok(Self { client, stream, server: address, local, base: Instant::now(), bound: HashSet::new() })
-    }
-
-    fn now(&self) -> turn_client_proto::stun::Instant {
-        turn_client_proto::stun::Instant::from_std(self.base)
-    }
-
-    /// Waits for the TURN server to give the relay's address, or none where it's closed first.
-    fn allocate(&mut self, received: &Receiver<Command>) -> anyhow::Result<Option<SocketAddr>> {
-        let until = Instant::now() + ALLOCATING;
-        loop {
-            self.flush()?;
-            while let Some(event) = self.client.poll_event() {
-                match event {
-                    TurnEvent::AllocationCreated(_, relay) => return Ok(Some(relay)),
-                    TurnEvent::AllocationCreateFailed(_) => bail!("the TURN server refused an allocation"),
-                    _ => {}
-                }
-            }
-            let wait = until.saturating_duration_since(Instant::now()).min(self.wait());
-            match received.recv_timeout(wait) {
-                Ok(Command::Turn(bytes)) => drop(self.receive(&bytes)),
-                Ok(Command::TurnClosed) => bail!("the TURN server closed its connection"),
-                Ok(Command::Close) | Err(RecvTimeoutError::Disconnected) => return Ok(None),
-                Ok(_) => {}
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= until => {
-                    bail!("it couldn't reach TURN within {} seconds", ALLOCATING.as_secs())
-                }
-                Err(RecvTimeoutError::Timeout) => {}
-            }
-        }
-    }
-
-    /// How long until the client has something to do: a request to send again, or the allocation to refresh.
-    fn wait(&mut self) -> Duration {
-        match self.client.poll(self.now()) {
-            TurnPollRet::WaitUntil(at) => at.to_std(self.base).saturating_duration_since(Instant::now()),
-            _ => Duration::from_secs(1),
-        }
-    }
-
-    /// Sends the client's requests.
-    fn flush(&mut self) -> anyhow::Result<()> {
-        let now = self.now();
-        let _ = self.client.poll(now);
-        while let Some(transmit) = self.client.poll_transmit(now) {
-            self.stream.write_all(transmit.data.as_ref())?;
-        }
-        Ok(())
-    }
-
-    /// The peers' data in bytes from the TURN server, the rest being the client's own.
-    fn receive(&mut self, bytes: &[u8]) -> Vec<(SocketAddr, Vec<u8>)> {
-        let now = self.now();
-        let mut data = vec![];
-        if let TurnRecvRet::PeerData(peer) =
-            self.client.recv(Transmit::new(bytes, TransportType::Tcp, self.server, self.local), now)
-        {
-            data.push((peer.peer, peer.data().to_vec()));
-        }
-        while let Some(peer) = self.client.poll_recv(now) {
-            data.push((peer.peer, peer.data().to_vec()));
-        }
-        data
-    }
-
-    fn permit(&mut self, ip: IpAddr) {
-        let _ = self.client.create_permission(TransportType::Udp, ip, self.now());
-    }
-
-    /// Sends `data` to `peer` through the relay, over a channel once the peer has one. One the relay doesn't let
-    /// through yet is let through, and its packet dropped, as ICE sends again.
-    fn send(&mut self, peer: SocketAddr, data: &[u8]) -> anyhow::Result<()> {
-        let now = self.now();
-        if !self.client.have_permission(TransportType::Udp, peer.ip()) {
-            self.permit(peer.ip());
-            return self.flush();
-        }
-        if self.bound.insert(peer) {
-            let _ = self.client.bind_channel(TransportType::Udp, peer, now);
-            self.flush()?;
-        }
-        if let Ok(Some(transmit)) = self.client.send_to(TransportType::Udp, peer, data, now) {
-            self.stream.write_all(&transmit.data.build())?;
-        }
-        Ok(())
     }
 }
