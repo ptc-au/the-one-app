@@ -270,8 +270,8 @@ defmodule OneCore.Mcp do
 
   # What whoever asked is to be of whoever else a request is for: their member, or for a tool of One Core's that
   # changes what's installed for them, their installer too (`OneCore.Mcp.Principal`), who lists their tools as a
-  # client does before it calls one.
-  defp relations("tools/list", _params), do: ["member", "installer"]
+  # client does before it calls one, and whose install's moments a server asks another's apps about (a hook).
+  defp relations(method, _params) when method in ["tools/list", "hooks/call"], do: ["member", "installer"]
 
   defp relations("tools/call", %{"name" => name}) do
     if Enum.find(OneCore.Tools.Definitions.tools(), &(&1.name == name))[:installs],
