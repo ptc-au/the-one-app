@@ -13,7 +13,8 @@
 //! `name` (its accessible name, exactly), `text` (words in its name, any case) and `key` (its `id` prop, as the DOM's
 //! `id` names an element), every one given matching, in the tree's order; `nth` picks a later match than the first.
 //! It finds only what a screen reader reads, but with `includeHidden`, as Playwright's `getByRole`, what's hidden from
-//! one too (`aria-hidden`, inert, not displayed).
+//! one too (`aria-hidden`, inert, not displayed), and with `includeInert` what's inert too (behind a modal, or `inert`),
+//! never what's `aria-hidden` or not displayed: what a page draws behind its open menu.
 //! A point is `x` and `y`, in CSS pixels from the window's top left, as `rect`s are.
 //!
 //! - `window` → `{entrypoint, width, height, scale, time, paused, failed, focused, leaving, moving, blank,
@@ -193,7 +194,7 @@ impl Request {
 
     /// The inputs of its selector, with `includeHidden`, as a query that finds the same nodes takes them.
     pub fn selector_inputs(&self) -> Map<String, Value> {
-        self.selector().chain(["includeHidden"]).filter_map(|input| Some((input.to_owned(), self.inputs.get(input)?.clone()))).collect()
+        self.selector().chain(["includeHidden", "includeInert"]).filter_map(|input| Some((input.to_owned(), self.inputs.get(input)?.clone()))).collect()
     }
 
     /// One of its selector's inputs.
@@ -236,7 +237,8 @@ pub fn png(width: u32, height: u32, rgba: Vec<u8>) -> anyhow::Result<Value> {
 }
 
 /// Each node's semantics as `Tree::semantics` gives them, by its id, without its children: with what's hidden from a
-/// screen reader too where the request says `includeHidden`, as Playwright's `getByRole` takes it.
+/// screen reader too where the request says `includeHidden`, as Playwright's `getByRole` takes it, or what's inert where
+/// it says `includeInert`.
 fn semantics(tree: &Tree, request: &Request) -> HashMap<Id, Map<String, Value>> {
     fn walk(nodes: &[Value], into: &mut HashMap<Id, Map<String, Value>>) {
         for node in nodes {
@@ -251,7 +253,14 @@ fn semantics(tree: &Tree, request: &Request) -> HashMap<Id, Map<String, Value>> 
         }
     }
     let mut described = HashMap::new();
-    walk(&if request.bool("includeHidden") { tree.semantics_including_hidden(0) } else { tree.semantics(0) }, &mut described);
+    let read = if request.bool("includeHidden") {
+        tree.semantics_including_hidden(0)
+    } else if request.bool("includeInert") {
+        tree.semantics_including_inert(0)
+    } else {
+        tree.semantics(0)
+    };
+    walk(&read, &mut described);
     described
 }
 
@@ -278,8 +287,8 @@ pub fn select(tree: &Tree, request: &Request) -> Vec<Id> {
         // What it's inside is hidden from a screen reader too where it is.
         Some(Value::Object(selector)) => {
             let mut inputs = selector.clone();
-            if request.bool("includeHidden") {
-                inputs.insert("includeHidden".into(), Value::Bool(true));
+            for reading in ["includeHidden", "includeInert"].into_iter().filter(|reading| request.bool(reading)) {
+                inputs.insert(reading.into(), Value::Bool(true));
             }
             Some(select(tree, &Request { id: Value::Null, op: "query".into(), inputs }))
         }
