@@ -23,8 +23,9 @@ use serde_json::{Value, json};
 const DIRECTORY: &str = "https://one.ptcau.dev/apps/api/installs";
 const LOCK: &str = "apps.lock";
 
-/// Where an app comes from: a repo as it's written in a lock file (`owner/repo` on GitHub, a git URL, or a
-/// folder's absolute path), and the ref asked for, if one was.
+/// Where an app comes from: a repo as it's written in a lock file (`owner/repo` on GitHub, a git URL, a repo of the
+/// network's Git Repos as git clones it, `one::users/alice/made/git-repos/notes`, or a folder's absolute path), and
+/// the ref asked for, if one was.
 #[derive(Clone)]
 struct Source {
     spec: String,
@@ -32,7 +33,7 @@ struct Source {
 }
 
 impl Source {
-    /// `owner/repo`, a git URL or a path, each with `@<ref>` after it or not.
+    /// `owner/repo`, a git URL, `<transport>::<address>` or a path, each with `@<ref>` after it or not.
     fn parse(written: &str) -> Result<Self> {
         let (repo, reference) = match written.rsplit_once('@') {
             Some((repo, reference)) if !reference.contains('/') && !reference.contains(':') && !repo.is_empty() => {
@@ -42,12 +43,16 @@ impl Source {
         };
         let spec = if Path::new(repo).exists() || Path::new(repo).is_absolute() || repo.starts_with(['.', '~']) {
             fs::canonicalize(repo).with_context(|| format!("There's no folder {repo}"))?.to_string_lossy().into_owned()
-        } else if repo.contains("://") || repo.starts_with("git@") {
+        } else if repo.contains("://") || repo.contains("::") || repo.starts_with("git@") {
             repo.to_owned()
         } else if repo.split('/').count() == 2 && !repo.contains(' ') {
             repo.trim_end_matches(".git").to_owned()
         } else {
-            bail!("{written} isn't a repo: write owner/repo (on GitHub), a git URL or a folder, with @<ref> or not")
+            bail!(
+                "{written} isn't a repo: write owner/repo (on GitHub), a git URL, {}::<a repo of the network's> or a \
+                 folder, with @<ref> or not",
+                client::command()
+            )
         };
         Ok(Self { spec, reference })
     }
@@ -85,7 +90,7 @@ impl Source {
         }
         let named = self.spec.split_once("://").map_or(self.spec.as_str(), |(_, rest)| rest);
         let named = named.replace(':', "/");
-        if !self.spec.contains("://") && !self.spec.starts_with("git@") {
+        if !self.spec.contains("://") && !self.spec.contains("::") && !self.spec.starts_with("git@") {
             folder.push("github.com");
         }
         for part in named.trim_start_matches("git@").trim_end_matches(".git").split('/') {
@@ -128,8 +133,11 @@ impl Source {
 
 }
 
+/// Runs git as this device's person: a repo of the network's is read as whoever installs, not whoever it's for.
 fn git(folder: &Path, args: &[&str]) -> Result<String> {
-    let ran = Command::new("git").arg("-C").arg(folder).args(args).env("GIT_TERMINAL_PROMPT", "0").output()?;
+    let mut git = Command::new("git");
+    git.arg("-C").arg(folder).args(args).env("GIT_TERMINAL_PROMPT", "0").env_remove("ONE_SUBJECT");
+    let ran = git.output()?;
     if !ran.status.success() {
         bail!("git {} said: {}", args.join(" "), String::from_utf8_lossy(&ran.stderr).trim());
     }
