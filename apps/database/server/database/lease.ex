@@ -42,8 +42,8 @@ defmodule Database.Lease do
     for `@renew_within`; then it's `:unreached`, and a transaction is refused at once while it reads the log again
     every `@renew_every`. So a database started again while the bucket is away doesn't hold up whoever asked for it.
   - `{:following, server}`: `server` holds the lease. A transaction is answered with who holds it, to be passed on
-    to them. One they didn't run has this server read what was logged after the last entry it read, and take the
-    lease if they handed it on, or if that's nothing and it's not the one out of reach (`Database.transaction/3`),
+    to them, and how long they may still be settling (`settles_in/2`). One they didn't run has this server read what
+    was logged after the last entry it read, and take the lease if they handed it on, or if that's nothing and it's not the one out of reach (`Database.transaction/3`),
     looking at the log meanwhile; one that another server took meanwhile is followed there. `nil` is nobody: the log is empty or handed on, and this server isn't up
     to take it.
   - `:settling`: this server has just opened the database, and writes nothing until `@writes_after` has passed.
@@ -133,7 +133,8 @@ defmodule Database.Lease do
   # wrote, `logged` the pages logged since the last snapshot and `pages` the copy's size, `proved` its clocks when it
   # last saw the log's next entry free, `settled` when by its monotonic clock it may write, and `firing` the
   # scheduled jobs being called here: each one's `job` and the time it was due `at`, by its call's process, and
-  # whether it's `marked` as run yet; `lost_to` the server that last took the lease from this one; `renewing` the look
+  # whether it's `marked` as run yet; `lost_to` the server that last took the lease from this one; `followed` the server
+  # it follows and when by its monotonic clock it first read that one holds it (`settles_in/2`); `renewing` the look
   # at the log under way in the background, `unreached` why the last look couldn't read the bucket, `used` when by its
   # monotonic clock it last ran a transaction, and `ticking` whether it looks again every `@renew_every`; `reader` the
   # copy's second connection, which only reads, `writing` the write being logged (`write/4`), `looking` the
@@ -151,6 +152,7 @@ defmodule Database.Lease do
     :settled,
     :failed,
     :lost_to,
+    :followed,
     :taking,
     :renewing,
     :unreached,
@@ -221,7 +223,7 @@ defmodule Database.Lease do
         {:next_state, :unreached, %{data | unreached: why, taking: nil}, [{:state_timeout, @renew_every, :look} | told(data, :unreached)]}
 
       {answer, {state, looked}} ->
-        kept = Map.take(looked, [:number, :db, :reader, :proved, :settled, :logged, :failed, :lost_to])
+        kept = Map.take(looked, [:number, :db, :reader, :proved, :settled, :logged, :failed, :lost_to, :followed])
         moved({state, Map.merge(%{data | unreached: nil, taking: nil}, kept)}, told(data, answer))
     end
   end
@@ -258,9 +260,9 @@ defmodule Database.Lease do
   def handle_event({:call, from}, {codec, _ask}, _state, %{artifact: %{codec: was}}) when codec != was,
     do: {:stop_and_reply, :normal, {:reply, from, :codec_changed}}
 
-  def handle_event({:call, from}, {_codec, ask}, {:following, server}, _data)
+  def handle_event({:call, from}, {_codec, ask}, {:following, server}, data)
       when elem(ask, 0) in [:transaction, :schedule],
-      do: {:keep_state_and_data, {:reply, from, {:held_by, server}}}
+      do: {:keep_state_and_data, {:reply, from, {:held_by, server, settles_in(data, server)}}}
 
   def handle_event({:call, _from}, {_codec, ask}, :looking, _data) when elem(ask, 0) in [:transaction, :schedule],
     do: {:keep_state_and_data, :postpone}
@@ -724,17 +726,35 @@ defmodule Database.Lease do
       free when free in [nil, %{server: nil}] ->
         if OneCore.Server.up?() and not failed?(data),
           do: take(data, if(free, do: "handed_on", else: "free")),
-          else: {{:following, nil}, data}
+          else: {{:following, nil}, %{data | followed: nil}}
 
       %{server: server} when server == data.server ->
         Logger.info("#{data.artifact.prefix}: holds its lease, from snapshot #{snapshot} and the log to #{data.number}")
-        open(%{data | proved: began}, snapshot, entries)
+        open(%{data | proved: began, followed: nil}, snapshot, entries)
 
       %{server: server} ->
         Logger.info("#{data.artifact.prefix}: its lease is held by #{server}")
-        {{:following, server}, data}
+        follow(data, server)
     end
   end
+
+  # Follows `server`, which the log names as holding the lease, keeping when this server first read that it does, since
+  # it last held it or followed nobody.
+  defp follow(data, server) do
+    case data.followed do
+      {^server, _at} -> {{:following, server}, data}
+      _other -> {{:following, server}, %{data | followed: {server, System.monotonic_time(:millisecond)}}}
+    end
+  end
+
+  # How long, in milliseconds, `server`, which holds the lease, may still be settling, writing nothing (`opened/3`): it
+  # began reading the log before it wrote the entry naming it, which this server read when it first followed it, so
+  # it writes within `@writes_after` of then. A write passed to it waits that out there, as the call is queued, and is
+  # given that long more before it's taken over from (`Database.transaction/3`): given only the time a holder that's up
+  # runs one in, every server that had just taken the lease was taken over from by the next write passed to it, which
+  # took it on to another, four servers in 17 s (backups, 24 Nov, after an update restarted every server).
+  defp settles_in(%{followed: {server, at}}, server), do: max(at + @writes_after - System.monotonic_time(:millisecond), 0)
+  defp settles_in(_data, _server), do: 0
 
   # Reads what was logged after the last entry it read, as the server it follows, `server`, didn't run a call passed on to
   # it, `why`: `:stopping` where this server is stopping, handed its lease on, and has a call it took before that still
@@ -776,7 +796,7 @@ defmodule Database.Lease do
 
       %{server: holder} when holder != data.server ->
         Logger.info("#{data.artifact.prefix}: its lease is held by #{holder}")
-        {:ok, {{:following, holder}, data}}
+        {:ok, follow(data, holder)}
 
       _this ->
         {:ok, look(data)}

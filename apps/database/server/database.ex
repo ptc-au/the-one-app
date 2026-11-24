@@ -46,8 +46,8 @@ defmodule Database do
         :erlang.raise(kind, reason, stacktrace)
 
       # The call ends here if the server holding the lease runs it, and otherwise goes on with who holds it now.
-      {:held_by, server} ->
-        taken_over(call, lease, server)
+      {:held_by, server, settling} ->
+        taken_over(call, lease, server, settling)
         transaction(call, schema, fun)
     end
   end
@@ -100,7 +100,7 @@ defmodule Database do
   # `not_answered` where it kept it `@waited` or more without running it, as one that's stuck does, which is warned
   # of, `gone` where it said at once that it wouldn't, and `connected` where the relay still reached it after it
   # took the lease from this one, and nothing else could be asked.
-  defp taken_over(call, lease, server) do
+  defp taken_over(call, lease, server, settling) do
     began = System.monotonic_time(:millisecond)
     # A call another server passed here to run, as one whose own copy failed passes its own (`:failed`), or as one
     # that couldn't reach the holder does, is asked of the holder once, for `@witness`, and passed on no further.
@@ -108,7 +108,8 @@ defmodule Database do
     relay = if server && not passed, do: Task.async(fn -> OneCore.Servers.answers?(server, @ping) end)
 
     try do
-      within = if passed, do: @witness, else: @reach
+      # A holder that may still be settling has a write wait that out (`Database.Lease`), and is given that too.
+      within = settling + if(passed, do: @witness, else: @reach)
       first = if server, do: Call.forward_to(call, server, within, relay && {relay, @ping})
       again = if server && not passed && System.monotonic_time(:millisecond) - began < @waited, do: Call.forward_to(call, server, @reach)
       waited = System.monotonic_time(:millisecond) - began
@@ -213,8 +214,8 @@ defmodule Database do
       :ambiguous ->
         raise OneCore.Writes.taking_longer()
 
-      {:held_by, server} ->
-        taken_over(call, lease, server)
+      {:held_by, server, settling} ->
+        taken_over(call, lease, server, settling)
         schedule(call, jobs, fire)
     end
   end
