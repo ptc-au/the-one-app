@@ -1,7 +1,7 @@
 // Notifications, as Settings draws it: whether this phone or browser is woken by them, and each app that has told you
 // something, which you hear from or not.
 import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { call, changed, client, Empty, List, Problem, Row, Screen, Section, Skeleton, Switch, toast } from "ui"
+import { call, changed, client, Empty, List, Problem, Row, Screen, Section, Spinner, Switch, toast } from "ui"
 import { type Push, PushState } from "./push.tsx"
 
 /** An app that has told its person something, as `notifications_apps` answers it. */
@@ -30,7 +30,7 @@ export default function NotificationSettings() {
   return (
     <Screen heading="Notifications" back>
       <Errored fallback={(error) => <Problem heading="Can't show your notifications" text={error() as Error} />}>
-        <Loading fallback={<Skeleton rows={3} />}>
+        <Loading fallback={<Spinner delay />}>
           <Show when={state().push}>{(push) => <PushState push={push()} settings={state().settings} again={() => refresh(state)} />}</Show>
           <Section heading="Allow Notifications">
             <Show when={state().apps.length} fallback={<Empty>No app has told you anything yet.</Empty>}>
