@@ -407,7 +407,10 @@ defmodule OneCore.App do
     or keep the token so a restore just works and revoke it only once it's purged.
   - A tool with a page of its own, which shows what it does to a person, says it as `ui: "client/link.html"`: a tool
     that only reads and has something to look at (`ui: "client/index.html"`, its app's page, which opens where its
-    answer points, as `toolResult()` gives it), never one that sends or deletes. Every such tool is listed naming one
+    answer points, as `toolResult()` gives it), or a tool that changes something, whose page is its form, filled in
+    from its arguments (`toolInput`), as a `mailto:` link fills an email: opening it does nothing until its person
+    presses its button, so a link never sends, deletes or pays (Google Calendar's `create_event`, at
+    `/google-calendar/events/new?summary=Lunch`). What they type stays the page's own. Every such tool is listed naming one
     MCP App page (`_meta.ui.resourceUri`, and ChatGPT's `openai/outputTemplate`), a router, as Sentry's charts share
     one, so an assistant that shows MCP Apps shows it, and what it answers says which page it is (`_meta.page`); a
     client that shows only text gets the same answer. That page needn't be an app. One that isn't is named for what it

@@ -13,7 +13,7 @@ defmodule GoogleCalendar do
   def icon, do: "icon.png"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.22.18", "google-account" => "to reach your calendars"}
+  def requires, do: %{"core" => ">= 0.34.597", "google-account" => "to reach your calendars"}
 
   # Its person's Google accounts are google-account's, which signs one in with what each Google app asks of Google.
   @impl true
@@ -204,6 +204,9 @@ defmodule GoogleCalendar do
       },
       %{
         name: "create_event",
+        ui: "client/new-event.html",
+        path: "events/new",
+        runtime_version: 5,
         description:
           "Adds an event to a calendar (Calendar's events.insert). This changes the person's calendar: do it only when they asked. Guests are told only with sendUpdates. Gives the event, with its id and link.",
         inputs: with_account.(fields, ["summary", "start"]),
