@@ -80,6 +80,7 @@ targets:
         # without it, an iPhone holds the app's Core Animation, which WebKit draws a CSS transition and animation and
         # its window's moves with, to 60 Hz.
         CADisableMinimumFrameDurationOnPhone: true
+        NSMicrophoneUsageDescription: Used for live voice in apps.
     entitlements:
       path: app_iOS/app_iOS.entitlements
       properties:
@@ -105,6 +106,8 @@ targets:
       - target: Widgets
       - framework: libapp.a
         embed: false
+      - sdk: AudioToolbox.framework
+      - sdk: AVFAudio.framework
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework

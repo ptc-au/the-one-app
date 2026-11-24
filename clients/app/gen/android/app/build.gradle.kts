@@ -14,7 +14,7 @@ android {
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "app.theone.client"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 37
         // The build's name, as `tooling/version` says it, and its number, its count of commits, which Google Play takes as
         // its version code.
