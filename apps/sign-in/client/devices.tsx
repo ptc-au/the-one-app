@@ -8,7 +8,7 @@
 // update it's taking as it moves on (`OneCore.Release`). This device becoming a server, or stopping being one, says
 // each stage.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Badge, Button, call, changed, client, confirm, date, type Element, Empty, Icon, List, open as visit, Problem, Row, Screen, Section, seen, Skeleton, since, Spinner, Split, Steps, styles, Switch, Text, toast, tokens, View } from "ui"
+import { Badge, Button, call, changed, client, confirm, date, type Element, Empty, Icon, List, open as visit, Problem, Row, Screen, Section, seen, since, Spinner, Split, Steps, styles, Switch, Text, toast, tokens, View } from "ui"
 
 /** A build a machine is on, as `builds` answers it. */
 interface Built {
@@ -450,7 +450,7 @@ function Things(props: { all: All; groups?: Groups }) {
 export default function Devices(props: { groups?: Groups }) {
   return (
   <Errored fallback={(error) => <Screen heading="Devices" back><Problem heading="Can't show your devices" text={error() as Error} /></Screen>}>
-    <Loading fallback={<Screen heading="Devices" back><Skeleton rows={3} /></Screen>}>
+    <Loading fallback={<Screen heading="Devices" back><Spinner delay /></Screen>}>
       <Things all={mine()} groups={props.groups} />
     </Loading>
   </Errored>

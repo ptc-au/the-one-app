@@ -5,7 +5,7 @@
 // someone in the network to it, take members out, and make them owners too. Groups are each person's own, so they're
 // asked for as the person, wherever the app was opened.
 import { createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
-import { Avatar, Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Skeleton, Split, styles, toast, tokens, View } from "ui"
+import { Avatar, Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Spinner, Split, styles, toast, tokens, View } from "ui"
 
 const look = styles({
   form: { gap: tokens.length.gutter },
@@ -339,7 +339,7 @@ function UsersAndGroups(props: { all: All }) {
 export default function PeopleAndGroups() {
   return (
   <Errored fallback={(error) => <Screen heading="People & Groups" back><Problem heading="Can't show who's in your network" text={error() as Error} /></Screen>}>
-    <Loading fallback={<Screen heading="People & Groups" back><Skeleton rows={3} /></Screen>}>
+    <Loading fallback={<Screen heading="People & Groups" back><Spinner delay /></Screen>}>
       <UsersAndGroups all={all()} />
     </Loading>
   </Errored>

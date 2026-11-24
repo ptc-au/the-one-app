@@ -6,7 +6,7 @@
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
 import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Skeleton, toast, upload, visible } from "ui"
+import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Spinner, toast, upload, visible } from "ui"
 import { Remove } from "./mine.tsx"
 
 /** A passkey, as `sign-in_devices` answers it. */
@@ -194,7 +194,7 @@ export default function SignInAndSecurity() {
       </Screen>
     )}
   >
-    <Loading fallback={<Screen heading="Sign In & Security" back action={opening()}><Skeleton rows={2} /></Screen>}>
+    <Loading fallback={<Screen heading="Sign In & Security" back action={opening()}><Spinner delay /></Screen>}>
       <Show when={mine()}>
         {(all) => (
           <Screen heading="Sign In & Security" back action={all().passkeys.length ? opening() : undefined}>
