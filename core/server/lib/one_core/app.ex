@@ -412,7 +412,10 @@ defmodule OneCore.App do
     one, so an assistant that shows MCP Apps shows it, and what it answers says which page it is (`_meta.page`); a
     client that shows only text gets the same answer. That page needn't be an app. One that isn't is named for what it
     does (`client/sign-in.html`), not `client/index.html`, an app's. It says its `runtime_version` beside it, as an
-    entrypoint does, for a native host to draw it.
+    entrypoint does, for a native host to draw it. Its screen's address in a browser is its app's, then its `path`,
+    with its inputs in braces, as OpenAPI's paths have them, and the rest after `?`: `path: "week/{start}"` is
+    `/my-week/week/2026-11-23`, and `"{owner}/{name}"` is `/git-repos/james-woollett/my-tasks`, as GitHub's is. It's
+    listed as `_meta.path`. One that says none is at its name, its inputs after `?`.
   - An app is drawn on a home screen under its `name` and `icon`, natively on a computer, an iPhone and Android, and
     by the same renderer in a browser. It's written in Solid 2.0 with the UI library, and its source is the folder `client/`:
     each `.html` there is a page, whose script is the app's, and the rest is whatever the app's made of. Its look is

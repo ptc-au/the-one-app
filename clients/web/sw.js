@@ -11,7 +11,6 @@ import { DhkemX25519HkdfSha256 } from "@hpke/dhkem-x25519"
 import { ed25519 } from "@noble/curves/ed25519.js"
 import { bytesToHex as hex } from "@noble/curves/utils.js"
 import { get, set } from "idb-keyval"
-import { pathOf } from "../app/page/path.js"
 
 const worker = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (self))
 
@@ -96,15 +95,15 @@ worker.addEventListener("push", (event) => {
   event.waitUntil(show())
 })
 
-// A tap opens the app it's from (`<app>[/<page>][#<fragment>]`) in a window of this address that's open, or a new one,
-// at the app's place (`pathOf`), as the web client opens one from its address.
+// A tap opens the app it's from (`<app>[/<page>][#<fragment>]`) in a window of this address that's open, or a new one
+// that opens it (`/?open=`), as the web client opens one from its address.
 worker.addEventListener("notificationclick", (event) => {
   event.notification.close()
   /** @type {string | undefined} */
   const app = event.notification.data?.app
   const open = async () => {
     const [window] = await worker.clients.matchAll({ type: "window", includeUncontrolled: true })
-    if (!window) return void (await worker.clients.openWindow(app ? pathOf(app) : "/"))
+    if (!window) return void (await worker.clients.openWindow(app ? `/?open=${encodeURIComponent(app)}` : "/"))
     if (app) window.postMessage({ open: app })
     await window.focus()
   }

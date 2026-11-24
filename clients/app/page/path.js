@@ -1,24 +1,55 @@
-// Where the window's address says it is, in a browser (`addressed` in host.js), as a web app's does.
+// Where the window's address says it is, in a browser (`pathOf` in clients/web/host.js), as a web app's does.
 
 /// The address of an app's place, which a link to it names: at the launcher `/`, and at an app `/<app>`, then the
 /// place in it, `settings#vault/accounts&request=4` at `/settings/vault/accounts?request=4`, which loading it again
-/// opens (`start` in clients/web/host.js). An app's page other than its first is its app's.
-/** @param {string} link */
-export function pathOf(link) {
+/// opens (`start` in clients/web/host.js). An app's page other than its first is its app's. A screen whose tool says
+/// its `path` among the tools listed (`_meta.path`, `week/{start}`, as OpenAPI's paths say theirs) is at that path,
+/// its arguments in it and the rest after `?`: `my-week#week&start=2026-11-23` at `/my-week/week/2026-11-23`.
+/** @param {string} link @param {Tool[]} tools */
+export function pathOf(link, tools) {
   const [page, fragment = ""] = link.split("#", 2)
-  const [place, ...said] = fragment.split("&")
-  const path = [page.split("/")[0], ...place.split("/").filter(Boolean)].map(encodeURIComponent).join("/")
-  return `/${path}${said.length ? `?${said.join("&")}` : ""}`
+  const [place, ...rest] = fragment.split("&")
+  const app = page.split("/")[0]
+  const said = new URLSearchParams(rest.join("&"))
+  const shape = tools.find(({ name }) => name === `${app}_${place}`)?._meta?.path?.split("/").filter(Boolean)
+  // A link that doesn't say every argument its tool's path has is at its place, as a tool with none is.
+  const filled = shape?.map(argument).every((name) => !name || said.has(name))
+  const parts = shape && filled ? shape.map((part) => taken(said, argument(part)) ?? part) : place.split("/")
+  const query = filled ? `${said}` : rest.join("&")
+  return `/${[app, ...parts].filter(Boolean).map(encodeURIComponent).join("/")}${query ? `?${query}` : ""}`
+}
+/** The argument a part of a tool's path is, `start` of `{start}`. @param {string} part */
+const argument = (part) => /^\{(\w+)\}$/.exec(part)?.[1]
+/** The value of `name` in `said`, which it's taken out of. @param {URLSearchParams} said @param {string} [name] */
+function taken(said, name) {
+  const value = name === undefined ? undefined : (said.get(name) ?? undefined)
+  if (name) said.delete(name)
+  return value
 }
 
-/// The link to the place an address is at: `pathOf`'s other way, nothing at the launcher.
-/** @param {string} pathname @param {string} search */
-export function linkOf(pathname, search) {
+/// The link to the place an address is at: `pathOf`'s other way, nothing at the launcher. The tool whose `path` the
+/// address is at is the one it names, the one whose path says the most of it where more than one would be.
+/** @param {string} pathname @param {string} search @param {Tool[]} tools */
+export function linkOf(pathname, search, tools) {
   const [app, ...place] = pathname.split("/").filter(Boolean).map(decodeURIComponent)
   const said = new URLSearchParams(search)
   if (!app) return undefined
+  const matched = tools
+    .flatMap(({ name, _meta }) => {
+      const parts = name.startsWith(`${app}_`) && typeof _meta?.path === "string" ? _meta.path.split("/").filter(Boolean) : undefined
+      if (!parts || parts.length !== place.length || !parts.every((part, at) => argument(part) || part === place[at])) return []
+      return [{ tool: name.slice(app.length + 1), parts, exact: parts.filter((part) => !argument(part)).length }]
+    })
+    .sort((one, other) => other.exact - one.exact)[0]
+  if (matched) {
+    for (const [at, part] of matched.parts.entries()) if (argument(part)) said.set(/** @type {string} */ (argument(part)), place[at])
+    return `${app}#${matched.tool}${said.size ? `&${said}` : ""}`
+  }
   return place.length || said.size ? `${app}#${place.join("/")}${said.size ? `&${said}` : ""}` : app
 }
+
+/** A tool as the tools listed have it (MCP's `tools/list`): a screen's says its `path` (`_meta.path`). */
+/** @typedef {{ name: string, _meta?: { path?: string } }} Tool */
 
 /// What's listed of the apps, as MCP's resources (`ui://<app>/<version>/<path>`), each named `<app>/<path>`: their
 /// pages, an MCP App's kind; what each app opens first, by the app's name (the last of its pages set, and the

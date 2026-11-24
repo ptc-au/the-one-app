@@ -4,7 +4,7 @@
 // commands by the same names, less what a browser can't do, which each says.
 
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping"
-import { linkOf } from "../app/page/path.js"
+import * as path from "../app/page/path.js"
 
 /** @import { Commands } from "../app/page/host.js" */
 
@@ -514,13 +514,13 @@ document.head.append(Object.assign(document.createElement("link"), { rel: "manif
 const cannot = (why) => () => Promise.reject(new Error(why))
 const NO_KEY = "A browser can't hold your key. Use the app on your phone or computer for that."
 
-/// Where this tab keeps the link it was opened with while its person signs in.
+/// Where this tab keeps the address it was opened at while its person signs in, or the link `/?open=` named.
 const OPEN = "open"
 // The address it was opened at is read as this file loads, before the window's page has run: its first launcher
 // replaces the address (`restart` in client.js), which `start` below would find already gone where the network answers
 // before the browser says it has WebGPU. The address goes back to the Home Screen's, which the app's own is pushed over
 // (`go` in client.js), so Back goes home.
-const linked = new URLSearchParams(location.search).get("open") ?? linkOf(location.pathname, location.search)
+const linked = new URLSearchParams(location.search).get("open") ?? (location.pathname === "/" ? null : `${location.pathname}${location.search}`)
 if (linked) {
   sessionStorage.setItem(OPEN, linked)
   history.replaceState(null, "", "/")
@@ -540,10 +540,10 @@ const commands = {
   /// Where this browser is with its network, as the app's client says a device's session (`State` in core/client):
   /// signed in here, or sent to sign in, and whether its network answers. A browser keeps nothing of a network's, so
   /// with its address not answering it's still opening, and asks again by itself (`tryAgain`).
-  /// Where the address it was opened at is, an app's place (`/settings/vault/accounts?request=4`, as `pathOf` makes
-  /// it), is opened once it's signed in, as a link to it (`settings#vault/accounts&request=4`), kept in this tab
-  /// while its person signs in (`OPEN`). A request's link in Vault still leads to `/?open=<one: link>`, as a
-  /// phone's app follows it there (clients/app/src/mobile.rs), until phones read a path.
+  /// Where the address it was opened at is, an app's screen (`/my-week/week/2026-11-23`, as `pathOf` makes it), is
+  /// opened once it's signed in, as a link to it (`my-week#week&start=2026-11-23`) by the tools it lists, kept in
+  /// this tab while its person signs in (`OPEN`). A request's link in Vault still leads to `/?open=<one: link>`, as
+  /// a phone's app follows it there (clients/app/src/mobile.rs), until phones read a path.
   async start() {
     const asked = opening
     if (!(await webgpu)) {
@@ -552,8 +552,10 @@ const commands = {
     }
     // Signed in when it last opened, it opens as it was while its network says whether it still is.
     if (!kept.apps) await asked
-    const open = session.session.state === "signIn" ? null : sessionStorage.getItem(OPEN)
-    if (open) sessionStorage.removeItem(OPEN)
+    const opened = session.session.state === "signIn" ? null : sessionStorage.getItem(OPEN)
+    if (opened) sessionStorage.removeItem(OPEN)
+    const at = opened?.startsWith("/") ? new URL(opened, location.origin) : undefined
+    const open = at ? path.linkOf(at.pathname, at.search, await known()) : opened
     return { state: state(), ...(open && { open }) }
   },
   /// The files a server lists for `subject`, and the open apps that are out of date.
@@ -666,9 +668,11 @@ export const address = (view) => {
 /// nothing here: not this page, not another app, and not what this browser is signed in with.
 export const sandbox = "allow-scripts allow-forms"
 
-/// The window's address says where it is (`pathOf`), as a web app's does, so going back and forward moves through
-/// it, loading it again opens the same place, and a copied address opens it for whoever may see it.
-export const addressed = true
+/// The window's address says where it is, as a web app's does, so going back and forward moves through it, loading it
+/// again opens the same place, and a copied address opens it for whoever may see it: at the path its screen's tool
+/// says, among the tools kept (path.js's `pathOf`).
+/** @type {typeof import("../app/page/host.js").pathOf} */
+export const pathOf = (link) => path.pathOf(link, kept.tools ?? [])
 
 /// An app's page updated under it asks its person to reload it while it's on screen ("Updated · Reload"), as a web
 /// app in a browser offers its update.

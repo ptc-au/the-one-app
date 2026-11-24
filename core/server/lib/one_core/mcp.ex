@@ -644,7 +644,7 @@ defmodule OneCore.Mcp do
 
   # Every tool there is for `who` as `mode` lists them, One Core's own first, or only those a sharing link's holder may
   # call. Code mode lists only One Core's that say so (`OneCore.Tools`). An app's says whose it is, and one with a page
-  # of its own names it as an MCP App's tool names its UI.
+  # of its own names it as an MCP App's tool names its UI, and the address its screen is at, its `path`.
   defp listed(who, holder, mode) do
     open = fn tools -> if holder, do: Enum.filter(tools, &(&1[:by_link] == true)), else: tools end
 
@@ -667,6 +667,7 @@ defmodule OneCore.Mcp do
     apps =
       for {app, version} <- Enum.sort(Apps.running(who)), holder or mode != :code, tool <- open.(version.tools) do
         ui = if tool[:ui], do: %{:ui => %{resourceUri: router()}, "openai/outputTemplate" => router()}, else: %{}
+        ui = if tool[:ui] && tool[:path], do: Map.put(ui, :path, tool.path), else: ui
         Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(ui, :app, app))
       end
 

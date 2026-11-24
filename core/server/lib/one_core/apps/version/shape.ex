@@ -30,6 +30,11 @@ defmodule OneCore.Apps.Version.Shape do
         "read_only" => %{"type" => "boolean", "description" => "true for a tool that only reads"},
         "by_link" => %{"type" => "boolean"},
         "ui" => %{"type" => "string", "description" => "a page of client/"},
+        "path" => %{
+          "type" => "string",
+          "pattern" => "^[A-Za-z0-9{}_-]+(/[A-Za-z0-9{}_-]+)*$",
+          "description" => "its screen's address after its app's, with its inputs in braces: \"week/{start}\""
+        },
         "runtime_version" => %{
           "type" => "integer",
           "minimum" => 1,

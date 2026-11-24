@@ -19,9 +19,9 @@ export const address = (view) => `${location.protocol === "tauri:" ? "oneapp://"
 /// What an app's frame may do. Its address is its own, so it reaches nothing else there.
 export const sandbox = "allow-scripts allow-same-origin allow-forms"
 
-/// Whether the window's address says where it is (`pathOf` in path.js), as a web app's does: a browser's only. The
-/// app's window is loaded from its own files, by their names, so it keeps its own.
-export const addressed = false
+/// The window's address doesn't say where it is, as a browser's does (`pathOf` in clients/web/host.js): the app's
+/// window is loaded from its own files, by their names, so it keeps its own.
+export const pathOf = undefined
 
 /// An app's page updated under it loads again by itself once it isn't in use, as a desktop app, a launcher (Raycast)
 /// or a phone's app updates silently: it never asks.
