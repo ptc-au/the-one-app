@@ -77,7 +77,7 @@ defmodule ComputerUse do
   def icon, do: "client/icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.403", "sign-in" => "to name a phone as its person knows it", "webrtc" => "to show a computer's screen live"}
+  def requires, do: %{"core" => ">= 0.34.604", "sign-in" => "to name a phone as its person knows it", "webrtc" => "to show a computer's screen live"}
 
   @impl true
   def offers do
@@ -107,6 +107,8 @@ defmodule ComputerUse do
       %{
         name: "screens",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
           "The screens you can use, as `screens`: each one's name, what it is, its width and height in pixels, the app it's from, and what it was last used for, by whom, when (ms since 1970). An app that couldn't list its screens is in `failed`, with why, as is a computer whose own screen didn't answer.",
         inputs: %{type: "object", properties: %{}},
@@ -144,6 +146,21 @@ defmodule ComputerUse do
           },
           required: ["screens", "failed"]
         }
+      },
+      %{
+        name: "screen",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{app}/{name}",
+        runtime_version: 4,
+        description:
+          "One screen you can use, as `screens` lists it, by the app it's from and its name: what it is, its size and its last use. It's Computer Use's screen of it, live, at /computer-use/containers/desktop.",
+        inputs: %{
+          type: "object",
+          properties: %{app: %{type: "string", description: "The app it's from, as `screens` says it"}, name: %{type: "string", description: "Its name"}},
+          required: ["app", "name"]
+        },
+        outputs: %{type: "object", properties: %{screen: %{type: "object", description: "As `screens` lists it"}}, required: ["screen"]}
       },
       %{
         name: "screenshot",
@@ -288,6 +305,13 @@ defmodule ComputerUse do
   end
 
   @impl true
+  def call("screen", %{"app" => app, "name" => name}, call) do
+    case Enum.find(call("screens", %{}, call)["screens"], &(&1["app"] == app and &1["name"] == name)) do
+      nil -> raise OneCore.Call.Refused, "There's no screen #{name} of #{app} you can use."
+      screen -> %{screen: screen}
+    end
+  end
+
   def call("screens", _inputs, call) do
     {screens, failed} = screens(call, &Desktop.screens/1)
     used = used(call, screens)

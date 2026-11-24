@@ -1,6 +1,6 @@
 // Computer Use: the screens your agents can use, and one of them as it is now, with who last used it and for what.
-import { createEffect, createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, client, Empty, List, LiveScreen, Problem, render, Row, Screen, Section, since, Spinner, Split, styles, Text, tokens, visible } from "ui"
+import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { Button, call, changed, client, Empty, List, LiveScreen, navigate, Problem, render, Row, Screen, Section, since, Spinner, Split, styles, Text, tokens, toolInput, visible } from "ui"
 
 /** A screen agents can use, as `computer-use_screens` answers it. */
 interface AgentScreen {
@@ -21,7 +21,18 @@ const address = (screen: AgentScreen) => `${screen.app}/${screen.name}`
 const name = (who?: string) => who?.split("/").pop()
 const usage = (used: AgentScreen["used"]) => (used ? `${used.doing ?? "Used"} · ${since(used.at)}` : "Not used yet")
 
-const [open, setOpen] = createSignal<string>()
+/// The screen open beside the list, by its app and name (`containers/desktop`), as the screen shown says it
+/// (`computer-use_screen { app, name }`, at /computer-use/containers/desktop).
+const open = () => {
+  const { name, arguments: inputs } = toolInput("computer-use_screens")
+  return name === "computer-use_screen" ? `${inputs.app}/${inputs.name}` : undefined
+}
+/// Opens a screen by its app and name, as a step Back goes back from, or the list alone.
+function setOpen(screen?: string) {
+  if (!screen) return navigate("computer-use_screens")
+  const [app, ...name] = screen.split("/")
+  navigate("computer-use_screen", { app, name: name.join("/") })
+}
 
 function Detail(props: { screen: AgentScreen }) {
   const s = () => props.screen
