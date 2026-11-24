@@ -37,7 +37,6 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scrollbar-gutter: stable;
   /* A tap is a tap at once, never the first of a double tap that zooms: what's pressed answers without the wait. */
   touch-action: manipulation;
   /* An app isn't a document: pulling past its top neither refreshes it nor drags the window. Sideways is the
@@ -75,10 +74,6 @@ form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--gutter);
-}
-/* The page under an open sheet stays where it is. */
-html:has(.ui-dialog[open]) {
-  overflow: hidden;
 }
 [hidden] {
   display: none !important;
@@ -499,9 +494,14 @@ img {
   --safe-bottom: env(safe-area-inset-bottom);
   --safe-left: env(safe-area-inset-left);
 }
+/* The window is a stage its apps' frames are drawn on, never a page that scrolls: what a move puts past its edges (an
+   app sliding in from the end, move-machine.js) is clipped, where it made the page wider than the window, so Chrome on
+   a Mac with scroll bars shown showed one under the Home Screen, and a swipe sideways scrolled it. The page's own
+   `clip`, which the window would take from it and scroll as `hidden` (`scrollIntoView`), is kept by `html`'s. */
 html,
 body {
   height: 100%;
+  overflow: clip;
 }
 body {
   box-sizing: border-box;
