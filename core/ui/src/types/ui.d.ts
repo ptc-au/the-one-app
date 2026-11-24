@@ -365,8 +365,10 @@ export type ButtonProps = {
   children?: Element
 }
 export declare function Button(props: ButtonProps): Element
-/** Who or what a thing is, as a picture or its initials: a person's (`users/…`), round; the network's (`network`), as an app's icon; else a group's, a rounded square. */
-export declare function Avatar(props: { subject: string; name?: string; size?: "small" | "medium" | "large" }): Element
+/** A face a group's avatar is drawn with: one of its members, and their picture where they have one. */
+export type Face = { subject: string; name?: string; picture?: string | null }
+/** Who or what a thing is, as a picture or its initials: a person's (`users/…`), round; the network's (`network`), as an app's icon; a group's (`groups/…`), up to four of its members' faces, or its initials on a rounded square with no one in it. `faces` are drawn as they are, where they're known already (a scene's). */
+export declare function Avatar(props: { subject: string; name?: string; size?: "small" | "medium" | "large"; faces?: Face[] }): Element
 /** Has every avatar ask for its picture again, as it's set or changed in this page. */
 export declare function refreshAvatars(): void
 export declare function Badge(props: { variant?: "default" | "secondary" | "destructive" | "outline"; "aria-label"?: string; children?: Element }): Element
