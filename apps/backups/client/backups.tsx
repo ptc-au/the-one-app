@@ -2,7 +2,7 @@
 // what's wrong; how often they're made and which are kept. A destination opens beside the list with its backups,
 // Restore, Check and Stop Backing Up Here. Backups are the network's, so every call is for the network.
 import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, date, Empty, Field, Icon, Input, List, plural, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Skeleton, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
+import { Button, call, changed, confirm, date, Empty, Field, Icon, Input, List, plural, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   note: { color: tokens.colour.secondaryLabel },
@@ -282,7 +282,7 @@ function Restore(props: { destination: Destination; from?: string }) {
       <Field label="What">
         <RadioGroup value={what()} onValueChange={setWhat} options={[{ value: "whose", label: "Someone's Data" }, { value: "app", label: "One App's Data" }, { value: "file", label: "One File" }]} />
       </Field>
-      <Loading fallback={<Skeleton rows={1} />}>
+      <Loading fallback={<Spinner delay />}>
         <Show when={what() !== "file"}>
           <Field label="Owner">
             <Select.Root items={choices().owners} value={whose() ?? choices().owners[0]?.value} onValueChange={setWhose} />
@@ -341,7 +341,7 @@ function Backups(props: { all: All }) {
 export default function BackupsSection() {
   return (
   <Errored fallback={(error) => <Screen heading="Backups" back><Problem heading="Can't show backups" text={error() as Error} /></Screen>}>
-    <Loading fallback={<Screen heading="Backups" back><Skeleton rows={3} /></Screen>}>
+    <Loading fallback={<Screen heading="Backups" back><Spinner delay /></Screen>}>
       <Backups all={backups()} />
     </Loading>
   </Errored>
