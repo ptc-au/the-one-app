@@ -33,7 +33,7 @@ defmodule GitRepos do
 
   @impl true
   def requires,
-    do: %{"core" => ">= 0.34.403", "software-update" => "to know what the network's own program is called, which owns its repos"}
+    do: %{"core" => ">= 0.34.604", "software-update" => "to know what the network's own program is called, which owns its repos"}
 
   # Every repo is listed in one index, the network's, which a call reads and writes whoever it's for, so what it
   # keeps is whoever Git Repos is installed for's, and it runs on their servers.
@@ -105,6 +105,8 @@ defmodule GitRepos do
       %{
         name: "list",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
           "Every repo you may read, the latest pushed first: its name, whose it is, who can see it, its description, when it was last pushed, and whether you push to it",
         inputs: only.(%{}, []),
@@ -162,6 +164,17 @@ defmodule GitRepos do
           },
           ["repo", "head", "whose", "owner", "clone", "pushes", "owns", "branches"]
         )
+      },
+      %{
+        name: "repo",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{owner}/{name}",
+        runtime_version: 4,
+        description:
+          "A repo's page, by its owner as it's shown and its name, as GitHub's are: its top folder at its default branch, as `tree` gives it, with its README. It's Git Repos' screen of it, at /git-repos/alice/notes.",
+        inputs: only.(%{owner: owner, name: %{type: "string", description: "Its name without its owner: notes"}}, ["owner", "name"]),
+        outputs: %{type: "object", properties: %{repo: repo}, required: ["repo"], description: "As `tree` answers its top folder"}
       },
       %{
         name: "tree",
@@ -467,6 +480,8 @@ defmodule GitRepos do
       branches: Enum.sort_by(branches, &(&1.branch != state["head"]))
     }
   end
+
+  defp run("repo", %{"owner" => owner, "name" => name}, call), do: run("tree", named(call, %{"repo" => "#{owner}/#{name}"}), call)
 
   defp run("tree", %{"repo" => name} = inputs, call) do
     {folder, state} = read(call, name)

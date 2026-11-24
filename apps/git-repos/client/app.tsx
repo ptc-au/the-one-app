@@ -3,7 +3,7 @@
 // closes. A file and a commit open in the repo's place, with Back.
 import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { marked, type Token, type Tokens } from "marked"
-import { Avatar, Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Spinner, Split, styles, Svg, Tabs, Text, toast, tokens, View, viewport } from "ui"
+import { Avatar, Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, navigate, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Spinner, Split, styles, Svg, Tabs, Text, toast, tokens, toolInput, View, viewport } from "ui"
 
 /** A commit, as the tools answer it. */
 interface Commit {
@@ -47,8 +47,19 @@ interface Listed {
 const repos = createMemo(() => json<{ repos: Listed[] }>("git-repos_list").then(({ repos }) => repos))
 changed(() => refresh(repos))
 
-/// The repo open beside the list, by its name, and where in it: a view, and a folder, a file or a commit.
-const [open, setOpen] = createSignal<string>()
+/// The repo open beside the list, by its name, as the screen shown says it (`git-repos_repo { owner, name }`, at
+/// /git-repos/alice/notes, as GitHub's), and where in it: a view, and a folder, a file or a commit.
+const open = () => {
+  const { name, arguments: inputs } = toolInput("git-repos_list")
+  if (name !== "git-repos_repo") return undefined
+  return repos().find((one) => one.owner === inputs.owner && one.name === inputs.name)?.repo ?? `${inputs.owner}/${inputs.name}`
+}
+/// Opens a repo by its name (users/alice/made/git-repos/notes), as a step Back goes back from, or the list alone.
+function setOpen(repo?: string) {
+  if (!repo) return navigate("git-repos_list")
+  const listed = repos().find((one) => one.repo === repo)
+  navigate("git-repos_repo", listed ? { owner: listed.owner, name: listed.name } : { owner: repo.split("/")[1], name: repo.split("/").pop() })
+}
 const [at, setAt] = createSignal<At>({ tab: "code", path: "" })
 const [ref, setRef] = createSignal<string>()
 const [adding, setAdding] = createSignal(false)
