@@ -105,13 +105,21 @@ defmodule GoogleCalendar do
               properties:
                 Map.merge(person.properties, %{
                   responseStatus: string.("needsAction, declined, tentative or accepted"),
-                  optional: %{type: "boolean"}
+                  optional: %{type: "boolean"},
+                  self: %{type: "boolean", description: "Whether it's you, the account's own"}
                 })
             })
         },
-        htmlLink: string.("Its link in Google Calendar")
+        htmlLink: string.("Its link in Google Calendar"),
+        colorId: %{type: ["string", "null"], description: "Its colour, as Calendar's colors.get numbers them (1 to 11); null where it has its calendar's"},
+        eventType: %{type: ["string", "null"], description: "default, outOfOffice, focusTime, workingLocation, birthday or fromGmail"},
+        hangoutLink: %{type: ["string", "null"], description: "Its Meet link"},
+        conferenceData: %{
+          type: ["object", "null"],
+          description: "Its call, as Calendar's ConferenceData: entryPoints, each with its entryPointType (video, phone, sip or more) and uri"
+        }
       },
-      required: ["id", "status", "summary", "start", "end", "location", "recurringEventId", "attendees", "htmlLink"]
+      required: ["id", "status", "summary", "start", "end", "location", "recurringEventId", "attendees", "htmlLink", "colorId", "eventType", "hangoutLink", "conferenceData"]
     }
 
     whole = %{
@@ -120,10 +128,9 @@ defmodule GoogleCalendar do
           Map.merge(listed.properties, %{
             description: %{type: ["string", "null"], description: "Its notes"},
             recurrence: %{type: "array", items: %{type: "string"}, description: "How it repeats, as RFC 5545 lines"},
-            organizer: %{person | type: ["object", "null"]},
-            hangoutLink: %{type: ["string", "null"], description: "Its Meet link"}
+            organizer: %{person | type: ["object", "null"]}
           }),
-        required: listed.required ++ ["description", "recurrence", "organizer", "hangoutLink"]
+        required: listed.required ++ ["description", "recurrence", "organizer"]
     }
 
     [
@@ -160,7 +167,7 @@ defmodule GoogleCalendar do
         name: "events",
         read_only: true,
         description:
-          "Events in a time range, to see what's on today or this week or find a meeting (Calendar's events.list, each repeat on its own, soonest first): each event's id, start and end (a dateTime, or a date for a whole day), summary, where and guests. The coming week of the primary calendar if left out. google-calendar_event gives one event's notes and Meet link too. Where there are more, nextPageToken is the next page's pageToken.",
+          "Events in a time range, to see what's on today or this week or find a meeting (Calendar's events.list, each repeat on its own, soonest first): each event's id, start and end (a dateTime, or a date for a whole day), summary, where, guests, colour, type and call link. The coming week of the primary calendar if left out. google-calendar_event gives one event's notes, organizer and how it repeats too. Where there are more, nextPageToken is the next page's pageToken.",
         inputs:
           with_account.(
             %{
@@ -371,8 +378,8 @@ defmodule GoogleCalendar do
     api(at, "GET", "calendars/#{calendar(at, calendar)}", missing: no_calendar(calendar))["timeZone"]
   end
 
-  @listed ~w(id status summary start end location recurringEventId attendees htmlLink)
-  @people ~w(email displayName responseStatus optional)
+  @listed ~w(id status summary start end location recurringEventId attendees htmlLink colorId eventType hangoutLink conferenceData)
+  @people ~w(email displayName responseStatus optional self)
 
   # An event as the tools answer it, from Calendar's Event resource: what `tools/0` says of it.
   defp listed(event) do
@@ -384,8 +391,7 @@ defmodule GoogleCalendar do
     Map.merge(listed(event), %{
       "description" => event["description"],
       "recurrence" => event["recurrence"] || [],
-      "organizer" => event["organizer"] && Map.take(event["organizer"], ["email", "displayName"]),
-      "hangoutLink" => event["hangoutLink"]
+      "organizer" => event["organizer"] && Map.take(event["organizer"], ["email", "displayName"])
     })
   end
 
