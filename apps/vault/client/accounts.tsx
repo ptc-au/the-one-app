@@ -6,7 +6,7 @@
 // one box atop the list, with the one thing that fixes it. A request is an alert, as a system's permission prompt is.
 // It's written as the UI library's skill says, so it runs on a native host as it does on the DOM.
 import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose, untrack } from "solid-js"
-import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, illustration, Image, Input, link, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Skeleton, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
+import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, illustration, Image, Input, link, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
 
 const look = styles({
   fill: { flexGrow: 1, alignSelf: "stretch" },
@@ -357,7 +357,7 @@ function Detail(props: { item: Item }) {
     <Show when={drawn()} keyed fallback={<Show when={framed()} keyed fallback={<ItemScreen item={props.item} />}>{(src) => <Frame src={src} subject={whose()} title={shown(props.item)} style={look.fill} />}</Show>}>
       {(type) => (
         <Errored fallback={(error) => <Problem heading={`Can't show ${shown(props.item)}`} text={error() as Error} />}>
-          <Loading fallback={<Skeleton rows={4} />}>
+          <Loading fallback={<Spinner delay />}>
             <Drawn type={type} item={props.item} />
           </Loading>
         </Errored>
