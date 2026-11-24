@@ -78,6 +78,7 @@ const look = styles({
   // Settings' do, so a note, a field or a button is in line with the lists, and a wide window doesn't leave it at
   // one side.
   column: { flexGrow: 1, gap: tokens.length.gutter, width: "100%", maxWidth: tokens.length.readable, alignSelf: "center" },
+  filled: { maxWidth: "100%" },
   // A row that scrolls sideways runs out to the window's edges, as the App Store's shelves do on a Mac and an iPad, so
   // what's cut by an edge is cut by the window's, never at the column's margin with room beyond it. It starts where
   // the column does (`side` of padding, as far as the margin pulls it out) and keeps room above and below for
@@ -194,8 +195,10 @@ export const Blank = createContext<(change: number) => void>(() => {})
 /// its material and a hairline. With `largeTitle` the screen's page draws its name large itself, as iOS's App Store's
 /// pages do, and the bar's shows as that scrolls away. With `tips` (2 to 4 `Tip`s: `{ title, body, keys?, picture? }`)
 /// its bar has a ? that shows them (`Tips`): at the end of a computer's title bar, where it stays, never in the
-/// footer's pills, and under a finger just before `action`.
-export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: JSX.Element }) {
+/// footer's pills, and under a finger just before `action`. What's in it keeps a readable width in the middle of its
+/// room; with `readable={false}` it fills the room, as a calendar's week or a grid of photos does (UIKit's
+/// readableContentGuide, not followed).
+export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: JSX.Element }) {
   // In a split's detail, its heading names what's open there, where the split doesn't (`Split`'s `place`).
   const naming = useContext(Named)
   if (naming) createEffect(() => (typeof props.heading === "string" ? props.heading : undefined), (heading) => void naming(heading))
@@ -327,7 +330,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
             </View>
           </Show>
           <View style={[look.parts, footed() && look.footed]}>
-            <View style={look.column}>
+            <View style={[look.column, props.readable === false && look.filled]}>
               <Choose value={panelled ? choose : null}>
                 <Middle value={() => false}>{props.children}</Middle>
               </Choose>

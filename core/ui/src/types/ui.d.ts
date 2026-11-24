@@ -287,7 +287,7 @@ export declare function render(code: () => Element): () => void
 
 /** One of a screen's tips: one idea in a few words, a sentence, and keys drawn as keycaps or a picture of the app's own. */
 export type Tip = { title: string; body: string; keys?: string[]; picture?: string }
-export declare function Screen(props: { heading?: Element; action?: Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; children?: Element }): Element
+export declare function Screen(props: { heading?: Element; action?: Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: Element }): Element
 export declare function Tips(props: { tips: Tip[]; action?: Action }): Element
 export declare function Section(props: { heading?: Element; "aria-label"?: string; children?: Element }): Element
 /** A row that scrolls sideways from the window's edge to its edge, its first item where the screen's column starts (`style` may say its `gap`). */
