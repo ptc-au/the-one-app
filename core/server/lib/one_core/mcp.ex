@@ -392,14 +392,16 @@ defmodule OneCore.Mcp do
       {:ok, caller} ->
         request = %{mode: mode(params), tools: fn -> scripted(subject) end, call: called(from, principal, forwarded)}
 
+        found = tool(name, subject)
+
         run = fn ->
           inputs = Map.get(params, "arguments", %{})
-          rendered(name, call(name, inputs, principal, forwarded, caller, request), principal)
+          paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found)
         end
 
         # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
         write = Writes.asked(meta(params), from, Process.get(:"$one_request", %{})[:client], subject)
-        outcome = asked(tool(name, subject), name, run, params, principal, caller, write)
+        outcome = asked(found, name, run, params, principal, caller, write)
         Writes.answered(write, outcome)
         outcome
 
@@ -664,12 +666,19 @@ defmodule OneCore.Mcp do
 
     apps =
       for {app, version} <- Enum.sort(Apps.running(who)), holder or mode != :code, tool <- open.(version.tools) do
-        ui = if tool[:ui], do: %{ui: %{resourceUri: "ui://#{app}/#{version.code}/#{tool.ui}"}}, else: %{}
+        ui = if tool[:ui], do: %{:ui => %{resourceUri: router()}, "openai/outputTemplate" => router()}, else: %{}
         Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(ui, :app, app))
       end
 
     own ++ apps
   end
+
+  # The page an assistant shows every app's tool with a page of its own in, as one MCP App (Sentry's MCP server's
+  # charts share one): a router, which opens the page the tool's answer says (`paged`) with our renderer, and what a
+  # link in it opens, as the web client does. The network's edge writes it (`core/edge/mcp/mcp.ts`), where whoever let
+  # the assistant in has their apps' files. It's named by this build, so an assistant that keeps a page reads it again
+  # once it may have changed.
+  defp router, do: "ui://one/#{Builds.build()}/app.html"
 
   # Which app called a tool is said only by a server that runs the apps of whoever it asks for, its subject: one
   # acting for them (a request that says its `actor`). Any other server's call is its person's. A client calls as nobody's app, unless it says an app's page asked
@@ -759,6 +768,13 @@ defmodule OneCore.Mcp do
       {:not_run, why} -> {:error, Writes.not_run(), why}
     end
   end
+
+  # What an app's tool with a page of its own answered says which page shows it (`_meta.page`, `<app>/<path>`), which
+  # the page an assistant shows every app's tool in opens (`router/0`).
+  defp paged({:ok, %{} = result}, name, %{ui: ui}) when is_binary(ui),
+    do: {:ok, Map.put(result, :_meta, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}"})}
+
+  defp paged(outcome, _name, _tool), do: outcome
 
   # The tool `name` is for `who`, with what One Core's own take and give read as its schemas.
   defp tool(name, who), do: Calls.find(name, who, Tools.tools())

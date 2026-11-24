@@ -404,10 +404,14 @@ defmodule OneCore.App do
     Chrome Profiles doesn't, since its person is in the update that failed. And what it does when soft delete's hook
     says its item was deleted, restored or purged: sign out and revoke at once, so no token waits in Recently Deleted,
     or keep the token so a restore just works and revoke it only once it's purged.
-  - A tool with a page of its own, which shows what it does to a person, says it as `ui: "client/link.html"`. It's
-    listed as an MCP App's tool names its UI (`_meta.ui.resourceUri`), so a host shows it, and that page needn't be
-    an app. One that isn't is named for what it does (`client/sign-in.html`), not `client/index.html`, an app's. It
-    says its `runtime_version` beside it, as an entrypoint does, for a native host to draw it.
+  - A tool with a page of its own, which shows what it does to a person, says it as `ui: "client/link.html"`: a tool
+    that only reads and has something to look at (`ui: "client/index.html"`, its app's page, which opens where its
+    answer points, as `toolResult()` gives it), never one that sends or deletes. Every such tool is listed naming one
+    MCP App page (`_meta.ui.resourceUri`, and ChatGPT's `openai/outputTemplate`), a router, as Sentry's charts share
+    one, so an assistant that shows MCP Apps shows it, and what it answers says which page it is (`_meta.page`); a
+    client that shows only text gets the same answer. That page needn't be an app. One that isn't is named for what it
+    does (`client/sign-in.html`), not `client/index.html`, an app's. It says its `runtime_version` beside it, as an
+    entrypoint does, for a native host to draw it.
   - An app is drawn on a home screen under its `name` and `icon`, natively on a computer, an iPhone and Android, and
     by the same renderer in a browser. It's written in Solid 2.0 with the UI library, and its source is the folder `client/`:
     each `.html` there is a page, whose script is the app's, and the rest is whatever the app's made of. Its look is
