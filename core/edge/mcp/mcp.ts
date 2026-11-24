@@ -154,6 +154,8 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
   const who = await signedIn(request, env);
   if ("refused" in who) return who.refused;
   const body = await request.text();
+  const routed = !who.session && who.apps && (await router(env, body, new URL(request.url).origin, who));
+  if (routed) return withCookies(routed, who.cookies);
   const answer = await forward(env, body, { device: who.device }, [`${who.who}/`, NETWORK], request.headers, mode(new URL(request.url)), { signal: request.signal, ctx });
   if (!(await nobodys(answer))) return withCookies(!who.session && who.apps ? await drawn(answer, body, new URL(request.url).origin, who.apps) : answer, who.cookies);
   if (who.challenge) return new Response(null, { status: 401, headers: { "www-authenticate": who.challenge } });
@@ -197,6 +199,43 @@ async function drawn(answer: Response, body: string, origin: string, apps: strin
   const ui = { csp: { frameDomains: [origin] } };
   return Response.json({ ...read, result: { ...read.result, contents: [{ ...content, text: page, _meta: { ...content._meta, ui } }] } });
 }
+
+/**
+ * The page an assistant shows for every app's tool that has one (`ui://one/<version>/app.html`, as `OneCore.Mcp` lists
+ * it), read by an assistant that shows MCP Apps: the router (`clients/web/router.js`), which shows the page of the app
+ * whose tool was called in the renderer's frame from here, and what a link in it opens, as the web client does. It's
+ * written here, as only here is where whoever let the assistant in has their apps' files (`apps`), and it's told the
+ * apps listed for them, which a link opens among. Any other request is nothing of its, and goes on.
+ */
+async function router(env: Env, body: string, origin: string, who: Who) {
+  let call: Call;
+  try {
+    call = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  const uri = call.params?.uri;
+  if (call.method !== "resources/read" || typeof uri !== "string" || !ROUTER.test(uri)) return undefined;
+  const listing = await forward(env, JSON.stringify({ jsonrpc: "2.0", id: 1, method: "resources/list", params: {} }), { device: who.device }, [`${who.who}/`, NETWORK]);
+  const listed = listing.status === 200 ? await listing.json<{ result?: { resources: { uri: string; mimeType?: string; _meta?: { category?: string } }[] } }>() : {};
+  // Only what a link opens among: the apps' pages.
+  const resources = (listed.result?.resources ?? []).filter(({ mimeType }) => mimeType === "text/html;profile=mcp-app").map(({ uri, mimeType, _meta }) => ({ uri, mimeType, _meta: { category: _meta?.category } }));
+  const said = JSON.stringify({ origin, apps: who.apps, resources, device: who.device }).replace(/</g, "\\u003c");
+  const script = await (await env.ASSETS.fetch(new Request(`${origin}/router.js`))).text();
+  const page = `<!doctype html>
+<meta charset="utf-8">
+<style>html, body { margin: 0; height: 100%; overflow: hidden; } iframe { display: block; border: 0; width: 100%; height: 100%; }
+body[data-unopened] iframe { display: none; } body[data-unopened]::before { content: "This app couldn't open here: " attr(data-unopened); display: block; padding: 16px; font: 15px system-ui; }</style>
+<iframe sandbox="allow-scripts allow-forms" allow="clipboard-write"></iframe>
+<script type="application/json" id="router">${said}</script>
+<script>${script.replace(/<\/script/gi, "<\\/script")}</script>
+`;
+  const ui = { csp: { frameDomains: [origin] } };
+  return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui } }] } });
+}
+
+/** What names the router's page, whatever its version. */
+const ROUTER = /^ui:\/\/one\/[^/]+\/app\.html$/;
 
 /** How tall an MCP App's page is in an assistant's chat, as its renderer's page says nothing of it. */
 const HEIGHT = 600;

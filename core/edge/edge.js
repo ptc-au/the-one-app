@@ -79,10 +79,10 @@ for (const file of readdirSync(`${root}/clients/web`).filter((file) => !["dist",
   rmSync(`${web}/${file}`, { force: true });
   place(`${root}/clients/web/${file}`, `${web}/${file}`);
 }
-// Its service worker and its host (the page's) are built, with what they import, over their source.
-rmSync(`${web}/sw.js`, { force: true });
-rmSync(`${web}/host.js`, { force: true });
-await $`bun install --frozen-lockfile && bun build sw.js --format iife --minify --outfile ${web}/sw.js && bun build host.js --format esm --minify --outfile ${web}/host.js`.cwd(`${root}/clients/web`).quiet();
+// Its service worker, its host (the page's) and the router an assistant shows an app's page in (`mcp/mcp.ts`) are
+// built, with what they import, over their source.
+for (const file of ["sw.js", "host.js", "router.js"]) rmSync(`${web}/${file}`, { force: true });
+await $`bun install --frozen-lockfile && bun build sw.js --format iife --minify --outfile ${web}/sw.js && bun build host.js --format esm --minify --outfile ${web}/host.js && bun build router.js --format iife --minify --outfile ${web}/router.js`.cwd(`${root}/clients/web`).quiet();
 // A deploy's page is bundled, as a web app's build bundles it: its scripts in one file and its styles in another, each
 // named by what's in it under `/assets/` (`_headers` keeps them for good), so a browser that opened it before asks for
 // none of them again, and one opening it for the first time waits for one of each, not each module as the one before
