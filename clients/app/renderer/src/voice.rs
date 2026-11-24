@@ -1,9 +1,9 @@
 //! A page's `voice` natively (renderer.ts's `voice`): a call's audio over WebRTC, as the web's browser carries one
-//! (clients/web/renderer/voice.js). WebRTC is str0m's and Opus's (libopus, which audiopus builds from its own source),
-//! so the two ends are one stack on every kind of device, with no browser and no libwebrtc; the microphone and the
-//! speakers are cpal's, as each system has them; and what the speakers play is taken out of what the microphone hears
-//! by aec3, the echo canceller Chrome's audio processing has. Each connection is a thread of its own: it reaches the
-//! screen only through a TURN server's relay, over TCP, as `video` does (`turn`), offers one Opus track to send and
+//! (clients/web/renderer/voice.js). WebRTC is str0m's and Opus's (opus-rs, libopus's own code ported to Rust), so the
+//! two ends are one stack on every kind of device, with no browser, no libwebrtc and no C to build; the microphone and
+//! the speakers are cpal's, as each system has them; and what the speakers play is taken out of what the microphone
+//! hears by aec3, the echo canceller Chrome's audio processing has. Each connection is a thread of its own: it reaches
+//! the screen only through a TURN server's relay, over TCP, as `video` does (`turn`), offers one Opus track to send and
 //! receive, takes the screen's answer or an SFU's offer, and encodes the microphone into the one and mixes the tracks
 //! it receives into the speakers. What it says the page hears as events (`offer`, `answer`, `state`, `speaking`).
 
@@ -17,10 +17,8 @@ use aec3::audio_processing::resampler::push_sinc_resampler::PushSincResampler;
 use aec3::nodes::audio::AudioFormat;
 use aec3::pipelines::linear::{self, LinearPipeline};
 use anyhow::{Context, anyhow};
-use audiopus::coder::{Decoder, Encoder};
-use audiopus::packet::Packet;
-use audiopus::{Application, Bitrate, Channels, MutSignals, SampleRate};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use opus_rs::{Application, OpusDecoder, OpusEncoder};
 use serde_json::{Value, json};
 use str0m::change::{SdpAnswer, SdpOffer, SdpPendingOffer};
 use str0m::format::Codec;
@@ -351,7 +349,11 @@ impl Session {
         let Some(pt) = self.pt else { return Ok(()) };
         let Some(writer) = self.rtc.writer(self.mid) else { return Ok(()) };
         let frame: &[f32; FRAME] = if muted { &[0.0; FRAME] } else { clean };
-        let len = self.audio.encoder.encode_float(frame, &mut self.audio.packet).context("the Opus encoder")?;
+        let len = self
+            .audio
+            .encoder
+            .encode(frame, FRAME, &mut self.audio.packet)
+            .map_err(|why| anyhow!("the Opus encoder: {why}"))?;
         writer.write(
             pt,
             Instant::now(),
@@ -370,18 +372,15 @@ impl Session {
         let mid = data.mid;
         let decoder = match self.audio.decoders.entry(mid) {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Decoder::new(SampleRate::Hz48000, Channels::Mono).context("an Opus decoder")?)
-            }
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
+                OpusDecoder::new(RATE as i32, 1).map_err(|why| anyhow!("an Opus decoder: {why}"))?,
+            ),
         };
-        let Ok(packet) = Packet::try_from(&data.data[..]) else { return Ok(()) };
-        let decoded = decoder.decode_float(
-            Some(packet),
-            MutSignals::try_from(&mut self.audio.decoded[..]).context("an Opus frame")?,
-            false,
-        );
+        let frame_size = self.audio.decoded.len();
         // A packet that doesn't decode is what a lost one is: the call goes on, and the next one plays.
-        let Ok(samples) = decoded else { return Ok(()) };
+        let Ok(samples) = decoder.decode(&data.data[..], frame_size, &mut self.audio.decoded) else {
+            return Ok(());
+        };
         let track = self.audio.tracks.entry(mid).or_default();
         track.extend(&self.audio.decoded[..samples]);
         // A track that comes faster than the speakers play it, or with nothing playing them, keeps a second of it.
@@ -468,8 +467,8 @@ struct Audio {
     /// aec3's: echo cancellation, noise suppression and gain, as Chrome's audio processing has them.
     echo: LinearPipeline,
     /// Opus, of the one track it sends and of each it receives, by its m-line.
-    encoder: Encoder,
-    decoders: HashMap<Mid, Decoder>,
+    encoder: OpusEncoder,
+    decoders: HashMap<Mid, OpusDecoder>,
     /// What each remote track has decoded that hasn't been played, 48 kHz mono.
     tracks: HashMap<Mid, VecDeque<f32>>,
     /// The packet encoded into, and the frame decoded out.
@@ -493,14 +492,14 @@ impl Audio {
             frame: FRAME,
             resampler: None,
             echo: linear::builder(FORMAT, FORMAT).build().context("the echo canceller")?,
-            encoder: Encoder::new(SampleRate::Hz48000, Channels::Mono, Application::Voip)
-                .context("the Opus encoder")?,
+            encoder: OpusEncoder::new(RATE as i32, 1, Application::Voip)
+                .map_err(|why| anyhow!("the Opus encoder: {why}"))?,
             decoders: HashMap::new(),
             tracks: HashMap::new(),
             packet: vec![0; 4000],
             decoded: vec![0.0; RATE / 5],
         };
-        audio.encoder.set_bitrate(Bitrate::BitsPerSecond(32_000)).context("the Opus encoder's bitrate")?;
+        audio.encoder.bitrate_bps = 32_000;
         if DEVICES {
             audio.speaker();
             audio.microphone(commands);

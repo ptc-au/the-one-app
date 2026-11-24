@@ -97,11 +97,11 @@ sha2 = "0.11"
 str0m = { version = "0.25", default-features = false, features = ["rust-crypto"] }
 turn-client-proto = "0.8"
 openh264 = "0.9"
-# A page's call (`voice`): the microphone and the speakers, by cpal, as each system has them; Opus, from libopus's own
-# source (audiopus builds it), for the one track it sends and the ones it receives; and aec3, pure Rust, for the echo
-# cancellation Chrome's audio processing has, so what the speakers play is taken out of what the microphone hears.
+# A page's call (`voice`): the microphone and the speakers, by cpal, as each system has them; Opus, in Rust (opus-rs,
+# libopus's own code ported to it), for the one track it sends and the ones it receives; and aec3, pure Rust, for the
+# echo cancellation Chrome's audio processing has, so what the speakers play is taken out of what the microphone hears.
 cpal = "0.18"
-audiopus = "0.3.0-rc.0"
+opus-rs = "0.1.42"
 aec3 = "0.4"
 
 # The web's: a page's canvas, drawn by wgpu on the browser's WebGPU, in a Worker with an OffscreenCanvas, called by
