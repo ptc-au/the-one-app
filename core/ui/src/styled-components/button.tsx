@@ -1,10 +1,11 @@
 // Something to press, a count or word beside something, an icon and a spinner: written once on the drawing
 // primitives (#primitives), the same on every host.
-import { children, createContext, Show, useContext } from "solid-js"
+import { children, createContext, createSignal, onCleanup, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Path, Pressable, Svg, Text, View } from "#primitives"
 import { messages } from "../words.ts"
 import { collected } from "./collect.ts"
+import { Middle } from "./screen.tsx"
 import { createButton } from "../headless-components/button.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
@@ -107,6 +108,19 @@ const look = styles({
   symbol: { width: tokens.length.symbol, height: tokens.length.symbol },
   spinner: { width: tokens.length.icon, height: tokens.length.icon, flexShrink: 0, animationName: "spin", animation: tokens.motion.spin },
   spinnerArc: { fill: "none", stroke: "currentColor", strokeWidth: 2 },
+  // Where what's loading goes, a spinner in the middle of it, grey, as Apple's activity indicator is, faded in.
+  waiting: {
+    alignSelf: "stretch",
+    alignItems: "center",
+    paddingBlock: tokens.grid[8],
+    color: tokens.colour.secondaryLabel,
+    opacity: 0,
+    transitionProperty: ["opacity"],
+    transition: tokens.motion.settle,
+  },
+  late: { opacity: 1 },
+  // All there is where it is, as Status is: in the middle of it.
+  middle: { flexGrow: 1, justifyContent: "center" },
   button: {
     flexDirection: "row",
     alignItems: "center",
@@ -170,10 +184,19 @@ export function Icon(props: { name: IconName; along?: boolean; large?: boolean }
   return <Svg viewBox="0 0 256 256" aria-hidden="true" style={[look.icon, props.large && look.symbol]}><Path d={d()} /></Svg>
 }
 
-/// `<Spinner />`: something's under way, an icon's size.
-export function Spinner() {
+/// `<Spinner />`: something's under way, an icon's size. `<Loading fallback={<Spinner delay />}>`: what's loading,
+/// in the place it'll take, as Apple's own apps show it: nothing for the first half second, as most answers come
+/// sooner (the client answers at once with what it kept), then a grey spinner in the middle of that place. A screen
+/// keeps its title, search and tabs outside its `<Loading>`, so they're drawn at once.
+export function Spinner(props: { delay?: boolean }) {
+  const middle = useContext(Middle)
+  const [late, setLate] = createSignal(false)
+  if (props.delay) {
+    const timer = setTimeout(() => setLate(true), 500)
+    onCleanup(() => clearTimeout(timer))
+  }
   return (
-    <View role="status" aria-label={messages.loading}>
+    <View role="status" aria-label={messages.loading} style={[props.delay && look.waiting, props.delay && middle() && look.middle, props.delay && late() && look.late]}>
       <Svg viewBox="0 0 24 24" style={look.spinner}><Path d="M12 3a9 9 0 1 0 9 9" style={look.spinnerArc} /></Svg>
     </View>
   )

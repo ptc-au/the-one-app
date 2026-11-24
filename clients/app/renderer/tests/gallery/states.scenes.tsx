@@ -1,4 +1,5 @@
-import { Button, Empty, Problem, type Scenes, Skeleton, Status, Stepper, Steps, styles, tokens, View } from "ui"
+import { createSignal, Show } from "solid-js"
+import { Button, Empty, Problem, type Scenes, Spinner, Status, Stepper, Steps, styles, tokens, View } from "ui"
 
 const look = styles({ column: { gap: tokens.grid[4] } })
 
@@ -10,7 +11,6 @@ export default {
       <Problem warn heading="Needs you" text="Sign in again." />
       <Status heading="Backing up" text="12 of 40 files" />
       <Steps steps={["Starting", "Signing in", "Ready"]} at={1} />
-      <Skeleton rows={2} />
     </View>
   ),
   // Where someone is in a flow they go through: its steps named in a row on a computer, dots on a phone.
@@ -25,11 +25,26 @@ export default {
     size: [390, 400],
     render: () => <Stepper steps={["Welcome", "Connect your AI", "Open from anywhere", "Your own server", "Set Up Your Vault"]} at={4} />,
   },
-  // Where a computer's window is wider than a column, loading is in the column's middle, as the states are and as the
-  // rows that replace it will be.
+  // What's loading shows nothing for the first half second, as most answers come sooner, then a spinner in the middle
+  // of its place: where a computer's window is wider than a column, the window's middle.
   "States/Loading on a computer": {
     size: [1280, 800],
-    render: () => <Skeleton rows={2} />,
-    checks: { "A skeleton is in the middle of the window": [{ expect: { centred: { role: "status", name: "Loading" } } }] },
+    render: () => <Spinner delay />,
+    checks: { "The spinner is in the middle of the window": [{ expect: { centred: { role: "status", name: "Loading" } } }] },
+  },
+  "States/Loading, from the start": {
+    render: () => {
+      const [loading, setLoading] = createSignal(false)
+      return <Show when={loading()} fallback={<Button onPress={() => setLoading(true)}>Load</Button>}><Spinner delay /></Show>
+    },
+    checks: {
+      "Nothing shows for the first half second, then the spinner fades in": [
+        { role: "button", name: "Load" },
+        { wait: 300 },
+        { expect: { drawn: { of: { role: "status", name: "Loading" }, opacity: 0 }, within: 0 } },
+        { wait: 500 },
+        { expect: { drawn: { of: { role: "status", name: "Loading" }, opacity: 1 } } },
+      ],
+    },
   },
 } satisfies Scenes

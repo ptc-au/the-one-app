@@ -126,9 +126,8 @@ export function Empty(props: { children?: JSX.Element; action?: JSX.Element }) {
   )
 }
 
-/// `<Skeleton rows={3} />`: grey shapes the shape of the list that's coming, once it's taken longer than a blink,
-/// so a quick load shows nothing in between: each row as tall as a list's row with a heading and a line of text, so
-/// the list takes its place without moving what's around it. It's what `<Loading fallback>` shows.
+// Skeleton: what `<Loading fallback>` showed before `<Spinner delay />`, kept only until the apps outside this repo
+// that draw it (PTC's My Week, My Tasks and Old PTC App) are on `<Spinner delay />`.
 export function Skeleton(props: { rows?: number }) {
   const middle = useContext(Middle)
   const style = useContext(ListStyle)
