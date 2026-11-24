@@ -363,6 +363,12 @@ export async function servers(lists: Lists, of: unknown): Promise<string[]> {
 /** The lists of servers, by their prefixes, and whom each server chose, by its key, as one request reads them. */
 type Lists = ((prefix: string | undefined) => Promise<string[] | null>) & { members: (key: string) => Promise<string[]> };
 
+/** A list of servers as the bucket gave it, `null` where there's none yet, and those on it that chose whoever it's of. */
+interface Listed {
+  list: string[] | null;
+  acting: string[];
+}
+
 /** A list of servers as the bucket gave it, and when it was asked for. */
 const kept = new Map<string, { at: number; list: string[] | null }>();
 
@@ -377,6 +383,55 @@ const kept = new Map<string, { at: number; list: string[] | null }>();
  * signs one each time (`OneCore.Servers.joined?/2`), so that holds back only the lists that weren't there.
  */
 export class Changes extends DurableObject<Env> {
+  /** The lists of servers read lately, by their prefixes, as being read, and when each was asked for. */
+  #lists = new Map<string, { at: number; list: Promise<string[] | null>; found?: string[] | null }>();
+  /** Whom each server chose, by its key, as being read, and when it was asked for. */
+  #members = new Map<string, { at: number; members: Promise<string[]> }>();
+
+  /**
+   * The lists of servers `prefixes` names, each with the servers on it that chose whoever it's of. Every copy of the
+   * presigner asks here, so each list and each server's choice is read from the bucket once every `KEPT` for the
+   * whole network, rather than once in each copy, of which Cloudflare runs dozens. What's being read is shared by
+   * whoever asks meanwhile.
+   */
+  async lists(prefixes: string[]): Promise<Listed[]> {
+    const [at, held] = [Date.now(), await this.until()];
+    for (const [prefix, had] of this.#lists) if (at - had.at >= KEPT) this.#lists.delete(prefix);
+    for (const [key, had] of this.#members) if (at - had.at >= KEPT) this.#members.delete(key);
+    return Promise.all(
+      prefixes.map(async (prefix) => {
+        const list = await this.#list(prefix, at, held);
+        const chose = await Promise.all((list ?? []).map((key) => this.#chose(key)));
+        return { list, acting: (list ?? []).filter((_key, at) => chose[at].includes(prefix.slice(0, -1))) };
+      }),
+    );
+  }
+
+  /** The list `prefix`, as read since any change to it and less than `KEPT` ago, or as the bucket has it now. */
+  #list(prefix: string, at: number, held: { any: number; absent: number }): Promise<string[] | null> {
+    const had = this.#lists.get(prefix);
+    if (had && had.at > (had.found === null ? Math.max(held.any, held.absent) : held.any)) return had.list;
+    const kept: { at: number; list: Promise<string[] | null>; found?: string[] | null } = { at, list: list(this.env, prefix) };
+    kept.list.then((found) => (kept.found = found), () => this.#lists.get(prefix) === kept && this.#lists.delete(prefix));
+    this.#lists.set(prefix, kept);
+    return kept.list;
+  }
+
+  /**
+   * Whom the server `key` chose (`chosen`), read again once it's been `KEPT`. Only it writes that, and it changes
+   * only when its owner chooses someone else too, which is never a refusal of what was let. One not there yet is
+   * read again next time, as a new server writes it as it starts.
+   */
+  #chose(key: string): Promise<string[]> {
+    const had = this.#members.get(key);
+    if (had) return had.members;
+    const kept = { at: Date.now(), members: chosen(this.env, key) };
+    const forget = () => this.#members.get(key) === kept && this.#members.delete(key);
+    kept.members.then((members) => members.length || forget(), forget);
+    this.#members.set(key, kept);
+    return kept.members;
+  }
+
   /** When lists read at or before it aren't believed, in milliseconds: any, and the ones that weren't there. */
   async until(): Promise<{ any: number; absent: number }> {
     const held = await this.ctx.storage.get<number>(["any", "absent"]);
