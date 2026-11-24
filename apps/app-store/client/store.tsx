@@ -4,7 +4,7 @@
 // Library does for an app with no screen of its own.
 import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch } from "solid-js"
 import type { Element } from "solid-js"
-import { Button, call, changed, confirm, Empty, go, Icon, Image, link, List, Menu, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Skeleton, Spinner, styles, Text, toast, tokens, View } from "ui"
+import { Button, call, changed, confirm, Empty, go, Icon, Image, link, List, Menu, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Spinner, styles, Text, toast, tokens, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -535,7 +535,7 @@ export default function Store() {
   })
   return (
     <Errored fallback={(error) => <Screen heading="App Store"><Problem heading="Can't show apps" text={error() as Error} /></Screen>}>
-      <Loading fallback={<Screen heading="App Store"><Skeleton rows={4} /></Screen>}>
+      <Loading fallback={<Screen heading="App Store"><Spinner delay /></Screen>}>
         <AppStore market={market()} all={owners()} />
       </Loading>
     </Errored>
