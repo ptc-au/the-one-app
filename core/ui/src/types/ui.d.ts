@@ -741,6 +741,8 @@ export declare function direction(): "ltr" | "rtl"
 /** What the device keeps for itself at each edge of the window (a status bar, a notch, a home indicator), as it
  * changes: the CSS's `env(safe-area-inset-*)`. */
 export declare function safeArea(): { top: number; right: number; bottom: number; left: number }
+/** Whether a finger points at the window, as it changes: a phone's does, a computer's doesn't. */
+export declare function touch(): boolean
 /** Whether whoever's looking asked for less motion, as it changes. */
 export declare function reducedMotion(): boolean
 /** Calls `listener` with each key pressed that isn't something's own: not one a field, a menu or a dialog used first
