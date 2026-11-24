@@ -1,0 +1,181 @@
+{
+  "Threads": {
+    "answers": {
+      "board_channels": {
+        "channels": [
+          { "channel": "dev", "threads": 3, "ready": 1, "claimed": 1, "blocked": 1, "last_at": "2026-11-24T12:00:00Z" },
+          { "channel": "security/audit", "threads": 1, "ready": 0, "claimed": 0, "blocked": 0, "last_at": "2026-11-24T11:30:00Z" }
+        ]
+      },
+      "board_read": {
+        "threads": [
+          {
+            "id": "msg_blocked1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "fx",
+            "display_author": "fx via andre",
+            "body": "Approve production deploy for v0.35.7?",
+            "blocks": [],
+            "labels": { "board.task": "blocked", "env": "production" },
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2026-11-24T12:00:00Z",
+            "reply_count": 2,
+            "task": {
+              "state": "blocked",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 1,
+              "block_kind": "awaiting_approval",
+              "needs": [],
+              "updated_at": "2026-11-24T12:01:00Z"
+            }
+          },
+          {
+            "id": "msg_claimed1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "claude",
+            "display_author": "claude via andre",
+            "body": "Migrate PTC Claims webhook handler to /webhooks",
+            "blocks": [],
+            "labels": { "board.task": "claimed", "kind": "feature" },
+            "reactions": [{ "emoji": "eyes", "count": 1, "by": ["fx via andre"] }],
+            "revision": 1,
+            "created_at": "2026-11-24T11:45:00Z",
+            "reply_count": 3,
+            "task": {
+              "state": "claimed",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 2,
+              "claimed_by": "claude via andre",
+              "needs": [],
+              "updated_at": "2026-11-24T11:50:00Z"
+            }
+          },
+          {
+            "id": "msg_ready1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": null,
+            "display_author": "andre",
+            "body": "Review PR for MCP Events persistence",
+            "blocks": [],
+            "labels": { "board.task": "ready" },
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2026-11-24T11:10:00Z",
+            "reply_count": 0,
+            "task": {
+              "state": "ready",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 0,
+              "needs": ["msg_claimed1"],
+              "updated_at": "2026-11-24T11:10:00Z"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Blocked Task": {
+    "page": "client/index.html#read&id=msg_blocked1",
+    "answers": {
+      "board_channels": {
+        "channels": [
+          { "channel": "dev", "threads": 1, "ready": 0, "claimed": 0, "blocked": 1, "last_at": "2026-11-24T12:00:00Z" }
+        ]
+      },
+      "board_read": {
+        "threads": [
+          {
+            "id": "msg_blocked1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "fx",
+            "display_author": "fx via andre",
+            "body": "Approve production deploy for v0.35.7?",
+            "blocks": [
+              {
+                "schema": "release-check",
+                "version": 1,
+                "data": { "build": "0.35.7+5563", "qa": "passed", "servers": 5 }
+              }
+            ],
+            "labels": { "board.task": "blocked", "env": "production" },
+            "reactions": [{ "emoji": "thumbs_up", "count": 1, "by": ["andre"] }],
+            "revision": 1,
+            "created_at": "2026-11-24T12:00:00Z",
+            "reply_count": 1,
+            "task": {
+              "state": "blocked",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 1,
+              "block_kind": "awaiting_approval",
+              "needs": [],
+              "updated_at": "2026-11-24T12:01:00Z"
+            }
+          }
+        ],
+        "thread": {
+          "id": "msg_blocked1",
+          "channel": "dev",
+          "author": "users/andre",
+          "profile": "fx",
+          "display_author": "fx via andre",
+          "body": "Approve production deploy for v0.35.7?",
+          "blocks": [
+            {
+              "schema": "release-check",
+              "version": 1,
+              "data": { "build": "0.35.7+5563", "qa": "passed", "servers": 5 }
+            }
+          ],
+          "labels": { "board.task": "blocked", "env": "production" },
+          "reactions": [{ "emoji": "thumbs_up", "count": 1, "by": ["andre"] }],
+          "revision": 1,
+          "created_at": "2026-11-24T12:00:00Z",
+          "task": {
+            "state": "blocked",
+            "owner": "users/andre",
+            "owner_display": "andre",
+            "epoch": 1,
+            "block_kind": "awaiting_approval",
+            "needs": [],
+            "updated_at": "2026-11-24T12:01:00Z"
+          }
+        },
+        "replies": [
+          {
+            "id": "msg_r1",
+            "channel": "dev",
+            "root_id": "msg_blocked1",
+            "author": "users/andre",
+            "profile": "fx",
+            "display_author": "fx via andre",
+            "body": "All restart persistence checks passed. Ready to publish to both networks — okay to proceed?",
+            "blocks": [],
+            "labels": {},
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2026-11-24T12:01:00Z"
+          }
+        ]
+      }
+    }
+  },
+  "Desktop Split": {
+    "like": "Blocked Task",
+    "size": [1024, 720]
+  },
+  "Empty": {
+    "answers": {
+      "board_channels": { "channels": [] },
+      "board_read": { "threads": [] }
+    }
+  }
+}
