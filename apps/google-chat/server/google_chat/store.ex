@@ -1,13 +1,15 @@
 defmodule GoogleChat.Store do
   @moduledoc """
-  Google Chat's SQLite schema, and the rows it keeps: what the network set it up with, the Workspace Events
-  subscriptions it watches, and the events it has already handled, so one Google sends twice is followed once.
+  Google Chat's SQLite schema, and the rows it keeps. A person's are the Workspace Events subscriptions they watch,
+  each with the account it watches as. Whoever the app is installed for keeps what the network set it up with, whose
+  each subscription is, and the events it has already handled, so one Google sends twice is followed once.
   """
   alias OneCore.Call
 
   @schema [
     "create table config (name text primary key, value text not null)",
-    "create table subscriptions (space text primary key, name text not null, expire_time text, created_at text not null)",
+    "create table subscriptions (space text primary key, name text not null, account text, expire_time text, created_at text not null)",
+    "create table routes (subscription text primary key, owner text not null)",
     "create table seen_events (id text primary key, seen_at integer not null)",
     "create index seen_events_by_seen_at on seen_events (seen_at)"
   ]
@@ -24,7 +26,7 @@ defmodule GoogleChat.Store do
 
   def query({database, db}, sql, values \\ []), do: database.query(db, sql, values)
 
-  @doc "What it's set up with, each value by its name: `vault_item`, `pubsub_topic`, `account` and `webhook_path`."
+  @doc "What it's set up with, each value by its name: `pubsub_topic` and `webhook_path`."
   def config(call) do
     transaction(call, fn db ->
       for %{"name" => name, "value" => value} <- query(db, "select name, value from config"), into: %{}, do: {name, value}
@@ -47,34 +49,31 @@ defmodule GoogleChat.Store do
   @doc "Every space it watches, by its name."
   def subscriptions(call) do
     transaction(call, fn db ->
-      for %{"space" => space, "name" => name, "expire_time" => expire} <-
-            query(db, "select space, name, expire_time from subscriptions order by space") do
-        %{space: space, subscription: name, expire_time: expire}
-      end
+      for row <- query(db, "select space, name, account, expire_time from subscriptions order by space"), do: row(row)
     end)
   end
 
   @doc "The subscription watching `space`, or nil where there's none."
   def subscription(call, space) do
     transaction(call, fn db ->
-      case query(db, "select space, name, expire_time from subscriptions where space = ?", [space]) do
-        [%{"space" => space, "name" => name, "expire_time" => expire}] ->
-          %{space: space, subscription: name, expire_time: expire}
-
-        [] ->
-          nil
+      case query(db, "select space, name, account, expire_time from subscriptions where space = ?", [space]) do
+        [row] -> row(row)
+        [] -> nil
       end
     end)
   end
 
-  @doc "Keeps a space's subscription, and when it expires."
-  def save_subscription(call, %{space: space, subscription: name, expire_time: expire}) do
+  defp row(%{"space" => space, "name" => name, "account" => account, "expire_time" => expire}),
+    do: %{space: space, subscription: name, account: account, expire_time: expire}
+
+  @doc "Keeps a space's subscription, the account it watches as, and when it expires."
+  def save_subscription(call, %{space: space, subscription: name, account: account, expire_time: expire}) do
     transaction(call, fn db ->
       query(
         db,
-        "insert into subscriptions (space, name, expire_time, created_at) values (?, ?, ?, ?) " <>
-          "on conflict (space) do update set name = excluded.name, expire_time = excluded.expire_time, created_at = excluded.created_at",
-        [space, name, expire, DateTime.utc_now() |> DateTime.to_iso8601()]
+        "insert into subscriptions (space, name, account, expire_time, created_at) values (?, ?, ?, ?, ?) " <>
+          "on conflict (space) do update set name = excluded.name, account = excluded.account, expire_time = excluded.expire_time",
+        [space, name, account, expire, DateTime.utc_now() |> DateTime.to_iso8601()]
       )
     end)
   end
@@ -82,6 +81,27 @@ defmodule GoogleChat.Store do
   @doc "Forgets the subscription watching `space`."
   def remove_subscription(call, space) do
     transaction(call, fn db -> query(db, "delete from subscriptions where space = ?", [space]) end)
+  end
+
+  @doc "Keeps whose the subscription `name` is, a user, or forgets it where that's nil."
+  def save_route(call, name, nil), do: transaction(call, fn db -> query(db, "delete from routes where subscription = ?", [name]) end)
+
+  def save_route(call, name, owner) do
+    transaction(call, fn db ->
+      query(db, "insert into routes (subscription, owner) values (?, ?) on conflict (subscription) do update set owner = excluded.owner", [name, owner])
+    end)
+  end
+
+  @doc "Whose the subscription `name` is, or nil where it's nobody's."
+  def route(_call, nil), do: nil
+
+  def route(call, name) do
+    transaction(call, fn db ->
+      case query(db, "select owner from routes where subscription = ?", [name]) do
+        [%{"owner" => owner}] -> owner
+        [] -> nil
+      end
+    end)
   end
 
   @doc """

@@ -1,53 +1,46 @@
 ---
 name: google-chat
-description: Read before reading or sending Google Chat messages, reacting in a space, or watching a space for what happens in it.
+description: Read before reading someone's own Google Chat spaces or messages, reacting as them in a space, or watching a space they're in for what happens in it.
 metadata:
   title: "Google Chat"
-  subtitle: "Your Chat spaces, and what happens in them"
-  about: "Reads your Google Chat spaces and messages, posts and changes what your Chat app says, reacts as you, and watches a space so its messages and reactions reach your AI and your agents."
+  subtitle: "Your Chat spaces"
+  about: "Reads your Google Chat spaces and messages, reacts as you, and watches a space you're in so its messages and reactions reach your AI and your agents. Each person's own: nobody reads through anyone else's account."
   category: Connectors
 ---
 
-Google Chat reaches a space two ways. As your **Chat app**, with a service account's key, it posts, edits
-and deletes the app's own messages. As **you**, through the Google account signed in to `google-account`, it reads
-your spaces and messages, reacts, and watches a space with Google Workspace Events.
+Google Chat is each person's own Google Chat, through the Google account they signed in to `google-account`. What
+it reads, reacts and watches is theirs, and nobody else's: it never reads through anyone else's account. Posting as
+the network's own Chat app is Google Chat App's (`google-chat-app`).
 
-## Set it up once
-
-1. In a Google Cloud project, turn on the **Google Chat API** and the **Google Workspace Events API**, and create a
-   service account with a **JSON key**. Download that key file.
-2. Put the key in the Vault, switched on for Google Chat: `vault_save_from_browser` takes the file the browser
-   downloaded, or `vault_request` with `app: "google-chat"`, the title **Google Chat** and the field
-   `service_account_json` asks the person to add it on their own device. Google Chat never asks for the key in chat.
-3. Create a Pub/Sub topic, `projects/<project>/topics/<topic>`, and a **push subscription** to it whose endpoint is
-   your network's address plus the `webhook_path` that `configure` answers. Give
-   `chat-api-push@system.gserviceaccount.com` the **Pub/Sub Publisher** role on the topic.
-4. Call `configure` with the topic and, if you have more than one, the `account` to act as. It makes the webhook's
-   secret and answers the path Google needs.
-5. To have the app itself mentioned in a space come straight to it, set the Chat app's connection settings to an
-   **HTTP endpoint URL** at that same `webhook_path`.
-
-The Chat app must be a member of a space to post in it. `google-account_sign_in` grants the scopes it needs; if the
-account was signed in before this app was installed, sign it in again.
+`google-account_sign_in` grants the scopes it needs. An account signed in before Google Chat was installed is signed
+in again for them.
 
 ## Tools
 
-Every tool is for the owners of whoever Google Chat is installed for (the network's owners, for a network): it reads and posts through their Google account and Chat app. An app they installed that requires it, as Board Google Chat Sync does, calls its tools for itself.
-
-- `spaces` lists the spaces you're in, and `messages` recent messages in one, newest first, as you. Their names,
-  like `spaces/AAAA` and `spaces/AAAA/messages/BBBB`, are what every other tool takes.
-- `send` posts in a space as the Chat app, in a thread if you give one: only when the person asked you to send.
-  `edit` and `delete` change only the app's own messages.
+- `spaces` lists the spaces you're in, and `messages` recent messages in one, newest first. Their names, like
+  `spaces/AAAA` and `spaces/AAAA/messages/BBBB`, are what every other tool takes. `account` picks which of your
+  Google accounts, the first if left out.
 - `react` adds an emoji to a message as you, or takes off the reaction whose name you give. A reaction's name comes
   from a `reaction_created` event.
-- `watch_space` subscribes a space to Google's events, and `unwatch_space` stops it. `status` says what's watched
-  and when each subscription ends; `renew_subscriptions` extends them, as it does every half hour by itself. Google
-  lets one last four hours at most with messages in its events.
+- `watch_space` watches a space as you, and `unwatch_space` stops it. `status` says which you watch and when each
+  subscription ends; `renew_subscriptions` extends them, as it does every half hour by itself. Google lets one last
+  four hours at most with messages in its events.
 
-## What happens in a watched space
+## What happens in a space you watch
 
-Other apps follow it by hooking into `google-chat.message_created`, `message_updated`, `message_deleted`,
-`reaction_created`, `reaction_deleted` and `mentioned`, or by subscribing to the events of the same names. Each says
-the space, thread and message, what it says, who did it (`sender`, `sender_name` and `sender_type`, `HUMAN` or
-`BOT`), the reaction's `emoji` and name, and the message's `create_time`. `mentioned` is the Chat app being
-mentioned, or sent a direct message.
+Your agents follow it by subscribing to `google-chat.message_created`, `message_updated`, `message_deleted`,
+`reaction_created` and `reaction_deleted`, and your apps by hooking into them. Each says the space, thread and
+message, what it says, who did it (`sender`, `sender_name` and `sender_type`, `HUMAN` or `BOT`), the reaction's `emoji`
+and name, and the message's `create_time`. They're yours alone: nobody else follows what you watch.
+
+## Set up watching once, for the network
+
+Google sends every watched space's events to one Pub/Sub topic in the Google Cloud project of the network's Google
+client (the one `google-account` signs in with), which pushes them here. One of the network's owners sets it up:
+
+1. In that project, turn on the **Google Chat API**, the **Google Workspace Events API** and **Cloud Pub/Sub**.
+   Google Chat's API needs the project's Chat app configured, which Google Chat App's setup does.
+2. Create a Pub/Sub topic, `projects/<project>/topics/<topic>`, and give `chat-api-push@system.gserviceaccount.com`
+   the **Pub/Sub Publisher** role on it.
+3. Call `configure` with that `pubsub_topic`. It answers `webhook_path`: create a **push subscription** to the topic
+   whose endpoint is the network's address plus it.
