@@ -201,16 +201,36 @@ defmodule Board do
       %{
         name: "read",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
-          "Read thread summaries in a channel/subtree (channel, state, label, limit) or a single thread in full (id).",
+          "Read thread summaries in a channel/subtree (channel, state, label, limit): Board's first screen, its list. One thread in full is `thread`.",
         inputs: %{
           type: "object",
           properties: %{
-            id: %{type: "string", description: "Thread root ID to read in full with replies"},
             channel: %{type: "string", description: "Channel path or trailing-/ subtree (e.g. dev or work/)"},
             state: %{type: "string", description: "Filter tasks by state (waiting, ready, claimed, blocked, completed, failed, canceled)"},
             label: %{type: "string", description: "Filter by key=value label on root or reply"},
             limit: %{type: "integer", description: "Max threads to return (default 50, max 200)"}
+          }
+        },
+        outputs: %{type: "object"}
+      },
+      %{
+        name: "thread",
+        read_only: true,
+        ui: "client/index.html",
+        path: "threads/{id}",
+        runtime_version: 4,
+        description:
+          "One thread in full, with its replies and its task: Board's screen of it, at /board/threads/msg_…, with the list beside it, which `channel` and `state` filter as `read`'s do.",
+        inputs: %{
+          type: "object",
+          required: ["id"],
+          properties: %{
+            id: %{type: "string", description: "Thread root ID"},
+            channel: %{type: "string", description: "The list beside it: its channel path or trailing-/ subtree"},
+            state: %{type: "string", description: "The list beside it: its tasks' state"}
           }
         },
         outputs: %{type: "object"}
@@ -587,7 +607,7 @@ defmodule Board do
     %{channels: channels}
   end
 
-  defp dispatch("read", %{"id" => id}, call) when is_binary(id) and id != "" do
+  defp dispatch("thread", %{"id" => id}, call) do
     Store.transaction(call, fn db ->
       case Store.query(
              db,
@@ -2296,7 +2316,7 @@ defmodule Board do
     notifications.send(call, %{
       "title" => "#{who} blocked a task in #{blocked.channel}",
       "text" => String.slice(blocked.question, 0, 140),
-      "page" => "read&id=#{blocked.id}"
+      "page" => "thread&id=#{blocked.id}"
     })
   end
 end

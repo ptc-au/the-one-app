@@ -1,5 +1,6 @@
 // Board: shared message board and task queue for people and agents. Channels and threads sit beside the open thread
-// where there's room (`Split`), and push on a phone. Every screen is tool-routed (`toolInput("board_read")`).
+// where there's room (`Split`), and push on a phone. Its screens are tools: the list `board_read { channel, state }` and a
+// thread `board_thread { id }`, which keeps the list's filters beside it (`toolInput("board_read")`).
 import { createEffect, createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import {
   Badge,
@@ -127,8 +128,9 @@ const look = styles({
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: tokens.grid[2] },
 })
 
-const route = () => toolInput("board_read").arguments as { id?: string; channel?: string; state?: string }
-const openId = () => route().id || ""
+const screen = () => toolInput("board_read")
+const route = () => screen().arguments as { id?: string; channel?: string; state?: string }
+const openId = () => (screen().name === "board_thread" ? route().id || "" : "")
 const selectedChannel = () => route().channel || ""
 const selectedState = () => route().state || ""
 
@@ -136,8 +138,8 @@ const goList = (opts: { channel?: string; state?: string; id?: string } = {}) =>
   const args: Record<string, string> = {}
   if (opts.channel) args.channel = opts.channel
   if (opts.state) args.state = opts.state
-  if (opts.id) args.id = opts.id
-  navigate("board_read", args)
+  if (opts.id) navigate("board_thread", { ...args, id: opts.id })
+  else navigate("board_read", args)
 }
 
 const channelsData = createMemo(async () => {
@@ -156,7 +158,7 @@ const threadsData = createMemo(async () => {
 const detailData = createMemo(async () => {
   const id = openId()
   if (!id) return null
-  const res: { thread: BoardMessage; replies: BoardMessage[] } = JSON.parse(await call("board_read", { id }))
+  const res: { thread: BoardMessage; replies: BoardMessage[] } = JSON.parse(await call("board_thread", { id }))
   return res
 })
 
