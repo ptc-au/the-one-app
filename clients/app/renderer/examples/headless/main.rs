@@ -2,7 +2,7 @@
 //!
 //!     cargo run -p renderer --example headless --features fake -- <page's built folder> <out.png> <out.json> \
 //!       [--ui core/ui/dist/client] [--answers answers.json] [--size 480x360] [--scale 2] [--dark] [--requests <file>|-]
-//!       [--safe-area <top>,<right>,<bottom>,<left>] [--touch] [--reduced-motion] [--panel <corner>] [--title <name>] [--measure] [--seed <n>]
+//!       [--safe-area <top>,<right>,<bottom>,<left>] [--touch] [--reduced-motion] [--panel <corner>] [--title <name>] [--icon <png>] [--measure] [--seed <n>]
 //!       [--latency <ms> [--cached <tool>,…]] [--slower <times>] [--memory <GB>] [--time-zone <IANA name>] [--hz <n>]
 //!
 //! It runs the module the folder's `index.html` loads, as `bun app.js` built it, with the UI library a native host
@@ -281,7 +281,11 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
     // Its app's name in its title row, as an app's window has it, starting where the app's starts it with no window
     // buttons to measure (clients/app/src/native `BAR`).
     let title = flag("--title");
-    screen.title = title.clone().map(|name| renderer::Title { icon: None, name, start: 12.0 });
+    // Its app's icon, a picture file, in its title and in the middle of the window while its page has drawn nothing
+    // (`Screen::splash`), as an app's window has it.
+    let icon = flag("--icon").and_then(|path| std::fs::read(&path).ok().map(|bytes| format!("data:image/png;base64,{}", data_encoding::BASE64.encode(&bytes))));
+    screen.title = title.clone().map(|name| renderer::Title { icon: icon.clone(), name, start: 12.0 });
+    screen.splash = icon;
     // A picture its page names by its path (Settings' `updates.svg`) is one of its files, read as an app's window
     // fetches it from its app's (`OneCore.Entrypoint` serves them as deployed), a `data:` address, or none where it
     // isn't there.

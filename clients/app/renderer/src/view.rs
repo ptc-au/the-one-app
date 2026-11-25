@@ -163,6 +163,11 @@ pub struct Screen {
     pub page: u32,
     /// What its window says above it, on a computer: the app's icon and name.
     pub title: Option<Title>,
+    /// Its app's icon, drawn in the middle of its window while its page has drawn nothing, once its window says it's
+    /// taken long enough (`splashed`), as iOS's launch screen and Android's splash screen show an app's as it loads.
+    pub splash: Option<String>,
+    /// Whether its window has waited long enough for its icon to show (`SPLASH`), so a quick page shows none.
+    pub splashed: bool,
     /// Its own window buttons, at its title row's start and at its end, where it has no frame of the system's
     /// (`WindowButton`), and the one last pressed, until its window does what it says.
     pub window_buttons: (Vec<WindowButton>, Vec<WindowButton>),
@@ -383,6 +388,8 @@ impl Screen {
             text_size: None,
             page: 0,
             title: None,
+            splash: None,
+            splashed: false,
             full_screen: false,
             lights: None,
             text_menu: None,
@@ -503,6 +510,11 @@ impl Screen {
     pub fn decoding(&self) -> bool {
         self.pictures.wait();
         self.pictures.decoding() || self.frames.values().any(|child| child.screen.decoding())
+    }
+
+    /// Whether it shows its app's icon (`splash`): its window has waited long enough, and its page has drawn nothing.
+    pub fn splashing(&self) -> bool {
+        self.splashed && self.splash.is_some() && self.drew_nothing()
     }
 
     /// Whether its page has drawn nothing: its tree's root holds nothing.

@@ -317,6 +317,8 @@ async fn window(started: Instant, entrypoint: &str, subject: Option<&str>, link:
             screen.touch = Native::phone();
             screen.page = tokens_page;
             screen.make_frame = trusted.then(|| frames(framing));
+            // An app's icon in the middle of its window while its page loads, as a phone's launch screen shows it.
+            screen.splash = if launcher { None } else { icon.clone() };
             if launcher && !Native::phone() {
                 // Its glass is the system's, under its page, where there's one; Linux has none, so it's a
                 // popover's colour (DESIGN.md, Launcher).

@@ -11,6 +11,7 @@ impl Windows {
     pub fn due(&self) -> Option<std::time::Duration> {
         let screens = self.windows.values().filter_map(|window| window.screen.as_ref().ok()?.due());
         let showing = self.windows.values().filter(|window| !window.shown || matches!(window.cover, Cover::Over(_)) || window.reloading).map(|window| (if window.picture.is_some() { SHOWN_WITHIN } else { QUIET }).saturating_sub(since(window.opened)));
+        let splash = self.windows.values().filter(|window| window.screen.as_ref().is_ok_and(|screen| screen.splash.is_some() && !screen.splashed)).map(|window| SPLASH.saturating_sub(since(window.opened)));
         let blank = self.windows.values().filter(|window| !window.looked && (!window.panel || window.visible)).map(|window| BLANK.saturating_sub(since(window.looking)));
         let unseen = (!self.seen() && !self.unseen_told).then(|| BLANK.saturating_sub(since(self.unseen)));
         // The next frame begun, while something moves or a window has a change to draw (`FrameClock`).
@@ -18,7 +19,7 @@ impl Windows {
         let check = self.check.as_ref().map(conformance::Check::due).into_iter().chain(self.recording.as_ref().map(|recording| recording.until.saturating_duration_since(now()))).min();
         let idle = self.renderers().filter_map(Renderer::idle_in);
         let hang = self.renderers().filter_map(Renderer::hang_in);
-        screens.chain(showing).chain(blank).chain(unseen).chain(frame).chain(check).chain(idle).chain(hang).min()
+        screens.chain(showing).chain(splash).chain(blank).chain(unseen).chain(frame).chain(check).chain(idle).chain(hang).min()
     }
 
     /// Whether nothing's wanted of a window on screen, or one is on screen and has drawn a frame (`expect`).
@@ -307,6 +308,13 @@ impl Windows {
             // what it asked, or has waited long enough, or with no snapshot by its canvas, until its page is ready or a
             // moment has gone by; then what covers it fades into it.
             let starting = (window.pending || window.screen.as_ref().is_ok_and(Screen::starting)) && since(window.opened) < SHOWN_WITHIN;
+            if let Ok(screen) = &mut window.screen
+                && !screen.splashed
+                && since(window.opened) >= SPLASH
+            {
+                screen.splashed = true;
+                window.dirty = true;
+            }
             let device = window.parts[0].native.device_size();
             if window.picture.as_ref().is_some_and(|picture| picture.len() != (device.width.0 * device.height.0 * 4) as usize) {
                 window.picture = None;
@@ -436,7 +444,12 @@ impl Windows {
                         // it was before it showed, so what it asks for as it's laid out is for its real layout.
                         screen.lights = window.lights;
                         if !matches!(window.cover, Cover::Over(_)) || (window.picture.is_none() && screen.title.is_some()) {
+                            // Its app's icon, shown as its page drew nothing, fades into what the page first draws.
+                            let splashed = (screen.showed_splash() && matches!(window.cover, Cover::Gone)).then(|| covered(&window.scene, None, 0.0, device));
                             changed = screen.paint(Some(time), room, scale, &mut self.text, &self.atlas, &mut window.scene);
+                            if let Some(splashed) = splashed.filter(|_| !screen.showed_splash()) {
+                                window.cover = Cover::Fading(splashed, now());
+                            }
                         }
                         window.moving = screen.take_again();
                         let calls = screen.text_input(&mut window.text_input);

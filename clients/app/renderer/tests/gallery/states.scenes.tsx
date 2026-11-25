@@ -47,4 +47,7 @@ export default {
       ],
     },
   },
+  // While its page loads, its app's window shows the app's icon in its middle, as a phone's launch screen does, once it has
+  // waited long enough that a quick page shows none (`SPLASH`); a page that has drawn nothing is the whole of it here.
+  "States/App icon while its page loads": { render: () => <></>, layout: "fullscreen", launching: true },
 } satisfies Scenes

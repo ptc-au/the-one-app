@@ -263,6 +263,7 @@ addEventListener("message", async ({ source, data }) => {
     if (errored) page(view, { type: "errored" })
     // The renderer's frame says each step of loading its page (clients/web/renderer), or that it couldn't open it, and why.
     if (method === "notifications/one/seen") for (const step of Object.keys(params)) (view.loaded ??= new Set()).add(step)
+    if (method === "notifications/one/seen" && params.drawn) view.frame.style.removeProperty("--splash")
     if (method === "notifications/one/seen" && typeof params.unopened === "string") page(view, { type: "unopened", why: params.unopened })
     return
   }

@@ -75,7 +75,7 @@ mod panel;
 mod touch;
 mod turn;
 mod window;
-use cover::{BLANK, FADES_IN, QUIET, SHOWN_WITHIN, Cover, covered, whole};
+use cover::{BLANK, FADES_IN, QUIET, SHOWN_WITHIN, SPLASH, Cover, covered, whole};
 use window::fit;
 pub(crate) use input::Input;
 mod frame_clock;

@@ -14,6 +14,11 @@ impl Screen {
         Conditions { dark: self.dark(), touch: self.touch, phone, reduced_motion: self.reduced_motion, reduced_transparency: self.reduced_transparency, insets, title_bar, page: self.page, rem }
     }
 
+    /// Whether the frame it last painted showed its app's icon (`splashing`), which what it paints next fades from.
+    pub fn showed_splash(&self) -> bool {
+        self.seen.as_ref().is_some_and(|seen| seen.splash)
+    }
+
     /// Draws its canvas over what it painted, `opacity` as opaque: its page's background with nothing on it, under its
     /// title row where its window has one (`title_row`), as its window shows while its page starts (`platform`'s
     /// `Cover`).
@@ -192,6 +197,7 @@ impl Screen {
             hovering: self.chrome.action.as_ref().is_some_and(hovering),
             notice: self.notice.as_ref().map(|notice| (notice.text.clone(), notice.action.as_ref().map(|(label, _)| label.clone()))),
             title: self.title.as_ref().map(|title| (title.name.clone(), title.start)),
+            splash: self.splashing(),
             panel: self.panel.map(|panel| (panel.corner, panel.fill)),
             line: self.line(),
             tip: self.tip,
@@ -275,6 +281,7 @@ impl Screen {
     /// over it. → what the painter found as it drew.
     fn draw(&mut self, plan: &Plan, text: &mut TextSystem, atlas: &Atlas, scene: &mut Scene) -> Drawing {
         let Plan { conditions, window, scale, now, caret, everything, ref changed, ref moving, ref below, ref layered, .. } = *plan;
+        let splashing = self.splashing();
         let line = self.line();
         let stretched = self.stretched();
         let handles = self.handles_on();
@@ -428,6 +435,13 @@ impl Screen {
         let after_buttons = (!starts.is_empty()).then(|| EDGE_GAP + starts.len() as f32 * (BUTTON + 8.0));
         // Mutant: the title starts where it would with no traffic lights measured (78102fce8's bug).
         let after_lights = self.lights.filter(|_| !crate::mutants::mutant("title-on-lights")).map(|end| end + EDGE_GAP);
+        // Its app's icon in the middle of the window while its page has drawn nothing, at a launch screen's size,
+        // rounded as the Home Screen rounds it.
+        if let Some(src) = self.splash.as_ref().filter(|_| splashing) {
+            const SIDE: f32 = 96.0;
+            let at = Bounds { origin: point((window.size.width - SIDE) / 2.0, (window.size.height - SIDE) / 2.0), size: Size { width: SIDE, height: SIDE } };
+            painter.picture(src, at, SIDE * 0.225);
+        }
         let title = self.title.as_ref().map(|title| {
             let start = edge.or(after_buttons).or(after_lights).unwrap_or(title.start);
             (start, painter.title(title, start, self.insets.top))
@@ -769,6 +783,7 @@ pub(super) struct Seen {
     hovering: bool,
     notice: Option<(String, Option<String>)>,
     title: Option<(String, f32)>,
+    splash: bool,
     panel: Option<(f32, bool)>,
     /// Where the rail's line shows, if it does.
     line: Option<Bounds<f32>>,

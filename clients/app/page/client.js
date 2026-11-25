@@ -9,7 +9,7 @@
 // `launcher`, which a network has exactly one of. It's the one this page shows first, under every other, and it
 // opens the rest (`one/open`).
 import { address, asksToReload, invoke, listen, pathOf, sandbox } from "./host.js"
-import { appStore, bySubject, files, first, launcher, list, listed, names, needs, settings } from "./apps.js"
+import { appStore, bySubject, files, first, icons, launcher, list, listed, names, needs, settings } from "./apps.js"
 import { post } from "./bridge.js"
 import { opens } from "./path.js"
 import { chosen, dress, heardTheme, titled } from "./chrome.js"
@@ -168,6 +168,12 @@ function load(entrypoint, subject, fragment) {
   // and shows a part of itself full screen (a live screen's Full Screen). A call (the UI library's `Voice`) takes the
   // microphone, which without this it is refused without even asking.
   view.frame.allow = "clipboard-write; web-share; fullscreen; microphone"
+  // Its app's icon in the middle of it while its renderer loads, as a phone's launch screen shows an app's, until its
+  // first frame draws over it (`notifications/one/seen`, bridge.js).
+  // Rounded as the launcher draws it, in a picture of its own, as a background can't be clipped.
+  const icon = icons.get(entrypoint)
+  const rounded = icon && `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><clipPath id="c"><rect width="100" height="100" rx="22.5"/></clipPath><image href="${icon}" width="100" height="100" clip-path="url(#c)"/></svg>`
+  if (rounded) view.frame.style.setProperty("--splash", `url("data:image/svg+xml,${encodeURIComponent(rounded)}")`)
   open.set(at, view)
   document.body.append(view.frame)
   on({ type: "load", view })

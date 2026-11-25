@@ -549,13 +549,13 @@ export declare function Widget(props: {
 // (`layout: "fullscreen"`, as Storybook's), how big its window is (`size`, a phone's 390 × 844 unless said) and whether a
 // finger points at it (`touch`: a window under 600 wide is a phone's unless it says `false`), what its window keeps at each
 // edge (`safeArea`, top, right, bottom and left: a phone's status bar and home indicator, an iPhone's for a touch scene), whether it's a Mac's
-// app window with its title row over the page (`titleRow`), where a press on what's empty moves the window, the gestures played on it, frame by frame (`motions`, clients/app/renderer/tests/animation.js), and what
+// app window with its title row over the page (`titleRow`), where a press on what's empty moves the window, whether its page has drawn nothing yet, as its app's window shows its icon (`launching`), the gestures played on it, frame by frame (`motions`, clients/app/renderer/tests/animation.js), and what
 // people do with it and what must hold as they do (`checks`, `bun animation.js --checks`), with the seeds a check once
 // failed on (`seeds`). A page that logs an error fails the scene, as a browser's console does a test, but for the
 // words a scene that shows an error says it logs (`errors`: "Couldn't reach the network"). Its name is its family's and its own: "Buttons/Variants".
 export type Scene =
   | (() => Element)
-  | { render: () => Element; taps?: Tap[]; alone?: boolean; layout?: "fullscreen"; size?: [number, number]; touch?: boolean; errors?: string[]; safeArea?: [number, number, number, number]; titleRow?: boolean; motions?: Record<string, Motion>; checks?: Record<string, CheckStep[]>; seeds?: number[] }
+  | { render: () => Element; taps?: Tap[]; alone?: boolean; layout?: "fullscreen"; size?: [number, number]; touch?: boolean; errors?: string[]; safeArea?: [number, number, number, number]; titleRow?: boolean; launching?: boolean; motions?: Record<string, Motion>; checks?: Record<string, CheckStep[]>; seeds?: number[] }
 /** A step of a check, as a test's (Playwright's, the UI SDK's): what's done, as a tap is (pressed, a key, typed), a
  * press held `hold` ms or tapped `clicks` times (an `agent`'s comes as an agent's request to a device's window does, by the inspector, though
  * nobody could press it, as on a panel put away), the pointer moved onto something (`hover`), a button held `down` on something and let go (`up`), input played as

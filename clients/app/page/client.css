@@ -673,6 +673,23 @@ iframe {
   border: 0;
   background: var(--background);
 }
+/* While its renderer loads, its app's icon in its middle (`--splash`), as iOS's launch screen and Android's splash
+   screen show an app's: under the frame's page, which has no background of its own until it draws over it. It fades
+   in only once loading has taken longer than a blink, as a quick one shows nothing. */
+@property --veil {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+iframe[style*="--splash"] {
+  background: linear-gradient(var(--veil), var(--veil)), var(--splash) center / 96px no-repeat, var(--background);
+  animation: splash 200ms ease-out 200ms backwards;
+}
+@keyframes splash {
+  from {
+    --veil: var(--background);
+  }
+}
 /* A window whose title bar is over the page, as a Mac's with no title band is (chrome.js's `titleBar`): what's drawn
    runs to its top, under the window's own controls, and keeps the title bar's height clear there, as it does what a
    phone keeps for itself. */

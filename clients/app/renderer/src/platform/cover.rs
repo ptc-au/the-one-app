@@ -11,6 +11,9 @@ pub(super) const QUIET: std::time::Duration = std::time::Duration::from_millis(1
 /// start (the Surface's Settings, 2 to 3 s), where its person is looking at an empty window.
 pub(super) const BLANK: std::time::Duration = std::time::Duration::from_secs(5);
 pub(super) const FADES_IN: std::time::Duration = std::time::Duration::from_millis(200);
+/// How long a window's page may draw nothing before its app's icon shows in its middle (`Screen::splash`), so a quick
+/// page shows none; once the page draws, the icon fades into it.
+pub(super) const SPLASH: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// What covers a window's page as it opens, as iOS shows an app's snapshot as it launches: its snapshot (`picture`),
 /// or with none its canvas (the page's background, under its title row), from the moment it shows until its page is

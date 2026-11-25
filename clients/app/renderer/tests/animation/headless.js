@@ -238,5 +238,5 @@ export async function scenesOf(target, built, folder, all = false) {
   if (!text) throw new Error(`The gallery listed no scenes: ${listed.said}`)
   return JSON.parse(JSON.parse(`"${text}"`))
     .filter((scene) => all || (checking ? scene.checks : scene.motions))
-    .map(({ name, taps = [], size = [390, 844], touch, safeArea, titleRow, errors, motions, checks, seeds }) => phone({ name, page: "index.html", link: name, answers: {}, taps, size, touch, safeArea, titleRow, errors, motions, checks, seeds }))
+    .map(({ name, taps = [], size = [390, 844], touch, safeArea, titleRow, launching, errors, motions, checks, seeds }) => phone({ name, page: "index.html", link: name, answers: {}, taps, size, touch, safeArea, titleRow, launching, errors, motions, checks, seeds }))
 }
