@@ -18,7 +18,12 @@ const { assign, fromCallback, setup } = XState
 /** @param {View} leaving @param {View} coming @param {boolean} back @param {Rect} [icon] @param {boolean} [pulled] @returns {{ upper: View, ms: number, corner?: number, parts: [View, Keyframe[]][] }} */
 function moves(leaving, coming, back, icon, pulled) {
   const style = getComputedStyle(document.documentElement)
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return { upper: coming, ms: parseFloat(style.getPropertyValue("--move-settle")), parts: [[coming, [{ opacity: 0 }, { opacity: 1 }]]] }
+  // A token's time in milliseconds, in whichever unit CSS has it: a deploy's minified styles say `.3s` for `300ms`.
+  const lasts = (/** @type {string} */ token) => {
+    const time = style.getPropertyValue(token).trim()
+    return parseFloat(time) * (time.endsWith("ms") ? 1 : 1000)
+  }
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return { upper: coming, ms: lasts("--move-settle"), parts: [[coming, [{ opacity: 0 }, { opacity: 1 }]]] }
   const [app, under] = back ? [leaving, coming] : [coming, leaving]
   const { x, y, width, height } = app.frame.getBoundingClientRect()
   // The app in its icon: its middle on the icon's, as large as fits in it.
@@ -60,7 +65,7 @@ function moves(leaving, coming, back, icon, pulled) {
   const at = (/** @type {number} */ share) => ({ translate: `${share * end}% 0px` })
   return {
     upper: app,
-    ms: parseFloat(style.getPropertyValue("--move-travel")),
+    ms: lasts("--move-travel"),
     parts: back ? [[app, [at(0), at(100)]], [under, [at(-25), at(0)]]] : [[app, [at(100), at(0)]], [under, [at(0), at(-25)]]],
   }
 }
