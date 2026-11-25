@@ -1,15 +1,16 @@
 defmodule BoardGoogleChat do
   @moduledoc """
-  Board Google Chat Sync: a Board channel mirrored in a Google Chat space, both ways. `map` says which channel is
-  which space and starts watching the space; from then on each message posted in either is posted in the other, and
-  edits, deletions and reactions follow. `no_sync` keeps a message on the board alone, as each one this app mirrors
-  from Google Chat does, so nothing goes round.
+  Board Google Chat Sync: a Board channel mirrored in a Google Chat space, both ways, through the network's Chat app
+  (Google Chat App), so nothing it does in Google Chat shows as a person. `map` says which channel is which space and
+  starts watching the space for whoever it's installed for; from then on each message posted in either is posted in
+  the other, and edits and deletions follow. A reaction in Google Chat is mirrored on the board, but not the other way:
+  Google lets only a person react, never a Chat app. `no_sync` keeps a message on the board alone, as each one this
+  app mirrors from Google Chat does, so nothing goes round.
 
   Which channel is which space is kept in this app's database, with each Google Chat thread and message made for a
   Board thread or message: a reply lands in the thread it belongs to, and an edit or a deletion finds its message.
-  Google Chat's bot messages and their edits aren't mirrored, so what this app posts there doesn't come back. A reaction
-  is made as the Google account, so it comes back as a person's: it's linked before it's made, and what's linked isn't
-  mirrored again. Mapping and unmapping are for the owners of whoever it's installed for.
+  Google Chat's bot messages and their edits aren't mirrored, so what this app posts there doesn't come back.
+  Mapping and unmapping are for the owners of whoever it's installed for.
   """
   @behaviour OneCore.App
   alias OneCore.Call
@@ -30,7 +31,7 @@ defmodule BoardGoogleChat do
       "core" => ">= 0.35.10",
       "database" => "to keep which channel is mirrored in which space",
       "board" => "to read and write each mirrored channel",
-      "google-chat" => "to send, edit, delete and react in a space, and to watch it"
+      "google-chat-app" => "to send, edit and delete in a space as the network's Chat app, and to watch it"
     }
   end
 
@@ -40,12 +41,11 @@ defmodule BoardGoogleChat do
       "board.message_posted",
       "board.message_edited",
       "board.message_deleted",
-      "board.reaction_changed",
-      "google-chat.message_created",
-      "google-chat.message_updated",
-      "google-chat.message_deleted",
-      "google-chat.reaction_created",
-      "google-chat.reaction_deleted"
+      "google-chat-app.message_created",
+      "google-chat-app.message_updated",
+      "google-chat-app.message_deleted",
+      "google-chat-app.reaction_created",
+      "google-chat-app.reaction_deleted"
     ]
   end
 
@@ -188,7 +188,7 @@ defmodule BoardGoogleChat do
 
   # What reaches outside, the space no longer watched, after the transaction that unmapped it.
   defp unwrap({:ok, %{space: space} = answer}, call) do
-    Call.tool(call, "google-chat", "unwatch_space", %{"space" => space})
+    Call.tool(call, "google-chat-app", "unwatch_space", %{"space" => space})
     answer
   end
 
@@ -223,12 +223,6 @@ defmodule BoardGoogleChat do
 
   # What was mirrored stays where it is, and nothing of it is linked any more: a space mapped again starts afresh.
   defp unmap(db, space, channel) do
-    Store.query(
-      db,
-      "delete from reaction_links where board_message_id in (select board_message_id from message_links where space_name = ?)",
-      [space]
-    )
-
     for table <- ["message_links", "thread_links", "mappings"],
         do: Store.query(db, "delete from #{table} where space_name = ?", [space])
 
@@ -236,16 +230,16 @@ defmodule BoardGoogleChat do
   end
 
   defp watch(call, space) do
-    Call.tool(call, "google-chat", "watch_space", %{"space" => space})
+    Call.tool(call, "google-chat-app", "watch_space", %{"space" => space})
     true
   end
 
   # --- Google Chat to the board ---
 
   @impl true
-  def hook("google-chat.message_created", %{"sender_type" => "BOT"}, _call), do: :ok
+  def hook("google-chat-app.message_created", %{"sender_type" => "BOT"}, _call), do: :ok
 
-  def hook("google-chat.message_created", about, call) do
+  def hook("google-chat-app.message_created", about, call) do
     if text?(about["text"]) do
       case inbound_state(call, about["space"], about["message"], about["thread"]) do
         nil -> :ok
@@ -256,9 +250,9 @@ defmodule BoardGoogleChat do
     end
   end
 
-  def hook("google-chat.message_updated", %{"sender_type" => "BOT"}, _call), do: :ok
+  def hook("google-chat-app.message_updated", %{"sender_type" => "BOT"}, _call), do: :ok
 
-  def hook("google-chat.message_updated", about, call) do
+  def hook("google-chat-app.message_updated", about, call) do
     if text?(about["text"]) do
       case chat_message_link(call, about["message"]) do
         nil -> :ok
@@ -269,7 +263,7 @@ defmodule BoardGoogleChat do
     end
   end
 
-  def hook("google-chat.message_deleted", about, call) do
+  def hook("google-chat-app.message_deleted", about, call) do
     case chat_message_link(call, about["message"]) do
       nil ->
         :ok
@@ -281,9 +275,9 @@ defmodule BoardGoogleChat do
     end
   end
 
-  def hook("google-chat.reaction_created", about, call), do: reaction_from_chat(call, about, false)
+  def hook("google-chat-app.reaction_created", about, call), do: reaction_from_chat(call, about, false)
 
-  def hook("google-chat.reaction_deleted", about, call), do: reaction_from_chat(call, about, true)
+  def hook("google-chat-app.reaction_deleted", about, call), do: reaction_from_chat(call, about, true)
 
   # --- The board to Google Chat ---
 
@@ -300,7 +294,7 @@ defmodule BoardGoogleChat do
     case board_message_link(call, about["id"]) do
       %{origin: "board"} = link ->
         text = chat_text(about["profile"], about["display_author"], about["body"])
-        Call.tool(call, "google-chat", "edit", %{"message" => link.chat_message_name, "text" => text})
+        Call.tool(call, "google-chat-app", "edit", %{"message" => link.chat_message_name, "text" => text})
         :ok
 
       _ ->
@@ -312,7 +306,7 @@ defmodule BoardGoogleChat do
     case board_message_link(call, about["id"]) do
       %{origin: "board"} = link ->
         forget(call, about["id"])
-        Call.tool(call, "google-chat", "delete", %{"message" => link.chat_message_name})
+        Call.tool(call, "google-chat-app", "delete", %{"message" => link.chat_message_name})
         :ok
 
       %{origin: _} ->
@@ -323,12 +317,6 @@ defmodule BoardGoogleChat do
         :ok
     end
   end
-
-  def hook("board.reaction_changed", %{"no_sync" => true}, _call), do: :ok
-
-  def hook("board.reaction_changed", %{"remove" => true} = about, call), do: remove_reaction(call, about)
-
-  def hook("board.reaction_changed", about, call), do: add_reaction(call, about)
 
   # A hook this app names but isn't told, as a newer version of it offers: nothing to do.
   def hook(_hook, _about, _call), do: :ok
@@ -373,8 +361,8 @@ defmodule BoardGoogleChat do
     :ok
   end
 
-  # A reaction this app made in Google Chat comes back as the Google account's, a person's, so what's linked is what it
-  # made: its echo is skipped, and a removal is passed on, which the board has already had if it was the board's.
+  # A reaction in Google Chat, a person's, is made or taken off on the board too. The Chat app makes none there, so none
+  # comes back.
   defp reaction_from_chat(_call, %{"sender_type" => "BOT"}, _remove), do: :ok
 
   defp reaction_from_chat(call, about, remove) do
@@ -383,15 +371,13 @@ defmodule BoardGoogleChat do
         :ok
 
       link ->
-        if remove or reaction_link(call, link.board_message_id, reaction_key(about["emoji"])) == nil do
-          Call.tool(call, "board", "react", %{
-            "id" => link.board_message_id,
-            "emoji" => about["emoji"],
-            "remove" => remove,
-            "profile" => profile_for(about["sender_name"] || about["sender"]),
-            "no_sync" => true
-          })
-        end
+        Call.tool(call, "board", "react", %{
+          "id" => link.board_message_id,
+          "emoji" => about["emoji"],
+          "remove" => remove,
+          "profile" => profile_for(about["sender_name"] || about["sender"]),
+          "no_sync" => true
+        })
 
         :ok
     end
@@ -426,59 +412,10 @@ defmodule BoardGoogleChat do
     :ok
   end
 
-  # A reaction is linked, by its emoji as Google Chat has it, before it's made there, so its echo is known when it comes.
-  defp add_reaction(call, about) do
-    with %{} = link <- board_message_link(call, about["id"]),
-         true <- Store.transaction(call, fn db -> link_reaction(db, about["id"], reaction_key(about["glyph"])) end) do
-      reacted =
-        try do
-          Call.tool(call, "google-chat", "react", %{"message" => link.chat_message_name, "emoji" => about["glyph"]})
-        rescue
-          error ->
-            Store.transaction(call, fn db ->
-              Store.query(db, "delete from reaction_links where board_message_id = ? and emoji = ?", [about["id"], reaction_key(about["glyph"])])
-            end)
-
-            reraise error, __STACKTRACE__
-        end
-
-      Store.transaction(call, fn db ->
-        Store.query(db, "update reaction_links set chat_reaction_name = ? where board_message_id = ? and emoji = ?", [
-          reacted["name"],
-          about["id"],
-          reaction_key(about["glyph"])
-        ])
-      end)
-    end
-
-    :ok
-  end
-
-  defp link_reaction(db, board_message_id, emoji) do
-    Store.query(db, "insert or ignore into reaction_links (board_message_id, emoji, chat_reaction_name) values (?, ?, '') returning 1", [
-      board_message_id,
-      emoji
-    ]) != []
-  end
-
-  # Unlinked before it's taken off, so whatever comes back of it is a person's.
-  defp remove_reaction(call, about) do
-    with %{} = reaction <- reaction_link(call, about["id"], reaction_key(about["glyph"])) do
-      Store.transaction(call, fn db ->
-        Store.query(db, "delete from reaction_links where board_message_id = ? and emoji = ?", [about["id"], reaction_key(about["glyph"])])
-      end)
-
-      if reaction.chat_reaction_name != "",
-        do: Call.tool(call, "google-chat", "react", %{"message" => reaction.message, "reaction" => reaction.chat_reaction_name})
-    end
-
-    :ok
-  end
-
   defp send_message(call, space, text, thread \\ nil) do
     inputs = %{"space" => space, "text" => text}
     inputs = if thread, do: Map.put(inputs, "thread", thread), else: inputs
-    Call.tool(call, "google-chat", "send", inputs)
+    Call.tool(call, "google-chat-app", "send", inputs)
   end
 
   defp chat_text(profile, display_author, body) do
@@ -567,24 +504,7 @@ defmodule BoardGoogleChat do
   defp forget(call, board_message_id) do
     Store.transaction(call, fn db ->
       Store.query(db, "delete from message_links where board_message_id = ?", [board_message_id])
-      Store.query(db, "delete from reaction_links where board_message_id = ?", [board_message_id])
     end)
-  end
-
-  defp reaction_link(call, board_message_id, emoji) do
-    case Store.transaction(call, fn db ->
-           Store.query(
-             db,
-             "select m.chat_message_name, r.chat_reaction_name from reaction_links r join message_links m on m.board_message_id = r.board_message_id where r.board_message_id = ? and r.emoji = ?",
-             [board_message_id, emoji]
-           )
-         end) do
-      [%{"chat_message_name" => message, "chat_reaction_name" => name}] ->
-        %{message: message, chat_reaction_name: name}
-
-      [] ->
-        nil
-    end
   end
 
   defp space_name(space) when is_binary(space) do
@@ -604,9 +524,6 @@ defmodule BoardGoogleChat do
   end
 
   defp channel_name(_), do: {:error, "A channel is required."}
-
-  # Google Chat spells some emoji with the variation selector that makes it a picture, and Board some without.
-  defp reaction_key(emoji), do: String.replace(emoji, "\uFE0F", "")
 
   defp text?(text), do: is_binary(text) and text != ""
 
