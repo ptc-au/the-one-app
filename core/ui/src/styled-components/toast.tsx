@@ -1,4 +1,4 @@
-// A toast: one line about what just happened, at the foot of the window for a few seconds. Written once on the drawing
+// A toast: what just happened, in up to three lines, at the foot of the window for a few seconds. Written once on the drawing
 // primitives, the same on every host: a portal over the window (#primitives' `Portal`), drawn
 // while there are toasts, so it's over whatever was open when the first came.
 import { createRoot, createSignal, For, Show } from "solid-js"
@@ -20,7 +20,8 @@ const look = styles({
     padding: tokens.length.gutter,
   },
   list: { alignItems: "center", gap: tokens.grid[2] },
-  // A pill, as Raycast's toasts are: one line, its action after a hairline.
+  // A pill on one line, as Raycast's toasts are, and a rounded card on more, as iOS's and Android's are: a radius over half
+  // the tallest one line, which clamps to a pill. Its action is after a hairline.
   toast: {
     flexDirection: "row",
     alignItems: "center",
@@ -29,7 +30,7 @@ const look = styles({
     minHeight: tokens.length.pill,
     paddingStart: tokens.grid[3],
     paddingEnd: tokens.grid[1],
-    borderRadius: tokens.radius.full,
+    borderRadius: tokens.radius.window,
     backgroundColor: tokens.colour.panel,
     backdropFilter: tokens.material.glass,
     color: tokens.colour.label,
@@ -43,13 +44,13 @@ const look = styles({
   },
   alone: { paddingEnd: tokens.grid[3] },
   rule: { width: tokens.length.hairline, alignSelf: "stretch", marginBlock: tokens.grid[2], backgroundColor: tokens.colour.quaternaryLabel },
-  title: { flexShrink: 1, minWidth: 0, lineClamp: 1 },
+  title: { flexShrink: 1, minWidth: 0, paddingBlock: tokens.grid[2], lineClamp: 3 },
 })
 
 let toaster: ReturnType<typeof createToaster> | undefined
 
-/// `toast("Deleted", { action: { label: "Undo", run: restore } })`: one line about what just happened, at the foot
-/// of the window for a few seconds, with one thing to do about it. What went well needs none: fine is silent.
+/// `toast("Deleted", { action: { label: "Undo", run: restore } })`: what just happened, in up to three lines, at the foot
+/// of the window for a few seconds (an error's longer), with one thing to do about it. What went well needs none: fine is silent.
 /// An error, as `call` throws it (`.catch(toast)`), or a tool's error as text, says what a person reads of it
 /// (`readable`), and with no `action` of its own has Details, which shows the rest, to copy for an agent or for support.
 export async function toast(text: string | Error, { action }: { action?: { label: string; run: () => void } } = {}): Promise<void> {
@@ -59,7 +60,7 @@ export async function toast(text: string | Error, { action }: { action?: { label
     const made = (toaster = createRoot(() => createToaster()))
     createRoot(() => <Toaster toaster={made} />)
   }
-  toaster.show(readable(all), action)
+  toaster.show(readable(all), action, all !== readable(all) || text instanceof Error)
 }
 
 function Toaster(props: { toaster: ReturnType<typeof createToaster> }) {

@@ -66,11 +66,12 @@ export function createToaster() {
   return {
     toasts,
     dismiss,
-    show: (title: string, action?: Toast["action"]) => {
+    show: (title: string, action?: Toast["action"], error = false) => {
       if (toasts().length >= MOST) dismiss(toasts()[0].id)
       const id = ++made
       setToasts((now) => [...now, { id, title, action }])
-      timers.add(id, action ? 8000 : 4000)
+      // An error stays long enough to read three lines.
+      timers.add(id, error ? 12000 : action ? 8000 : 4000)
       announce(title)
     },
     region: () => ({ onPointerEnter: () => timers.pause("item-hover"), onPointerLeave: () => timers.resume("item-hover") }),

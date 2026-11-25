@@ -227,6 +227,16 @@ export default {
     taps: ["Sync"],
     render: () => <Button onPress={() => toast(new Error("Couldn't reach the network\n\nnotes_sync: connection refused (os error 111)"))}>Sync</Button>,
   },
+  "Over the page/A long toast": {
+    alone: true,
+    taps: ["Sync"],
+    render: () => <Button onPress={() => toast("Couldn't save the receipt because the network went away while it was uploading; it's kept on this phone and will go up again once you're back online.")}>Sync</Button>,
+  },
+  "Over the page/A long error as a toast": {
+    alone: true,
+    taps: ["Sync"],
+    render: () => <Button onPress={() => toast(new Error("Couldn't save the receipt because the network went away while it was uploading; it's kept on this phone and will go up again once you're back online.\n\nclaims_add_receipt: connection refused (os error 111)"))}>Sync</Button>,
+  },
   "Over the page/A tool's error in full": {
     alone: true,
     taps: ["Sync", "Details"],
