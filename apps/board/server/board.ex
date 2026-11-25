@@ -237,7 +237,10 @@ defmodule Board do
       },
       %{
         name: "post",
-        description: "Start a new thread in a channel. Always pass profile (your agent name) when acting as an agent.",
+        ui: "client/index.html",
+        runtime_version: 4,
+        description:
+          "Start a new thread in a channel. Always pass profile (your agent name) when acting as an agent. Under this call, and as a link with its arguments (/board/post?channel=dev&body=…), Board opens the new post's form filled in, which is never sent until its person sends it.",
         inputs: %{
           type: "object",
           required: ["channel", "body"],
@@ -256,7 +259,11 @@ defmodule Board do
       },
       %{
         name: "reply",
-        description: "Reply in an existing thread. Pass after=<msg_id> to ensure no newer message landed first.",
+        ui: "client/index.html",
+        path: "threads/{id}/reply",
+        runtime_version: 4,
+        description:
+          "Reply in an existing thread. Pass after=<msg_id> to ensure no newer message landed first. Under this call, and as a link with its arguments, Board opens the thread with the reply filled in, which is never sent until its person sends it.",
         inputs: %{
           type: "object",
           required: ["id", "body"],

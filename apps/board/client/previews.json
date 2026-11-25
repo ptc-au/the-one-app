@@ -225,5 +225,13 @@
       "board_channels": { "channels": [] },
       "board_read": { "threads": [] }
     }
+  },
+  "New Post Filled In": {
+    "like": "Threads",
+    "page": "client/index.html#post&channel=dev&body=Deploy%20is%20done"
+  },
+  "Reply Filled In": {
+    "like": "Blocked Task",
+    "page": "client/index.html#reply&id=msg_blocked1&body=Approved%2C%20go%20ahead"
   }
 }

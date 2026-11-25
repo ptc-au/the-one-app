@@ -34,6 +34,7 @@ import {
   toast,
   tokens,
   toolInput,
+  toolResult,
   View,
 } from "ui"
 
@@ -129,8 +130,10 @@ const look = styles({
 })
 
 const screen = () => toolInput("board_read")
-const route = () => screen().arguments as { id?: string; channel?: string; state?: string }
-const openId = () => (screen().name === "board_thread" ? route().id || "" : "")
+const route = () => screen().arguments as { id?: string; channel?: string; state?: string; body?: string }
+/// The new post's form, over the list, filled in from `board_post`'s arguments; and the reply's, in the thread, from `board_reply`'s.
+const composing = () => screen().name === "board_post"
+const openId = () => (screen().name === "board_thread" || screen().name === "board_reply" ? route().id || "" : "")
 const selectedChannel = () => route().channel || ""
 const selectedState = () => route().state || ""
 
@@ -141,6 +144,14 @@ const goList = (opts: { channel?: string; state?: string; id?: string } = {}) =>
   if (opts.id) navigate("board_thread", { ...args, id: opts.id })
   else navigate("board_read", args)
 }
+
+// Under a call of `board_post` or `board_reply` that was answered, it's sent: its thread is shown, not its form again.
+const sent = () => {
+  if (!toolResult()) return undefined
+  if (screen().name === "board_reply") return route().id
+  if (screen().name === "board_post") return (toolResult()!.structuredContent as { id?: string } | undefined)?.id
+}
+createEffect(sent, (id) => void (id && goList({ id })))
 
 const channelsData = createMemo(async () => {
   const res: { channels: ChannelInfo[] } = JSON.parse(await call("board_channels", {}))
@@ -167,8 +178,6 @@ changed(() => {
   refresh(threadsData)
   if (openId()) refresh(detailData)
 })
-
-const [composing, setComposing] = createSignal(false)
 
 const FENCE_RE = /```json#[a-z][a-z0-9-]*@[1-9][0-9]*\r?\n[\s\S]*?```/g
 
@@ -217,9 +226,13 @@ function ComposeSheet() {
   const [asTask, setAsTask] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
 
+  // Each time it opens, it's as its arguments say.
   createEffect(composing, (open) => {
-    if (open) setChannel(selectedChannel() || "general")
+    if (!open) return
+    setChannel(selectedChannel() || "general")
+    setBody(route().body ?? "")
   })
+  const close = () => goList({ channel: selectedChannel(), state: selectedState() })
 
   const submit = async () => {
     const ch = channel().trim()
@@ -229,7 +242,7 @@ function ComposeSheet() {
     try {
       const tool = asTask() ? "board_task_create" : "board_post"
       const created: { id: string } = JSON.parse(await call(tool, { channel: ch, body: text }))
-      setComposing(false)
+      close()
       setBody("")
       refresh(channelsData)
       refresh(threadsData)
@@ -242,14 +255,16 @@ function ComposeSheet() {
   }
 
   return (
-    <Sheet heading={asTask() ? "New Task" : "New Post"} open={composing()} onClose={() => setComposing(false)}>
+    <Sheet heading={asTask() ? "New Task" : "New Post"} open={composing()} onClose={close}>
       <Field label="Channel" hint="Lowercase path, e.g. dev or work/checkout.">
         <Input value={channel()} onChangeText={setChannel} autoCapitalize="none" autoCorrect={false} />
       </Field>
       <Field label="Message">
         <Textarea value={body()} onChangeText={setBody} placeholder={asTask() ? "Describe the task…" : "Write an update…"} />
       </Field>
-      <Row heading="Track as task" end={<Switch aria-label="Track as task" value={asTask()} onValueChange={setAsTask} />} />
+      <List>
+        <Row heading="Track as task" end={<Switch aria-label="Track as task" value={asTask()} onValueChange={setAsTask} />} />
+      </List>
       <Button onPress={submit} disabled={busy() || !channel().trim() || !body().trim()}>
         {asTask() ? "Create Task" : "Post"}
       </Button>
@@ -313,7 +328,7 @@ function MessageCard(props: { msg: BoardMessage }) {
 }
 
 function ThreadDetail(props: { id: string }) {
-  const [replyText, setReplyText] = createSignal("")
+  const [replyText, setReplyText] = createSignal(screen().name === "board_reply" ? (route().body ?? "") : "")
   const [sending, setSending] = createSignal(false)
 
   const sendReply = async () => {
@@ -322,6 +337,8 @@ function ThreadDetail(props: { id: string }) {
     setSending(true)
     if (await runTool("board_reply", { id: props.id, body: text })) {
       setReplyText("")
+      // Its link was the reply filled in: it's sent now, and the thread is the screen.
+      if (screen().name === "board_reply") goList({ channel: selectedChannel(), state: selectedState(), id: props.id })
     }
     setSending(false)
   }
@@ -429,7 +446,7 @@ function BoardApp() {
         pick="Pick a thread to read it."
         detail={<Show when={openId()}>{(id) => <ThreadDetail id={id()} />}</Show>}
       >
-        <Screen heading="Board" action={<Button onPress={() => setComposing(true)}>New Post</Button>}>
+        <Screen heading="Board" action={<Button onPress={() => navigate("board_post", selectedChannel() ? { channel: selectedChannel() } : {})}>New Post</Button>}>
           <Show when={hasAny()}>
             <Section>
               <Tabs.Root value={selectedState()} onValueChange={(v) => goList({ channel: selectedChannel(), state: v, id: openId() })}>
