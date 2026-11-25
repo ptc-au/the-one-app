@@ -317,7 +317,9 @@ export declare function render(code: () => Element): () => void
 
 /** One of a screen's tips: one idea in a few words, a sentence, and keys drawn as keycaps or a picture of the app's own. */
 export type Tip = { title: string; body: string; keys?: string[]; picture?: string }
-export declare function Screen(props: { heading?: Element; action?: Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: Element }): Element
+/** One of a screen's floating actions: an icon, its name (which the trailing one shows too) and what pressing it does. */
+export type FloatingAction = { icon: IconName; label: string; onPress: () => void; disabled?: boolean; primary?: boolean }
+export declare function Screen(props: { heading?: Element; action?: Element; floatingActions?: { leading?: FloatingAction[]; trailing?: FloatingAction }; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: Element }): Element
 /** One thing to do at the tips' foot: what it says, an icon, and what does it. */
 export type Action = { label: string; icon?: IconName; onAction: () => void }
 export declare function Tips(props: { tips: Tip[]; action?: Action }): Element

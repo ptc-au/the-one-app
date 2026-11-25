@@ -1,12 +1,13 @@
 // A whole view of an app, a part of one, and a list beside what it opens: written once on the drawing primitives
 // (#primitives), the same on every host, which each say what's theirs (#bridge): their history,
 // their device's back and how they move between screens.
-import { children, createContext, createEffect, createSignal, onSettled, Show, useContext } from "solid-js"
+import { children, createContext, createEffect, createSignal, For, onSettled, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
 import { back as goBack, covers, go, keydown, safeArea, step, titled, touch, viewport } from "#bridge"
-import { BarEnd, Button, Icon } from "./button.tsx"
+import { BarEnd, Button, Icon, type IconName } from "./button.tsx"
 import { messages } from "../words.ts"
+import { createButton } from "../headless-components/button.ts"
 import { ListKeys, ListStyle } from "./list.tsx"
 import { Empty } from "./states.tsx"
 import { Tips, type Tip } from "./tips.tsx"
@@ -100,6 +101,17 @@ const look = styles({
   tipsAt: { position: "absolute", top: 0, end: 0, zIndex: 2 },
   tipsRow: { flexDirection: "row", alignItems: "center", minHeight: tokens.length.bar, paddingInline: tokens.length.gutter },
   tipsRoom: { width: tokens.length.control, flexShrink: 0 },
+  // A phone's floating actions, over what scrolls and clear of the home indicator, as iOS's floating buttons and
+  // Android's FABs are: a stack of round buttons at the start and one pill at the end, each hugging its own corner so
+  // what's between them is still pressed through.
+  floatAt: { position: "absolute", bottom: tokens.length.safeBottom, zIndex: 1, padding: tokens.length.gutter, opacity: { default: 1, entering: 0, exiting: 0 }, translateY: { default: 0, entering: tokens.grid[4], exiting: tokens.grid[4] }, transitionProperty: ["opacity", "translateY"], transition: tokens.motion.travel },
+  floatStart: { start: tokens.length.safeLeft, alignItems: "flex-start", gap: tokens.grid[3] },
+  floatEnd: { end: tokens.length.safeRight },
+  // Glass over the page as Liquid Glass's buttons are; the main one dark, as Material's primary FAB is the strongest fill.
+  floatButton: { width: tokens.grid[10], height: tokens.grid[10], alignItems: "center", justifyContent: "center", borderRadius: tokens.radius.full, backgroundColor: tokens.colour.glass, backdropFilter: tokens.material.glass, boxShadow: tokens.shadow.glass, color: tokens.colour.label, cursor: "pointer", opacity: { default: 1, pressed: 0.7 }, transitionProperty: ["opacity"], transition: tokens.motion.quick },
+  floatMain: { width: tokens.grid[12], height: tokens.grid[12], backgroundColor: tokens.colour.label, color: tokens.colour.background },
+  floatPill: { width: "auto", flexDirection: "row", gap: tokens.grid[2], paddingInline: tokens.grid[5], font: tokens.type.large, whiteSpace: "nowrap" },
+  floatOff: { opacity: 0.5, cursor: "default" },
 })
 
 /** How far a screen whose own page draws its large title (`largeTitle`) is scrolled when that's gone under its bar, in
@@ -161,6 +173,38 @@ export const Middle = createContext<() => boolean>(() => true)
 /// `Section`, which is only that section's.
 export const Blank = createContext<(change: number) => void>(() => {})
 
+/** A floating action: an icon, what it's named (`label`, which the trailing one also shows) and what pressing it does. */
+export interface FloatingAction {
+  icon: IconName
+  label: string
+  onPress: () => void
+  disabled?: boolean
+  /** The leading stack's main one, larger and dark, at the stack's bottom. */
+  primary?: boolean
+}
+
+/** Whether a field in the screen has the keyboard, which a phone's floating actions give way to. */
+export const Typing = createContext<(on: boolean) => void>(() => {})
+
+function FloatingButton(props: { action: FloatingAction; pill?: boolean }) {
+  const button = createButton({
+    get disabled() {
+      return props.action.disabled
+    },
+    get onPress() {
+      return props.action.onPress
+    },
+  })
+  return (
+    <Pressable {...button.root()} aria-label={props.action.label} style={[look.floatButton, props.action.primary && look.floatMain, props.pill && look.floatPill, button.off() && look.floatOff]}>
+      <Icon name={props.action.icon} />
+      <Show when={props.pill}>
+        <Text>{props.action.label}</Text>
+      </Show>
+    </Pressable>
+  )
+}
+
 /// `<Screen heading="Notes" action={<Button>Add</Button>}>...</Screen>`: a whole view of an app: a bar across its
 /// top that stays as what's under it scrolls, with its `heading` and what it does (`action`: its one main button, at
 /// the bar's end on every device as a Mac's toolbar and GitHub's New have it, with any others in a ⋯ `Menu` before it),
@@ -176,8 +220,13 @@ export const Blank = createContext<(change: number) => void>(() => {})
 /// its bar has a ? that shows them (`Tips`): at the end of a computer's title bar, where it stays, and under a finger
 /// just before `action`. What's in it keeps a readable width in the middle of its
 /// room; with `readable={false}` it fills the room, as a calendar's week or a grid of photos does (UIKit's
-/// readableContentGuide, not followed).
-export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: JSX.Element }) {
+/// readableContentGuide, not followed). With `floatingActions={{ leading: [{ icon: "plus", label: "Add receipt", onPress: add }, { icon: "scan", label: "Scan", onPress: scan, primary: true }], trailing: { icon: "list-checks", label: "Complete", onPress: complete } }}`
+/// a screen has the actions its person reaches for most, as Android's FAB and extended FAB and iOS's floating buttons
+/// are, over what scrolls, always in view: under a finger in a narrow window, a stack of round buttons at the start (the
+/// `primary` one larger, at its bottom) and one pill at the end, clear of the home indicator, with room left at the end of
+/// what scrolls so the last row clears them, and away while a field has the keyboard. Where there's room (a computer's
+/// window, an iPad's wide one) they're in the bar instead: the leading ones before `action`, the trailing one after it.
+export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; floatingActions?: { leading?: FloatingAction[]; trailing?: FloatingAction }; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: JSX.Element }) {
   const opened = useContext(Opened)
   const leave = useContext(Leave)
   const inDetail = useContext(InDetail)
@@ -198,6 +247,11 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   if (hand) onSettled(() => hand(() => props.tips))
   const tips = () => (splitTips().drawn ? undefined : props.tips?.length ? props.tips : undefined)
   const computer = !touch()
+  const room = useContext(Room)
+  const floating = () => !computer && room() < wide && !!props.floatingActions
+  const [typing, setTyping] = createSignal(0)
+  const [leadingHeight, setLeadingHeight] = createSignal(0)
+  const [trailingHeight, setTrailingHeight] = createSignal(0)
   // Under a finger, a first screen draws its heading large itself.
   const large = !computer && !props.back && !props.largeTitle
   const [scrolled, setScrolled] = createSignal(0)
@@ -217,8 +271,9 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
   const named = () => titleShown() > 0
   // On a computer, a screen that says nothing in its bar, in a window whose title bar already names it (a dialog's),
   // has no bar; under a finger the bar keeps clear of the status bar.
-  const barred = () => !computer || !!props.heading || !!props.action || !!tips() || backed() || titled() || (computer && !!history())
+  const barred = () => !computer || !!props.heading || !!props.action || !!props.floatingActions || !!tips() || backed() || titled() || (computer && !!history())
   return (
+    <Typing value={(on) => setTyping((count) => count + (on ? 1 : -1))}>
     <View style={look.screen}>
       <Show when={barred()}>
       <View role="banner" style={[look.bar, !computer && look.clear, !computer && look.floating]} onLayout={computer ? undefined : (event) => setBarHeight(event.currentTarget.getBoundingClientRect().height)}>
@@ -257,9 +312,28 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
           <Show when={!computer && tips()}>
             {(now) => <Tips tips={now()} />}
           </Show>
-          <Show when={props.action}>
+          <Show when={props.action || (!floating() && props.floatingActions)}>
             <BarEnd value={true}>
-              <View style={look.action}>{props.action}</View>
+              <View style={look.action}>
+                <Show when={!floating()}>
+                  <For each={props.floatingActions?.leading}>
+                    {(one) => (
+                      <Button size="icon" variant={one.primary ? "default" : "ghost"} aria-label={one.label} disabled={one.disabled} onPress={one.onPress}>
+                        <Icon name={one.icon} />
+                      </Button>
+                    )}
+                  </For>
+                </Show>
+                {props.action}
+                <Show when={!floating() && props.floatingActions?.trailing}>
+                  {(one) => (
+                    <Button variant="outline" disabled={one().disabled} onPress={one().onPress}>
+                      <Icon name={one().icon} />
+                      {one().label}
+                    </Button>
+                  )}
+                </Show>
+              </View>
             </BarEnd>
           </Show>
           <Show when={computer && tips()}>
@@ -290,9 +364,27 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tip
               <Middle value={() => false}>{props.children}</Middle>
             </View>
           </View>
+          <Show when={floating()}>
+            <View style={look.clearBy(Math.max(leadingHeight(), trailingHeight()))} />
+          </Show>
         </View>
       </ScrollView>
+      <Show when={floating() && !typing()}>
+        <Show when={props.floatingActions?.leading?.length}>
+          <View role="toolbar" style={[look.floatAt, look.floatStart]} onLayout={(event) => setLeadingHeight(event.currentTarget.getBoundingClientRect().height)}>
+            <For each={props.floatingActions?.leading}>{(one) => <FloatingButton action={one} />}</For>
+          </View>
+        </Show>
+        <Show when={props.floatingActions?.trailing}>
+          {(one) => (
+            <View style={[look.floatAt, look.floatEnd]} onLayout={(event) => setTrailingHeight(event.currentTarget.getBoundingClientRect().height)}>
+              <FloatingButton action={one()} pill />
+            </View>
+          )}
+        </Show>
+      </Show>
     </View>
+    </Typing>
   )
 }
 

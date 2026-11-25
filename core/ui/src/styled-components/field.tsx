@@ -1,6 +1,6 @@
 // What's typed in or chosen: a field around it, a line or lines of text, a search, a checkbox, a switch and radios,
 // written once on the drawing primitives (#primitives), the same on every host.
-import { createSignal, For, omit, onSettled, Show, useContext } from "solid-js"
+import { createSignal, For, omit, onCleanup, onSettled, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Path, Pressable, Svg, Text, TextInput, View } from "#primitives"
 import { keydown, touch } from "#bridge"
@@ -8,7 +8,7 @@ import type { Keyed, TextInputProps } from "../types/ui.d.ts"
 import { Icon } from "./button.tsx"
 import { askMac, pressed } from "./keys.ts"
 import { ListStyle } from "./list.tsx"
-import { Room } from "./screen.tsx"
+import { Room, Typing } from "./screen.tsx"
 import { messages } from "../words.ts"
 import { createField, createRadioGroup, createToggle, Field as Context, named, useField, type FieldProps, type RadioGroupProps, type ToggleProps } from "../headless-components/field.ts"
 import { styles, type Styles } from "../styles.ts"
@@ -160,7 +160,12 @@ function Boxed(props: InputProps & { multiline?: boolean; own?: Styles }) {
   const field = useField()
   const wrong = () => (props["aria-invalid"] ?? (field?.invalid() ? "true" : undefined)) === "true"
   const off = () => !!props.disabled || !!field?.disabled()
-  return <TextInput {...omit(props, "style", "own", "aria-label", "aria-invalid", "disabled")} {...named(field, props)} style={[look.box, props.multiline && look.lines, props.own, wrong() && look.boxWrong, off() && look.dim, props.style]} />
+  // The screen it's in is told while it has the keyboard, which a phone's floating actions give way to.
+  const typing = useContext(Typing)
+  let held = false
+  const hold = (now: boolean) => held !== now && typing((held = now))
+  onCleanup(() => hold(false))
+  return <TextInput {...omit(props, "style", "own", "aria-label", "aria-invalid", "disabled", "onFocus", "onBlur")} {...named(field, props)} onFocus={() => (hold(true), props.onFocus?.())} onBlur={() => (hold(false), props.onBlur?.())} style={[look.box, props.multiline && look.lines, props.own, wrong() && look.boxWrong, off() && look.dim, props.style]} />
 }
 
 /// `<Search placeholder="Search notes" aria-label="Search notes" value={words()} onChangeText={setWords} />`:

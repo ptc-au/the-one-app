@@ -1,4 +1,4 @@
-import { Button, Empty, History, List, ListStyle, Menu, Row, type Scenes, Screen, Section, SignIn, Split, styles, Text, View } from "ui"
+import { Button, Empty, History, Input, List, ListStyle, Menu, Row, type Scenes, Screen, Section, SignIn, Split, styles, Text, View } from "ui"
 
 const look = styles({ window: { height: 720 }, narrow: { height: 475 }, phone: { height: 844 } })
 
@@ -70,7 +70,49 @@ const settings = () => (
   </ListStyle>
 )
 
+/// Receipts under a screen's floating actions: a stack of round buttons at the start, the main one dark and larger at its
+/// bottom, and a pill at the end, as the old Claims had them.
+const receipts = () => (
+  <Screen
+    heading="Claims"
+    floatingActions={{
+      leading: [{ icon: "plus", label: "Add receipt", onPress: () => {} }, { icon: "scan", label: "Scan", onPress: () => {}, primary: true }],
+      trailing: { icon: "list-checks", label: "Complete", onPress: () => {} },
+    }}
+  >
+    <Input aria-label="Note" placeholder="Note" />
+    <List>{notes.map((note) => <Row heading={note} text="Wed, 14 Oct" />)}</List>
+  </Screen>
+)
+
 export default {
+  // A phone's floating actions, over what scrolls and clear of the home indicator; the last row scrolls clear of them,
+  // and they're gone while a field has the keyboard.
+  "Screens/Floating actions on a phone": {
+    alone: true,
+    layout: "fullscreen",
+    touch: true,
+    safeArea: [47, 0, 34, 0],
+    render: () => <View style={look.phone}>{receipts()}</View>,
+    checks: {
+      "They're in view, clear of the home indicator": [{ expect: { shown: { role: "button", name: "Scan" } } }, { expect: { shown: { role: "button", name: "Complete" } } }, { expect: { shown: { role: "button", name: "Add receipt" } } }],
+      "The last row scrolls clear of them": [{ trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { trace: "traces/finger-pans-up.json" }, { expect: { apart: { of: { text: "Note 30" }, from: { role: "button", name: "Scan" } } } }],
+      "Away while a field has the keyboard": [{ role: "textbox", name: "Note" }, { expect: { gone: { role: "button", name: "Scan" } } }],
+    },
+  },
+  "Screens/Floating actions with the keyboard": {
+    alone: true, layout: "fullscreen", touch: true, safeArea: [47, 0, 34, 0],
+    render: () => <View style={look.phone}>{receipts()}</View>,
+    taps: [{ role: "textbox", name: "Note" }],
+  },
+  // Where there's room, the same actions are in the bar, the leading ones before the main one.
+  "Screens/Floating actions on a computer": {
+    alone: true,
+    layout: "fullscreen",
+    size: [1100, 720],
+    render: () => <View style={look.window}>{receipts()}</View>,
+    checks: { "They're in the bar": [{ expect: { shown: { role: "button", name: "Complete" } } }, { expect: { shown: { role: "button", name: "Scan" } } }] },
+  },
   // A phone's first screen: its name large at the top of what scrolls, which goes under the bar as it scrolls, the
   // bar's small name taking its place and the bar its glass and hairline, as UINavigationBar's large titles do.
   "Screens/A phone's first screen": {
