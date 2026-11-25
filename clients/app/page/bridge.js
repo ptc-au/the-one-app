@@ -259,7 +259,7 @@ addEventListener("message", async ({ source, data }) => {
     // Where its page is in itself (the UI library's `place`), which the window's history and address follow.
     if (method === "notifications/one/place" && typeof params.place === "string") {
       view.place = params.place
-      reached(view, params.place, params.navigated === true, params.replace === true)
+      reached(view, params.place, params.replace === true)
     }
     // How long a spinner was in sight on it, which Telemetry hears with the tool it waited on (`waited.rs`).
     if (method === "notifications/one/waited" && typeof params.ms === "number") invoke("waited", { view: view.key, place: view.place ?? "", ms: Math.round(params.ms) }).catch(() => {})

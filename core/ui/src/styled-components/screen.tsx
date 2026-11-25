@@ -4,7 +4,7 @@
 import { children, createContext, createEffect, createSignal, onSettled, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
-import { back as goBack, covers, go, keydown, link, place, routed, safeArea, step, titled, touch, viewport } from "#bridge"
+import { back as goBack, covers, go, keydown, safeArea, step, titled, touch, viewport } from "#bridge"
 import { BarEnd, Button, Icon } from "./button.tsx"
 import { messages } from "../words.ts"
 import { ListKeys, ListStyle } from "./list.tsx"
@@ -122,25 +122,6 @@ export const Room = createContext<() => number>(() => viewport().width)
 const Opened = createContext<() => (() => void) | undefined>(() => undefined)
 /** What a screen's Back does when it says nothing of its own: back through the history, or closing a split's detail. */
 const Leave = createContext<() => void>(goBack)
-/** Where in its page what's open in the splits a screen is in is: the place of each, outermost first (`Split`'s `place`). */
-const Place = createContext<() => string[]>(() => [])
-/** Where a screen in a split's detail names what's open, by its heading, where the split doesn't name it itself. */
-const Named = createContext<((heading: string | undefined) => void) | null>(null)
-/** Each open split's place in its page, and what closes it. */
-const places = new Map<object, string[]>()
-/** The page's host is told the deepest open split's place, once what changed has settled: not a page whose screens are
- * tools (`routed`), whose address is its screen's tool and arguments. */
-let telling = false
-function tellPlace() {
-  if (telling || routed()) return
-  telling = true
-  queueMicrotask(() => {
-    telling = false
-    place([...places.values()].reduce((deepest, at) => (at.length > deepest.length ? at : deepest), []).join("/"))
-  })
-}
-/** A heading as a place says it: `Sign In & Security` is `sign-in-security`. */
-const slug = (heading: string | undefined) => heading?.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || undefined
 /** Whether it's in a split's detail beside its list, where a screen has nowhere to go back to. A split in that detail
  * whose own detail is pushed over its list has a Back again, to that list. */
 const InDetail = createContext<() => boolean>(() => false)
@@ -197,9 +178,6 @@ export const Blank = createContext<(change: number) => void>(() => {})
 /// room; with `readable={false}` it fills the room, as a calendar's week or a grid of photos does (UIKit's
 /// readableContentGuide, not followed).
 export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: JSX.Element }) {
-  // In a split's detail, its heading names what's open there, where the split doesn't (`Split`'s `place`).
-  const naming = useContext(Named)
-  if (naming) createEffect(() => (typeof props.heading === "string" ? props.heading : undefined), (heading) => void naming(heading))
   const opened = useContext(Opened)
   const leave = useContext(Leave)
   const inDetail = useContext(InDetail)
@@ -369,7 +347,7 @@ export function Shelf(props: { role?: "group" | "toolbar" | "list"; "aria-label"
 /** The splits with something open, the innermost last, which Escape closes first. */
 const open: (() => void)[] = []
 
-/// `<Split open={!!note()} onClose={() => setNote()} detail={<Screen heading={note().text} back>...</Screen>}><Screen heading="Notes">...</Screen></Split>`:
+/// `<Split open={toolInput("notes_list").name === "notes_note"} onClose={() => navigate("notes_list")} detail={<Screen heading={note().text} back>...</Screen>}><Screen heading="Notes">...</Screen></Split>`:
 /// a list and what it opens (`detail`): beside it where there's room, pushed over it where there isn't, while
 /// `open`. Each side scrolls by itself, and the split is as tall as what it's in. While it's open the device's own
 /// back, Escape, and the detail's Back button close it, or beside its list, where a detail has none, the list's: it
@@ -378,28 +356,6 @@ const open: (() => void)[] = []
 /// Message Selected", where the app has a list to pick from: it's left out where there's none, and where the list is
 /// empty (an `Empty` in it, not in one of its sections), when its detail side says nothing and the list's own line stands alone, as Mail's does.
 export function Split(props: { open?: boolean; onClose?: () => void; pick?: string; detail?: JSX.Element; children?: JSX.Element }) {
-  // Where what's open is in the page, in a page whose screens aren't tools yet (`routed`): its own place after its
-  // parents', its screen's heading, which the page's host hears as the page's place while it's the deepest open
-  // (`tellPlace`); a link to a place it isn't in, as a browser's Back sends, closes it. It goes once every app's screens
-  // are tools.
-  const parent = useContext(Place)
-  const [heading, setHeading] = createSignal<string>()
-  const at = () => [...parent(), ...(slug(heading())?.split("/").filter(Boolean) ?? [])]
-  const self = {}
-  createEffect(() => (props.open ? at().join("/") : undefined), (now) => {
-    if (now === undefined) return
-    places.set(self, at())
-    tellPlace()
-    return () => (places.delete(self), tellPlace())
-  })
-  // The link the page was opened to isn't one: its app opened what it names, and may open it deeper than it says
-  // (`/notifications` is Notifications' first section, `notifications/settings`).
-  let opening = true
-  createEffect(link, (to) => {
-    if (opening || routed()) return void (opening = false)
-    const there = (to ?? "").split("&")[0].split("/").filter(Boolean)
-    if (props.open && !at().every((part, index) => there[index] === part)) props.onClose?.()
-  })
   const room = useContext(Room)
   const history = useContext(Went)
   const edge = useContext(Edge)
@@ -468,8 +424,6 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
         <Room value={() => (beside() ? room() - listWidth() - 1 : room())}>
           <Edge value={() => ({ start: edge().start && !beside(), end: edge().end })}>
           <Leave value={close}>
-            <Place value={() => (props.open ? at() : parent())}>
-            <Named value={setHeading}>
             <History value={beside() ? history() : null}>
             <InDetail value={beside}>
               <Middle value={beside}>
@@ -485,8 +439,6 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
               </Middle>
             </InDetail>
             </History>
-            </Named>
-            </Place>
           </Leave>
           </Edge>
         </Room>

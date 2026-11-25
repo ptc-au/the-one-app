@@ -336,13 +336,13 @@ export const covers: typeof Page.covers = (shut, { layer = true } = {}) => {
 export const connection: typeof Page.connection = () => connected()
 /** Where the page is in itself as its host was last told it (`place`). */
 let placed: string | undefined
-/** `place("vault/accounts")`: says where the page is in itself, as its splits have it, which its host hears of as it
- * changes (`notifications/one/place`): a browser's address and history follow it, and its host's link takes it back
- * there (`link`). */
-export const place = (at: string, navigated = false, replace = false) => {
+/** `place("week&start=2026-11-30")`: says which screen the page shows, its tool by its app's own name and its arguments
+ * (`navigate`), which its host hears of as it changes (`notifications/one/place`): a browser's address and history
+ * follow it, in place of the entry it's on where it says `replace`, and its host's link takes it back there (`link`). */
+const place = (at: string, replace = false) => {
   if (at === placed) return
   placed = at
-  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at, navigated, replace } }))
+  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at, replace } }))
 }
 /** Opening something is a step back closes, as the device's back closes what covers the page: a screen pushed over the
  * last, which isn't drawn over the page as a sheet or a menu is (a layer), as the DOM's history step isn't one. */
@@ -434,9 +434,6 @@ let assistantTool: string | undefined
 /** The screen the page shows: a link's tool and arguments, `week&start=2026-11-23`, its tool by its app's own name (as
  * the address `/my-week/week?start=2026-11-23` says it), or the call an assistant shows it for. */
 const [shownCall, setShownCall] = createSignal<string | Page.ToolCall>("")
-/** Whether the page's screens are tools (`toolInput`), whose splits then say nothing of where they are (`Split`). */
-let byTools = false
-export const routed = () => byTools
 /** The tool of the app's first screen (`toolInput`'s `first`), which with no arguments is the app's own address, as a link to the app alone says it. */
 let firstScreen: string | undefined
 /** The screens the page navigated from (`navigate`), the last on top, each with what stops the device's Back going there. */
@@ -478,7 +475,6 @@ function linked(to: string) {
 /// it first draws: `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`. Each screen's tool
 /// says `ui: "client/index.html"` (and its `path`) in the app's `tools/0`, so an assistant draws the screen under its call.
 export const toolInput: typeof Page.toolInput = (first) => {
-  byTools = true
   firstScreen = first
   const now = shownCall()
   if (typeof now !== "string") return now
@@ -496,7 +492,7 @@ export const navigate: typeof Page.navigate = (name, inputs = {}, { replace = fa
   if (from === to) return
   if (replace) {
     setShownCall(to)
-    return place(to, true, true)
+    return place(to, true)
   }
   // To the screen it last navigated from is Back to it, as a split's detail closing goes back to its list.
   const last = navigated.at(-1)
@@ -504,7 +500,7 @@ export const navigate: typeof Page.navigate = (name, inputs = {}, { replace = fa
     navigated.pop()
     last.done()
     setShownCall(to)
-    return place(to, true)
+    return place(to)
   }
   const one = { from, done: () => {} }
   one.done = step(() => {
@@ -512,9 +508,9 @@ export const navigate: typeof Page.navigate = (name, inputs = {}, { replace = fa
     if (at < 0) return
     for (const later of navigated.splice(at)) later.done()
     setShownCall(from)
-    place(from, true)
+    place(from)
   })
   navigated.push(one)
   setShownCall(to)
-  place(to, true)
+  place(to)
 }

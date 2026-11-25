@@ -213,20 +213,16 @@ let quiet = 0
 /// The entry the window's on, given another place once those steps back are taken (`reached`).
 /** @type {(() => void) | undefined} */
 let replaced
-/// An app's page says where in itself it is (`notifications/one/place`, as the UI library's splits have it), which the
-/// window's history and address follow where it says one (`pathOf`): somewhere new is an entry of its own
-/// (`/notifications/settings`), so Back goes back to where it was, and back where the entry before it was, as its own Back
-/// goes, the window goes back to that entry too.
-/// A page that navigated to a screen that's a tool (the UI library's `navigate`) says its arguments too
-/// (`week&start=2026-11-30`); one that says only its place where its link said more (`notifications/settings` of
-/// `notifications/settings&id=4`) is still where its entry is.
-/// One that says `replace` is there in place of the entry it's on, as a renamed thing's screen is, once a step back the
-/// window's history takes for it (`quiet`) is taken.
-/** @param {View} view @param {string} place @param {boolean} [navigated] @param {boolean} [replace] */
-export function reached(view, place, navigated, replace) {
+/// An app's page says which screen it shows (`notifications/one/place`, as the UI library's `navigate` has it: its tool
+/// and arguments, `week&start=2026-11-30`), which the window's history and address follow where it says one
+/// (`pathOf`): somewhere new is an entry of its own (`/my-week/week/2026-11-30`), so Back goes back to where it was, and
+/// back where the entry before it was, as its own Back goes, the window goes back to that entry too. One that says
+/// `replace` is there in place of the entry it's on, as a renamed thing's screen is, once a step back the window's
+/// history takes for it (`quiet`) is taken.
+/** @param {View} view @param {string} place @param {boolean} [replace] */
+export function reached(view, place, replace) {
   const now = stack[depth]
   if (!pathOf || !now || shows(now) !== view.key || (now.place ?? "") === place) return
-  if (!navigated && (now.place ?? "").split("&")[0] === place) return
   if (replace) {
     const path = pathOf(`${view.entrypoint}#${place}`)
     replaced = () => {
