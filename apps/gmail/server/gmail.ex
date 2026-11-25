@@ -52,7 +52,7 @@ defmodule Gmail do
       reply_to: string.("A message's id, from gmail_search or gmail_read, to reply to it: the reply goes in its thread"),
       attachments: %{
         type: "array",
-        description: "Files to attach, up to 10 and 25 MB in all",
+        description: "Files to attach, up to 50 and 25 MB in all",
         items: %{
           type: "object",
           required: ["name"],
@@ -503,7 +503,7 @@ defmodule Gmail do
 
   # The files to attach, each its name, its type and its bytes.
   defp files(at, given) do
-    if length(given) > 10, do: raise("At most 10 attachments.")
+    if length(given) > 50, do: raise("At most 50 attachments.")
 
     files =
       for file <- given do
