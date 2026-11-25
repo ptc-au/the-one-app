@@ -13,7 +13,9 @@
 //     any state ──a newer build──► preparing, for the newer one
 //     preparing or restarting ──a server goes back, or doesn't finish──► it's behind (which, why), and the rest go
 //       on: a machine can be off or broken, and one mustn't keep every other from a build. It tries again by itself
-//       1, 5 and then every 15 min after it went back (`RETRIES`), or at once with Update Now or a newer build
+//       1, 5 and then every 15 min after it went back (`RETRIES`), or at once with Update Now or a newer build. Its
+//       10 min to prepare count from when it first fell behind, not from each newer build, or one that can't would hold
+//       the rest for as long as builds come faster than that (PTC's Mac, 25 Nov)
 //     up to date ──a server that missed one is back──► preparing, for it alone
 //
 // The edge has an update of its own beside it (`edge_update`), which never holds the servers': once they're all up to
@@ -109,6 +111,11 @@ interface State {
   servers: Taking[];
   /** When they were told to prepare it, in ms since 1970. */
   told?: number;
+  /**
+   * When each server taking part fell behind, in ms since 1970, which its time to prepare counts from: from the first
+   * build it didn't prepare, not each newer one, so one that can't never holds the rest while builds are published.
+   */
+  behind?: Record<string, number>;
   /**
    * Asleep, gone or silent as it began, or since: each is left out of every update until it's heard from again, and
    * then caught up.
@@ -239,10 +246,16 @@ export class NetworkUpdater extends DurableObject<Env> {
     if (state.until && state.until <= Date.now()) {
       const reported = await this.reported();
       const preparing = state.network_update_status === "preparing";
-      const late = state.servers.filter((server) => server.ready === undefined && (preparing ? server.prepared === undefined : server.went !== undefined));
+      // Preparing, each has its time from when it first fell behind (`begin`), so only those whose time is up are late.
+      const unprepared = state.servers.filter((server) => server.ready === undefined && server.prepared === undefined);
+      const due = (key: string) => (state.behind?.[key] ?? state.told!) + PREPARING;
+      const late = preparing
+        ? unprepared.filter((server) => due(server.key) <= Date.now())
+        : state.servers.filter((server) => server.ready === undefined && server.went !== undefined);
       const why = preparing ? `didn't finish preparing within ${PREPARING / 60_000} min` : `didn't take it within ${RESTARTING / 60_000} min`;
       for (const server of late) this.wentBack(state, server.key, reported[server.key]?.name, why);
-      state.until = null;
+      const rest = preparing ? unprepared.filter((server) => !late.includes(server)).map((server) => due(server.key)) : [];
+      state.until = rest.length ? Math.min(...rest) : null;
       await this.ctx.storage.put("state", state);
       said(state, this.status(state, reported));
     }
@@ -265,18 +278,25 @@ export class NetworkUpdater extends DurableObject<Env> {
     const away = (key: string) => !presence[key]?.server_ready || state.skipped.includes(key);
     // One already preparing this pair has begun.
     const begun = (key: string) => reported[key].server_update_status !== "up_to_date" && on(state, { ...reported[key], version: reported[key].next_build ?? undefined, program: reported[key].next_program });
+    const taking = behind.filter((key) => !away(key));
+    const now = Date.now();
+    const since: Record<string, number> = Object.fromEntries(taking.map((key) => [key, state.behind?.[key] ?? now]));
+    const due = taking.map((key) => since[key] + PREPARING);
     Object.assign(state, {
       network_update_status: "preparing",
       build,
       published,
-      servers: behind.filter((key) => !away(key)).map((key) => ({ key, ...(begun(key) && { begun: true }) })),
-      told: Date.now(),
+      servers: taking.map((key) => ({ key, ...(begun(key) && { begun: true }) })),
+      told: now,
+      behind: since,
       skipped: behind.filter(away),
       waiting_for: null,
       now: false,
       went_back: [],
       tries,
-      until: Date.now() + PREPARING,
+      // Where every one taking part has had its time already, as one behind trying again alone, none holds another, so
+      // they have it all again.
+      until: due.every((at) => at <= now) ? now + PREPARING : Math.min(...due),
       timings: {},
     } satisfies State);
     if (!state.servers.length) this.finish(state);
@@ -309,7 +329,11 @@ export class NetworkUpdater extends DurableObject<Env> {
     for (const server of state.servers) {
       const said = reported[server.key] ?? {};
       const next = { ...said, version: said.next_build ?? undefined, program: said.next_program };
-      if (server.prepared === undefined && said.server_update_status === "checked" && on(state, next)) server.prepared = at;
+      if (server.prepared === undefined && said.server_update_status === "checked" && on(state, next)) {
+        server.prepared = at;
+        // It kept up, so its time to prepare a newer build counts from that one.
+        delete state.behind?.[server.key];
+      }
       if (server.started === undefined && on(state, said)) server.started = at;
       if (server.ready === undefined && on(state, said) && said.server_update_status === "up_to_date" && presence[server.key]?.server_ready) server.ready = at;
       // Back on the pair it was on, saying why: it went back, or couldn't prepare. It's behind, and the rest go on.
