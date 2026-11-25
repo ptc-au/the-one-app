@@ -62,6 +62,13 @@ interface Service {
   lacks: Record<string, string>
 }
 
+/** What's open, as the section's screen says it (`settings_section`'s own arguments): a device or a server beside the
+ * list, `device`, a step Back goes back from. */
+interface Shown {
+  inputs: { device?: string }
+  show: (inputs?: { device: string }) => void
+}
+
 /** A device or a server, as a row says it. */
 interface Thing extends ServerStatus {
   id: string
@@ -214,7 +221,6 @@ async function removeServer(server: Thing) {
   doing(() => call("remove_server", { key: server.id }, { subject: server.subject }))
 }
 
-const [open, setOpen] = createSignal<string>()
 const [working, setWorking] = createSignal<string>()
 /// Whether this device is becoming a server (`true`) or stopping being one (`false`), while it is.
 const [serving, setServing] = createSignal<boolean>()
@@ -381,7 +387,9 @@ const Glyph = (props: { thing: Thing }) => (
   </View>
 )
 
-function Things(props: { all: All; groups?: Groups }) {
+function Things(props: { all: All; groups?: Groups } & Shown) {
+  const open = () => props.inputs.device
+  const setOpen = (device?: string) => props.show(device ? { device } : undefined)
   const opened = () => [...props.all.devices, ...props.all.servers].find((thing) => thing.id === open())
   const row = (thing: () => Thing) => (
     <Row
@@ -447,11 +455,11 @@ function Things(props: { all: All; groups?: Groups }) {
 }
 
 /// Devices, as Settings draws it, with what other apps add to a device's page (`groups`).
-export default function Devices(props: { groups?: Groups }) {
+export default function Devices(props: { groups?: Groups } & Shown) {
   return (
   <Errored fallback={(error) => <Screen heading="Devices" back><Problem heading="Can't show your devices" text={error() as Error} /></Screen>}>
     <Loading fallback={<Screen heading="Devices" back><Spinner delay /></Screen>}>
-      <Things all={mine()} groups={props.groups} />
+      <Things all={mine()} groups={props.groups} inputs={props.inputs} show={props.show} />
     </Loading>
   </Errored>
 )

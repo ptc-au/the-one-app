@@ -5,7 +5,7 @@
 // person says it may. Whoever uses it has their key from then on, so a passkey nobody here allowed never does. Above
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
-import { createEffect, createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
+import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
 import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Spinner, toast, upload, visible } from "ui"
 import { Remove } from "./mine.tsx"
 import { Username } from "./username.tsx"
@@ -73,9 +73,15 @@ function Picture() {
   )
 }
 
+/// What's open, as the section's screen says it (`settings_section`'s own arguments): the form to change their username
+/// over it, `form: "username"`, a step Back goes back from.
+interface Shown {
+  inputs: { form?: "username" }
+  show: (inputs?: { form: "username" }) => void
+}
+
 /// Their username, which their addresses are under, to change, as GitHub's account settings have it.
-function Handle() {
-  const [changing, setChanging] = createSignal(false)
+function Handle(props: { open: boolean; show: Shown["show"] }) {
   const name = () => you().who.replace("users/", "")
   return (
     <Section heading="Username">
@@ -83,10 +89,10 @@ function Handle() {
         <Row
           heading={name()}
           text={`Your addresses are under it, like /git-repos/${name()}/notes.`}
-          action={<Button variant="secondary" onPress={() => setChanging(true)}>Change</Button>}
+          action={<Button variant="secondary" onPress={() => props.show({ form: "username" })}>Change</Button>}
         />
       </List>
-      <Username who={you().who} you open={changing()} onClose={() => setChanging(false)} onChanged={() => refresh(you)} />
+      <Username who={you().who} you open={props.open} onClose={() => props.show()} onChanged={() => refresh(you)} />
     </Section>
   )
 }
@@ -202,7 +208,7 @@ const opening = () => <Button onPress={opens("sign-in_add_passkey")}>Add Passkey
 
 // The devices are read by `<Show>`, outside the `<Screen>`, which keeps what's thrown inside it to itself and draws nothing.
 /// Sign In & Security, as Settings draws it: a section of its own, which Back leaves on a phone.
-export default function SignInAndSecurity() {
+export default function SignInAndSecurity(props: Shown) {
   return (
   <Errored
     fallback={(error, retry) => (
@@ -220,7 +226,7 @@ export default function SignInAndSecurity() {
         {(all) => (
           <Screen heading="Sign In & Security" back action={all().passkeys.length ? opening() : undefined}>
             <Picture />
-            <Handle />
+            <Handle open={props.inputs.form === "username"} show={props.show} />
             <Waiting />
             <Show
               when={all().passkeys.length}

@@ -91,12 +91,18 @@ async function remove(person: Person, all: All) {
   if (await confirm({ ...question, destructive: true })) change("sign-in_remove_person", { who: person.who })
 }
 
-const [inviting, setInviting] = createSignal(false)
-const [naming, setNaming] = createSignal(false)
-/** Whose username is being changed, from their row's menu. */
-const [renaming, setRenaming] = createSignal<string>()
-const [opened, setOpened] = createSignal<string>()
-const [adding, setAdding] = createSignal<"group" | "member">()
+/// What's open, as the section's screen says it (`settings_section`'s own arguments): a group beside the list, `group`,
+/// or a form over it, `form`: `invite`, `name` (whoever's looking, to change theirs), `new-group`, `member` (to add to
+/// the group open) or `username` (of `who`). Each is a step Back goes back from.
+interface Open {
+  group?: string
+  form?: "invite" | "name" | "new-group" | "member" | "username"
+  who?: string
+}
+interface Shown {
+  inputs: Open
+  show: (inputs?: Open) => void
+}
 
 /// The name whoever's looking goes by, to change.
 function Name(props: { open: boolean; onClose: () => void; called?: string }) {
@@ -201,7 +207,7 @@ function NewGroup(props: { open: boolean; onClose: () => void; me: string }) {
 
 /// Someone's row: what they go by, and what can be done to them, by whoever may: they change their own name, an owner
 /// takes someone else out, and makes anyone who has joined an owner, or not one, unless they're the last or the network's first.
-function PersonRow(props: { person: Person; all: All }) {
+function PersonRow(props: { person: Person; all: All; show: Shown["show"] }) {
   const me = () => props.person.who === props.all.me
   const mayRemove = () => props.all.invites && !me()
   const owner = () => props.all.owners.includes(props.person.who)
@@ -214,7 +220,7 @@ function PersonRow(props: { person: Person; all: All }) {
       text={about(props.person, props.all) || undefined}
       end={
         <Show when={me() || mayRemove() || mayOwn() || props.all.owners.includes(props.all.me)}>
-          <Menu.Root onSelect={(value) => (value === "rename" ? setNaming(true) : value === "username" ? setRenaming(props.person.who) : value === "owner" ? own("network", "the network", props.person.who, owner(), props.all) : remove(props.person, props.all))}>
+          <Menu.Root onSelect={(value) => (value === "rename" ? props.show({ form: "name" }) : value === "username" ? props.show({ form: "username", who: props.person.who }) : value === "owner" ? own("network", "the network", props.person.who, owner(), props.all) : remove(props.person, props.all))}>
             <Menu.Trigger aria-label={`More for ${name()}`} />
             <Menu.Positioner>
               <Menu.Content>
@@ -242,7 +248,7 @@ function PersonRow(props: { person: Person; all: All }) {
 }
 
 /// A group: who's in it, each to take out or make an owner, or not one, and someone in the network to add.
-function GroupScreen(props: { group: Group; all: All }) {
+function GroupScreen(props: { group: Group; all: All; show: Shown["show"] }) {
   // Its owners add, take out and make owners.
   const owns = () => props.group.owners.includes(props.all.me)
   const remove = async (member: string) => {
@@ -250,7 +256,7 @@ function GroupScreen(props: { group: Group; all: All }) {
       change("permissions_unshare", { artifact: props.group.group, relation: "member", who: member }, props.all.me)
   }
   return (
-    <Screen heading={props.group.called} back action={<Show when={owns()}><Button variant="outline" onPress={() => setAdding("member")}>Add Member</Button></Show>}>
+    <Screen heading={props.group.called} back action={<Show when={owns()}><Button variant="outline" onPress={() => props.show({ group: props.group.group, form: "member" })}>Add Member</Button></Show>}>
       <Section heading="Members">
         <List each={props.group.members}>
           {(member) => {
@@ -289,68 +295,69 @@ function GroupScreen(props: { group: Group; all: All }) {
 }
 
 /// Someone in the network, not yet in the group, to add.
-function AddMember(props: { all: All; group?: Group }) {
+function AddMember(props: { all: All; group?: Group; open: boolean; show: Shown["show"] }) {
   const outside = () => props.all.joined.filter((person) => !props.group?.members.includes(person.who))
   return (
-    <Sheet heading="Add Member" open={adding() === "member"} onClose={() => setAdding()}>
+    <Sheet heading="Add Member" open={props.open} onClose={() => props.show({ group: props.group?.group })}>
       <Show when={outside().length} fallback={<Empty>Everyone in the network is in it.</Empty>}>
         <List each={outside()} keyed={(person) => person.who}>
-          {(person) => <Row start={<Avatar subject={person().who} name={props.all.named(person().who)} />} heading={props.all.named(person().who)} text={person().email ?? undefined} onPress={() => (setAdding(), change("permissions_share", { artifact: opened()!, relation: "member", who: person().who }, props.all.me))} />}
+          {(person) => <Row start={<Avatar subject={person().who} name={props.all.named(person().who)} />} heading={props.all.named(person().who)} text={person().email ?? undefined} onPress={() => (props.show({ group: props.group?.group }), change("permissions_share", { artifact: props.group!.group, relation: "member", who: person().who }, props.all.me))} />}
         </List>
       </Show>
     </Sheet>
   )
 }
 
-function UsersAndGroups(props: { all: All }) {
-  const group = () => props.all.groups.find(({ group }) => group === opened())
+function UsersAndGroups(props: { all: All } & Shown) {
+  const group = () => props.all.groups.find(({ group }) => group === props.inputs.group)
+  const form = (name: Open["form"]) => props.inputs.form === name
   return (
     <>
-      <Split open={!!group()} onClose={() => setOpened()} pick="Pick a group to see its members." detail={<Show when={group()}><GroupScreen group={group()!} all={props.all} /></Show>}>
-        <Screen heading="People & Groups" back action={props.all.invites ? <Button onPress={() => setInviting(true)}>Invite</Button> : undefined}>
+      <Split open={!!group()} onClose={() => props.show()} pick="Pick a group to see its members." detail={<Show when={group()}><GroupScreen group={group()!} all={props.all} show={props.show} /></Show>}>
+        <Screen heading="People & Groups" back action={props.all.invites ? <Button onPress={() => props.show({ form: "invite" })}>Invite</Button> : undefined}>
           <Show when={props.all.joined.length}>
             <Section heading="Users">
               <List each={props.all.joined} keyed={(person) => person.who}>
-                {(person) => <PersonRow person={person()} all={props.all} />}
+                {(person) => <PersonRow person={person()} all={props.all} show={props.show} />}
               </List>
             </Section>
           </Show>
           <Show when={props.all.invited.length}>
             <Section heading="Invited">
               <List each={props.all.invited} keyed={(person) => person.who}>
-                {(person) => <PersonRow person={person()} all={props.all} />}
+                {(person) => <PersonRow person={person()} all={props.all} show={props.show} />}
               </List>
             </Section>
           </Show>
           <Section heading="Groups">
             <Show when={props.all.groups.length} fallback={<Empty>You're in no groups yet.</Empty>}>
               <List each={props.all.groups} keyed={({ group }) => group}>
-                {(group) => <Row start={<Avatar subject={group().group} name={group().called} />} heading={group().called} text={new Intl.ListFormat("en").format(group().members.map(props.all.named))} current={opened() === group().group} onPress={() => setOpened(group().group)} />}
+                {(group) => <Row start={<Avatar subject={group().group} name={group().called} />} heading={group().called} text={new Intl.ListFormat("en").format(group().members.map(props.all.named))} current={props.inputs.group === group().group} onPress={() => props.show({ group: group().group })} />}
               </List>
             </Show>
             <List>
-              <Row start={<Icon name="plus" />} heading="New Group" onPress={() => setAdding("group")} />
+              <Row start={<Icon name="plus" />} heading="New Group" onPress={() => props.show({ form: "new-group" })} />
             </List>
           </Section>
         </Screen>
       </Split>
-      <Invite open={inviting()} onClose={() => setInviting(false)} />
-      <Name open={naming()} onClose={() => setNaming(false)} called={props.all.joined.find((person) => person.who === props.all.me)?.called} />
-      <Show when={renaming()} keyed>
-        {(who) => <Username who={who} you={who === props.all.me} open onClose={() => setRenaming()} onChanged={() => refresh(all)} />}
+      <Invite open={form("invite")} onClose={() => props.show()} />
+      <Name open={form("name")} onClose={() => props.show()} called={props.all.joined.find((person) => person.who === props.all.me)?.called} />
+      <Show when={form("username") ? props.inputs.who : undefined} keyed>
+        {(who) => <Username who={who} you={who === props.all.me} open onClose={() => props.show()} onChanged={() => refresh(all)} />}
       </Show>
-      <NewGroup open={adding() === "group"} onClose={() => setAdding()} me={props.all.me} />
-      <AddMember all={props.all} group={group()} />
+      <NewGroup open={form("new-group")} onClose={() => props.show()} me={props.all.me} />
+      <AddMember all={props.all} group={group()} open={form("member")} show={props.show} />
     </>
   )
 }
 
-/// People & Groups, as Settings draws it.
-export default function PeopleAndGroups() {
+/// People & Groups, as Settings draws it, told its screen (`Open`).
+export default function PeopleAndGroups(props: Shown) {
   return (
   <Errored fallback={(error) => <Screen heading="People & Groups" back><Problem heading="Can't show who's in your network" text={error() as Error} /></Screen>}>
     <Loading fallback={<Screen heading="People & Groups" back><Spinner delay /></Screen>}>
-      <UsersAndGroups all={all()} />
+      <UsersAndGroups all={all()} inputs={props.inputs} show={props.show} />
     </Loading>
   </Errored>
 )
