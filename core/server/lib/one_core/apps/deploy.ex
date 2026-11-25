@@ -74,6 +74,7 @@ defmodule OneCore.Apps.Deploy do
         with {:ok, styling} <- step("lint", fn -> Entrypoint.lint(files, version, trusted) end),
              :ok <- if(why = Version.waiting(name, version), do: {:error, why}, else: :ok),
              :ok <- described(name, version),
+             :ok <- routed(name, version, files),
              :ok <- if(install, do: fits_deploy(owner, name, version), else: :ok),
              {:ok, warnings} <- if(trusted, do: {:ok, warnings}, else: Sandbox.check(owner, version, built)),
              _ = stage.("Keeping it in the bucket"),
@@ -82,7 +83,7 @@ defmodule OneCore.Apps.Deploy do
              :ok <- step("listed", fn -> listed(artifact) end),
              {:ok, number} <- step("keep", fn -> Store.keep(artifact, name, version, built, files, from, trusted, was) end),
              :ok <- committed(owner, name, %{"number" => number, "code" => version.code, "trusted" => trusted}, version, install, began) do
-          warnings = Enum.join(Enum.reject([warnings, styling | untasked(name, version, built) ++ unrouted(name, version, files)], &(&1 == "")), "\n")
+          warnings = Enum.join(Enum.reject([warnings, styling | untasked(name, version, built)], &(&1 == "")), "\n")
           {:ok, number, warnings}
         end
       after
@@ -176,8 +177,8 @@ defmodule OneCore.Apps.Deploy do
 
   # An app's screens are tools (`OneCore.App`): its page reads which it shows with `toolInput` and goes to another with
   # `navigate`, and each such tool says `ui`, so an assistant draws the screen under its call. A page that never calls
-  # `toolInput`, or a screen whose tool says no `ui`, is warned of, with which.
-  defp unrouted(name, version, files) do
+  # `toolInput`, or a screen whose tool says no `ui`, is refused, saying which.
+  defp routed(name, version, files) do
     sources =
       for {path, text} <- files,
           String.starts_with?(path, "client/") and Path.extname(path) in ~w(.ts .tsx .js .jsx) and is_binary(text),
@@ -195,11 +196,14 @@ defmodule OneCore.Apps.Deploy do
           sources != [] and not Enum.any?(sources, &String.contains?(&1, "toolInput(")),
           do: "#{name}'s page #{page} never calls toolInput, so its screens aren't tools: read which screen it shows with toolInput and go to another with navigate."
 
-    never ++
-      for tool <- version.tools,
-          tool.name in screens,
-          tool[:ui] == nil,
-          do: "#{name}_#{tool.name} is a screen (its page shows it with toolInput or navigate) and says no ui: give it ui: \"client/index.html\" beside its name in tools/0."
+    unrouted =
+      never ++
+        for tool <- version.tools,
+            tool.name in screens,
+            tool[:ui] == nil,
+            do: "#{name}_#{tool.name} is a screen (its page shows it with toolInput or navigate) and says no ui: give it ui: \"client/index.html\" beside its name in tools/0."
+
+    if unrouted == [], do: :ok, else: {:error, Enum.join(unrouted, "\n")}
   end
 
   # Each function the code defines, by its name and arity, and each tool's call/3 clause, by the tool's name.
