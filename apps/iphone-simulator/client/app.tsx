@@ -1,6 +1,6 @@
 // iPhone Simulator: your simulators on every Mac, and one of them live, to use as an iPhone, start, stop or remove.
 import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast } from "ui"
+import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, navigate, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast, toolInput } from "ui"
 
 /** A simulator, as `iphone-simulator_list` answers it. */
 interface Simulator {
@@ -21,7 +21,12 @@ const says = (e: Simulator) => (e.state === "stopped" && e.why ? "Couldn't start
 /// What its menu offers in each state: none while it's being removed.
 const ACTIONS: Record<State, ("start" | "stop" | "remove")[]> = { stopped: ["start", "remove"], starting: ["stop", "remove"], running: ["stop", "remove"], stopping: ["remove"], removing: [], gone: ["remove"] }
 
-const [open, setOpen] = createSignal<string>()
+/// The simulator open beside the list is a screen of its own, `iphone-simulator_simulator { simulator }` at /iphone-simulator/iphone-1.
+const open = () => {
+  const { name, arguments: inputs } = toolInput("iphone-simulator_list")
+  return name === "iphone-simulator_simulator" ? String(inputs.simulator) : undefined
+}
+const setOpen = (simulator?: string) => navigate(simulator ? "iphone-simulator_simulator" : "iphone-simulator_list", simulator ? { simulator } : {})
 
 function Detail(props: { simulator: Simulator }) {
   const e = () => props.simulator

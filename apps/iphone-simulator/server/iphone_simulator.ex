@@ -67,10 +67,22 @@ defmodule IphoneSimulator do
       %{
         name: "list",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
           "The simulators you can use, on every Mac: each one's name, model, iOS version, state (stopped, starting, running, stopping, removing, gone), machine, what it's for, who created it, and when it was created and last used (ms since 1970). A Mac that didn't answer is in `failed`, with why.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object", properties: %{simulators: %{type: "array", items: @listed}, failed: @failed}, required: ["simulators", "failed"]}
+      },
+      %{
+        name: "simulator",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{simulator}",
+        runtime_version: 4,
+        description: "One simulator, as `list` gives it: its state, what it's doing and why it didn't start. It is the screen of it beside the list, live where it runs: /iphone-simulator/iphone-1.",
+        inputs: one(),
+        outputs: @listed
       },
       %{
         name: "machines",
@@ -211,6 +223,11 @@ defmodule IphoneSimulator do
   def call("list", _inputs, call) do
     {simulators, failed} = listed(call)
     %{simulators: simulators, failed: failed}
+  end
+
+  def call("simulator", %{"simulator" => name}, call) do
+    {simulators, _failed} = listed(call)
+    Enum.find(simulators, &(&1["name"] == name)) || raise "No simulator is called #{name}"
   end
 
   def call("machines", _inputs, call), do: %{machines: Service.machines(call, Simulator)}
