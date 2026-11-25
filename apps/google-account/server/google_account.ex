@@ -273,6 +273,7 @@ defmodule GoogleAccount do
     }
 
     request = if body, do: Map.put(request, "body", body), else: request
+    allowed!(call, email, url)
 
     response = vault(call, "fetch", request)
 
@@ -282,6 +283,20 @@ defmodule GoogleAccount do
     end
 
     %{status: response["status"], headers: response["headers"], body: decoded(response["body"])}
+  end
+
+  # An account is sent only to the Google hosts it was signed in with (`@service`), which signing in again adds to as it
+  # adds what the Google apps installed since ask (`scopes`). So an account signed in before an app was installed is
+  # its person's to sign in again, as one Google says needs more allowed of it is, which is said here rather than
+  # as the Vault's refusal.
+  defp allowed!(call, email, url) do
+    host = URI.parse(url).host
+    kept = Enum.find(vault(call, "items", %{})["items"], &(&1["name"] == item(email)))
+
+    if host in @service["hosts"] and host not in kept["hosts"] do
+      state(call, email, :needs_action, "Sign in again", %{label: "Sign In", tool: "sign_in", inputs: %{account: email}})
+      raise "#{email} isn't signed in for #{host} yet, which a Google app installed since needs: google-account_sign_in with account #{email} gives the link to sign in again."
+    end
   end
 
   defp decoded(nil), do: nil
