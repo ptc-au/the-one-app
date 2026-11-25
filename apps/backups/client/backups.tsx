@@ -88,11 +88,20 @@ async function doing<T>(does: () => Promise<T>): Promise<T | true | false> {
 
 /// What's open, as the section's screen says it (`settings_section`'s own arguments): a destination beside the list,
 /// `destination`; the form to add one over it, `add` (the kind, `folder` or `s3`); the form to restore from the one open,
-/// `restore` (the backup, or nothing for the newest). Each is a step Back goes back from.
+/// `restore` (the backup, or nothing for the newest). Each is a step Back goes back from. A form is filled in with what
+/// its tool would be given, where it's said: `add`'s `name`, `folder`, `machine`, `endpoint`, `bucket` and `item`, and
+/// `restore`'s `blobs`.
 interface Open {
   destination?: string
   add?: string
   restore?: string
+  name?: string
+  folder?: string
+  machine?: string
+  endpoint?: string
+  bucket?: string
+  item?: string
+  blobs?: string
 }
 interface Shown {
   inputs: Open
@@ -176,10 +185,13 @@ function Opened(props: { destination: Destination; show: Shown["show"] }) {
 
 /// Adds a destination: a folder on one of the network's machines, as on a disk plugged into it, or S3-compatible storage
 /// whose keys are an item in the Vault for Everyone. It's tried before it's added, so a typo shows here.
-function AddSheet(props: { machines: All["machines"]; kind?: string; show: Shown["show"] }) {
-  const [kind, setKind] = createSignal(props.kind === "s3" ? "s3" : "folder")
-  const [machine, setMachine] = createSignal<string>()
-  const [typed, setTyped] = createSignal<Record<string, string>>({})
+function AddSheet(props: { machines: All["machines"]; kind?: string; given: Open; show: Shown["show"] }) {
+  const [kind, setKind] = createSignal(() => (props.kind === "s3" ? "s3" : "folder"))
+  const [machine, setMachine] = createSignal<string | undefined>(() => props.given.machine)
+  const [typed, setTyped] = createSignal<Record<string, string>>(() => {
+    const { name, folder, endpoint, bucket, item } = props.given
+    return Object.fromEntries(Object.entries({ name, folder, endpoint, bucket, item }).filter((pair): pair is [string, string] => pair[1] !== undefined))
+  })
   const [missing, setMissing] = createSignal<string[]>([])
   const machines = () => props.machines.map((machine) => ({ value: machine.key, label: machine.name ?? machine.key.slice(0, 8) }))
   const type = (name: string) => (text: string) => (setTyped({ ...typed(), [name]: text }), setMissing(missing().filter((one) => one !== name)))
@@ -233,20 +245,30 @@ function AddSheet(props: { machines: All["machines"]; kind?: string; show: Shown
 
 /// Brings back what a backup holds that's gone: someone's data, what one app keeps for them, or one file. What's
 /// there now stays as it is.
-function RestoreSheet(props: { destination?: Destination; from?: string; show: Shown["show"] }) {
+function RestoreSheet(props: { destination?: Destination; from?: string; blobs?: string; show: Shown["show"] }) {
   return (
     <Sheet heading="Restore" open={!!props.destination && props.from !== undefined} onClose={() => props.show({ destination: props.destination?.name })}>
-      <Show when={props.destination}>{(destination) => <Restore destination={destination()} from={props.from || undefined} show={props.show} />}</Show>
+      <Show when={props.destination}>{(destination) => <Restore destination={destination()} from={props.from || undefined} blobs={props.blobs} show={props.show} />}</Show>
     </Sheet>
   )
 }
 
-function Restore(props: { destination: Destination; from?: string; show: Shown["show"] }) {
-  const [what, setWhat] = createSignal("whose")
+/// What `blobs` names, as the form says it: someone's data (`users/alice/`), one app's of theirs
+/// (`users/alice/own/notes/`), or one file.
+function named(blobs = "") {
+  const app = /^((?:users|groups)\/[^/]+|network)\/(?:own|made)\/([^/]+)\/$/.exec(blobs)
+  if (app) return { what: "app", whose: app[1], app: app[2], file: "" }
+  const whose = /^((?:users|groups)\/[^/]+|network)\/$/.exec(blobs)
+  if (whose) return { what: "whose", whose: whose[1], file: "" }
+  return { what: blobs ? "file" : "whose", file: blobs }
+}
+
+function Restore(props: { destination: Destination; from?: string; blobs?: string; show: Shown["show"] }) {
+  const [what, setWhat] = createSignal(() => named(props.blobs).what)
   const [backup, setBackup] = createSignal<string | undefined>(props.from)
-  const [whose, setWhose] = createSignal<string>()
-  const [app, setApp] = createSignal<string>()
-  const [file, setFile] = createSignal("")
+  const [whose, setWhose] = createSignal<string | undefined>(() => named(props.blobs).whose)
+  const [app, setApp] = createSignal<string | undefined>(() => named(props.blobs).app)
+  const [file, setFile] = createSignal(() => named(props.blobs).file)
   const [missing, setMissing] = createSignal(false)
   const choices = createMemo(async () => {
     const listed = <T,>(tool: string, key: string) => call(tool).then((text): T[] => JSON.parse(text)[key], (): T[] => [])
@@ -339,8 +361,8 @@ function Backups(props: { all: All } & Shown) {
           </Show>
         </Screen>
       </Split>
-      <AddSheet machines={props.all.machines} kind={props.inputs.add} show={props.show} />
-      <RestoreSheet destination={opened()} from={props.inputs.restore} show={props.show} />
+      <AddSheet machines={props.all.machines} kind={props.inputs.add} given={props.inputs} show={props.show} />
+      <RestoreSheet destination={opened()} from={props.inputs.restore} blobs={props.inputs.blobs} show={props.show} />
     </>
   )
 }

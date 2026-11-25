@@ -186,6 +186,8 @@ defmodule Backups do
       },
       %{
         name: "add",
+        ui: "client/forms.html",
+        runtime_version: 4,
         description:
           "Adds a destination to back up to: a folder on a machine of the network's, as on a disk plugged into it, or S3-compatible storage. It's tried first",
         inputs: %{
@@ -296,6 +298,8 @@ defmodule Backups do
       },
       %{
         name: "restore",
+        ui: "client/forms.html",
+        runtime_version: 4,
         task_support: :optional,
         description:
           "Brings back what a backup holds under `blobs` that's gone from the network, such as one person's or one app's data, or a file. It changes nothing that's there",
