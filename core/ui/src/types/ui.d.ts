@@ -663,6 +663,10 @@ export declare function upload(file: File | Blob): Promise<string>
 /** The device's own picker of files to open, from a press: of `accept`'s kinds (`.png`, `image/*`), one or
  * `multiple`. → the files chosen, none where it was cancelled. */
 export declare function pickFiles(options?: { accept?: string[]; multiple?: boolean }): Promise<File[]>
+/** The device's own document scanner, from a press: it finds each page's edges, takes it by itself, flattens it and scans
+ * as many in a row as its person likes. → a JPEG file a page, in order, none where it was cancelled. A device without
+ * one takes a photo, or asks for image files as `pickFiles` does. */
+export declare function scanDocuments(): Promise<File[]>
 /** `changed(() => refresh(notes))`: runs `listener` whenever what this page was answered has changed, to ask again and
  * draw it, but not while the page isn't shown (`visible`): a change then is told once, as it's shown again, as a
  * browser's background tab does nothing until it's looked at. → the function that stops it. */

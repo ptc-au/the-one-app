@@ -379,8 +379,22 @@ export const upload: typeof Page.upload = async (file) => {
 /// press, as a browser shows it for `<input type="file">`. → the files chosen, none where it was cancelled.
 export const pickFiles: typeof Page.pickFiles = async (options = {}) => {
   await greeted
-  const { files } = await ask<{ files: { name: string; body: string }[] }>("one/files", { accept: options.accept ?? [], multiple: !!options.multiple })
-  return files.map((file) => new File([Uint8Array.from(atob(file.body), (character) => character.charCodeAt(0))], file.name))
+  return filesOf(await ask<Files>("one/files", { accept: options.accept ?? [], multiple: !!options.multiple }))
+}
+type Files = { files: { name: string; body: string }[] }
+/// A file the device gave, with the type its name says, as a browser's picker gives it.
+const filesOf = ({ files }: Files) =>
+  files.map((file) => new File([Uint8Array.from(atob(file.body), (character) => character.charCodeAt(0))], file.name, { type: TYPES[file.name.split(".").pop()!.toLowerCase()] ?? "" }))
+const TYPES: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", heic: "image/heic", webp: "image/webp", pdf: "application/pdf" }
+/// `const pages = await scanDocuments()`: the device's own document scanner, from a press, as a phone's Notes shows it: it
+/// finds each page's edges, takes it by itself, flattens it and scans as many in a row as its person likes. → a JPEG
+/// file a page, in order, none where it was cancelled. A device without a scanner takes a photo instead, or asks for
+/// image files as `pickFiles` does, so an app uses it on every device.
+export const scanDocuments: typeof Page.scanDocuments = async () => {
+  await greeted
+  // A client that doesn't know `one/scan`, or a device with no scanner, says so as an error.
+  const scanned = await ask<Files>("one/scan", {}).catch(() => undefined)
+  return scanned ? filesOf(scanned) : pickFiles({ accept: ["image/*"], multiple: true })
 }
 /// `copy(url).then(() => setCopied(true))`: puts text on the device's clipboard, as a Copy button does, which its client
 /// does (`one/copy`): a page has none of its own.

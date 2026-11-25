@@ -177,6 +177,21 @@ async function respond(view, method, params) {
     await haptic(params.kind)
     return {}
   }
+  // A page of an app that scans documents (`scanDocuments`), which no DOM has a scanner for: a photo from the device's
+  // camera as `<input capture>` takes it, and where it has none, the picker of images, as a computer's browser shows.
+  if (method === "one/scan") {
+    const photo = await new Promise((resolve) => {
+      const input = Object.assign(document.createElement("input"), { type: "file", accept: "image/*", capture: "environment" })
+      input.onchange = () => resolve(input.files?.[0])
+      input.oncancel = () => resolve(undefined)
+      input.click()
+    })
+    if (!photo) return { files: [] }
+    const bytes = new Uint8Array(await photo.arrayBuffer())
+    let binary = ""
+    for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
+    return { files: [{ name: photo.name, body: btoa(binary) }] }
+  }
   // What an app is told of its client, and the few things one changes of it.
   if (method === "one/client") {
     const changes = Object.keys(params).filter((change) => change !== "statusBar")
