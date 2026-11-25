@@ -175,12 +175,11 @@ defmodule OneCore.Servers do
   """
   def behind? do
     mine = Builds.count(Builds.build())
-
-    Enum.any?(all() -- [Server.key()], fn key ->
-      said = cached({:build, key}, fn -> read("servers/#{key}/build", %{})["build"] end)
-      ready?(key) == true and Builds.count(said) > mine
-    end)
+    Enum.any?(all() -- [Server.key()], &(ready?(&1) == true and Builds.count(build(&1)) > mine))
   end
+
+  @doc "The build the server whose key is `key` says it runs (`OneCore.Builds.say/1`), `nil` where it says none."
+  def build(key), do: cached({:build, key}, fn -> read("servers/#{key}/build", %{})["build"] end)
 
   @doc """
   Whether this server is the one to do `what` (a JSON value, such as the build or the commit it's for), of all the

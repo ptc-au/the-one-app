@@ -16,7 +16,7 @@ defmodule OneCore.Jobs do
   """
   use GenServer
   require Logger
-  alias OneCore.{Apps, Bucket, Edge, Servers}
+  alias OneCore.{Apps, Bucket, Builds, Edge, Server, Servers}
   alias OneCore.Apps.Calls
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -98,15 +98,23 @@ defmodule OneCore.Jobs do
     refused in Bucket.Refused -> Logger.info("Alarms are looked for again in a minute: #{Exception.message(refused)}")
   end
 
-  # Whose alarms this server looks at: everyone's, and the network's, for one acting for the network, which it lists
-  # by their folders, and whoever else it's for.
+  # Whose alarms this server looks at: whoever it's for, and everyone's, which it lists by their folders, for the one
+  # acting for the network that comes first by its key of those ready and on a build as new as its own. One look a
+  # minute has each that's due made, and a list is the bucket's dearest kind of request, a person's a minute for each
+  # server that looked. A server that's stepped aside runs no jobs and is behind (`OneCore.Servers.Aside`), so the next
+  # looks in its place.
   defp looked_at do
     everyone =
-      if Servers.here?("network"),
+      if Servers.here?("network") and first?(),
         do: ["network" | for(folder <- Bucket.folders("users/") ++ Bucket.folders("groups/"), do: String.trim_trailing(folder, "/"))],
         else: []
 
     Enum.uniq(everyone ++ Servers.here())
+  end
+
+  defp first? do
+    {me, mine} = {Server.key(), Builds.count(Builds.build())}
+    not Enum.any?(Servers.own("network"), &(&1 < me and Servers.ready?(&1) == true and Builds.count(Servers.build(&1)) >= mine))
   end
 
   # An alarm's key: whoever the app was installed for, the app's name, and when it's due, in seconds since 1970.
