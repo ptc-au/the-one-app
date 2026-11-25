@@ -151,6 +151,31 @@ fn opened(key: &SecretKey, idempotency: &str, response: Vec<u8>) -> Vec<u8> {
     Value::Object(answer.clone()).to_string().into_bytes()
 }
 
+/// What a server answered `tasks/get` of a task whose write it found was done already, which the task keeps as the
+/// first ask answered it, sealed (`opened`): the task as it ended then. Anything else as it is.
+fn opened_task(key: &SecretKey, idempotency: &str, response: Vec<u8>) -> Vec<u8> {
+    let Ok(mut answer) = serde_json::from_slice::<Value>(&response) else { return response };
+    let Some(sealed) = answer["result"]["result"]["_meta"]["sealed"].as_str() else { return response };
+    let about = format!("one/writes/1/answer\n{idempotency}");
+    let Some(then) = data_encoding::BASE64.decode(sealed.as_bytes()).ok()
+        .and_then(|sealed| crate::sealed::open(key, &about, &sealed).ok())
+        .and_then(|then| serde_json::from_slice::<Value>(&then).ok())
+    else {
+        return response;
+    };
+    let task = &mut answer["result"];
+    if let Some(result) = then.get("result") {
+        task["result"] = result.clone();
+    } else if let Some(error) = then.get("error") {
+        // As a task that failed is kept (`OneCore.Tasks`).
+        task.as_object_mut().expect("it's a response").remove("result");
+        task["status"] = json!("failed");
+        task["statusMessage"] = error["message"].clone();
+        task["error"] = error.clone();
+    }
+    answer.to_string().into_bytes()
+}
+
 /// Whether `response` is a JSON-RPC error: what a server answers a write asked again that it didn't run, as one
 /// still running where it was first asked, or a server that speaks no protocol keeping to keys.
 fn error(response: &[u8]) -> bool {
@@ -232,7 +257,12 @@ impl Client {
             }
         };
         let response = match (request.await, &write) {
-            (Ok(response), Some((key, _again))) => Ok(opened(&self.key, key, response)),
+            (Ok(response), Some((key, _again))) => {
+                let response = opened(&self.key, key, response);
+                self.remember(key, &response);
+                Ok(response)
+            }
+            (Ok(response), None) => Ok(self.task_opened(said.as_ref(), response)),
             (response, _) => response,
         };
         // Refused for being behind, it's behind; answered what only a server it talks with answers, it isn't.
@@ -279,6 +309,30 @@ impl Client {
             }
             refused => refused,
         }
+    }
+
+    /// Keeps the idempotency key of a write that was answered with a task, for opening what the task keeps
+    /// (`task_opened`).
+    fn remember(&self, key: &str, response: &[u8]) {
+        let Ok(answer) = serde_json::from_slice::<Value>(response) else { return };
+        if let Some(task) = answer["result"]["taskId"].as_str() {
+            self.tasks.lock().expect("no ask panics").insert(task.to_owned(), key.to_owned());
+        }
+    }
+
+    /// What a server answers `tasks/get` as the task ended, opening what it keeps sealed with the key its write was
+    /// asked by, which is forgotten once it ended.
+    fn task_opened(&self, request: Option<&Value>, response: Vec<u8>) -> Vec<u8> {
+        let Some(request) = request.filter(|request| request["method"] == "tasks/get") else { return response };
+        let Some(task) = request["params"]["taskId"].as_str() else { return response };
+        let Some(key) = self.tasks.lock().expect("no ask panics").get(task).cloned() else { return response };
+        let opened = opened_task(&self.key, &key, response);
+        if let Ok(answer) = serde_json::from_slice::<Value>(&opened)
+            && ["completed", "failed", "cancelled"].contains(&answer["result"]["status"].as_str().unwrap_or_default())
+        {
+            self.tasks.lock().expect("no ask panics").remove(task);
+        }
+        opened
     }
 
     /// What `open`'s server answers `request`, or if it hasn't within `HEDGE`, what another server answers it, if

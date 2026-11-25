@@ -415,6 +415,9 @@ pub struct Client {
     listed: std::sync::Mutex<Option<Arc<resolve::Listed>>>,
     /// Asking a server for `tools/list`, one at a time, so concurrent startup calls don't stampede.
     listing: Mutex<()>,
+    /// The idempotency key of each write answered with a task, by its `taskId`, until the task is seen ended: what
+    /// opens an answer the task keeps sealed (`rpc::opened_task`).
+    tasks: std::sync::Mutex<std::collections::HashMap<String, String>>,
     /// What this client says of itself in what it records (`report`), as OpenTelemetry's resource attributes say a
     /// service: which client it is (`service.name`), its build, its device's name and its operating system, until its
     /// SDK is made, as it first records something (`telemetry`).
@@ -501,7 +504,7 @@ impl Client {
         let client = Arc::new_cyclic(|me| Self {
             home, key, address, state: watch::Sender::new(state), admitting: Mutex::default(),
             again: Arc::default(), approval: Arc::default(), link, reach, notifications, says, watching, resolvers, tools,
-            listed, listing, resource, telemetry: Arc::default(), sending: Mutex::default(), unanswered: std::sync::Mutex::default(),
+            listed, listing, tasks: std::sync::Mutex::default(), resource, telemetry: Arc::default(), sending: Mutex::default(), unanswered: std::sync::Mutex::default(),
             me: me.clone(), runtime: tokio::runtime::Handle::current(),
         });
         accept(endpoint, client.me.clone());
