@@ -521,7 +521,7 @@ fn sending_audio(sdp: &str) -> Option<Mid> {
 struct AudioSession;
 
 impl AudioSession {
-    fn open() -> Self {
+    fn open() -> anyhow::Result<Self> {
         #[cfg(target_os = "ios")]
         unsafe {
             use objc2_avf_audio::{
@@ -542,9 +542,11 @@ impl AudioSession {
         }
         #[cfg(target_os = "android")]
         if !crate::platform::android::ensure_microphone() {
-            eprintln!("A voice asked Android for microphone permission");
+            // Android's audio is back to normal as this ends, as a call's is.
+            drop(Self);
+            anyhow::bail!("Android's microphone permission isn't granted");
         }
-        Self
+        Ok(Self)
     }
 }
 
@@ -652,7 +654,7 @@ impl Audio {
         };
         audio.encoder.bitrate_bps = 32_000;
         if DEVICES {
-            audio._session = Some(AudioSession::open());
+            audio._session = Some(AudioSession::open()?);
             out.tell("devices", list_devices());
             audio.speaker(output);
             audio.microphone(commands, input);

@@ -29,6 +29,8 @@ public final class NativeHost {
     /** The view under every other, as a phone's launcher's is: Back doesn't close it. */
     private static NativeView root;
     private static OnBackPressedCallback back;
+    /** Asks for `RECORD_AUDIO` as Android's permission flow does, and hears its answer (`nativeMicrophone`). */
+    private static androidx.activity.result.ActivityResultLauncher<String> microphone;
     /** What dims what's under an app's view as the rail's line pulls it home (`moved`), under every app's view. */
     private static View dim;
 
@@ -38,6 +40,8 @@ public final class NativeHost {
     public static void attach(ComponentActivity activity, Runnable changed) {
         NativeHost.activity = activity;
         NativeHost.changed = changed;
+        microphone = activity.registerForActivityResult(
+                new androidx.activity.result.contract.ActivityResultContracts.RequestPermission(), NativeHost::nativeMicrophone);
         nativeAttach(dark(activity), reduced(), activity.getResources().getConfiguration().fontScale);
     }
 
@@ -276,7 +280,7 @@ public final class NativeHost {
         if (changed != null) changed.run();
     }
 
-    /** Switches Android's audio to voice communication and asks for RECORD_AUDIO if not yet granted. */
+    /** Switches Android's audio to voice communication and asks for RECORD_AUDIO if not yet granted: its answer is `nativeMicrophone`'s. */
     static boolean ensureMicrophone() {
         if (activity == null) return false;
         android.media.AudioManager audio = activity.getSystemService(android.media.AudioManager.class);
@@ -288,8 +292,7 @@ public final class NativeHost {
                 == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return true;
         }
-        androidx.core.app.ActivityCompat.requestPermissions(
-                activity, new String[] { android.Manifest.permission.RECORD_AUDIO }, 1001);
+        microphone.launch(android.Manifest.permission.RECORD_AUDIO);
         return false;
     }
 
@@ -304,5 +307,6 @@ public final class NativeHost {
     }
 
     private static native void nativeAttach(boolean dark, boolean reduced, float fontScale);
+    private static native void nativeMicrophone(boolean granted);
     private static native void nativeAppearance(boolean dark, boolean reduced, float fontScale);
 }

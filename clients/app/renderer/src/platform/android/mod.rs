@@ -15,7 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, OnceLock, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::Instant;
 
 use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
@@ -60,18 +60,32 @@ pub fn start() -> anyhow::Result<super::Native> {
     STARTED.get().cloned().map(super::Native).ok_or_else(|| anyhow::anyhow!("the app's activity hasn't attached its native host"))
 }
 
-/// Switches Android's audio to voice communication and asks for `RECORD_AUDIO` if not yet granted.
+/// Voices waiting for Android's answer to the microphone's permission (`nativeMicrophone`).
+static MICROPHONE: Mutex<Vec<mpsc::Sender<bool>>> = Mutex::new(Vec::new());
+
+/// Switches Android's audio to voice communication and gives whether `RECORD_AUDIO` is granted, asking for it through
+/// Android's permission flow if it isn't yet and waiting for its person's answer.
 pub(crate) fn ensure_microphone() -> bool {
     let Some(sender) = STARTED.get() else { return false };
-    let (tx, rx) = mpsc::sync_channel(1);
+    let (tx, rx) = mpsc::channel();
     let _ = sender.send(Box::new(move |_| {
         let granted = java(|env, host| {
             env.call_static_method(<&JClass>::from(host.as_obj()), "ensureMicrophone", "()Z", &[])?.z()
-        })
-        .unwrap_or(false);
-        let _ = tx.send(granted);
+        });
+        match granted {
+            Some(false) => MICROPHONE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(tx),
+            granted => drop(tx.send(granted.unwrap_or(false))),
+        }
     }));
-    rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap_or(false)
+    rx.recv().unwrap_or(false)
+}
+
+/// Android's answer to the microphone's permission.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_theone_renderer_NativeHost_nativeMicrophone(_: JNIEnv, _: JClass, granted: jboolean) {
+    for waiting in MICROPHONE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).drain(..) {
+        let _ = waiting.send(granted != 0);
+    }
 }
 
 /// Returns Android's audio routing to normal once a voice ends.
