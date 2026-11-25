@@ -21,8 +21,8 @@
 // the air, and a host knows only the kinds of token, the conditions and the style properties, never a token's or a
 // style's name or value.
 
-/** The runtime version: what the host's side of the renderer is, which a host says it has, an entrypoint names
- * (`runtime_version`), and the tables say they need. 3 made each mutation and event a direct call, 4 added
+/** The runtime version the tables say they need: a host's own (`RUNTIME_VERSION` in `clients/app/renderer/src/lib.rs`) is
+ * this one or later, and is what an entrypoint names (`runtime_version`). 3 made each mutation and event a direct call, 4 added
  * `intersection`, 5 an app's own tokens (`Styles.tokens`) and the values of a dynamic style (`Dynamic`). A host of 6 draws CSS's own
  * values where a token isn't the point (`fontSize`, `boxShadow`'s text, `backgroundImage`) and keyframes that start
  * once drawn and end (`animationDelay` and the rest), which a host of 5 leaves out; a host of 7 says which press of

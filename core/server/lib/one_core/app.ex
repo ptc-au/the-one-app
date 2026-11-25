@@ -428,7 +428,7 @@ defmodule OneCore.App do
     Settings counts what waits in its sections, such as devices waiting to sign in as them (`badge: "badge"`). A Home Screen asks it again whenever
     something changed, so it only reads what the app keeps.
   - An entrypoint says its `runtime_version`, the runtime version its page needs of a native host
-    (`RUNTIME_VERSION` in `core/ui/src/drawing-primitives/renderer.ts`, 5 now): its page is written with the UI library
+    (`RUNTIME_VERSION` in `clients/app/renderer/src/lib.rs`): its page is written with the UI library
     alone (the UI library's skill), so a computer, an iPhone or Android that has that version draws it itself, a browser
     draws it with the same renderer on its WebGPU, and so does an assistant showing it as an MCP App, in a frame of
     the web's (`core/edge/mcp/mcp.ts`). A computer or a phone doesn't open one

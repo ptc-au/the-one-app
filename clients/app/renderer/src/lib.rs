@@ -36,7 +36,9 @@ pub use view::touch;
 pub use view::decoding_takes;
 pub use view::{Appearance, Asked, Cursor, FONT, Late, MakeFrame, Notice, Panel, Screen, Title, TitleRow, WindowButton, fonts};
 
-/// This host's runtime version (`RUNTIME_VERSION` in core/ui/src/drawing-primitives/renderer.ts). An entrypoint that needs a
-/// later one isn't drawn: a computer's window says so, and a phone opens it in its page.
+/// This host's runtime version: what it draws, which `clients/web/host.js` says for the web too. An
+/// entrypoint that needs a later one isn't drawn: a computer's window says so, and a phone opens it in its page. The
+/// UI library's own `RUNTIME_VERSION` (core/ui/src/drawing-primitives/renderer.ts) is the oldest one its tables need, and
+/// goes up only when a table changes in a way an older host couldn't read.
 pub const RUNTIME_VERSION: u32 = 8;
 
