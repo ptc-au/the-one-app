@@ -62,7 +62,7 @@ defmodule Permissions do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep who may reach what"}
+  def requires, do: %{"core" => ">= 0.37.50", "database" => "to keep who may reach what"}
 
   @impl true
   def offers do
@@ -313,7 +313,7 @@ defmodule Permissions do
   end
 
   @impl true
-  def hooks, do: ["reach", "owner", "renamed"]
+  def hooks, do: ["reach", "owner", "renamed", "groups"]
 
   # The network is the top parent of every artifact, and its first owner's tuple is the one nobody shares: it's
   # written as One Core makes them.
@@ -338,6 +338,11 @@ defmodule Permissions do
     end)
 
     nil
+  end
+
+  # The groups someone is in, as `member?/3` has them, for an assistant to list those groups' apps beside theirs.
+  def hook("groups", %{"who" => who}, call) do
+    %{"groups" => for("groups/" <> _ = group <- transaction(call, &followed(&1, @groups, [who], [])), do: group)}
   end
 
   def hook("reach", %{"who" => who, "relation" => "member", "artifact" => of}, call) do
