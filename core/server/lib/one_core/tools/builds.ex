@@ -24,7 +24,7 @@ defmodule OneCore.Tools.Builds do
   @presence ~w(server_membership server_daemon_status server_ready server_ready_reason last_seen)
 
   # Which build each of `owner`'s servers runs, with what its machine is called and what it is (`OneCore.Builds.say/1`), as it says
-  # it and, where the network's edge says it now, whether it's ready (`OneCore.Servers.presence/1`), and which each
+  # it and, where the network's edge says it now, whether it's ready (`OneCore.Servers.edge/1`), and which each
   # of `by`'s devices last said it is, with when it was last seen, and the latest for each kind of machine: what shows
   # whether everything is on the same build; the protocol each part speaks (`OneCore.Protocol.of/1`), which says which
   # talk; and `apps`, whether what runs on the server that answers is what's installed, `synced`, or it's `syncing`
@@ -48,12 +48,14 @@ defmodule OneCore.Tools.Builds do
 
     {server_reads, device_reads} = Enum.split(read, length(keys))
 
-    edge = Servers.edge(Enum.map(devices, &Path.basename/1)) || %{}
+    # Whether each server and device is there, asked of the network's edge at once, where a request for each server took
+    # most of a second.
+    edge = Servers.edge(Enum.map(devices, &Path.basename/1) ++ keys) || %{}
 
     servers =
       for {key, read} <- Enum.zip(keys, server_reads) do
         info = with {:ok, info, _tag} <- read, do: JSON.decode!(info), else: (:absent -> %{})
-        presence = Map.take(Servers.presence(key) || %{}, @presence)
+        presence = Map.take(edge["presence"][key] || %{}, @presence)
         info = Map.put(info, "protocol", Protocol.of(info["protocol"]))
         server = Map.merge(info, Map.merge(presence, %{"server" => key, "name" => Servers.name(key)}))
         if why = why(server, edge), do: Map.put(server, "why", why), else: server
