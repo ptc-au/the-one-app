@@ -784,6 +784,12 @@ export declare function direction(): "ltr" | "rtl"
 /** What the device keeps for itself at each edge of the window (a status bar, a notch, a home indicator), as it
  * changes: the CSS's `env(safe-area-inset-*)`. */
 export declare function safeArea(): { top: number; right: number; bottom: number; left: number }
+/** How the client shows the page, as it changes: `"fullscreen"` where the page has the window (a computer's), `"inline"`
+ * where it's in something larger, as an assistant's chat is. */
+export declare function displayMode(): "inline" | "fullscreen"
+/** Asks the client to show the page full screen or back inline, where it's inline and offers that, as an MCP App does.
+ * → how the client shows it now: unchanged where it doesn't offer it, or declined. */
+export declare function requestDisplayMode(mode: "inline" | "fullscreen"): Promise<"inline" | "fullscreen">
 /** Whether a finger points at the window, as it changes: a phone's does, a computer's doesn't. */
 export declare function touch(): boolean
 /** Whether whoever's looking asked for less motion, as it changes. */

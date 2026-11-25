@@ -1,10 +1,10 @@
 // A screen as it is now, as a remote desktop app shows one: written once on the drawing primitives (#primitives),
 // the same on every host. Its live video is the `Video` primitive, which a host draws.
-import { createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { assign, createActor, fromPromise, setup } from "xstate"
 import { Portal, Pressable, Video, View } from "#primitives"
-import { safeArea, touch, viewport } from "#bridge"
+import { displayMode, requestDisplayMode, safeArea, touch, viewport } from "#bridge"
 import { BarEnd, Button, Icon } from "./button.tsx"
 import { Problem, Status } from "./states.tsx"
 import { fullScreen } from "../drawing-primitives/input.ts"
@@ -202,8 +202,26 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
     else queue = queue.then(resize).then(() => !gone && connection.start())
   }
 
-  // Full Screen fills the window with it, over the page: a page has no display of its own to fill.
-  const toggle = () => setFull(!full())
+  // Full Screen fills the window with it, over the page: a page has no display of its own to fill. Where its client shows
+  // the page inline, in an assistant's chat, it's the client that goes full screen first, and back, as its person closes
+  // it (`displayMode`).
+  let lent = false
+  const toggle = async () => {
+    if (full() && lent) {
+      lent = false
+      await requestDisplayMode("inline")
+    } else if (!full() && displayMode() === "inline") {
+      lent = (await requestDisplayMode("fullscreen")) === "fullscreen"
+      return setFull(lent)
+    }
+    setFull(!full())
+  }
+  createEffect(displayMode, (mode) => {
+    if (mode === "inline" && lent) {
+      lent = false
+      setFull(false)
+    }
+  })
 
   // Where the person types, presses and scrolls: its video, which sends it all itself.
   const view = (

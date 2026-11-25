@@ -108,6 +108,9 @@ const same = (before: Record<string, number>, after: Record<string, number>) => 
 const [insets, setInsets] = createSignal<{ top: number; right: number; bottom: number; left: number }>({ top: 0, right: 0, bottom: 0, left: 0 }, { equals: same })
 const [size, setSize] = createSignal<{ width: number; height: number }>({ width: 0, height: 0 }, { equals: same })
 const [still, setStill] = createSignal(false)
+// How its client shows the page, as MCP Apps' host context says: a computer's window shows it full, an assistant's chat inline.
+const [mode, setMode] = createSignal<"inline" | "fullscreen">("fullscreen")
+const [offered, setOffered] = createSignal<string[]>([])
 const [shown, setShown] = createSignal(true)
 interface Context {
   titled?: boolean
@@ -115,6 +118,9 @@ interface Context {
   safeAreaInsets?: ReturnType<typeof Page.safeArea>
   containerDimensions?: { width: number; height: number }
   reducedMotion?: boolean
+  /** MCP Apps' own: how the client shows the page, and the other ways it offers. */
+  displayMode?: "inline" | "fullscreen"
+  availableDisplayModes?: string[]
   /** The link the page was opened to: what follows `#` in a page's address (`link()`). */
   link?: string
   /** MCP Apps' own: the tool an assistant shows the page for. */
@@ -183,6 +189,8 @@ function dress(context?: Context) {
   if (context?.safeAreaInsets) setInsets(context.safeAreaInsets)
   if (context?.containerDimensions) setSize(context.containerDimensions)
   if (context && "reducedMotion" in context) setStill(context.reducedMotion === true)
+  if (context?.displayMode) setMode(context.displayMode)
+  if (context?.availableDisplayModes) setOffered(context.availableDisplayModes)
   if (context && "visible" in context) {
     setShown(context.visible !== false)
     if (missed) tell()
@@ -245,6 +253,16 @@ export const viewport: typeof Page.viewport = () => size()
 export const direction: typeof Page.direction = () => "ltr"
 /** Whether a finger points at it, as its host says (`deviceCapabilities.touch`): a phone's does, a computer's doesn't. */
 export const touch = () => fingered()
+/// `displayMode()`: how the client shows the page, as MCP Apps' host context has it: `"fullscreen"` where the page has the
+/// window (a computer's), `"inline"` where it's in something larger, as an assistant's chat is.
+export const displayMode: typeof Page.displayMode = () => mode()
+/// `await requestDisplayMode("fullscreen")`: asks the client to show the page `"fullscreen"`, or back `"inline"`, as an
+/// MCP App does (`ui/request-display-mode`). → how it shows it now: the same where it doesn't offer that, or declined.
+export const requestDisplayMode: typeof Page.requestDisplayMode = async (to) => {
+  await greeted
+  if (to !== mode() && offered().includes(to)) setMode(((await ask<{ mode: "inline" | "fullscreen" }>("ui/request-display-mode", { mode: to })).mode))
+  return mode()
+}
 /// `reducedMotion()`: whether whoever's looking asked for less motion, as it changes, for what moves by hand.
 export const reducedMotion: typeof Page.reducedMotion = () => still()
 /// `createEffect(visible, (now, was) => now && was === false && refresh(phone))`: whether this page is shown, as it
