@@ -17,6 +17,7 @@ use aec3::audio_processing::resampler::push_sinc_resampler::PushSincResampler;
 use aec3::nodes::audio::AudioFormat;
 use aec3::pipelines::linear::{self, LinearPipeline};
 use anyhow::{Context, anyhow};
+use cpal::Sample as _;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use opus_rs::{Application, OpusDecoder, OpusEncoder};
 use serde_json::{Value, json};
@@ -413,7 +414,14 @@ impl Session {
             for sample in &mut mixed {
                 *sample = sample.clamp(-1.0, 1.0);
             }
-            lock(&self.audio.playing).extend(mixed);
+            match &mut self.audio.speaker_resampler {
+                Some(resampler) => {
+                    let mut at = vec![0.0; self.audio.speaker_frame];
+                    resampler.resample_f32(&mixed, &mut at);
+                    lock(&self.audio.playing).extend(at);
+                }
+                None => lock(&self.audio.playing).extend(mixed),
+            }
             let mut played = lock(&self.audio.played);
             played.extend(mixed);
             while played.len() > RATE {
@@ -467,6 +475,9 @@ struct Audio {
     frame: usize,
     /// The device's frames brought to 48 kHz, where it doesn't give that.
     resampler: Option<PushSincResampler>,
+    /// The call's frames of 10 ms brought to the speakers' rate, where they don't take 48 kHz, and how many that is.
+    speaker_frame: usize,
+    speaker_resampler: Option<PushSincResampler>,
     /// aec3's: echo cancellation, noise suppression and gain, as Chrome's audio processing has them.
     echo: LinearPipeline,
     /// Opus, of the one track it sends and of each it receives, by its m-line.
@@ -494,6 +505,8 @@ impl Audio {
             capture: Vec::new(),
             frame: FRAME,
             resampler: None,
+            speaker_frame: FRAME,
+            speaker_resampler: None,
             echo: linear::builder(FORMAT, FORMAT).build().context("the echo canceller")?,
             encoder: OpusEncoder::new(RATE as i32, 1, Application::Voip)
                 .map_err(|why| anyhow!("the Opus encoder: {why}"))?,
@@ -516,26 +529,26 @@ impl Audio {
             eprintln!("A voice has no speakers: it plays nothing");
             return;
         };
-        let Some(config) = device.supported_output_configs().ok().and_then(float_config) else {
-            eprintln!("A voice's speakers take no float audio: it plays nothing");
-            return;
+        // The rate and the format the speakers are already at, which they play without either changing: asking a device
+        // to move to 48 kHz is what a Mac fails on (`Sample rate update timed out`), so what's mixed is brought to its
+        // rate instead.
+        let config = match device.default_output_config() {
+            Ok(config) => config,
+            Err(why) => return eprintln!("A voice's speakers didn't open: {why}"),
         };
-        let channels = config.channels() as usize;
+        let rate = config.sample_rate() as usize;
+        self.speaker_frame = (rate / 100).max(1);
+        self.speaker_resampler = (rate != RATE).then(|| PushSincResampler::new(FRAME, self.speaker_frame));
         let playing = self.playing.clone();
-        let stream = device.build_output_stream::<f32, _, _>(
-            config.config(),
-            move |data: &mut [f32], _| {
-                let mut playing = lock(&playing);
-                for frame in data.chunks_exact_mut(channels) {
-                    let sample = playing.pop_front().unwrap_or(0.0);
-                    for out in frame {
-                        *out = sample;
-                    }
-                }
-            },
-            |why| eprintln!("A voice's speakers stopped: {why}"),
-            None,
-        );
+        use cpal::SampleFormat as Format;
+        let stream = match config.sample_format() {
+            Format::F32 => output::<f32>(&device, &config, playing),
+            Format::I16 => output::<i16>(&device, &config, playing),
+            Format::I32 => output::<i32>(&device, &config, playing),
+            Format::U16 => output::<u16>(&device, &config, playing),
+            Format::U32 => output::<u32>(&device, &config, playing),
+            format => return eprintln!("A voice's speakers take no {format} audio: it plays nothing"),
+        };
         match stream {
             Ok(stream) => match stream.play() {
                 Ok(()) => self._speaker = Some(stream),
@@ -551,27 +564,24 @@ impl Audio {
             eprintln!("A voice has no microphone: it sends nothing");
             return;
         };
-        let Some(config) = device.supported_input_configs().ok().and_then(float_config) else {
-            eprintln!("A voice's microphone gives no float audio: it sends nothing");
-            return;
+        // The rate and the format the microphone is already at, as the speakers': one that gives no float audio is read
+        // as the samples it does give, at the rate it runs.
+        let config = match device.default_input_config() {
+            Ok(config) => config,
+            Err(why) => return eprintln!("A voice's microphone didn't open: {why}"),
         };
-        let rate = config.sample_rate();
-        let channels = config.channels() as usize;
-        self.frame = (rate as usize / 100).max(1);
-        self.resampler = (rate as usize != RATE).then(|| PushSincResampler::new(self.frame, FRAME));
-        let samples = commands.clone();
-        let stream = device.build_input_stream::<f32, _, _>(
-            config.config(),
-            move |data: &[f32], _| {
-                let mut mono = Vec::with_capacity(data.len() / channels);
-                for frame in data.chunks_exact(channels) {
-                    mono.push(frame.iter().sum::<f32>() / channels as f32);
-                }
-                let _ = samples.send(Command::Mic(mono));
-            },
-            |why| eprintln!("A voice's microphone stopped: {why}"),
-            None,
-        );
+        let rate = config.sample_rate() as usize;
+        self.frame = (rate / 100).max(1);
+        self.resampler = (rate != RATE).then(|| PushSincResampler::new(self.frame, FRAME));
+        use cpal::SampleFormat as Format;
+        let stream = match config.sample_format() {
+            Format::F32 => input::<f32>(&device, &config, commands.clone()),
+            Format::I16 => input::<i16>(&device, &config, commands.clone()),
+            Format::I32 => input::<i32>(&device, &config, commands.clone()),
+            Format::U16 => input::<u16>(&device, &config, commands.clone()),
+            Format::U32 => input::<u32>(&device, &config, commands.clone()),
+            format => return eprintln!("A voice's microphone gives no {format} audio: it sends nothing"),
+        };
         match stream {
             Ok(stream) => match stream.play() {
                 Ok(()) => self._mic = Some(stream),
@@ -606,17 +616,49 @@ impl Audio {
     }
 }
 
-/// The device's float audio at 48 kHz where it has it, else at the rate it has, and mono where it can: what aec3 and
-/// Opus take, which every system's devices can give.
-fn float_config(ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>) -> Option<cpal::SupportedStreamConfig> {
-    let mut best: Option<(bool, u16, cpal::SupportedStreamConfig)> = None;
-    for range in ranges.filter(|range| range.sample_format() == cpal::SampleFormat::F32) {
-        let at = if range.min_sample_rate() <= RATE as u32 { RATE as u32 } else { range.min_sample_rate() };
-        let Some(config) = range.try_with_sample_rate(at) else { continue };
-        let choice = (config.sample_rate() != RATE as u32, config.channels(), config);
-        if best.as_ref().is_none_or(|best| (choice.0, choice.1) < (best.0, best.1)) {
-            best = Some(choice);
-        }
-    }
-    best.map(|(_, _, config)| config)
+/// The speakers' stream, playing what's mixed for them in the format they take.
+fn output<T: cpal::SizedSample + cpal::FromSample<f32>>(
+    device: &cpal::Device,
+    config: &cpal::SupportedStreamConfig,
+    playing: Arc<Mutex<VecDeque<f32>>>,
+) -> Result<cpal::Stream, cpal::Error> {
+    let channels = config.channels() as usize;
+    device.build_output_stream(
+        config.config(),
+        move |data: &mut [T], _| {
+            let mut playing = lock(&playing);
+            for frame in data.chunks_exact_mut(channels) {
+                let sample = playing.pop_front().unwrap_or(0.0);
+                for out in frame {
+                    *out = T::from_sample(sample);
+                }
+            }
+        },
+        |why| eprintln!("A voice's speakers stopped: {why}"),
+        None,
+    )
+}
+
+/// The microphone's stream, its samples handed to its connection as they come, mono.
+fn input<T: cpal::SizedSample>(
+    device: &cpal::Device,
+    config: &cpal::SupportedStreamConfig,
+    samples: Sender<Command>,
+) -> Result<cpal::Stream, cpal::Error>
+where
+    f32: cpal::FromSample<T>,
+{
+    let channels = config.channels() as usize;
+    device.build_input_stream(
+        config.config(),
+        move |data: &[T], _| {
+            let mono = data
+                .chunks_exact(channels)
+                .map(|frame| frame.iter().map(|sample| f32::from_sample(*sample)).sum::<f32>() / channels as f32)
+                .collect();
+            let _ = samples.send(Command::Mic(mono));
+        },
+        |why| eprintln!("A voice's microphone stopped: {why}"),
+        None,
+    )
 }
