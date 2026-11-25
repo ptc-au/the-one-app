@@ -21,7 +21,7 @@ use str0m::{Candidate, Event as RtcEvent, IceConnectionState, Input as RtcInput,
 
 use crate::geometry::{Bounds, DevicePixels, Size};
 use crate::render::atlas::{Atlas, AtlasKey, AtlasTile};
-use crate::turn::{Ice, Turn, candidates};
+use crate::turn::{Ice, Turn, candidates, readable};
 
 /// What reaches a connection's thread: bytes from the TURN server, or what its page did.
 enum Command {
@@ -308,9 +308,10 @@ impl Session {
                     for ip in candidates(&sdp) {
                         self.turn.permit(ip);
                     }
-                    self.rtc
-                        .sdp_api()
-                        .accept_answer(pending, SdpAnswer::from_sdp_string(&sdp).context("the screen's answer")?)?;
+                    self.rtc.sdp_api().accept_answer(
+                        pending,
+                        SdpAnswer::from_sdp_string(&readable(&sdp)).context("the screen's answer")?,
+                    )?;
                     self.turn.flush()?;
                 }
                 Ok(Command::Send(input)) => {

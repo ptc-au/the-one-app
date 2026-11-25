@@ -2,7 +2,7 @@
 //! `video`'s and a `voice`'s connection reach the screen through, so neither needs an address of its own that the
 //! screen can reach, nor a UDP port.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::Arc;
@@ -211,4 +211,48 @@ pub(crate) fn candidates(sdp: &str) -> HashSet<IpAddr> {
         .filter_map(|line| line.strip_prefix("a=candidate:"))
         .filter_map(|candidate| candidate.split_whitespace().nth(4)?.parse().ok())
         .collect()
+}
+
+/// An SDP whose candidate lines str0m reads: its parser takes the attributes after `typ` in one order only (`raddr`,
+/// `tcptype`, `generation`, `network-id`, `ufrag`, `network-cost`) and drops a whole line that has them in any other,
+/// as Cloudflare's SFU writes `ufrag` before `generation`. A dropped line is a candidate no ICE check is ever sent to,
+/// so a call or a video stays unconnected. The attributes it knows are written in its order, the ones it doesn't are
+/// left out, and every other line is as it was.
+pub(crate) fn readable(sdp: &str) -> String {
+    let mut out = String::with_capacity(sdp.len());
+    for (at, line) in sdp.split("\r\n").enumerate() {
+        if at > 0 {
+            out.push_str("\r\n");
+        }
+        match readable_candidate(line) {
+            Some(candidate) => out.push_str(&candidate),
+            None => out.push_str(line),
+        }
+    }
+    out
+}
+
+/// The attributes str0m's candidate parser takes, in the order it takes them.
+const CANDIDATE_ATTRIBUTES: [&str; 7] =
+    ["raddr", "rport", "tcptype", "generation", "network-id", "ufrag", "network-cost"];
+
+/// A candidate line with its attributes in str0m's order, or none where the line isn't one.
+fn readable_candidate(line: &str) -> Option<String> {
+    // `candidate:<foundation> <component> <transport> <priority> <address> <port> typ <kind>`, then the attributes.
+    let candidate = line.strip_prefix("a=candidate:")?;
+    let (head, rest) = candidate.split_once(" typ ")?;
+    let mut fields = rest.split_whitespace();
+    let kind = fields.next()?;
+    let rest: Vec<&str> = fields.collect();
+    let attributes: HashMap<&str, &str> = rest.chunks_exact(2).map(|pair| (pair[0], pair[1])).collect();
+    let mut out = format!("a=candidate:{head} typ {kind}");
+    for name in CANDIDATE_ATTRIBUTES {
+        if let Some(value) = attributes.get(name) {
+            out.push(' ');
+            out.push_str(name);
+            out.push(' ');
+            out.push_str(value);
+        }
+    }
+    Some(out)
 }

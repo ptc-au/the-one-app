@@ -26,7 +26,7 @@ use str0m::media::{Direction, Frequency, MediaData, MediaKind, MediaTime, Mid, P
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event as RtcEvent, IceConnectionState, Input as RtcInput, Output, Rtc};
 
-use crate::turn::{Ice, Turn, candidates};
+use crate::turn::{Ice, Turn, candidates, readable};
 
 /// The rate every codec here is at, and how many samples a frame of 10 ms takes: aec3's and Opus's both.
 const RATE: usize = 48_000;
@@ -245,15 +245,18 @@ impl Session {
                     for ip in candidates(&sdp) {
                         self.turn.permit(ip);
                     }
-                    self.rtc
-                        .sdp_api()
-                        .accept_answer(pending, SdpAnswer::from_sdp_string(&sdp).context("the screen's answer")?)?;
+                    self.rtc.sdp_api().accept_answer(
+                        pending,
+                        SdpAnswer::from_sdp_string(&readable(&sdp)).context("the screen's answer")?,
+                    )?;
                     self.pt = self.opus();
                     self.turn.flush()?;
                 }
                 Ok(Command::Offer(sdp)) => {
-                    let answer =
-                        self.rtc.sdp_api().accept_offer(SdpOffer::from_sdp_string(&sdp).context("the SFU's offer")?)?;
+                    let answer = self
+                        .rtc
+                        .sdp_api()
+                        .accept_offer(SdpOffer::from_sdp_string(&readable(&sdp)).context("the SFU's offer")?)?;
                     let answer = answer.to_sdp_string();
                     // What it sends now, on the audio m-line it answered as sending.
                     if let Some(mid) = sending_audio(&answer) {
