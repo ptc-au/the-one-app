@@ -274,8 +274,27 @@ defmodule OneCore.Server do
   def notify(servers, owners, what \\ "reload", params \\ %{}) do
     params = Map.put(params, :owners, owners)
     notification = JSON.encode!(%{jsonrpc: "2.0", method: "notifications/one/" <> what, params: params})
-    OneCore.Asks.each(servers -- [key()], &ask(&1, notification))
+    told(servers -- [key()], notification)
     :ok
+  end
+
+  # Tells each of `servers`, and tells again, beside this, each that didn't take it while the relay still says it's
+  # ready: a machine that stalls for longer than it's waited for, frozen or too busy to answer, keeps its relay
+  # connection for up to 20 s of saying nothing (`EVERY` in `one_core_iroh/src/outside.rs`), and would never hear of
+  # it. It's told again once it answers the relay's ping. One that isn't ready hears nothing from here: one that
+  # connects again looks at everything then (`OneCore.Apps.reconnected/0`), and one that starts loads the latest.
+  defp told(servers, notification) do
+    {answers, failed} = OneCore.Asks.each(servers, &ask(&1, notification))
+    missed = Map.keys(failed) ++ for({server, answer} <- answers, not match?({:ok, _}, answer), do: server)
+    for server <- missed, do: Task.Supervisor.start_child(OneCore.Asks, fn -> told_again(server, notification) end)
+  end
+
+  defp told_again(server, notification) do
+    cond do
+      Servers.presence_again(server)["server_ready"] != true -> :ok
+      Servers.answers?(server, 5_000) -> told([server], notification)
+      true -> told_again(server, notification)
+    end
   end
 
   # A connection is opened when there's none, to where the server says it is now. One whose connection no longer
