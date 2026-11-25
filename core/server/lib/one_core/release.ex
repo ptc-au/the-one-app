@@ -209,36 +209,7 @@ defmodule OneCore.Release do
       end)
     end
 
-    status = status()
-    {build, program} = target(update, status)
-    at = status["server_update_status"]
-    next = %{"build" => status["next_build"], "program" => status["next_program"]}
-    checked = at == "checked" and on?({build, program}, next)
-
-    # One that checked a pair older than the network's is asked again, as the list it read was older than the edge's;
-    # one that checked a newer pair isn't, as it would check the same again, over and over (20 Nov, once a second for
-    # an hour), and waits for the edge to read the newer list, within five minutes.
-    behind =
-      (at == "up_to_date" and not on?({build, program}, Map.put(status, "build", Builds.build()))) or
-        (at == "checked" and not checked and older?(next, {build, program}))
-
-    # Said once until the program says it began, though the updater says it again to every server as each moves on.
-    asked = :persistent_term.get({__MODULE__, :asked}, nil) == {build, program}
-
-    case Application.get_env(:one_core, :installed, false) && update["servers"][Server.key()] do
-      "prepare" when behind and not asked ->
-        :persistent_term.put({__MODULE__, :asked}, {build, program})
-        say("prepare")
-
-      "go" when checked ->
-        say("go")
-
-      "go_when_quiet" when checked ->
-        quiet()
-
-      _ ->
-        :ok
-    end
+    act(update)
 
     # Checked and kept as one step, as several are told at once: those held while it starts (`answer/3` in
     # `OneCore.Application`) are let go together, and two deploys in one folder each failed (PTC, 25 Nov).
@@ -251,6 +222,67 @@ defmodule OneCore.Release do
         end, [node()])
 
     if first, do: :deploy_edge, else: :ok
+  end
+
+  # What this server is to do of the network's update, `update`, said to the program keeping it running.
+  defp act(update) do
+    status = status()
+    {build, program} = target(update, status)
+    at = status["server_update_status"]
+    next = %{"build" => status["next_build"], "program" => status["next_program"]}
+    checked = at == "checked" and on?({build, program}, next)
+    on = Map.put(status, "build", Builds.build())
+
+    # One that checked a pair older than the network's is asked again, as the list it read was older than the edge's;
+    # one that checked a newer pair isn't, as it would check the same again, over and over (20 Nov, once a second for
+    # an hour), and waits for the edge to read the newer list, within five minutes.
+    from =
+      cond do
+        at == "up_to_date" and not on?({build, program}, on) -> on
+        at == "checked" and not checked and older?(next, {build, program}) -> next
+        true -> nil
+      end
+
+    # Said once until the program says it began, though the updater says it again to every server as each moves on.
+    asked = :persistent_term.get({__MODULE__, :asked}, nil) == {build, program}
+
+    case Application.get_env(:one_core, :installed, false) && update["servers"][Server.key()] do
+      "prepare" when from != nil and not asked ->
+        # Only once the core's list of builds for its kind of machine has a pair it isn't on or checked, and looked at
+        # again once that list is read again: each kind's list is published apart, the Mac's last, and one told to
+        # prepare before its list had the network's build found nothing newer and was told again, every 2 s for as
+        # long as the list was behind (25 Nov, 17 minutes on PTC's Mac, each change of it said to every server and
+        # client, each of which read the bucket again).
+        if listed?(status, from) do
+          :persistent_term.put({__MODULE__, :asked}, {build, program})
+          say("prepare")
+        else
+          look_again()
+        end
+
+      "go" when checked ->
+        say("go")
+
+      "go_when_quiet" when checked ->
+        quiet()
+
+      _ ->
+        :ok
+    end
+  end
+
+  # Looks at the network's update again once the core's list of builds is read again (`Builds.download/2`), once
+  # while it waits.
+  defp look_again do
+    if :persistent_term.get({__MODULE__, :looking}, false) == false do
+      :persistent_term.put({__MODULE__, :looking}, true)
+
+      Task.start(fn ->
+        Process.sleep(60_000)
+        :persistent_term.put({__MODULE__, :looking}, false)
+        if update = network(), do: act(update)
+      end)
+    end
   end
 
   @doc """
@@ -291,6 +323,23 @@ defmodule OneCore.Release do
   def target(update, server) do
     serving = update["serving"] || %{}
     {serving["server-code"] || update["build"], serving[server["program_name"]]}
+  end
+
+  # Whether the core's list of builds for the kind of machine `status` names, as read at most a minute before
+  # (`Builds.download/2`), has a pair other than `from`'s, its `build` and `program`: what the program keeping it
+  # running would take if told to prepare (`latest_pair` in `clients/cli/src/serving/update.rs`).
+  defp listed?(status, from) do
+    with [program, target] <- String.split(status["program_name"] || "", "/", parts: 2) do
+      list = Builds.download(target)
+      code = list["server-runtime"] && list["server-code"]["build"]
+      {code || from["build"], list[program]["build"] || from["program"]} != {from["build"], from["program"]}
+    else
+      _ -> false
+    end
+  rescue
+    error ->
+      Logger.warning("Couldn't read the core's list of builds: #{Exception.message(error)}")
+      false
   end
 
   # Whether the pair `next` a server checked is older than `target` in its build or its `one`.
