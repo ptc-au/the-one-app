@@ -310,6 +310,9 @@ defmodule OneCore.Apps.Calls do
   defp wrong(%Error.Minimum{expected: least}, at, _takes), do: "#{at} is #{least} or more."
   defp wrong(%Error.Maximum{expected: most, exclusive?: true}, at, _takes), do: "#{at} is less than #{most}."
   defp wrong(%Error.Maximum{expected: most}, at, _takes), do: "#{at} is #{most} or less."
+  defp wrong(%Error.Format{expected: "upload"}, at, _takes),
+    do: "#{at} is the name of a file the `upload` tool took (`uploads/…`), not a path or a file's name. Send the file with `upload`, or with `--#{at}-from <path>` in a command."
+
   defp wrong(%Error.MinLength{expected: 1}, at, _takes), do: "#{at} can't be empty."
   defp wrong(%Error.MinLength{expected: least}, at, _takes), do: "#{at} is #{least} characters or more."
   defp wrong(%Error.MaxLength{expected: most}, at, _takes), do: "#{at} is #{most} characters or fewer."

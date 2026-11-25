@@ -244,8 +244,16 @@ defmodule OneCore.Apps.Version do
   against on every call: `takes` from its `inputs`, and `gives` from its `outputs`, where it says them.
   """
   def schemas(tool) do
-    resolve = &ExJsonSchema.Schema.resolve(OneCore.JSON.normalize(&1))
+    resolve = &ExJsonSchema.Schema.resolve(OneCore.JSON.normalize(&1), custom_format_validator: {__MODULE__, :format})
     tool = Map.put(tool, :takes, resolve.(tool.inputs))
     if tool[:outputs], do: Map.put(tool, :gives, resolve.(tool.outputs)), else: tool
   end
+
+  @doc """
+  Whether `value` is of a `format` that's ours, which JSON Schema leaves to whoever checks it: an `upload` is the name
+  of a blob the `upload` tool gave (`uploads/<32 hex digits>`), so a path or a file name is refused where it's given,
+  and not as a blob's key the bucket's presigner refuses.
+  """
+  def format("upload", value), do: is_binary(value) and Regex.match?(~r/\Auploads\/[0-9a-f]{32}\z/, value)
+  def format(_format, _value), do: true
 end
