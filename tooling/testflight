@@ -26,10 +26,14 @@
 # reaches, in a few seconds.
 #
 # It finishes only what a phone doesn't get otherwise: its page comes from the network's edge, and its apps from their
-# servers, so a build whose native code, what Rust builds for the phone (`tooling/input-hash`) and its Xcode project
-# (`clients/app/gen/apple`), is as TestFlight's latest build had it is left as it is, as is one a newer build there has
-# the changes of. `tooling/release client` runs it for a network with an iPhone among its devices. Each line it prints
-# says how many seconds into it it is. The build number is the commit's count of commits (`tooling/version`).
+# servers, so a build made from what TestFlight's latest build was made from (`inputs`) is left as it is, as is one a
+# newer build there has the changes of. What a build is made from is its native code, what Rust builds for the phone
+# (`tooling/input-hash`) and its Xcode project (`clients/app/gen/apple`), the network's `app/` (its name, icons and
+# address), and the App Store profile of each target, which says what the target is signed with: its App Group, so a
+# build that went up without an extension, as one whose profile had no App Group did, isn't the same as one with it.
+# Each upload's is kept on this machine (`record`), so a build it has none for is made again. `tooling/release client`
+# runs it for a network with an iPhone among its devices. Each line it prints says how many seconds into it it is. The
+# build number is the commit's count of commits (`tooling/version`).
 set -euo pipefail
 
 # The team that signs the One App, and its App Store Connect API key, an Admin's, whose .p8 is in 1Password.
@@ -72,6 +76,7 @@ git -C "$network" archive origin/main app | tar -x -C "$work"
 config=$work/app/tauri.conf.json
 identifier=$(jq -r '.identifier // empty' "$config")
 identifier=${identifier:-$(jq -r .identifier clients/app/tauri.conf.json)}
+record=${XDG_STATE_HOME:-$HOME/.local/state}/one/testflight/$identifier
 app=$(asc "/v1/apps?filter%5BbundleId%5D=$identifier" | jq -r '.data[0].id // empty')
 [[ -n $app ]] || { echo "App Store Connect has no app $identifier: its owner makes it on the website." >&2 && exit 1; }
 
@@ -116,6 +121,35 @@ native() {
   git worktree remove --force "$at"
 }
 
+# Each target's App Store profile, the newest App Store Connect has active for its bundle ID, made where it has none: a
+# profile is invalid once its App ID changes, as when its owner ticks the App Group on it. The App Group is on each of
+# the network's App IDs (the app's, its notifications' and its widgets') by its owner, on the website, which the API has
+# nothing for, so a profile that has none says so, and nothing is uploaded that couldn't read the app's client. It says
+# the profile, as Base64.
+profile() {
+  local bundle_id content
+  bundle_id=$(asc "/v1/bundleIds?filter%5Bidentifier%5D=$1" | jq -r --arg id "$1" '.data[] | select(.attributes.identifier == $id) | .id')
+  [[ -n $bundle_id ]] || { echo "App Store Connect has no bundle ID $1: its owner makes it on the website" >&2 && return 1; }
+  content=$(asc "/v1/bundleIds/$bundle_id/profiles?limit=200" | jq -r '[.data[].attributes | select(.profileType == "IOS_APP_STORE" and .profileState == "ACTIVE")]
+    | sort_by(.expirationDate) | last | .profileContent // empty')
+  if [[ -z $content ]]; then
+    content=$(asc /v1/profiles POST "$(jq -nc --arg name "$1 App Store $SECONDS" --arg bundle_id "$bundle_id" \
+      --arg certificate "$(asc '/v1/certificates?filter%5BcertificateType%5D=DISTRIBUTION' | jq -r '.data[0].id')" '{data: {type: "profiles",
+      attributes: {name: $name, profileType: "IOS_APP_STORE"}, relationships: {bundleId: {data: {type: "bundleIds", id: $bundle_id}},
+      certificates: {data: [{type: "certificates", id: $certificate}]}}}}')" | jq -r .data.attributes.profileContent)
+  fi
+  base64 -d <<<"$content" | grep -qaF "group.$identifier" ||
+    { echo "$1's App Store profile has no App Group: its owner ticks group.$identifier on its App ID on the website (Certificates, Identifiers & Profiles), and this makes the profile again" >&2 && return 1; }
+  echo "$content"
+}
+
+# What a build is made from, as a SHA-256: `$1` is its native code, its Xcode project and protocols, the rest what's
+# signed into it, as above.
+inputs() {
+  { echo "$1" && (cd "$work" && find app -type f -print0 | sort -z | xargs -0 sha256sum) &&
+    printf '%s\n' "$app_profile" "$notifications_profile" "$widgets_profile"; } | sha256sum | cut -d' ' -f1
+}
+
 # TestFlight's latest build, by its number, which is a commit's count on main.
 latest=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-version&limit=1&fields%5Bbuilds%5D=version" | jq -r '.data[0].attributes.version // empty')
 # An app with builds from before this numbering has them as `<n>.<m>` (the PTC pilot's 2278.14), which Bash's arithmetic
@@ -123,11 +157,13 @@ latest=$(asc "/v1/builds?filter%5Bapp%5D=$app&sort=-version&limit=1&fields%5Bbui
 latest=${latest%%.*}
 if [[ -n $latest ]]; then
   ((latest < number)) || { echo "TestFlight has $latest, which has $build's changes" && exit 0; }
-  git fetch -q origin main
-  was=$(git rev-list --reverse origin/main | sed -n "${latest}p")
-  if [[ -n $was && $(native "$was") == $(native "$commit") ]]; then
-    echo "$build's native code is as TestFlight's $latest has it: the phone takes its page and apps without a build" && exit 0
-  fi
+fi
+app_profile=$(profile "$identifier")
+notifications_profile=$(profile "$identifier.notifications")
+widgets_profile=$(profile "$identifier.widgets")
+made=$(inputs "$(native "$commit")")
+if [[ -n $latest && $(sed -n "s/^$latest //p" "$record" 2>/dev/null) == "$made" ]]; then
+  echo "$build is made from what TestFlight's $latest was: the phone takes its page and apps without a build" && exit 0
 fi
 
 # The commit's plain build, as GitHub's runner made it already where it did, as for a release tried again.
@@ -183,28 +219,9 @@ PYTHON
   echo "Its icon and logo are the network's"
 fi
 
-# Each target's App Store profile, the newest App Store Connect has active for its bundle ID, made where it has none: a
-# profile is invalid once its App ID changes, as when its owner ticks the App Group on it. The App Group is on each of
-# the network's App IDs (the app's, its notifications' and its widgets') by its owner, on the website, which the API has
-# nothing for, so a profile that has none says so, and nothing is uploaded that couldn't read the app's client.
-profile() {
-  local bundle_id content
-  bundle_id=$(asc "/v1/bundleIds?filter%5Bidentifier%5D=$1" | jq -r --arg id "$1" '.data[] | select(.attributes.identifier == $id) | .id')
-  [[ -n $bundle_id ]] || { echo "App Store Connect has no bundle ID $1: its owner makes it on the website" >&2 && return 1; }
-  content=$(asc "/v1/bundleIds/$bundle_id/profiles?limit=200" | jq -r '[.data[].attributes | select(.profileType == "IOS_APP_STORE" and .profileState == "ACTIVE")]
-    | sort_by(.expirationDate) | last | .profileContent // empty')
-  if [[ -z $content ]]; then
-    content=$(asc /v1/profiles POST "$(jq -nc --arg name "$1 App Store $SECONDS" --arg bundle_id "$bundle_id" \
-      --arg certificate "$(asc '/v1/certificates?filter%5BcertificateType%5D=DISTRIBUTION' | jq -r '.data[0].id')" '{data: {type: "profiles",
-      attributes: {name: $name, profileType: "IOS_APP_STORE"}, relationships: {bundleId: {data: {type: "bundleIds", id: $bundle_id}},
-      certificates: {data: [{type: "certificates", id: $certificate}]}}}}')" | jq -r .data.attributes.profileContent)
-  fi
-  base64 -d <<<"$content" >"$2"
-  grep -qaF "group.$identifier" "$2" || { echo "$1's App Store profile has no App Group: its owner ticks group.$identifier on its App ID on the website (Certificates, Identifiers & Profiles), and this makes the profile again" >&2 && return 1; }
-}
-profile "$identifier" "$bundle/embedded.mobileprovision"
-profile "$identifier.notifications" "$bundle/PlugIns/Notifications.appex/embedded.mobileprovision"
-profile "$identifier.widgets" "$bundle/PlugIns/Widgets.appex/embedded.mobileprovision"
+base64 -d <<<"$app_profile" >"$bundle/embedded.mobileprovision"
+base64 -d <<<"$notifications_profile" >"$bundle/PlugIns/Notifications.appex/embedded.mobileprovision"
+base64 -d <<<"$widgets_profile" >"$bundle/PlugIns/Widgets.appex/embedded.mobileprovision"
 
 # The network's name, identifier, link schemes and address in the app, and each target's entitlements: its profile's,
 # less what's a wildcard there, which a signature can't hold (`keychain-access-groups`, `associated-domains`), with the
@@ -317,4 +334,5 @@ done
 [[ $(jq -r .state <<<"$state") == COMPLETE ]] || { echo "Apple refused it: $(jq -c .errors <<<"$state")" >&2 && exit 1; }
 # What Apple warns of, as it emails it too: ITMS-90725, an SDK it will soon refuse.
 jq -r '.warnings[]? | "Apple warns: ITMS-\(.code): \(.description)"' <<<"$state"
+mkdir -p "$(dirname "$record")" && echo "$number $made" >>"$record"
 echo "Uploaded $number ($build): Apple processes it, then its testers' phones take it by themselves"
