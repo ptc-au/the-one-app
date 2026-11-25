@@ -24,7 +24,7 @@ defmodule Board do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.35.34",
+      "core" => ">= 0.37.0",
       "database" => "to keep channels, threads, tasks, schemas, and schedules",
       "notifications" => "to alert people when a task is blocked"
     }
@@ -84,6 +84,50 @@ defmodule Board do
         }
       },
       %{
+        name: "message_edited",
+        description: "A message was edited.",
+        inputs: %{type: "object", properties: %{channel: %{type: "string"}, root_id: %{type: "string"}}},
+        outputs: %{
+          type: "object",
+          properties: %{
+            id: %{type: "string"},
+            channel: %{type: "string"},
+            root_id: %{type: ["string", "null"]},
+            profile: %{type: ["string", "null"]},
+            display_author: %{type: "string"},
+            body: %{type: "string"},
+            revision: %{type: "integer"}
+          }
+        }
+      },
+      %{
+        name: "message_deleted",
+        description: "A message was deleted.",
+        inputs: %{type: "object", properties: %{channel: %{type: "string"}, root_id: %{type: "string"}}},
+        outputs: %{
+          type: "object",
+          properties: %{id: %{type: "string"}, channel: %{type: "string"}, root_id: %{type: ["string", "null"]}}
+        }
+      },
+      %{
+        name: "reaction_changed",
+        description: "A reaction was added to a message or taken off it.",
+        inputs: %{type: "object", properties: %{channel: %{type: "string"}, actor: %{type: "string"}}},
+        outputs: %{
+          type: "object",
+          properties: %{
+            id: %{type: "string"},
+            channel: %{type: "string"},
+            emoji: %{type: "string"},
+            glyph: %{type: "string"},
+            remove: %{type: "boolean"},
+            actor: %{type: "string"},
+            profile: %{type: ["string", "null"]},
+            no_sync: %{type: "boolean"}
+          }
+        }
+      },
+      %{
         name: "labels_changed",
         description: "Labels on a message or task root changed.",
         inputs: %{type: "object", properties: %{channel: %{type: "string"}, message_id: %{type: "string"}}},
@@ -121,6 +165,7 @@ defmodule Board do
             channel: %{type: "string"},
             question: %{type: "string"},
             kind: %{type: ["string", "null"]},
+            owner: %{type: "string"},
             author: %{type: "string"},
             profile: %{type: ["string", "null"]}
           }
@@ -136,40 +181,11 @@ defmodule Board do
             id: %{type: "string"},
             channel: %{type: "string"},
             result: %{type: "string"},
+            owner: %{type: "string"},
             author: %{type: "string"},
             profile: %{type: ["string", "null"]}
           }
         }
-      }
-    ]
-  end
-
-  @impl true
-  def offers do
-    [
-      %{
-        name: "message_posted",
-        kind: :observe,
-        description:
-          "A message or reply was posted to a channel or thread, about its `id`, `channel`, `root_id`, `author`, " <>
-            "`profile`, `display_author` and `body`, and whether it's `no_sync`."
-      },
-      %{
-        name: "message_edited",
-        kind: :observe,
-        description: "A message was edited, about its `id`, `channel`, `root_id`, its `profile` and `display_author`, its new `body` and its `revision`."
-      },
-      %{
-        name: "message_deleted",
-        kind: :observe,
-        description: "A message was deleted, about its `id`, `channel` and `root_id`."
-      },
-      %{
-        name: "reaction_changed",
-        kind: :observe,
-        description:
-          "A reaction was added to a message or removed from it, about its `id`, `channel`, normalized `emoji` and its `glyph`, " <>
-            "whether it's a `remove`, and the `actor` and `profile` who did it."
       }
     ]
   end
@@ -837,7 +853,7 @@ defmodule Board do
         {:ok, msg} ->
           Call.changed(call)
 
-          Call.run_hook(call, "message_edited", %{
+          Events.emit(call, "message_edited", %{
             "id" => msg.id,
             "channel" => msg.channel,
             "root_id" => msg.root_id,
@@ -902,7 +918,7 @@ defmodule Board do
         {:ok, %{channel: channel, root_id: root_id, blobs: blobs} = res} ->
           Call.changed(call)
           for blob <- blobs, do: Artifact.remove(call.own, blob)
-          Call.run_hook(call, "message_deleted", %{"id" => res.id, "channel" => channel, "root_id" => root_id})
+          Events.emit(call, "message_deleted", %{"id" => res.id, "channel" => channel, "root_id" => root_id})
           Map.delete(res, :blobs)
 
         {:ok, res} ->
@@ -943,7 +959,7 @@ defmodule Board do
         {:ok, res} ->
           Call.changed(call)
 
-          Call.run_hook(call, "reaction_changed", %{
+          Events.emit(call, "reaction_changed", %{
             "id" => id,
             "channel" => res.channel,
             "emoji" => emoji,
@@ -1111,7 +1127,7 @@ defmodule Board do
           Call.changed(call)
 
           for t <- created, t.state == "ready" do
-            Events.emit(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile}, event_id: "ready_" <> t.id)
+            Events.emit(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile})
           end
 
           %{tasks: created}
@@ -1279,10 +1295,10 @@ defmodule Board do
         {:ok, done} ->
           Call.changed(call)
           posted(call, done.reply)
-          Events.emit(call, "task_completed", %{id: done.id, channel: done.channel, result: done.result, author: actor, profile: profile}, match: %{channel: done.channel, owner: done.owner})
+          Events.emit(call, "task_completed", %{id: done.id, channel: done.channel, result: done.result, owner: done.owner, author: actor, profile: profile})
 
           for r <- done.readied do
-            Events.emit(call, "task_ready", r, event_id: "ready_" <> r.id)
+            Events.emit(call, "task_ready", r)
           end
 
           %{id: done.id, state: "completed", result: done.result, readied: Enum.map(done.readied, & &1.id)}
@@ -1401,7 +1417,7 @@ defmodule Board do
         {:ok, blocked} ->
           Call.changed(call)
           posted(call, blocked.reply)
-          Events.emit(call, "task_blocked", %{id: blocked.id, channel: blocked.channel, question: blocked.question, kind: blocked.kind, author: actor, profile: profile}, match: %{channel: blocked.channel, owner: blocked.owner, kind: blocked.kind})
+          Events.emit(call, "task_blocked", %{id: blocked.id, channel: blocked.channel, question: blocked.question, kind: blocked.kind, owner: blocked.owner, author: actor, profile: profile})
           notify_blocked(call, blocked, profile)
           %{id: blocked.id, state: "blocked", kind: blocked.kind}
 
@@ -1727,7 +1743,7 @@ defmodule Board do
     Call.changed(call)
 
     if task.state == "ready" do
-      Events.emit(call, "task_ready", %{id: task.id, channel: task.channel, body: task.body, owner: task.owner, assigned_profile: task.assigned_profile}, event_id: "ready_" <> task.id)
+      Events.emit(call, "task_ready", %{id: task.id, channel: task.channel, body: task.body, owner: task.owner, assigned_profile: task.assigned_profile})
     end
 
     task
@@ -2188,8 +2204,7 @@ defmodule Board do
       "no_sync" => msg.no_sync
     }
 
-    Events.emit(call, "message_posted", data, event_id: msg.id)
-    Call.run_hook(call, "message_posted", data)
+    Events.emit(call, "message_posted", data)
   end
 
   defp notify_blocked(call, blocked, profile) do

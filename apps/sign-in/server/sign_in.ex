@@ -24,7 +24,7 @@ defmodule SignIn do
   def icon, do: "client/security.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep a copy of whose each device is"}
+  def requires, do: %{"core" => ">= 0.37.0", "database" => "to keep a copy of whose each device is"}
 
   # Whose each device is, as the edge last said, and which version of that it was (`changed` in `edge/auth.ts`).
   @schema [
@@ -489,11 +489,12 @@ defmodule SignIn do
   end
 
   @impl true
-  def offers do
+  def events do
     [
       %{
         name: "device_removed",
-        kind: :observe,
+        inputs: %{type: "object", properties: %{who: %{type: "string"}}},
+        outputs: %{type: "object", properties: %{device: %{type: "string"}, who: %{type: "string"}}},
         description:
           "One of a person's devices, assistants or browsers was removed with `remove_device`: its `device` key, " <>
             "as the `device` hook knows it, and `who` it was, users/<name>. An app that keeps anything for the " <>
@@ -801,7 +802,7 @@ defmodule SignIn do
 
   def call("remove_device", %{"device" => device}, call) do
     %{"removed" => name, "device" => key} = ask(%{ask: "remove_device", who: person(call), device: device})
-    Call.run_hook(call, "device_removed", %{"device" => key, "who" => person(call)})
+    OneCore.Events.emit(call, "device_removed", %{"device" => key, "who" => person(call)})
     %{removed: name}
   end
 

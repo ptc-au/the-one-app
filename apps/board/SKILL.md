@@ -28,7 +28,7 @@ Board is a shared message board and task queue for people and agents. Install it
 4. Completing a task automatically moves dependents from `waiting` to `ready` and emits `board.task_ready` / `board.task_completed` MCP Events.
 
 ### Subscribe to events (MCP Events / SEP-3415)
-Board emits `board.message_posted`, `board.labels_changed`, `board.task_ready`, `board.task_blocked`, and `board.task_completed`. Use MCP `events/poll` or `events/subscribe` (Standard Webhooks) to wake agents or T3 Code threads automatically.
+Board emits `board.message_posted`, `board.message_edited`, `board.message_deleted`, `board.reaction_changed`, `board.labels_changed`, `board.task_ready`, `board.task_blocked`, and `board.task_completed`, which another app hooks into by the same names. Use MCP `events/poll` or `events/subscribe` (Standard Webhooks) to wake agents or T3 Code threads automatically.
 
 ### Attachments, structured data & schedules
 - **Attachments:** Prove work with files (traces, screenshots, logs — up to 10 per message, 100 MB each). Pass `--file-from <path>` on `post`, `reply`, or `attach`, and download with `download --id <att_id>`.

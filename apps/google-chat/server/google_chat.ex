@@ -52,7 +52,7 @@ defmodule GoogleChat do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.35.10",
+      "core" => ">= 0.37.0",
       "database" => "to keep what it's set up with, the spaces it watches and the events it has handled",
       "vault" => "to read your Chat app's service account key",
       "google-account" => "to read your spaces and react as you"
@@ -67,18 +67,6 @@ defmodule GoogleChat do
 
   @impl true
   def jobs, do: [%{tool: "renew_subscriptions", every: 1800}]
-
-  @impl true
-  def offers do
-    [
-      %{name: "message_created", kind: :observe, description: "Someone posted a message in a watched space"},
-      %{name: "message_updated", kind: :observe, description: "Someone edited a message in a watched space"},
-      %{name: "message_deleted", kind: :observe, description: "Someone deleted a message in a watched space"},
-      %{name: "reaction_created", kind: :observe, description: "Someone reacted to a message in a watched space"},
-      %{name: "reaction_deleted", kind: :observe, description: "Someone took their reaction off a message in a watched space"},
-      %{name: "mentioned", kind: :observe, description: "Someone mentioned your Chat app, or sent it a direct message"}
-    ]
-  end
 
   @impl true
   def events do
@@ -348,15 +336,15 @@ defmodule GoogleChat do
     config = Store.config(call)
     item = inputs["vault_item"] || config["vault_item"] || @item
 
-    values = %{"vault_item" => item, "webhook_token" => config["webhook_token"] || webhook_token()}
+    values = %{"vault_item" => item, "webhook_path" => config["webhook_path"] || Call.webhook(call, "events")}
     values = if Map.has_key?(inputs, "pubsub_topic"), do: Map.put(values, "pubsub_topic", inputs["pubsub_topic"]), else: values
     values = if Map.has_key?(inputs, "account"), do: Map.put(values, "account", inputs["account"]), else: values
     Store.save_config(call, values)
-    configured(Store.config(call), call)
+    configured(Store.config(call))
   end
 
   defp run("status", _inputs, call) do
-    Store.config(call) |> configured(call) |> Map.put(:subscriptions, Store.subscriptions(call))
+    Store.config(call) |> configured() |> Map.put(:subscriptions, Store.subscriptions(call))
   end
 
   defp run("spaces", inputs, call) do
@@ -444,24 +432,11 @@ defmodule GoogleChat do
     %{renewed: renewed}
   end
 
-  # What Google sends to the webhook: a Pub/Sub push of a Workspace Events event, or an event sent straight to a Chat
-  # app. The token in the address is the secret, and the one configure made says a sender's from another's.
+  # What Google sends to the webhook configure made: a Pub/Sub push of a Workspace Events event, or an event sent
+  # straight to a Chat app. One Core answers an address with any other token before it comes here.
   @impl true
-  def webhook(call, %{method: "POST", body: body, token: token}) do
-    case Store.config(call)["webhook_token"] do
-      nil ->
-        answer(404)
-
-      kept ->
-        if same?(kept, token), do: received(call, body), else: answer(401)
-    end
-  end
-
+  def webhook(call, %{method: "POST", body: body, name: "events"}), do: received(call, body)
   def webhook(_call, _request), do: answer(405)
-
-  # The token in the address, in as much time as comparing them takes: a token that's another length isn't it.
-  defp same?(kept, given) when is_binary(given) and byte_size(kept) == byte_size(given), do: :crypto.hash_equals(kept, given)
-  defp same?(_kept, _given), do: false
 
   defp received(call, body) do
     case JSON.decode(body) do
@@ -514,12 +489,9 @@ defmodule GoogleChat do
 
   defp chat_event(_call, _event), do: answer(400)
 
-  # It's followed once, whatever sent it twice, and then by the apps that hook into it and by its events.
+  # It's followed once, whatever sent it twice: by the apps that hook into it and whoever follows its events.
   defp occurred(call, name, id, payload) do
-    if Store.unseen?(call, id) do
-      Call.run_hook(call, name, payload)
-      Events.emit(call, name, payload, event_id: id)
-    end
+    if Store.unseen?(call, id), do: Events.emit(call, name, payload)
 
     answer(200)
   end
@@ -612,24 +584,16 @@ defmodule GoogleChat do
 
   defp item(call), do: Store.config(call)["vault_item"] || @item
 
-  defp configured(config, call) do
+  defp configured(config) do
     %{
       vault_item: config["vault_item"] || @item,
       pubsub_topic: config["pubsub_topic"],
       account: config["account"],
-      webhook_path: webhook_path(config, call)
+      webhook_path: config["webhook_path"]
     }
   end
-
-  defp webhook_path(%{"webhook_token" => token}, call) when is_binary(token),
-    do: "/webhooks/#{call.installed}/google-chat/#{token}"
-
-  defp webhook_path(_config, _call), do: nil
 
   defp watched(subscription) do
     %{space: subscription.space, subscription: subscription.subscription, expire_time: subscription.expire_time}
   end
-
-  # 32 random bytes, in URL-safe base64: 43 characters a webhook's address takes, and nobody guesses.
-  defp webhook_token, do: Base.url_encode64(:crypto.strong_rand_bytes(32), padding: false)
 end

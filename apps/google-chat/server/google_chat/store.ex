@@ -24,7 +24,7 @@ defmodule GoogleChat.Store do
 
   def query({database, db}, sql, values \\ []), do: database.query(db, sql, values)
 
-  @doc "What it's set up with, each value by its name: `vault_item`, `pubsub_topic`, `account` and `webhook_token`."
+  @doc "What it's set up with, each value by its name: `vault_item`, `pubsub_topic`, `account` and `webhook_path`."
   def config(call) do
     transaction(call, fn db ->
       for %{"name" => name, "value" => value} <- query(db, "select name, value from config"), into: %{}, do: {name, value}

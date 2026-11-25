@@ -9,7 +9,7 @@ defmodule Database do
   def icon, do: "icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.330"}
+  def requires, do: %{"core" => ">= 0.37.0"}
 
   require Logger
   alias Database.Lease
@@ -195,6 +195,11 @@ defmodule Database do
   @impl true
   def schedule(%Call{} = call, jobs, fire) when is_list(jobs) and is_function(fire, 1) do
     lease = Lease.of(call)
+
+    # A timer that tries again what the app's events didn't deliver is One Core's, set in this database
+    # (`OneCore.Events`), rather than one of the app's tools.
+    retry = OneCore.Events.retry()
+    fire = fn called -> if called.tool == retry, do: OneCore.Events.redeliver(call), else: fire.(called) end
 
     case ask(lease, {call.own.codec, {:schedule, jobs, fire, System.os_time(:second)}}, :codec_changed) do
       # What's due is being made, and its timers' alarm says when the next is, so the clock comes back then.
