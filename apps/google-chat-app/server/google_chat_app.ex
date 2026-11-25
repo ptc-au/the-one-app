@@ -7,11 +7,11 @@ defmodule GoogleChatApp do
   them to this app's webhook. No person's account is used, so nothing it does shows as a person. A Chat app can't
   react: Google lets only a person do that.
 
-  What it's set up with and what it watches are kept for whoever it's installed for, the network, where its tools
-  run: a call for anyone else is made again for them, asked by nobody, as its jobs are. What happens in a watched
-  space is said, as events and hooks, for whoever asked to watch it (`deliver`): a message posted, edited or deleted,
-  and a reaction added or taken off. Being mentioned, or sent a direct message, is said for whoever it's installed
-  for. `renew_subscriptions` keeps the watches alive, since Google lets one last four hours at most with its events'
+  What it keeps is the network's, one for everyone (`own/0`), as the Chat app is: what it's set up with, the spaces it
+  watches, and what happened in them, so its calls run where the network's Vault opens. What happens in a watched
+  space is said, as events and hooks, for whoever asked to watch it, so a group's apps (Board Google Chat Sync) are
+  told: a message posted, edited or deleted, and a reaction added or taken off. Being mentioned, or sent a direct
+  message, is said for whoever it's installed for. `renew_subscriptions` keeps the watches alive, since Google lets one last four hours at most with its events'
   data included, and runs every half hour.
   """
   @behaviour OneCore.App
@@ -31,18 +31,16 @@ defmodule GoogleChatApp do
     "google.workspace.chat.reaction.v1.deleted" => "reaction_deleted"
   }
 
-  # The tools only this app calls, for itself: to keep whose a space's events are, and to say one happened for them.
-  @own ~w(route deliver)
-
-  # The tools that act for whoever it's watching a space for, rather than for whoever it's installed for.
-  @watching ~w(watch_space unwatch_space)
-
   @space ~r{\Aspaces/[A-Za-z0-9_-]+\z}
   @message ~r{\Aspaces/[A-Za-z0-9_-]+/messages/[A-Za-z0-9_.-]+\z}
   @thread ~r{\Aspaces/[A-Za-z0-9_-]+/threads/[A-Za-z0-9_.-]+\z}
 
   @impl true
   def icon, do: "icon.svg"
+
+  # What it keeps is the network's, as its Chat app is: what's posted in a space it's in is shared with the network.
+  @impl true
+  def own, do: :installed
 
   @impl true
   def requires do
@@ -247,59 +245,21 @@ defmodule GoogleChatApp do
           properties: %{renewed: %{type: "array", items: watched, description: "The subscriptions renewed"}},
           required: ["renewed"]
         }
-      },
-      %{
-        name: "route",
-        description: "Google Chat App's own, which only it calls: watches a space for someone, or stops",
-        inputs: %{
-          type: "object",
-          properties: %{
-            space: space,
-            for: string.("Whose its events are: users/<name>, groups/<name> or network"),
-            watch: %{type: "boolean", description: "Whether to watch it for them, or to stop"}
-          },
-          required: ["space", "for", "watch"]
-        },
-        outputs: %{type: "object"}
-      },
-      %{
-        name: "deliver",
-        description: "Google Chat App's own, which only it calls: says what happened in a watched space, for whoever it watches it for",
-        inputs: %{
-          type: "object",
-          properties: %{event: string.("The event: message_created, reaction_deleted and the others"), data: happened()},
-          required: ["event", "data"]
-        },
-        outputs: %{type: "object"}
       }
     ]
   end
 
   # Whose Chat app this is, is the network's owners' to say, so what changes it, posts with it or reads through it is
-  # theirs, and an app that requires it (a bridge) asks for itself. The clock, asked by nobody, renews what it watches:
-  # for whoever it's installed for, where that's kept, and nothing for anyone else it keeps events for.
+  # theirs, and an app that requires it (a bridge) asks for itself. `renew_subscriptions` is the clock's too.
   @impl true
-  def call(tool, inputs, call) when tool in @own do
-    if not itself?(call), do: raise(Call.Refused, "Only Google Chat App calls #{tool}, for itself.")
-    run(tool, inputs, call)
-  end
-
-  def call(tool, inputs, %Call{caller: nil, actor: actor} = call) when actor != nil do
+  def call(tool, inputs, %Call{caller: nil} = call) when tool != "renew_subscriptions" do
     if not Call.owns?(%{call | subject: call.installed}),
       do: raise(Call.Refused, "Only the owners of whoever Google Chat App is installed for use it.")
 
-    dispatch(tool, inputs, call)
+    run(tool, inputs, call)
   end
 
-  def call(tool, inputs, call), do: dispatch(tool, inputs, call)
-
-  defp dispatch(tool, inputs, call) do
-    cond do
-      tool in @watching or installed?(call) -> run(tool, inputs, call)
-      tool == "renew_subscriptions" and call.actor == nil -> %{renewed: []}
-      true -> Call.tool(installed(call), call.app, tool, inputs)
-    end
-  end
+  def call(tool, inputs, call), do: run(tool, inputs, call)
 
   defp run("configure", inputs, call) do
     config = Store.config(call)
@@ -336,14 +296,6 @@ defmodule GoogleChatApp do
     %{name: message, deleted: true}
   end
 
-  defp run("watch_space", %{"space" => space}, call) do
-    Call.tool(installed(call), call.app, "route", %{"space" => space!(space), "for" => call.subject, "watch" => true})
-  end
-
-  defp run("unwatch_space", %{"space" => space}, call) do
-    Call.tool(installed(call), call.app, "route", %{"space" => space!(space), "for" => call.subject, "watch" => false})
-  end
-
   defp run("renew_subscriptions", _inputs, call) do
     now = DateTime.utc_now()
     config = configured!(call)
@@ -358,7 +310,8 @@ defmodule GoogleChatApp do
     %{renewed: renewed}
   end
 
-  defp run("route", %{"space" => space, "for" => whose, "watch" => true}, call) do
+  # Whose its events are is whoever asked to watch it: a group whose app watches it, or a person.
+  defp run("watch_space", %{"space" => space}, call) do
     space = space!(space)
     config = configured!(call)
 
@@ -376,14 +329,14 @@ defmodule GoogleChatApp do
       end
 
     Store.save_subscription(call, subscription)
-    Store.add_watcher(call, space, whose)
+    Store.add_watcher(call, space, call.subject)
     subscription
   end
 
-  defp run("route", %{"space" => space, "for" => whose, "watch" => false}, call) do
+  defp run("unwatch_space", %{"space" => space}, call) do
     space = space!(space)
     subscription = Store.subscription(call, space)
-    removed = Store.remove_watcher(call, space, whose)
+    removed = Store.remove_watcher(call, space, call.subject)
 
     if subscription && Store.watchers(call, space) == [] do
       Api.unsubscribe(call, configured!(call), subscription.subscription)
@@ -391,12 +344,6 @@ defmodule GoogleChatApp do
     end
 
     %{space: space, subscription: subscription && subscription.subscription, removed: removed}
-  end
-
-  defp run("deliver", %{"event" => event, "data" => data}, call) do
-    if event not in Map.values(@happened), do: raise(Call.Refused, "Google Chat App has no event #{event}.")
-    OneCore.Events.emit(call, event, data)
-    %{}
   end
 
   # What Google sends to the webhook configure made: a Pub/Sub push of a Workspace Events event, or an event sent
@@ -440,8 +387,7 @@ defmodule GoogleChatApp do
           if watchers != [] and Store.unseen?(call, id) do
             data = Api.payload(event)
 
-            for whose <- watchers,
-                do: Call.tool(%{call | actor: nil, subject: whose}, call.app, "deliver", %{"event" => name, "data" => data})
+            for whose <- watchers, do: OneCore.Events.emit(%{call | actor: nil, subject: whose}, name, data)
           end
 
           answer(200)
@@ -465,15 +411,6 @@ defmodule GoogleChatApp do
   end
 
   defp answer(status), do: {:ok, %{status: status, headers: [["content-type", "application/json"]], body: "{}"}}
-
-  # Whether the call runs for whoever the app is installed for, where its tools run.
-  defp installed?(call), do: call.subject == call.installed
-
-  # The same call, for whoever the app is installed for and asked by nobody, as its jobs are.
-  defp installed(call), do: %{call | actor: nil, subject: call.installed}
-
-  # Whether this app called it, for itself, asked by nobody.
-  defp itself?(call), do: call.caller == call.app_artifact and call.actor == nil
 
   defp configured!(call) do
     config = Store.config(call)

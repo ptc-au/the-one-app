@@ -35,6 +35,9 @@ says the space, thread and message, what it says, who did it (`sender`, `sender_
 `BOT`), the reaction's `emoji` and name, and the message's `create_time`. `mentioned` is the Chat app being mentioned,
 or sent a direct message, for whoever it's installed for.
 
+What the Chat app reads is the network's, as the Chat app is: adding it to a space shares what's said there with the
+network, whose agents can follow its events. A person's own spaces stay theirs through Google Chat (`google-chat`).
+
 ## Set it up once
 
 In the Google Cloud project the Chat app is to live in:

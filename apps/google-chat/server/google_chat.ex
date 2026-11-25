@@ -9,7 +9,8 @@ defmodule GoogleChat do
   watched as, and what happened there, as events only they follow. What's the network's, kept for whoever the app is
   installed for, is how Google reaches it: the Pub/Sub topic, the one webhook its push subscription sends to, and
   whose each Workspace Events subscription is, so that an event goes to the person whose it is (`deliver`), and to
-  nobody else. A person's call reaches that as the app's jobs do, for whoever it's installed for and asked by nobody.
+  nobody else. A person's call reaches that for whoever it's installed for, asked by them still, so a server acting
+  for them may ask a server acting for the network.
 
   What happens in a watched space is offered to its person's other apps and agents, as events: a message posted,
   edited or deleted, and a reaction added or taken off. `renew_subscriptions` keeps the watches alive, since Google
@@ -437,11 +438,12 @@ defmodule GoogleChat do
   # Whether the call runs for whoever the app is installed for, where what's the network's is kept.
   defp installed?(call), do: call.subject == call.installed
 
-  # The same call, for whoever the app is installed for and asked by nobody, as its jobs are.
-  defp installed(call), do: %{call | actor: nil, subject: call.installed}
+  # The same call, for whoever the app is installed for. Whoever asked still asks: a server acting for a person asks
+  # one acting for the network only for someone who may ask for it.
+  defp installed(call), do: %{call | subject: call.installed}
 
-  # Whether this app called it, for itself, asked by nobody.
-  defp itself?(call), do: call.caller == call.app_artifact and call.actor == nil
+  # Whether this app called it, for itself: One Core says which app called, and nothing asked can say.
+  defp itself?(call), do: call.caller == call.app_artifact
 
   defp pubsub_topic(call) do
     if installed?(call),
