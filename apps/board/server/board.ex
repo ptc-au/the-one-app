@@ -79,7 +79,8 @@ defmodule Board do
             author: %{type: "string"},
             profile: %{type: ["string", "null"]},
             display_author: %{type: "string"},
-            body: %{type: "string"}
+            body: %{type: "string"},
+            no_sync: %{type: "boolean"}
           }
         }
       },
@@ -145,6 +146,36 @@ defmodule Board do
   end
 
   @impl true
+  def offers do
+    [
+      %{
+        name: "message_posted",
+        kind: :observe,
+        description:
+          "A message or reply was posted to a channel or thread, about its `id`, `channel`, `root_id`, `author`, " <>
+            "`profile`, `display_author` and `body`, and whether it's `no_sync`."
+      },
+      %{
+        name: "message_edited",
+        kind: :observe,
+        description: "A message was edited, about its `id`, `channel`, `root_id`, its new `body` and its `revision`."
+      },
+      %{
+        name: "message_deleted",
+        kind: :observe,
+        description: "A message was deleted, about its `id`, `channel` and `root_id`."
+      },
+      %{
+        name: "reaction_changed",
+        kind: :observe,
+        description:
+          "A reaction was added to a message or removed from it, about its `id`, `channel` and normalized `emoji`, " <>
+            "whether it's a `remove`, and the `actor` and `profile` who did it."
+      }
+    ]
+  end
+
+  @impl true
   def tools do
     [
       %{
@@ -182,6 +213,7 @@ defmodule Board do
             body: %{type: "string"},
             profile: %{type: "string"},
             labels: %{type: "object"},
+            no_sync: %{type: "boolean", description: "Don't pass it to apps that mirror this channel elsewhere, such as a chat app"},
             file: %{type: "string", format: "upload", description: "Optional uploaded file attachment"},
             file_name: %{type: "string", description: "Filename for the attachment"},
             mime_type: %{type: "string", description: "MIME type for the attachment"}
@@ -201,6 +233,7 @@ defmodule Board do
             profile: %{type: "string"},
             reply_to: %{type: "string", description: "Specific message ID replied to within the thread"},
             after: %{type: "string", description: "Compare-and-swap: fail if another reply landed after this message ID"},
+            no_sync: %{type: "boolean", description: "Don't pass it to apps that mirror this channel elsewhere, such as a chat app"},
             file: %{type: "string", format: "upload", description: "Optional uploaded file attachment"},
             file_name: %{type: "string", description: "Filename for the attachment"},
             mime_type: %{type: "string", description: "MIME type for the attachment"}
@@ -243,7 +276,8 @@ defmodule Board do
             id: %{type: "string"},
             emoji: %{type: "string"},
             profile: %{type: "string"},
-            remove: %{type: "boolean"}
+            remove: %{type: "boolean"},
+            no_sync: %{type: "boolean", description: "Don't pass it to apps that mirror this channel elsewhere, such as a chat app"}
           }
         },
         outputs: %{type: "object"}
@@ -614,6 +648,7 @@ defmodule Board do
          :ok <- validate_labels_map(inputs["labels"]),
          {:ok, upload} <- validate_optional_upload(call, inputs["file"], inputs["file_name"], inputs["mime_type"]) do
       author = call.actor || call.subject
+      no_sync = if inputs["no_sync"] == true, do: 1, else: 0
 
       result =
         Store.transaction(call, fn db ->
@@ -625,9 +660,9 @@ defmodule Board do
               db,
               """
               insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
-              values (?, ?, null, null, ?, ?, ?, ?, 1, 0, ?)
+              values (?, ?, null, null, ?, ?, ?, ?, 1, ?, ?)
               """,
-              [id, channel, author, profile, body, JSON.encode!(blocks), now]
+              [id, channel, author, profile, body, JSON.encode!(blocks), no_sync, now]
             )
 
             for {k, v} <- inputs["labels"] || %{} do
@@ -649,6 +684,7 @@ defmodule Board do
                labels: Store.labels_for(db, id),
                attachments: Store.attachments_for(db, id),
                revision: 1,
+               no_sync: no_sync == 1,
                created_at: now
              }}
           end
@@ -657,7 +693,7 @@ defmodule Board do
       case result do
         {:ok, msg} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", Map.take(msg, [:id, :channel, :root_id, :author, :profile, :display_author, :body]), event_id: msg.id)
+          posted(call, msg)
           msg
 
         {:error, why} ->
@@ -672,6 +708,7 @@ defmodule Board do
          {:ok, profile} <- Store.validate_profile(inputs["profile"]),
          {:ok, upload} <- validate_optional_upload(call, inputs["file"], inputs["file_name"], inputs["mime_type"]) do
       author = call.actor || call.subject
+      no_sync = if inputs["no_sync"] == true, do: 1, else: 0
 
       result =
         Store.transaction(call, fn db ->
@@ -686,9 +723,9 @@ defmodule Board do
                   db,
                   """
                   insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
-                  values (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                  values (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                   """,
-                  [id, channel, root_id, inputs["reply_to"], author, profile, body, JSON.encode!(blocks), now]
+                  [id, channel, root_id, inputs["reply_to"], author, profile, body, JSON.encode!(blocks), no_sync, now]
                 )
 
                 if upload, do: insert_attachment(db, id, upload, now)
@@ -706,6 +743,7 @@ defmodule Board do
                    blocks: blocks,
                    attachments: Store.attachments_for(db, id),
                    revision: 1,
+                   no_sync: no_sync == 1,
                    created_at: now
                  }}
               end
@@ -718,7 +756,7 @@ defmodule Board do
       case result do
         {:ok, msg} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", Map.take(msg, [:id, :channel, :root_id, :author, :profile, :display_author, :body]), event_id: msg.id)
+          posted(call, msg)
           msg
 
         {:error, why} ->
@@ -775,7 +813,7 @@ defmodule Board do
                       end
                     end
 
-                    {:ok, %{id: id, channel: channel, body: body, blocks: blocks, revision: new_rev, edited_at: now}}
+                    {:ok, %{id: id, channel: channel, root_id: root_id, body: body, blocks: blocks, revision: new_rev, edited_at: now}}
                   end
               end
 
@@ -790,6 +828,15 @@ defmodule Board do
       case result do
         {:ok, msg} ->
           Call.changed(call)
+
+          notify_hook(call, "message_edited", %{
+            "id" => msg.id,
+            "channel" => msg.channel,
+            "root_id" => msg.root_id,
+            "body" => msg.body,
+            "revision" => msg.revision
+          })
+
           msg
 
         {:error, why} ->
@@ -805,8 +852,8 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select root_id, author, profile, revision, deleted_at from messages where id = ?", [id]) do
-            [%{"root_id" => root_id, "author" => msg_author, "profile" => msg_profile, "revision" => rev, "deleted_at" => nil}] ->
+          case Store.query(db, "select channel, root_id, author, profile, revision, deleted_at from messages where id = ?", [id]) do
+            [%{"channel" => channel, "root_id" => root_id, "author" => msg_author, "profile" => msg_profile, "revision" => rev, "deleted_at" => nil}] ->
               cond do
                 not can_edit?(actor, profile, msg_author, msg_profile) ->
                   {:error, "Only the author can delete this message."}
@@ -829,7 +876,7 @@ defmodule Board do
                     )
                   end
 
-                  {:ok, %{id: id, deleted: true, revision: new_rev}}
+                  {:ok, %{id: id, channel: channel, root_id: root_id, deleted: true, revision: new_rev}}
               end
 
             [%{"deleted_at" => _deleted}] ->
@@ -841,6 +888,11 @@ defmodule Board do
         end)
 
       case result do
+        {:ok, %{channel: channel, root_id: root_id} = res} ->
+          Call.changed(call)
+          notify_hook(call, "message_deleted", %{"id" => res.id, "channel" => channel, "root_id" => root_id})
+          res
+
         {:ok, res} ->
           Call.changed(call)
           res
@@ -860,15 +912,15 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select deleted_at from messages where id = ?", [id]) do
-            [%{"deleted_at" => nil}] ->
+          case Store.query(db, "select channel, deleted_at from messages where id = ?", [id]) do
+            [%{"channel" => channel, "deleted_at" => nil}] ->
               if inputs["remove"] == true do
                 Store.query(db, "delete from reactions where message_id = ? and actor = ? and profile = ? and emoji = ?", [id, actor, prof_key, emoji])
               else
                 Store.query(db, "insert or ignore into reactions (message_id, actor, profile, emoji) values (?, ?, ?, ?)", [id, actor, prof_key, emoji])
               end
 
-              {:ok, %{id: id, reactions: Store.reactions_for(db, id)}}
+              {:ok, %{id: id, channel: channel, reactions: Store.reactions_for(db, id)}}
 
             _ ->
               {:error, "Message #{id} not found."}
@@ -878,6 +930,17 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
+
+          notify_hook(call, "reaction_changed", %{
+            "id" => id,
+            "channel" => res.channel,
+            "emoji" => emoji,
+            "remove" => inputs["remove"] == true,
+            "actor" => actor,
+            "profile" => profile,
+            "no_sync" => inputs["no_sync"] == true
+          })
+
           res
 
         {:error, why} ->
@@ -1208,7 +1271,7 @@ defmodule Board do
       case result do
         {:ok, done} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", done.reply, event_id: done.reply.id)
+          posted(call, done.reply)
           emit_safe(call, "task_completed", %{id: done.id, channel: done.channel, result: done.result, author: actor, profile: profile}, match: %{channel: done.channel, owner: done.owner})
 
           for r <- done.readied do
@@ -1252,7 +1315,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", res.reply, event_id: res.reply.id)
+          posted(call, res.reply)
           Map.delete(res, :reply)
 
         {:error, why} ->
@@ -1292,7 +1355,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", res.reply, event_id: res.reply.id)
+          posted(call, res.reply)
           Map.delete(res, :reply)
 
         {:error, why} ->
@@ -1336,7 +1399,7 @@ defmodule Board do
       case result do
         {:ok, blocked} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", blocked.reply, event_id: blocked.reply.id)
+          posted(call, blocked.reply)
           emit_safe(call, "task_blocked", %{id: blocked.id, channel: blocked.channel, question: blocked.question, kind: blocked.kind, author: actor, profile: profile}, match: %{channel: blocked.channel, owner: blocked.owner, kind: blocked.kind})
           notify_blocked(call, blocked, profile)
           %{id: blocked.id, state: "blocked", kind: blocked.kind}
@@ -1371,7 +1434,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", res.reply, event_id: res.reply.id)
+          posted(call, res.reply)
 
           if res.state == "ready" do
             emit_safe(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
@@ -1414,7 +1477,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", res.reply, event_id: res.reply.id)
+          posted(call, res.reply)
           Map.delete(res, :reply)
 
         {:error, why} ->
@@ -1447,7 +1510,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
-          emit_safe(call, "message_posted", res.reply, event_id: res.reply.id)
+          posted(call, res.reply)
 
           if res.state == "ready" do
             emit_safe(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
@@ -1599,7 +1662,7 @@ defmodule Board do
     end
 
     for msg <- sent_msgs do
-      emit_safe(call, "message_posted", msg, event_id: msg.id)
+      posted(call, msg)
     end
 
     %{expired_leases: length(expired), sent_schedules: length(sent_msgs)}
@@ -1889,7 +1952,16 @@ defmodule Board do
       [id, channel, root_id, actor, profile, body, now]
     )
 
-    %{id: id, channel: channel, root_id: root_id, author: actor, profile: profile, display_author: Store.display_author(actor, profile), body: body}
+    %{
+      id: id,
+      channel: channel,
+      root_id: root_id,
+      author: actor,
+      profile: profile,
+      display_author: Store.display_author(actor, profile),
+      body: body,
+      no_sync: false
+    }
   end
 
   defp fire_scheduled_message(db, target, body, author, profile, no_sync) do
@@ -1911,7 +1983,7 @@ defmodule Board do
           [id, channel, target, author, profile, body, blocks_json, no_sync, now]
         )
 
-        %{id: id, channel: channel, root_id: target, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body}
+        %{id: id, channel: channel, root_id: target, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}
 
       [] ->
         case Store.validate_channel(target) do
@@ -1925,7 +1997,7 @@ defmodule Board do
               [id, channel, author, profile, body, blocks_json, no_sync, now]
             )
 
-            %{id: id, channel: channel, root_id: nil, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body}
+            %{id: id, channel: channel, root_id: nil, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}
 
           _ ->
             nil
@@ -2097,6 +2169,32 @@ defmodule Board do
     )
 
     %{id: att_id, message_id: msg_id, name: name, mime_type: mime, size: sz, created_at: now}
+  end
+
+  # A message that's now on the board: the event says it happened, and each app observing the board hears it. Both
+  # are told whether it's `no_sync`, so a bridge that posted it on the board's behalf doesn't hear its own post.
+  defp posted(call, msg) do
+    data = %{
+      "id" => msg.id,
+      "channel" => msg.channel,
+      "root_id" => msg.root_id,
+      "author" => msg.author,
+      "profile" => msg.profile,
+      "display_author" => msg.display_author,
+      "body" => msg.body,
+      "no_sync" => msg.no_sync
+    }
+
+    emit_safe(call, "message_posted", data, event_id: msg.id)
+    notify_hook(call, "message_posted", data)
+  end
+
+  defp notify_hook(call, name, payload) do
+    Call.run_hook(call, name, payload)
+  rescue
+    e ->
+      Logger.warning("board failed to run #{name}: #{Exception.message(e)}")
+      :ok
   end
 
   defp emit_safe(call, event, data, opts \\ []) do
