@@ -21,9 +21,11 @@ defmodule OneCore.Apps.Icons do
       address = "ui://icons/#{hash}/icon.#{hd(MIME.extensions(kind))}"
       :persistent_term.put({__MODULE__, :data, hash}, data)
       # Its address is kept only once it's in the bucket, so one that couldn't be written is written the next time
-      # it's given.
+      # it's given. It's read before it's written: named for what's in it, it's there already, given by another
+      # server or an earlier version, and a write the bucket refuses is charged as one that's made, at many times a read.
       Task.Supervisor.start_child(OneCore.Asks, fn ->
-        if Bucket.write("icons/#{hash}", data) in [:ok, :exists], do: :persistent_term.put({__MODULE__, icon}, address)
+        kept = with :absent <- Bucket.read("icons/#{hash}"), do: Bucket.write("icons/#{hash}", data)
+        if kept in [:ok, :exists] or match?({:ok, _, _}, kept), do: :persistent_term.put({__MODULE__, icon}, address)
       end)
 
       address
