@@ -308,10 +308,11 @@ impl AtlasState {
         let side = |at_least: DevicePixels, default: DevicePixels| DevicePixels(at_least.0.min(self.max_texture_size).max(default.0));
         let size = Size { width: side(min_size.width, DEFAULT_ATLAS_SIZE.width), height: side(min_size.height, DEFAULT_ATLAS_SIZE.height) };
         // A glyph's coverage, or an image's or an emoji's colours, as the text systems and the image decoder give
-        // them: blue, green, red, alpha.
+        // them: blue, green, red, alpha, in a texture of four channels that the shader reads in that order
+        // (`fs_poly_sprite`), as WebGL2 can't upload BGRA.
         let format = match kind {
             AtlasTextureKind::Monochrome => wgpu::TextureFormat::R8Unorm,
-            AtlasTextureKind::Polychrome => wgpu::TextureFormat::Bgra8Unorm,
+            AtlasTextureKind::Polychrome => wgpu::TextureFormat::Rgba8Unorm,
         };
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,

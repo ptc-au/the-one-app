@@ -1,9 +1,9 @@
 // An app's page drawn by the renderer (clients/app/renderer), as a computer's and a phone's windows draw it, in this
-// frame of the web client's: the renderer is WebAssembly on the browser's WebGPU (`renderer::platform::web`), and the
-// page's JS is this frame's own, which draws through it as a native host's sandbox does (`globalThis.mutations`, the
-// UI library's native build). The frame's address names the page's (`#<its address>`) and the runtime version it
-// needs (`runtime`), as the web client's `address` has it. A classic script, so the import map it writes comes before
-// any module loads.
+// frame of the web client's: the renderer is WebAssembly on the browser's WebGPU, or its WebGL2 where it has none
+// (`renderer::platform::web`), and the page's JS is this frame's own, which draws through it as a native host's
+// sandbox does (`globalThis.mutations`, the UI library's native build). The frame's address names the page's
+// (`#<its address>`) and the runtime version it needs (`runtime`), as the web client's `address` has it. A classic
+// script, so the import map it writes comes before any module loads.
 ;(async () => {
   const started = performance.now()
   // A page shown in a browser's tab by itself, as the sign-in and Vault pages are, names itself (`<meta name="page">`),
@@ -42,7 +42,7 @@
   }
   step("script")
   try {
-    if (!navigator.gpu) throw new Error("this browser has no WebGPU")
+    if (!navigator.gpu && !document.createElement("canvas").getContext("webgl2")) throw new Error("this browser has neither WebGPU nor WebGL2")
     const { base, script } = mapped(page, await pageHtml)
     step("page")
     // Its tables: the UI library's tokens and styles, and its app's styles, which its build writes beside every page.

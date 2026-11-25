@@ -49,10 +49,10 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     super::thread::stepped(paused);
     LINK.set(link);
     let media = |query: &str| web_sys::window().and_then(|window| window.match_media(query).ok().flatten()).is_some_and(|list| list.matches());
-    HOST.set(Some(Host { canvas, calls, dark: media("(prefers-color-scheme: dark)"), reduced_motion: media("(prefers-reduced-motion: reduce)") }));
+    HOST.set(Some(Host { canvas: canvas.clone(), calls, dark: media("(prefers-color-scheme: dark)"), reduced_motion: media("(prefers-reduced-motion: reduce)") }));
     observe_pressure();
     let tokens = load(&tables).map_err(|error| JsError::new(&format!("{error:#}")))?;
-    let context = crate::render::context::Context::create().await.map_err(|error| JsError::new(&format!("{error:#}")))?;
+    let context = crate::render::context::Context::create(Some(wgpu::SurfaceTarget::Canvas(canvas))).await.map_err(|error| JsError::new(&format!("{error:#}")))?;
     let mut windows = Windows::made(Display, Ok(context)).map_err(|error| JsError::new(&format!("{error:#}")))?;
     let mut screen = Screen::new(Thread::new(clock()), Some(Box::new(asked)));
     screen.page = tokens;

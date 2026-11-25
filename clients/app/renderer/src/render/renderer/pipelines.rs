@@ -23,6 +23,8 @@ pub(crate) struct Pipelines {
     pub(super) tiles: wgpu::RenderPipeline,
     /// What clears where a frame is drawn again, replacing what's there.
     pub(super) clear: wgpu::RenderPipeline,
+    /// What draws a frame drawn on its canvas onto an image that can only be drawn into, replacing what's there.
+    pub(super) put: wgpu::RenderPipeline,
 }
 
 /// What every pipeline of a format is made from: the shaders, the target's format and blending, and the layouts of
@@ -207,7 +209,7 @@ impl Pipelines {
         // All of them before a window's first frame, as Flutter's Impeller and Chromium's Graphite make theirs ahead:
         // a pipeline compiled as a frame first needs it made that frame wait, the first to show glass half a second on
         // the Surface while its blur's were compiled.
-        let [quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear] = side_by_side([
+        let [quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear, put] = side_by_side([
             &|| l.pipeline(&bindings::QUADS, &[Some(Quad::LAYOUT)], blend),
             &|| l.pipeline(&bindings::SHADOWS, &[Some(Shadow::LAYOUT)], blend),
             &|| l.pipeline(&bindings::UNDERLINES, &[Some(Underline::LAYOUT)], blend),
@@ -221,8 +223,9 @@ impl Pipelines {
             &|| l.pipeline_into(TILE_FORMAT, &bindings::SHADOW_COVERAGE, &[Some(Shadow::LAYOUT)], None),
             &|| l.pipeline(&bindings::SHADOW_TILES, &[Some(Shadow::LAYOUT)], blend),
             &|| l.pipeline(&bindings::CLEAR, &[], None),
+            &|| l.pipeline(&bindings::PUT, &[], None),
         ]);
-        Self { layouts, quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear }
+        Self { layouts, quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear, put }
     }
 
     /// The pipelines for targets of `format`, compiled the first time a renderer draws to one, or ahead of it

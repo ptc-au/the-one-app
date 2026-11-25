@@ -104,10 +104,11 @@ cpal = "0.18"
 opus-rs = "0.1.42"
 aec3 = "0.4"
 
-# The web's: a page's canvas, drawn by wgpu on the browser's WebGPU, in a Worker with an OffscreenCanvas, called by
-# the page's JS through wasm-bindgen (`platform/web`).
+# The web's: a page's canvas, drawn by wgpu on the browser's WebGPU, or its WebGL2 where it has none (a phone app's
+# web view often hasn't), in a Worker with an OffscreenCanvas, called by the page's JS through wasm-bindgen
+# (`platform/web`).
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "30.0.2", default-features = false, features = ["webgpu"] }
+wgpu = { version = "30.0.2", default-features = false, features = ["webgpu", "webgl"] }
 wasm-bindgen = "=0.2.130"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"

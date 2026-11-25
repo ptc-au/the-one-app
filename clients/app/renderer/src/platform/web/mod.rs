@@ -95,8 +95,9 @@ pub fn recover() -> Option<anyhow::Result<crate::render::context::Context>> {
         return Some(made);
     }
     if !ASKING.replace(true) {
+        let canvas = HOST.with_borrow(|host| host.as_ref().map(|host| wgpu::SurfaceTarget::Canvas(host.canvas.clone())));
         wasm_bindgen_futures::spawn_local(async {
-            CAME.set(Some(crate::render::context::Context::create().await));
+            CAME.set(Some(crate::render::context::Context::create(canvas).await));
             ASKING.set(false);
             soon();
         });

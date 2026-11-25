@@ -19,7 +19,8 @@
 // Each scene is drawn on a native host by its headless renderer (clients/app/renderer's `headless` example): the check
 // every change runs (the `qa` skill). With `--web`, a tool for debugging the web client itself and never a routine check,
 // it's drawn by our renderer in headless Chromium too, in a frame a stand-in client answers (its web frame,
-// clients/web/renderer, on Chromium's WebGPU, on the machine's GPU through Vulkan), with `--ssh` on a device's GPU too, by its own build of the headless renderer (a Windows
+// clients/web/renderer, on Chromium's WebGPU, on the machine's GPU through Vulkan; with `--webgl2` instead, on its WebGL2, its
+// WebGPU turned off, as a phone app's web view without WebGPU draws it), with `--ssh` on a device's GPU too, by its own build of the headless renderer (a Windows
 // one's Direct3D 12, as animation.js plays there: where each node is laid out there and here, and how much of the
 // pictures differs, `device.png` beside `afresh.png`, drawn the same way here), each as a picture, and natively its
 // semantic tree as text (src/drawing-primitives/outline.ts) too. On the web every frame from opening the app's frame until its
@@ -69,7 +70,9 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 // Its own worktree's, never a folder every agent on the machine shares, where one ran with another's UI build.
 const out = resolve(option("--out") ?? join(root, "target", "screenshot"))
 const dark = flag("--dark")
-const onTheWeb = flag("--web")
+// On Chromium's WebGL2, its WebGPU giving no adapter (`--webgl2`), as a phone app's web view without WebGPU draws a page.
+const webgl2 = flag("--webgl2")
+const onTheWeb = flag("--web") || webgl2
 // Chromium, which only `--web` starts, loaded only then.
 const { chromium } = onTheWeb ? await import("playwright-core") : {}
 // Every scene in a window this size, a phone's if it is under COMPACT and a computer's if not, where it says none of its own.
@@ -284,8 +287,9 @@ async function web(browser, serve, key, scene, folder) {
   }
   page.on("pageerror", (error) => logged(String(error)))
   // Warnings that aren't the page's: a preload Chrome saw unused within a few seconds of the page's load, as long as a
-  // busy machine's Chromium takes to start the frame's renderer, which does use it.
-  const notThePage = ["preferred by this device", "preloaded using link preload but not used within a few seconds"]
+  // busy machine's Chromium takes to start the frame's renderer, which does use it; and with `--webgl2`, Chrome's that
+  // the WebGPU it was started without gives no adapter.
+  const notThePage = ["preferred by this device", "preloaded using link preload but not used within a few seconds", ...(webgl2 ? ["Failed to create WebGPU Context Provider"] : [])]
   page.on("console", (message) => message.type() === "warning" && !notThePage.some((words) => message.text().includes(words)) && logged(message.text()))
   await page.clock.setFixedTime(new Date(Date.UTC(2026, 0, 1)))
   // The first fetch of each picture file fails on the network, as a loaded or flaky connection's does: a picture is tried
@@ -854,9 +858,10 @@ const WEB_DIFFERS = {}
 // phone's two pixels a point; with `--lavapipe`, on SwiftShader's, which draws every frame on the CPU, the second GPU whose
 // pictures must agree: its canvas is put on the page only when the page is composited on the GPU too (ANGLE on
 // SwiftShader).
-const webgpuArgs = lavapipe
+const webgpuArgs = (lavapipe
   ? ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-unsafe-swiftshader", "--enable-gpu", "--use-gl=angle", "--use-angle=swiftshader", "--use-webgpu-adapter=opengles", "--force-device-scale-factor=2"]
   : ["--font-render-hinting=none", "--enable-unsafe-webgpu", "--enable-gpu", "--use-angle=vulkan", "--enable-features=Vulkan", "--ignore-gpu-blocklist", "--force-device-scale-factor=2"]
+).flatMap((arg) => (!webgl2 ? [arg] : arg === "--enable-unsafe-webgpu" ? ["--disable-features=WebGPUService"] : [arg]))
 // Each page drawn at once has a browser of its own, so one that hangs or fails (its GPU process starved) is closed and
 // started again for the next, taking no other scene with it.
 const browsers = []

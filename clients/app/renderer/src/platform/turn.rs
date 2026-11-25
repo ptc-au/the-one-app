@@ -59,10 +59,11 @@ impl Windows {
     /// for one (`requestAnimationFrame`), or a finger pulls it home, as a page dragged asks for a frame with each move,
     /// so the display's link is going as it's let go and its spring steps on its ticks. With the link stopped (a window
     /// moved draws nothing), a pull let go just before a refresh drew its first step for that refresh, and the loop's
-    /// own clock its next for the refresh after: a frame held, at 120 Hz.
+    /// own clock its next for the refresh after: a frame held, at 120 Hz. Or its GPU hasn't finished its last frame
+    /// (`Renderer::working`), which WebGL2's says only as it's asked on a tick.
     pub(super) fn framing(&self) -> bool {
         self.check.as_ref().is_some_and(conformance::Check::moving)
-            || self.windows.values().any(|window| window.on_screen() && (window.moving || (window.dirty && window.working()) || window.slide.is_some() || window.hint.is_some() || window.pull.as_ref().is_some_and(|pull| pull.pulling() || pull.springing()) || matches!(window.cover, Cover::Fading(..)) || window.screen.as_ref().is_ok_and(Screen::framing)))
+            || self.windows.values().any(|window| window.on_screen() && (window.moving || window.working() || window.slide.is_some() || window.hint.is_some() || window.pull.as_ref().is_some_and(|pull| pull.pulling() || pull.springing()) || matches!(window.cover, Cover::Fading(..)) || window.screen.as_ref().is_ok_and(Screen::framing)))
     }
 
     /// Whether a frame is wanted: the loop asked for the display's next as it last turned, something moves, or a window

@@ -1239,7 +1239,8 @@ fn sample_mipmapped(uv: vec2<f32>, tile: vec4<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_poly_sprite(input: PolySpriteVarying) -> @location(0) vec4<f32> {
-    let sample = sample_mipmapped(input.tile_position, input.tile);
+    // Its texture holds blue, green, red and alpha, as pictures and emoji are given (`Atlas`).
+    let sample = sample_mipmapped(input.tile_position, input.tile).bgra;
     // Alpha clip after using the derivatives.
     let mask = mask_coverage(input.clip_distances, input.mask_radii);
     if (mask <= 0.0) {
@@ -1301,6 +1302,13 @@ fn vs_blur(@builtin(vertex_index) vertex_id: u32) -> BlurVarying {
 @fragment
 fn fs_clear() -> @location(0) vec4<f32> {
     return vec4<f32>(0.0);
+}
+
+// The texel under it, as it is: a frame drawn on its canvas, put on an image that can't be copied into
+// (`Renderer::put`).
+@fragment
+fn fs_put(input: BlurVarying) -> @location(0) vec4<f32> {
+    return textureLoad(t_sprite, vec2<i32>(input.position.xy), 0);
 }
 
 // One way of a separable Gaussian: two taps a sample, between texels, for linear filtering to weigh. With no

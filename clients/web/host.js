@@ -416,9 +416,9 @@ async function refresh(view) {
 /// entrypoint (`<subject>|<entrypoint>`), where it names one (`runtime_version`).
 /** @type {Map<string, number>} */
 const runtimes = new Map()
-/// Whether this browser has the WebGPU the renderer draws every app's page on, asked as the page loads: one without it
-/// is sent to a page that names the browsers that have it (`unsupported.html`).
-const webgpu = navigator.gpu ? navigator.gpu.requestAdapter().then(Boolean, () => false) : Promise.resolve(false)
+/// Whether this browser has the WebGPU or WebGL2 the renderer draws every app's page on, asked as the page loads: one
+/// with neither is sent to a page that says so (`unsupported.html`).
+const drawable = (navigator.gpu ? navigator.gpu.requestAdapter().then(Boolean, () => false) : Promise.resolve(false)).then((webgpu) => webgpu || !!document.createElement("canvas").getContext("webgl2"))
 /// The version of each app a server last listed, by the subject it's listed for.
 /** @type {Map<string | undefined, Map<string, string>>} */
 const versions = new Map()
@@ -582,7 +582,7 @@ const commands = {
   /// a phone's app follows it there (clients/app/src/mobile.rs), until phones read a path.
   async start() {
     const asked = opening
-    if (!(await webgpu)) {
+    if (!(await drawable)) {
       location.replace("/unsupported")
       return new Promise(() => {})
     }

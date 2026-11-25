@@ -705,8 +705,14 @@ impl Renderer {
     /// waits to draw its next till it has, as a browser's compositor does, else what's shown falls further behind with
     /// each frame a GPU slower than the display is given (the web's on a CPU, SwiftShader's, had a page that moves for
     /// good pile up frames till a screenshot waited forever). A native surface's next image already waits for it.
+    /// WebGL2's device says it's finished one only as it's polled, which this does, as the display's link keeps going
+    /// while it hasn't (`Windows::framing`); the browser's WebGPU says by itself, and polling it does nothing.
     pub fn working(&self) -> bool {
-        cfg!(target_arch = "wasm32") && self.finished() < self.frames
+        if !cfg!(target_arch = "wasm32") || self.finished() == self.frames {
+            return false;
+        }
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        self.finished() < self.frames
     }
 
     /// How many frames it's submitted, and how many of them the GPU has finished, which the web's settle waits for

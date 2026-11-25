@@ -1,6 +1,6 @@
 //! Our renderer, copied from GPUI's: a frame's scene, the atlas its glyphs and images are packed into, and the
 //! renderer that draws it on the GPU by wgpu (Vulkan on Linux and Android, Metal on a Mac, Direct3D 12 on Windows,
-//! WebGPU on the web), with the GPU's `Context` they share.
+//! WebGPU on the web, or WebGL2 where a browser has none), with the GPU's `Context` they share.
 
 pub mod atlas;
 mod bindings;

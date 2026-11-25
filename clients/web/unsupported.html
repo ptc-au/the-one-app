@@ -10,13 +10,13 @@
   <link rel="stylesheet" href="client.css">
 </head>
 <body>
-  <!-- Where the web client sends a browser without WebGPU, which the renderer draws every app's page on (host.js): the
-       window's own problem box (index.html's #state), naming the browsers that have it. -->
+  <!-- Where the web client sends a browser with neither WebGPU nor WebGL2, which the renderer draws every app's page on
+       (host.js): the window's own problem box (index.html's #state), naming browsers that have them. -->
   <div id="state" class="ui-state middle">
     <div class="problem" role="alert">
       <svg class="ui-icon" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-8,56a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm8,104a12,12,0,1,1,12-12A12,12,0,0,1,128,184Z"/></svg>
       <strong>This browser can't show <span data-name>the One App</span></strong>
-      <p>Open this page in the latest Chrome, Edge or Safari.</p>
+      <p>It can draw with neither WebGPU nor WebGL2. Open this page in the latest Chrome, Edge, Firefox or Safari.</p>
     </div>
   </div>
 </body>

@@ -397,13 +397,16 @@ impl Renderer {
     /// Draws `target`'s batches into its `image`. Where little changed since its last frame (`damage`), only that is drawn again,
     /// on its last frame as it kept it (its canvas), which is then copied into its image, as a surface's images come
     /// back in no known order with what was drawn on them frames before; where most did, it's drawn whole in its
-    /// image, and the next frame that changes little draws whole into its canvas, as its first frame does.
+    /// image, and the next frame that changes little draws whole into its canvas, as its first frame does. An image
+    /// that can only be drawn into, as WebGL2's surface and wgpu's of a browser's WebGPU canvas are, can be neither
+    /// copied into nor read by a backdrop: every frame is drawn on its canvas, which is drawn onto it (`put`).
     #[allow(clippy::too_many_arguments)]
     fn draw_target(&mut self, encoder: &mut wgpu::CommandEncoder, target: &mut Target, image: &Image, globals: &wgpu::BindGroup, buffer: &wgpu::Buffer, batches: &[PrimitiveBatch<'_>], instances: &Instances, blurs: &[Vec<Blur>], drawn: Drawn, shown: Prints, since: Option<Vec<Rect>>, origin: [f32; 2]) {
         let (texture, view) = (&image.texture, &image.view);
         let size = (texture.width(), texture.height());
         let whole = u64::from(size.0) * u64::from(size.1);
-        let copies = texture.usage().contains(wgpu::TextureUsages::COPY_DST);
+        let drawn_only = !texture.usage().intersects(wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING);
+        let copies = texture.usage().contains(wgpu::TextureUsages::COPY_DST) || drawn_only;
         // Its blurs, before where it's drawn again is known: what a blur taken reads is drawn again first.
         let blurrable = copies || texture.usage().intersects(wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC);
         let decided = self.decide(target, blurs, blurrable);
@@ -431,7 +434,7 @@ impl Renderer {
             .or_else(|| on(&target.previous, drawn.over).filter(|_| copies).map(changed).filter(|rects| little(rects)).map(|_| None))
             // Its first frame, with none before it to tell what changes, is drawn whole on its canvas too, so the next,
             // which most often changes little (a press, a hover), draws only that, where it drew all again.
-            .or_else(|| (copies && target.previous.is_none()).then_some(None));
+            .or_else(|| (copies && (target.previous.is_none() || drawn_only)).then_some(None));
         let mut work = self.work.get();
         match plan {
             Some(clip) => {
@@ -443,7 +446,11 @@ impl Renderer {
                 if clip.as_ref().is_none_or(|clip| !clip.rects.is_empty()) {
                     self.draw_batches(encoder, target, &canvas, &canvas_view, globals, buffer, batches, instances, blurs, decided, clip.as_ref());
                 }
-                self.copy(encoder, false, |encoder| encoder.copy_texture_to_texture(canvas.as_image_copy(), texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 }));
+                if drawn_only {
+                    self.put(encoder, globals, &canvas_view, view);
+                } else {
+                    self.copy(encoder, false, |encoder| encoder.copy_texture_to_texture(canvas.as_image_copy(), texture.as_image_copy(), wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 }));
+                }
                 target.canvas = Some(canvas);
                 target.previous = Some((drawn.over, shown.clone()));
                 target.shown = Some((drawn.over, shown));
@@ -459,6 +466,16 @@ impl Renderer {
         target.last = drawn;
         // What's behind no backdrop this frame isn't kept; what's still drawn starts the next frame unused.
         target.blurred.retain(|_, kept| std::mem::take(&mut kept.used));
+    }
+
+    /// Draws `canvas` onto `view`, an image the same size that can only be drawn into, as a copy would put it there.
+    fn put(&self, encoder: &mut wgpu::CommandEncoder, globals: &wgpu::BindGroup, canvas: &wgpu::TextureView, view: &wgpu::TextureView) {
+        let mut pass = self.pass(encoder, view, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), self.stamps.as_ref().and_then(|stamps| stamps.pass(false)));
+        pass.set_pipeline(&self.pipelines.put);
+        pass.set_bind_group(0, globals, &[]);
+        pass.set_bind_group(2, &self.texture(canvas), &[]);
+        pass.draw(0..4, 0..1);
+        self.drew();
     }
 
     /// How the blurs of a frame's batches are had (`Decided`): kept from the frames before, else taken afresh, or again

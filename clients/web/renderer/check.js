@@ -56,7 +56,7 @@ addEventListener("message", ({ source, data }) => {
   if (data.method === "notifications/one/seen") {
     Object.assign(seen, data.params)
     if (data.params.took) started(data.params.took)
-    // The renderer couldn't draw here (no WebGPU, or what it said), so the page shows nothing.
+    // The renderer couldn't draw here (neither WebGPU nor WebGL2, or what it said), so the page shows nothing.
     if (data.params.unopened) told("opened", false, data.params.unopened)
   }
   else if (data.method === "notifications/one/checked") told(data.params.check, !!data.params.worked, data.params.note)
