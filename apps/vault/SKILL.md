@@ -157,8 +157,8 @@ list of types:
   follows is the item as a person reads it. One the app makes that's of no type of its is an account.
 - `section` is the heading its items are listed under: its own (Chrome Profiles), or one several apps' types share
   (Accounts).
-- `create` is how one is added, an action as below; `name: true` asks its person for a name first, which the tool is
-  given as `name`.
+- `create` is how one is added: a `tool` of the app's, called as its person, or a `page` of its client's (the form
+  that adds one); `name: true` asks its person for a name first, which the tool is given as `name`.
 - `component` is what draws one item beside the list: a Solid component the app's client exports
   (`client/package.json`: `{"exports": {"./profile": "./profile.tsx"}}`), the module's default export, given `item`
   (the item as a person reads it), `subject` (whose Vault it is), and `open(item)` and `close()`, for once it's
@@ -175,9 +175,10 @@ only that app, never another with access to it, and never for a password. The ap
 - `ready`: usable, which shows nothing: fine is silent. Every item starts there, and a password is always there.
 - `busy`, with a `message` ("Saving…"): something's under way, shown as a spinner and it.
 - `needs_action`, with a `message`, why ("Signed out on your phone"), and one `action`: its person has to act,
-  shown as a dot, why and a button. The `action` is that button: a `label`, and either a `tool` of the app, called as
-  its person, whose `url`, if it gives one, opens in their browser (`%{label: "Sign In", tool: "sign_in", inputs:
-  %{account: "+614..."}}`), or a `page` of its client's (`%{label: "Sign In", page: "client/sign-in.html#+614..."}`).
+  shown as a dot, why and a button. The `action` is that button: a `label`, and a `tool` of the app with its `inputs`
+  (`%{label: "Sign In", tool: "account", inputs: %{account: "+614..."}}`), which is all that's kept. A tool that is a
+  screen (it says `ui`) opens that screen, at the link the Vault makes from the tool and its inputs each time it lists
+  the item; any other is called as its person, and its `url`, if it gives one, opens in their browser.
 
 Two things are each app's to choose, and none chooses for another: whether its person is notified when its item
 needs them (`notifications`), and what it does when its item is deleted, restored or purged, which soft delete's hook

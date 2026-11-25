@@ -68,7 +68,7 @@ defmodule Vault do
             "`section`, the heading it's listed under (Chrome Profiles, or Accounts, which several apps' types share). " <>
             "`component` names a Solid component the app's client exports (client/package.json's `exports`, as " <>
             "./<component>), which draws one item beside the list, given `item` and `subject`; and `create` is how one " <>
-            "is added, an action as `state/5` takes one: `%{tool: \"create\", name: true}` asks its person for a name " <>
+            "is added: `%{tool: \"create\", name: true}` asks its person for a name " <>
             "first."
       }
     ]
@@ -459,8 +459,8 @@ defmodule Vault do
         description: """
         For an app's code: says which of three states an item switched on for the app that calls this is in, for
         its person to see in the Vault: ready, which shows nothing; busy, with a `message` (Saving…); or
-        needs_action, with `message`, why, and `action`, the one thing that fixes it: a tool of the app's, called
-        as its person, or a page of its client's.
+        needs_action, with `message`, why, and `action`, the one thing that fixes it: a tool of the app's with its
+        inputs, which opens its screen if it has one, else is called as its person.
         """,
         inputs: %{
           type: "object",
@@ -470,14 +470,13 @@ defmodule Vault do
             message: %{type: "string", description: "What's under way, or why its person has to act"},
             action: %{
               type: "object",
-              description: "For needs_action: {label, tool, inputs} or {label, page}",
+              description: "For needs_action: {label, tool, inputs}",
               properties: %{
                 label: %{type: "string", description: "The button's words, like Sign In"},
                 tool: %{type: "string", description: "A tool of the app's, like sign_in"},
-                inputs: %{type: "object"},
-                page: %{type: "string", description: "Or a page of its client's, like client/sign-in.html#+61400000000"}
+                inputs: %{type: "object"}
               },
-              required: ["label"]
+              required: ["label", "tool"]
             }
           },
           required: ["item", "state"]
@@ -714,9 +713,9 @@ defmodule Vault do
   spinner and it; or `:needs_action`, its person has to act, `message` saying why ("Signed out on your phone") and
   `action` the one thing that fixes it, which shows a dot, why and a button. The app keeps its own detailed states and
   says only which of these it's in (`Vault.Items`' status). `action` is the app's own: `%{label: "Sign In", tool:
-  "sign_in", inputs: %{account: "+614..."}}`, a tool of the app's, called as its person, whose `url`, if it gives one,
-  opens in their browser; or `%{label: "Sign In", page: "client/sign-in.html#+614..."}`, a page of the app's, opened
-  over the Vault. Whether its person is notified too is the app's to choose, with `notifications`.
+  "account", inputs: %{account: "+614..."}}`, a tool of the app's: a screen (it says `ui`) opens, at the link the Vault
+  makes from it and its inputs when it lists the item; any other is called as its person, whose `url`, if it gives
+  one, opens in their browser. Whether its person is notified too is the app's to choose, with `notifications`.
   """
   def state(%Call{} = call, item, state, message \\ nil, action \\ nil) do
     db = Store.reached(call)
@@ -852,11 +851,13 @@ defmodule Vault do
     names = Items.names(call)
     types = Items.types(call)
 
+    running = OneCore.Apps.running(call.subject)
+
     use_it =
-      for({name, version} <- OneCore.Apps.running(call.subject), is_map_key(version.requires, "vault"), do: %{name: name, title: version.title || name, icon: OneCore.Apps.Icons.address(version.icon)})
+      for({name, version} <- running, is_map_key(version.requires, "vault"), do: %{name: name, title: version.title || name, icon: OneCore.Apps.Icons.address(version.icon)})
       |> Enum.sort_by(&String.downcase(&1.title))
 
-    items = for item <- Enum.sort_by(Items.all(call, db), &String.downcase(&1["name"])), do: Items.listed(item, db, names, types)
+    items = for item <- Enum.sort_by(Items.all(call, db), &String.downcase(&1["name"])), do: Items.listed(item, db, names, types, running)
     %{items: items, requests: Requests.all(call, db, names), apps: use_it, types: Enum.map(types, &Map.delete(&1, :artifact))}
   end
 

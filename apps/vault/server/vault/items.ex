@@ -136,8 +136,10 @@ defmodule Vault.Items do
       "needs_action" when is_binary(message) and is_map(action) ->
         action = JSON.decode!(JSON.encode!(action))
 
-        if not is_binary(action["label"]) or not (is_binary(action["tool"]) or is_binary(action["page"])),
-          do: raise("An action has a label, and either a tool of the app's or a page of its client's.")
+        if not is_binary(action["label"]) or not is_binary(action["tool"]),
+          do: raise("An action has a label and a tool of the app's, with its inputs.")
+
+        action = Map.take(action, ["label", "tool", "inputs"])
 
         %{"state" => "needs_action", "message" => message, "action" => action, "by" => app}
 
@@ -207,8 +209,23 @@ defmodule Vault.Items do
   def title(call, app),
     do: Enum.find_value(Apps.running(call.subject), Path.basename(app), fn {_name, version} -> version.artifact == app && version.title end)
 
+  # An action is kept as its tool and inputs. Where its tool is a screen (it says `ui`), `list` gives the page that
+  # opens it, made from them as every link is (`client/sign-in.html#account&account=%2B614…`), so one is never kept.
+  defp screen(%{"action" => %{"tool" => tool} = action, "by" => app} = status, running) do
+    case running[app] && Enum.find(running[app].tools, &(&1.name == tool)) do
+      %{ui: ui} when is_binary(ui) ->
+        inputs = action["inputs"] || %{}
+        put_in(status, ["action", "page"], "#{ui}##{tool}#{if inputs != %{}, do: "&" <> URI.encode_query(inputs)}")
+
+      _ ->
+        status
+    end
+  end
+
+  defp screen(status, _running), do: status
+
   @doc "An item as `list` gives it: never a secret field's value."
-  def listed(item, db, names, types) do
+  def listed(item, db, names, types, running) do
     fields =
       for field <- item["fields"] do
         if field["secret"],
@@ -224,7 +241,7 @@ defmodule Vault.Items do
       artifact: Store.artifact(db, item["id"]),
       kind: item["kind"],
       type: type && type.id,
-      status: item["status"],
+      status: item["status"] && screen(item["status"], running),
       fields: fields,
       hosts: item["hosts"],
       access: if("agents" in item["access"], do: ["agents"], else: []) ++ Enum.sort(apps),
