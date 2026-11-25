@@ -95,7 +95,9 @@ export const { render: mount, effect, memo, createComponent, createElement, crea
     parent.children.splice(at < 0 ? parent.children.length : at, 0, node)
     mutations.insert(parent.id, node.id, anchor?.id)
   },
+  // A node put elsewhere already (a live screen's, moved into a Portal) isn't taken out of where it was, as the DOM's insertBefore moves one.
   removeNode(parent, node) {
+    if (node.parent !== parent) return
     parent.children.splice(parent.children.indexOf(node), 1)
     node.parent = undefined
     mutations.remove(parent.id, node.id)

@@ -17,6 +17,11 @@ export default {
     errors: ["Live video didn't connect: Live video needs a Cloudflare TURN key"],
     render: () => <LiveScreen label="The desktop" screen={unkeyed} />,
   },
+  "Live screen/Full": {
+    errors: ["Live video didn't connect: Live video needs a Cloudflare TURN key"],
+    taps: ["Full Screen"],
+    render: () => <LiveScreen label="The desktop" screen={unkeyed} />,
+  },
   "Live screen/Key refused": {
     errors: ["Live video didn't connect: Cloudflare refused"],
     taps: ["Show Details"],
