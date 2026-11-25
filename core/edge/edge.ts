@@ -1,6 +1,6 @@
 // The network's edge, one Worker at the network's address: each request goes where the first part of its path says,
 // to a piece here (`paths.json`), an app's part (`PARTS`, which `edge.js` makes from each app's `edge/package.json`),
-// or the web client's files, whose page answers any other page a browser goes to (an app's place, `/settings/vault`:
+// or the web client's files, whose page answers any other page a browser goes to (an app's place, `/settings/vault/accounts`:
 // `pathOf` in clients/app/page/path.js). The pieces call each other as functions; an app's part is a Worker of its own, bound
 // here by `edge.js`, and bound in turn to `Network`, `Own` and `RelayEntrypoint`. The relay is a Worker of its own
 // (`relay/worker.ts`), which holds every server's and device's connection.

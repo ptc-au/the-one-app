@@ -209,11 +209,11 @@ export function backHome() {
 let quiet = 0
 /// An app's page says where in itself it is (`notifications/one/place`, as the UI library's splits have it), which the
 /// window's history and address follow where it says one (`pathOf`): somewhere new is an entry of its own
-/// (`/settings/vault`), so Back goes back to where it was, and back where the entry before it was, as its own Back
+/// (`/notifications/settings`), so Back goes back to where it was, and back where the entry before it was, as its own Back
 /// goes, the window goes back to that entry too.
 /// A page that navigated to a screen that's a tool (the UI library's `navigate`) says its arguments too
-/// (`week&start=2026-11-30`); one that says only its place where its link said more (Settings' `vault/accounts` of
-/// `vault/accounts&request=4`) is still where its entry is.
+/// (`week&start=2026-11-30`); one that says only its place where its link said more (`notifications/settings` of
+/// `notifications/settings&id=4`) is still where its entry is.
 /** @param {View} view @param {string} place @param {boolean} [navigated] */
 export function reached(view, place, navigated) {
   const now = stack[depth]

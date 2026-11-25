@@ -393,7 +393,7 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
     return () => (places.delete(self), tellPlace())
   })
   // The link the page was opened to isn't one: its app opened what it names, and may open it deeper than it says
-  // (`/settings/vault` is Settings' Vault section, `vault/accounts`).
+  // (`/notifications` is Notifications' first section, `notifications/settings`).
   let opening = true
   createEffect(link, (to) => {
     if (opening || routed()) return void (opening = false)
