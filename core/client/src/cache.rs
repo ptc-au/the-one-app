@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use std::fs;
 use std::io::Write;
 
@@ -237,7 +238,15 @@ struct Query {
     fetched: u64,
     /// The refetch a write started, which a refresh joins rather than asking again.
     fetching: Option<(u64, watch::Receiver<bool>)>,
+    /// When a server last answered it.
+    answered: Option<Instant>,
 }
+
+/// How long a server's answer is taken as fresh when the view asks it again, as TanStack Query's `staleTime`: a view
+/// asks everything again whenever one answer changes, and each of those asked the server again, whose answers changed
+/// others, in waves ~200 ms apart until they settled (25 Nov, Settings: 177 `settings_updates` in half an hour). What
+/// is known to have changed, by a write or a server's notice (`invalidate`, `refresh`), is asked again whatever this.
+const FRESH: Duration = Duration::from_secs(2);
 
 /// What one view has been answered since it opened. It asks through this, and every view gets the same, with
 /// nothing to write: what only reads is answered at once from what was kept and asked again behind it, as
@@ -330,11 +339,12 @@ impl Subscription {
     /// answered waits for a server.
     async fn read(self: &Arc<Self>, method: &str, params: Value) -> Result<Value> {
         let key = json!([method, params]).to_string();
-        // What the view was answered is shown again at once, and asked again behind it unless it's being asked: a view
-        // outlives its window, so one opened again, or a phone's back from behind another app, would show forever what
-        // it was answered before (21 Nov: Sign In & Security reopened without the passkey just made).
+        // What the view was answered is shown again at once, and asked again behind it unless it's being asked or was
+        // just answered (`FRESH`): a view outlives its window, so one opened again, or a phone's back from behind
+        // another app, would show forever what it was answered before (21 Nov: Sign In & Security reopened without the
+        // passkey just made).
         if let Some(query) = self.responses.lock().expect("no view panics").get_mut(&key) {
-            if query.fetching.is_none() {
+            if query.fetching.is_none() && query.answered.is_none_or(|at| at.elapsed() > FRESH) {
                 let (tx, rx) = watch::channel(false);
                 query.fetching = Some((query.invalidated, rx));
                 let (shown, key, method, params, generation) = (self.clone(), key.clone(), method.to_owned(), params.clone(), query.invalidated);
@@ -362,6 +372,7 @@ impl Subscription {
             invalidated: 0,
             fetched: 0,
             fetching: None,
+            answered: (!revalidate).then(Instant::now),
         });
         drop(responses);
         if revalidate {
@@ -434,6 +445,7 @@ impl Subscription {
                     && generation >= query.fetched
                 {
                     query.fetched = generation;
+                    query.answered = Some(Instant::now());
                     if query.response != fresh {
                         query.response = fresh;
                         notify = true;
