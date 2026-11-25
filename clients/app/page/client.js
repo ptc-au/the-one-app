@@ -165,9 +165,9 @@ function load(entrypoint, subject, fragment) {
   const view = { ...place, frame }
   view.frame.setAttribute("sandbox", sandbox)
   // An app hands a link to the device's share sheet, or copies it, as its person presses Share (the UI library's `share`),
-  // and shows a part of itself full screen (a live screen's Full Screen). A call (the UI library's `Voice`) takes the
-  // microphone, which without this it is refused without even asking.
-  view.frame.allow = "clipboard-write; web-share; fullscreen; microphone"
+  // and shows a part of itself full screen (a live screen's Full Screen). Never the microphone: a call (the UI library's
+  // `Voice`) takes it in this page, for a trusted app only (`one/voice`, bridge.js).
+  view.frame.allow = "clipboard-write; web-share; fullscreen"
   // Its app's icon in the middle of it while its renderer loads, as a phone's launch screen shows an app's, until its
   // first frame draws over it (`notifications/one/seen`, bridge.js).
   // Rounded as the launcher draws it, in a picture of its own, as a background can't be clipped.

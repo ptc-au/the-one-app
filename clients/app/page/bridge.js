@@ -91,9 +91,14 @@ async function respond(view, method, params) {
   /** Who the page asks for: whoever it says, if its app is trusted. @param {string} [said] */
   const whom = async (said) => (said && (await trusts()) ? said : view.subject)
   // A call's microphone and connection are this page's, not the app's frame's, which has no origin to take one from
-  // (`clients/web/voice.js`): the frame hands over what its page gives a voice, and hears what the voice says.
+  // (`clients/web/voice.js`): the frame hands over what its page gives a voice, and hears what the voice says. The
+  // microphone is this whole page's, which its person allowed once, so only a trusted app's call takes it.
   if (method === "one/voice") {
     const { op, id: node, ...rest } = params
+    if (!(await trusts())) {
+      if (op === "create") post(view, { method: "notifications/one/voice", params: { id: node, name: "state", state: "lost" } })
+      throw new Error(`${names.get(view.entrypoint) || app} is installed untrusted, so it doesn't take the microphone.`)
+    }
     return invoke("voice", op, `${view.key}|${node}`, rest, (event) => post(view, { method: "notifications/one/voice", params: { id: node, ...event } }))
   }
   if (method === "ui/initialize") {
