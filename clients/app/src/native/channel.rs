@@ -11,6 +11,8 @@ pub(super) struct State {
     pub(super) framed: bool,
     /// The place in its page the link it was opened at names: what follows its `#`.
     pub(super) fragment: Option<String>,
+    /// The place its page says it's at now (`notifications/one/place`), at first `fragment`'s.
+    pub(super) place: String,
     pub(super) trusted: bool,
     pub(super) entrypoint: String,
     /// Who it was opened for, a group or the network, or none for its person: whoever its requests are for.
@@ -114,6 +116,21 @@ pub(super) fn respond(
             let stack = (!stack.is_empty()).then_some(stack);
             views.client.report(json!({"name": "exception", "error": error, "attributes": {"code.file.path": path, "code.line.number": line, "exception.stacktrace": stack, "one.app": app}}));
         });
+        return None;
+    }
+    // Where its page is in itself, as the UI library's `place` says it, and how long a spinner was in sight there.
+    if method == "notifications/one/place" {
+        if let Some(place) = message["params"]["place"].as_str() {
+            state.lock().expect("nothing panics holding it").place = place.to_owned();
+        }
+        return None;
+    }
+    if method == "notifications/one/waited" {
+        let (view, place) = {
+            let state = state.lock().expect("nothing panics holding it");
+            (state.view.clone(), state.place.clone())
+        };
+        crate::waited(view, place, message["params"]["ms"].as_u64().unwrap_or_default());
         return None;
     }
     // Its page has drawn what it asked for as it opened, which its opening is timed to.

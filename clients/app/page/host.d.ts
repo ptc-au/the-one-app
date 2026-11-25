@@ -54,6 +54,8 @@ export interface View {
   asked?: number
   /** How far its renderer's frame got loading it, as a browser's frame says each step (`clients/web/renderer`). */
   loaded?: Set<string>
+  /** Where its page says it is in itself (`notifications/one/place`). */
+  place?: string
 }
 
 /** What moves an open app's page (`page-machine.js`): it drew, didn't, showed an error, was loaded against a version that's
@@ -194,6 +196,8 @@ export interface Commands {
   opened(args: { view: string; ms: number }): void
   /** Reports to Telemetry, as Telemetry's tool `record` takes a record, what went wrong here. */
   report(args: { record: Record<string, unknown> }): void
+  /** Tells Telemetry how long a spinner was in sight on `view`'s page, at `place`, with the tool it waited on. */
+  waited(args: { view: string; place: string; ms: number }): void
   /** Turns the device's own back and forward gestures on or off. */
   navigation_gestures(args: { on: boolean; home: boolean }): void
   /** Shows or hides an iPhone's status bar, as the app that's showing asks; a device with none keeps what it has. */

@@ -502,6 +502,7 @@ pub(crate) async fn command(label: &str, command: &str, args: Value) -> Result<V
         "listen" => listen().map(done),
         "opened" => opened(text("view").unwrap_or_default(), args["ms"].as_u64().unwrap_or_default() as u32).map(done),
         "report" => report(args["record"].clone()).map(done),
+        "waited" => Ok(done(waited(text("view").unwrap_or_default(), text("place").unwrap_or_default(), args["ms"].as_u64().unwrap_or_default()))),
         // A phone's status bar and haptics, and the web view's own back and forward, which the launcher has none of.
         "status_bar" | "navigation_gestures" => Ok(Value::Null),
         command if command.starts_with("plugin:") => Ok(Value::Null),

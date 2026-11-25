@@ -27,7 +27,22 @@ pub(crate) async fn apps(subject: Option<String>) -> Result<Value, String> {
 /// Answers what a view asks, in MCP's words: the result of `method`.
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) async fn request(view: String, method: String, params: Value) -> Result<Value, String> {
-    views()?.subscription(&view).request(&method, params).await.map_err(|error| format!("{error:#}"))
+    let subscription = views()?.subscription(&view);
+    let Some(tool) = params["name"].as_str().filter(|_| method == "tools/call") else {
+        return subscription.request(&method, params).await.map_err(|error| format!("{error:#}"));
+    };
+    // Each tool it calls is kept, as a spinner it shows is told with the one it waited on (`waited`).
+    let asked = waited::asked(&view, tool);
+    let answer = subscription.request(&method, params).await.map_err(|error| format!("{error:#}"));
+    waited::answered(&view, asked);
+    answer
+}
+
+/// A view's page had a spinner in sight for `ms`, on the screen its page is at (`place`): Telemetry is told, with the
+/// tool it waited on (`waited`).
+#[cfg_attr(mobile, tauri::command)]
+pub(crate) fn waited(view: String, place: String, ms: u64) {
+    waited::waited(&view, &place, ms);
 }
 
 /// Asks again for what a view was answered: its user returned to it.
@@ -192,6 +207,7 @@ pub(crate) async fn recover(key: String, subject: Option<String>) -> Result<(), 
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) fn close(view: String) -> Result<(), String> {
     views()?.subscriptions.lock().expect("no view panics").remove(&view);
+    waited::closed(&view);
     Ok(())
 }
 

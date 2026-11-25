@@ -9,6 +9,7 @@ import { createButton } from "../headless-components/button.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 import type { Laid, Located } from "../types/ui.d.ts"
+import type { Host } from "../calls.ts"
 import arrowDown from "@phosphor-icons/core/assets/regular/arrow-down.svg?raw"
 import arrowUp from "@phosphor-icons/core/assets/regular/arrow-up.svg?raw"
 import arrowCounterClockwise from "@phosphor-icons/core/assets/regular/arrow-counter-clockwise.svg?raw"
@@ -186,13 +187,18 @@ export function Icon(props: { name: IconName; along?: boolean; large?: boolean }
 /// `<Spinner />`: something's under way, an icon's size. `<Loading fallback={<Spinner delay />}>`: what's loading,
 /// in the place it'll take, as Apple's own apps show it: nothing for the first half second, as most answers come
 /// sooner (the client answers at once with what it kept), then a grey spinner in the middle of that place. A screen
-/// keeps its title, search and tabs outside its `<Loading>`, so they're drawn at once.
+/// keeps its title, search and tabs outside its `<Loading>`, so they're drawn at once. How long it was in sight is told
+/// to the client as it goes (`notifications/one/waited`), which tells Telemetry with the tool it waited on.
 export function Spinner(props: { delay?: boolean }) {
   const middle = useContext(Middle)
   const [late, setLate] = createSignal(false)
   if (props.delay) {
-    const timer = setTimeout(() => setLate(true), 500)
-    onCleanup(() => clearTimeout(timer))
+    let shown = 0
+    const timer = setTimeout(() => (setLate(true), (shown = Date.now())), 500)
+    onCleanup(() => {
+      clearTimeout(timer)
+      if (shown) (globalThis as { host?: Host }).host?.post({ jsonrpc: "2.0", method: "notifications/one/waited", params: { ms: Date.now() - shown } })
+    })
   }
   return (
     <View role="status" aria-label={messages.loading} style={[props.delay && look.waiting, props.delay && middle() && look.middle, props.delay && late() && look.late]}>

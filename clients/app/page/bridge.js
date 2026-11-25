@@ -257,7 +257,12 @@ addEventListener("message", async ({ source, data }) => {
       if (!view.frame.inert) opened(view)
     }
     // Where its page is in itself (the UI library's `place`), which the window's history and address follow.
-    if (method === "notifications/one/place" && typeof params.place === "string") reached(view, params.place, params.navigated === true)
+    if (method === "notifications/one/place" && typeof params.place === "string") {
+      view.place = params.place
+      reached(view, params.place, params.navigated === true)
+    }
+    // How long a spinner was in sight on it, which Telemetry hears with the tool it waited on (`waited.rs`).
+    if (method === "notifications/one/waited" && typeof params.ms === "number") invoke("waited", { view: view.key, place: view.place ?? "", ms: Math.round(params.ms) }).catch(() => {})
     // Something is open over its page, or nothing is any more, and whether it's on its first screen.
     if (method === "notifications/one/over") {
       view.over = params.over === true

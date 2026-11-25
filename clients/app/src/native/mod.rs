@@ -303,7 +303,7 @@ async fn window(started: Instant, entrypoint: &str, subject: Option<&str>, link:
     let behind = matches!(kind, Kind::Launcher(_, Some(Instead::Behind)));
     // A page of the client's own in the launcher's place floats nothing of its own: the whole panel is its card.
     let instead = matches!(kind, Kind::Launcher(_, Some(_)));
-    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view: view.clone(), page: 0, next: 0, launcher, framed: false, fragment, sheet, unopened, signing_in, behind, window: window.clone() };
+    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view: view.clone(), page: 0, next: 0, launcher, framed: false, place: fragment.clone().unwrap_or_default(), fragment, sheet, unopened, signing_in, behind, window: window.clone() };
     // Its title bar, which its page keeps clear, as its host context's `safeAreaInsets` tells it. The launcher has none.
     let top = if launcher { 0.0 } else { BAR.0 as f32 };
     let insets = renderer::geometry::Edges { top, right: 0.0, bottom: 0.0, left: 0.0 };
@@ -693,7 +693,7 @@ async fn reloaded(window: Arc<OnceLock<WindowId>>, entrypoint: String, subject: 
     Opening::step(&view, "started");
     let chosen = start["theme"].as_str().map(str::to_owned);
     let fragment = link.split_once('#').map(|(_, fragment)| fragment.to_owned());
-    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.clone(), subject: subject.clone(), view, page: 0, next: 0, launcher: false, framed: false, fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
+    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.clone(), subject: subject.clone(), view, page: 0, next: 0, launcher: false, framed: false, place: fragment.clone().unwrap_or_default(), fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
     let (reloaded_to, reloaded) = tokio::sync::oneshot::channel::<anyhow::Result<bool>>();
     Native::get()?.run(move |windows| {
         let Some(id) = window.get().copied() else { return drop(reloaded_to.send(Ok(false))) };
@@ -726,7 +726,7 @@ async fn frame(window: Arc<OnceLock<WindowId>>, node: renderer::tree::Id, src: &
     let started = start(entrypoint, subject, src, false, Place::Frame(window.clone(), node), &module, page)?;
     let view = format!("{}|{entrypoint}", subject.unwrap_or_default());
     let fragment = src.split_once('#').map(|(_, fragment)| fragment.to_owned());
-    let state = State { chosen: None, trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view, page: 0, next: 0, launcher: false, framed: true, fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
+    let state = State { chosen: None, trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view, page: 0, next: 0, launcher: false, framed: true, place: fragment.clone().unwrap_or_default(), fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
     let src = src.to_owned();
     Native::get()?.run(move |windows| {
         let Some(id) = window.get() else { return };

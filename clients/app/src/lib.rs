@@ -54,6 +54,7 @@ mod app;
 mod commands;
 mod session;
 mod views;
+mod waited;
 #[cfg(mobile)]
 mod mobile;
 #[cfg(target_os = "ios")]
@@ -155,6 +156,7 @@ pub fn run() {
             status_bar,
             theme,
             report,
+            waited,
         ])
         .run(context)
         .expect("the app starts");
