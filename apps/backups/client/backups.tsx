@@ -86,10 +86,18 @@ async function doing<T>(does: () => Promise<T>): Promise<T | true | false> {
   }
 }
 
-const [open, setOpen] = createSignal<string>()
-const [adding, setAdding] = createSignal(false)
-/// What's being restored from: a destination, and the backup if one was picked.
-const [restoring, setRestoring] = createSignal<{ destination: Destination; backup?: string }>()
+/// What's open, as the section's screen says it (`settings_section`'s own arguments): a destination beside the list,
+/// `destination`; the form to add one over it, `add` (the kind, `folder` or `s3`); the form to restore from the one open,
+/// `restore` (the backup, or nothing for the newest). Each is a step Back goes back from.
+interface Open {
+  destination?: string
+  add?: string
+  restore?: string
+}
+interface Shown {
+  inputs: Open
+  show: (inputs?: Open) => void
+}
 const [working, setWorking] = createSignal<string>()
 
 /// `does` under way on the button `which`, which shows it's working until it's done.
@@ -107,12 +115,12 @@ const schedules = [
 ]
 
 /// A destination, opened: what's wrong with it, where it is, its backups, Check and Stop Backing Up Here.
-function Opened(props: { destination: Destination }) {
+function Opened(props: { destination: Destination; show: Shown["show"] }) {
   const destination = () => props.destination
   const stop = async () => {
     const question = { heading: `Stop backing up to ${destination().name}?`, text: "What's there now stays there.", action: "Stop Backing Up", destructive: true }
     if (!(await confirm(question))) return
-    if (await doing(() => call("backups_remove", { destination: destination().name }, network))) setOpen()
+    if (await doing(() => call("backups_remove", { destination: destination().name }, network))) props.show()
   }
   const check = press("check", async () => {
     const [checked] = JSON.parse(await call("backups_check", { destination: destination().name }, network)).checks as { backup: string | null; objects?: number }[]
@@ -149,13 +157,13 @@ function Opened(props: { destination: Destination }) {
       <Show when={destination().backups.length}>
         <Section heading="Backups">
           <List each={destination().backups} keyed={(backup) => backup.name}>
-            {(backup) => <Row heading={when(backup().at)} text={`${size(backup().bytes)} · ${size(backup().sent_bytes)} sent · ${took(backup().took)}`} onPress={() => setRestoring({ destination: destination(), backup: backup().name })} />}
+            {(backup) => <Row heading={when(backup().at)} text={`${size(backup().bytes)} · ${size(backup().sent_bytes)} sent · ${took(backup().took)}`} onPress={() => props.show({ destination: destination().name, restore: backup().name })} />}
           </List>
         </Section>
       </Show>
       <Show when={destination().backups.length}>
         <List>
-          <Row heading="Restore…" onPress={() => setRestoring({ destination: destination() })} />
+          <Row heading="Restore…" onPress={() => props.show({ destination: destination().name, restore: "" })} />
           <Row heading="Check" end={working() === "check" ? <Spinner /> : undefined} onPress={working() === "check" ? undefined : check} />
         </List>
       </Show>
@@ -168,8 +176,8 @@ function Opened(props: { destination: Destination }) {
 
 /// Adds a destination: a folder on one of the network's machines, as on a disk plugged into it, or S3-compatible storage
 /// whose keys are an item in the Vault for Everyone. It's tried before it's added, so a typo shows here.
-function AddSheet(props: { machines: All["machines"] }) {
-  const [kind, setKind] = createSignal("folder")
+function AddSheet(props: { machines: All["machines"]; kind?: string; show: Shown["show"] }) {
+  const [kind, setKind] = createSignal(props.kind === "s3" ? "s3" : "folder")
   const [machine, setMachine] = createSignal<string>()
   const [typed, setTyped] = createSignal<Record<string, string>>({})
   const [missing, setMissing] = createSignal<string[]>([])
@@ -184,12 +192,12 @@ function AddSheet(props: { machines: All["machines"] }) {
       [...(kind() === "folder" ? [["machine", machine() ?? props.machines[0]?.key]] : []), ...required().map((name) => [name, typed()[name]]), ["name", typed().name]].filter(([, value]) => value),
     )
     setWorking("add")
-    if (await doing(() => call("backups_add", sent, network))) (setAdding(false), setTyped({}))
+    if (await doing(() => call("backups_add", sent, network))) props.show()
     setWorking()
   }
   const error = (name: string) => (missing().includes(name) ? "Fill in this field." : undefined)
   return (
-    <Sheet heading="Add Destination" open={adding()} onClose={() => setAdding(false)}>
+    <Sheet heading="Add Destination" open={props.kind !== undefined} onClose={() => props.show()}>
       <RadioGroup value={kind()} onValueChange={setKind} options={[{ value: "folder", label: "A Disk" }, { value: "s3", label: "S3-Compatible Storage" }]} />
       <Show when={kind() === "folder"}>
         <Show
@@ -225,15 +233,15 @@ function AddSheet(props: { machines: All["machines"] }) {
 
 /// Brings back what a backup holds that's gone: someone's data, what one app keeps for them, or one file. What's
 /// there now stays as it is.
-function RestoreSheet() {
+function RestoreSheet(props: { destination?: Destination; from?: string; show: Shown["show"] }) {
   return (
-    <Sheet heading="Restore" open={!!restoring()} onClose={() => setRestoring()}>
-      <Show when={restoring()}>{(from) => <Restore destination={from().destination} from={from().backup} />}</Show>
+    <Sheet heading="Restore" open={!!props.destination && props.from !== undefined} onClose={() => props.show({ destination: props.destination?.name })}>
+      <Show when={props.destination}>{(destination) => <Restore destination={destination()} from={props.from || undefined} show={props.show} />}</Show>
     </Sheet>
   )
 }
 
-function Restore(props: { destination: Destination; from?: string }) {
+function Restore(props: { destination: Destination; from?: string; show: Shown["show"] }) {
   const [what, setWhat] = createSignal("whose")
   const [backup, setBackup] = createSignal<string | undefined>(props.from)
   const [whose, setWhose] = createSignal<string>()
@@ -271,7 +279,7 @@ function Restore(props: { destination: Destination; from?: string }) {
     setWorking()
     if (result) {
       toast(String(result))
-      setRestoring()
+      props.show({ destination: props.destination.name })
     }
   }
   return (
@@ -305,22 +313,22 @@ function Restore(props: { destination: Destination; from?: string }) {
   )
 }
 
-function Backups(props: { all: All }) {
+function Backups(props: { all: All } & Shown) {
   const destinations = () => props.all.destinations
-  const opened = () => destinations().find((destination) => destination.name === open())
+  const opened = () => destinations().find((destination) => destination.name === props.inputs.destination)
   const now = press("now", () => call("backups_now", {}, network))
   const backingUp = () => destinations().some((destination) => destination.state === "backing_up")
   const schedule = (every: string) => every !== props.all.every && doing(() => call("backups_schedule", { every }, network))
   return (
     <>
-      <Split open={!!opened()} onClose={() => setOpen()} pick="Pick a destination to see its backups." detail={<Show when={opened()}><Opened destination={opened()!} /></Show>}>
+      <Split open={!!opened()} onClose={() => props.show()} pick="Pick a destination to see its backups." detail={<Show when={opened()}><Opened destination={opened()!} show={props.show} /></Show>}>
         <Screen heading="Backups" back action={<Show when={destinations().length}><Button loading={working() === "now" || backingUp()} onPress={now}>Back Up Now</Button></Show>}>
-          <Show when={destinations().length} fallback={<Empty action={<Button onPress={() => setAdding(true)}>Add Destination</Button>}>Nothing is backed up yet.</Empty>}>
+          <Show when={destinations().length} fallback={<Empty action={<Button onPress={() => props.show({ add: "folder" })}>Add Destination</Button>}>Nothing is backed up yet.</Empty>}>
             <List each={destinations()} keyed={(destination) => destination.name}>
-              {(destination) => <Row heading={destination().name} text={<Text style={[warns(destination()) && look.warns]}>{about(destination())}</Text>} current={open() === destination().name} onPress={() => setOpen(destination().name)} />}
+              {(destination) => <Row heading={destination().name} text={<Text style={[warns(destination()) && look.warns]}>{about(destination())}</Text>} current={props.inputs.destination === destination().name} onPress={() => props.show({ destination: destination().name })} />}
             </List>
             <List>
-              <Row start={<Icon name="plus" />} heading="Add Destination" onPress={() => setAdding(true)} />
+              <Row start={<Icon name="plus" />} heading="Add Destination" onPress={() => props.show({ add: "folder" })} />
             </List>
             <Section heading="Schedule">
               <List>
@@ -331,18 +339,18 @@ function Backups(props: { all: All }) {
           </Show>
         </Screen>
       </Split>
-      <AddSheet machines={props.all.machines} />
-      <RestoreSheet />
+      <AddSheet machines={props.all.machines} kind={props.inputs.add} show={props.show} />
+      <RestoreSheet destination={opened()} from={props.inputs.restore} show={props.show} />
     </>
   )
 }
 
-/// Backups, as Settings draws it.
-export default function BackupsSection() {
+/// Backups, as Settings draws it, told its screen (`Open`).
+export default function BackupsSection(props: Shown) {
   return (
   <Errored fallback={(error) => <Screen heading="Backups" back><Problem heading="Can't show backups" text={error() as Error} /></Screen>}>
     <Loading fallback={<Screen heading="Backups" back><Spinner delay /></Screen>}>
-      <Backups all={backups()} />
+      <Backups all={backups()} inputs={props.inputs} show={props.show} />
     </Loading>
   </Errored>
 )
