@@ -70,7 +70,7 @@ defmodule OneCore.Renames do
       for blob <- Bucket.list("network/deployed/#{old}/"),
           do: moved.(blob, String.replace_prefix(blob, "network/deployed/#{old}/", "network/deployed/#{new}/"))
 
-      OneCore.Server.notify_servers(["network"], "reload", %{owners: [old, new, "network"]})
+      OneCore.Server.notify_servers([old, new, "network"])
       Servers.invalidate()
       OneCore.Apps.reload(new)
       OneCore.Hooks.invalidate()
