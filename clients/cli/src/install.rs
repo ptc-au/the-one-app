@@ -167,10 +167,8 @@ struct Locked {
 struct Lock {
     #[serde(default)]
     apps: BTreeMap<String, Locked>,
-    /// The network whose apps these are, which wrote it: one from before it said so has none, and says it by its
-    /// repo's `app/address` instead.
-    #[serde(default)]
-    network: Option<String>,
+    /// The network whose apps these are, which wrote it.
+    network: String,
 }
 
 /// The lock file, where this is run in a network's repo: a folder with an `apps.lock`, or with a network's own
@@ -184,12 +182,9 @@ fn read_lock(file: &Path) -> Result<Lock> {
     serde_json::from_str(&text).with_context(|| format!("{} says an app wrong", file.display()))
 }
 
-fn write_lock(file: &Path, network: Option<&str>, locked: &BTreeMap<String, Locked>) -> Result<()> {
-    let mut lock = json!({"version": 1, "apps": locked});
-    if let Some(network) = network {
-        lock["network"] = json!(network);
-    }
-    let text = serde_json::to_string_pretty(&lock)?;
+fn write_lock(file: &Path, client: &Client, locked: &BTreeMap<String, Locked>) -> Result<()> {
+    let network = client.address().context("this CLI has no network's address to record in the lock")?;
+    let text = serde_json::to_string_pretty(&json!({"version": 1, "network": network, "apps": locked}))?;
     Ok(fs::write(file, text + "\n")?)
 }
 
@@ -203,11 +198,11 @@ fn network(address: &str) -> String {
     }
 }
 
-/// The network a folder's `apps.lock` is for: what it says, or its repo's `app/address` where it's from before it
-/// said so, or `None` where the folder is no network's repo.
+/// The network a folder's `apps.lock` is for: what it says, or its repo's `app/address` where there's no lock yet, or
+/// `None` where the folder is no network's repo.
 fn repo_network(file: &Path) -> Result<Option<String>> {
-    if let Some(recorded) = read_lock(file)?.network {
-        return Ok(Some(recorded));
+    if file.exists() {
+        return Ok(Some(read_lock(file)?.network));
     }
     Ok(fs::read_to_string(ADDRESS).ok().map(|address| address.trim().to_owned()))
 }
@@ -486,7 +481,7 @@ impl<'a> Installer<'a> {
                 let it = finish_deploy(self.client, self.of, name, self.source, self.commit, &text).await?;
                 if let Some(file) = self.lock {
                     self.locked.insert(name.to_owned(), it);
-                    write_lock(file, self.client.address().as_deref(), self.locked)?;
+                    write_lock(file, self.client, self.locked)?;
                 }
                 self.done.insert(name.to_owned());
                 return Ok(());
@@ -767,7 +762,7 @@ pub async fn uninstall(client: &Client, name: &str) -> Result<ExitCode> {
     let mut locked = read_lock(&file)?.apps;
     if locked.get(name).is_some_and(|it| it.of == of) {
         locked.remove(name);
-        write_lock(&file, client.address().as_deref(), &locked)?;
+        write_lock(&file, client, &locked)?;
         println!("Removed from {LOCK}.");
     }
     Ok(ExitCode::SUCCESS)
