@@ -25,8 +25,18 @@ const toPage = (message) => frame.contentWindow?.postMessage({ jsonrpc: "2.0", .
 
 /// The id of this page's own `ui/initialize`, which no page it shows asks by.
 const GREETING = "router"
-/// How tall it is in an assistant's chat: a host sizes a page by what it says, and an app's says nothing of it.
-const HEIGHT = 600
+/// How tall the page is in an assistant's chat: a host sizes a page by what it says. What the page says of its content
+/// (`ui/notifications/size-changed`, as any page's client has it), or until it does as much as the host allows, which
+/// a page that fills its window (Settings, a live screen) is as tall as, and no more than its person's display.
+/** @type {number | undefined} */
+let said
+let told = 0
+function size() {
+  const dimensions = /** @type {{ maxHeight?: number } | undefined} */ (greeted?.hostContext?.containerDimensions)
+  const most = dimensions?.maxHeight ?? Infinity
+  const height = Math.round(Math.min(most, said ?? Math.max(480, screen.availHeight * 0.8)))
+  if (height !== told) toHost({ method: "ui/notifications/size-changed", params: { height: (told = height) } })
+}
 /// What the assistant answered this page's `ui/initialize`, once it has.
 /** @type {{ hostContext?: Record<string, unknown> } | undefined} */
 let greeted
@@ -48,6 +58,8 @@ function show(page, fragment) {
   shown.src = `${origin}/renderer/#${at}`
   frame.replaceWith(shown)
   frame = shown
+  said = undefined
+  size()
 }
 
 /** Asks the network `method`, as whoever let the assistant in. → its JSON-RPC answer. @param {unknown} id @param {string} method @param {unknown} [params] */
@@ -75,7 +87,7 @@ addEventListener("message", ({ source, data }) => {
     if (data.id === GREETING) {
       greeted = data.result
       toHost({ method: "ui/notifications/initialized", params: {} })
-      toHost({ method: "ui/notifications/size-changed", params: { height: HEIGHT } })
+      size()
       return
     }
     if (data.method === "ui/notifications/tool-input") input = data.params
@@ -88,7 +100,10 @@ addEventListener("message", ({ source, data }) => {
       }
       return
     }
-    if (data.method === "ui/notifications/host-context-changed" && greeted) greeted = { ...greeted, hostContext: { ...greeted.hostContext, ...data.params } }
+    if (data.method === "ui/notifications/host-context-changed" && greeted) {
+      greeted = { ...greeted, hostContext: { ...greeted.hostContext, ...data.params } }
+      size()
+    }
     toPage(data)
     return
   }
@@ -99,6 +114,10 @@ addEventListener("message", ({ source, data }) => {
   if (data.method === "ui/initialize") {
     const tool = tools && typeof result?._meta?.tool === "string" ? { toolInfo: { tool: { name: result._meta.tool } } } : {}
     return toPage({ id: data.id, result: greeted && { ...greeted, hostContext: { ...tool, ...greeted.hostContext } } })
+  }
+  if (data.method === "ui/notifications/size-changed") {
+    said = typeof data.params?.height === "number" ? data.params.height : undefined
+    return size()
   }
   if (data.method === "ui/notifications/initialized") {
     if (tools && input) toPage({ method: "ui/notifications/tool-input", params: input })
