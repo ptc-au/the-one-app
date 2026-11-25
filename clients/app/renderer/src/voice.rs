@@ -308,9 +308,9 @@ impl Session {
                 Output::Timeout(at) => return Ok(at),
                 Output::Transmit(transmit) => self.turn.send(transmit.destination, &transmit.contents)?,
                 Output::Event(event) => match event {
-                    RtcEvent::IceConnectionStateChange(IceConnectionState::Connected) => {
-                        out.tell("state", json!({"state": "connected"}))
-                    }
+                    // A call is connected once DTLS does, which is when its audio's keys are there: the side that offers
+                    // ICE is the controlling one, so its ICE says `Completed` and never `Connected`.
+                    RtcEvent::Connected => out.tell("state", json!({"state": "connected"})),
                     RtcEvent::IceConnectionStateChange(IceConnectionState::Disconnected) => {
                         self.ended = Some("the screen went".into())
                     }
