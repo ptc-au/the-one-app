@@ -11,8 +11,8 @@ const look = styles({
   /// An app's tile: its icon and its name under it, the size it is on a Home Screen, or as wide as a grid's column.
   tile: { alignItems: "center", gap: tokens.grid[1.5], width: sizes.tile, flexShrink: 0, borderRadius: tokens.radius.medium },
   fills: { width: "100%" },
-  icon: { width: sizes.icon, height: sizes.icon, borderRadius: tokens.radius.large },
-  largeIcon: { width: sizes.largeIcon, height: sizes.largeIcon, borderRadius: tokens.radius.large },
+  icon: { width: sizes.icon, height: sizes.icon, borderRadius: tokens.radius.icon },
+  largeIcon: { width: sizes.largeIcon, height: sizes.largeIcon, borderRadius: tokens.radius.icon },
   /// Where an app has no icon.
   blank: { backgroundColor: tokens.colour.quinaryLabel },
   name: { font: tokens.type.caption, textAlign: "center", lineClamp: 2, width: "100%" },

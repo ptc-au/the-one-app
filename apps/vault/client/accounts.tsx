@@ -19,8 +19,8 @@ const look = styles({
   note: { color: tokens.colour.secondaryLabel },
   line: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1.5] },
   /// An app's icon, or an item's picture, at the start of its row: its flat tile, as on the Home Screen.
-  tile: { width: tokens.grid[8], height: tokens.grid[8], borderRadius: tokens.radius.medium },
-  small: { width: tokens.grid[4], height: tokens.grid[4], borderRadius: tokens.radius.small },
+  tile: { width: tokens.grid[8], height: tokens.grid[8], borderRadius: tokens.radius.icon },
+  small: { width: tokens.grid[4], height: tokens.grid[4], borderRadius: tokens.radius.icon },
   inline: { flexDirection: "row", alignItems: "center", gap: tokens.grid[1], minWidth: 0 },
   /// A dot that says something needs its person.
   dot: { width: tokens.grid[2], height: tokens.grid[2], flexShrink: 0, borderRadius: tokens.radius.full, backgroundColor: tokens.colour.orange },

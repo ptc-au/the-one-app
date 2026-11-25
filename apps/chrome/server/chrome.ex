@@ -141,7 +141,7 @@ defmodule Chrome do
   """
 
   @impl true
-  def icon, do: "icon.svg"
+  def icon, do: "icon.png"
 
   # Its data is everyone's together, each person's browsers kept apart by who they're for (`browsers/<who>/`).
   @impl true

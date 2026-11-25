@@ -83,10 +83,10 @@ changed(() => [added, apps, me].forEach(refresh))
 const src = (icon: string) => icon.replace(/^ui:\/\/([^/]+)\/([^/]+)\//, "../../$1@$2/")
 
 const look = styles({
-  icon: { width: tokens.length.sidebarIcon, height: tokens.length.sidebarIcon },
+  icon: { width: tokens.length.sidebarIcon, height: tokens.length.sidebarIcon, borderRadius: tokens.radius.icon },
   /// A group's heading in another section's page: its app's icon and name.
   heading: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2] },
-  small: { width: tokens.grid[4], height: tokens.grid[4] },
+  small: { width: tokens.grid[4], height: tokens.grid[4], borderRadius: tokens.radius.icon },
   /// Why an app can't be removed, under Remove App.
   why: { font: tokens.type.small, color: tokens.colour.secondaryLabel, paddingInline: tokens.grid[3] },
   muted: { color: tokens.colour.secondaryLabel },

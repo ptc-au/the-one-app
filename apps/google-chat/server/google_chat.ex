@@ -49,7 +49,7 @@ defmodule GoogleChat do
   @subscription ~r{\Asubscriptions/[A-Za-z0-9_-]+\z}
 
   @impl true
-  def icon, do: "icon.svg"
+  def icon, do: "icon.png"
 
   @impl true
   def requires do

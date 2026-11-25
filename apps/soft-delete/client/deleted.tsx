@@ -8,7 +8,7 @@ import { call, changed, confirm, Empty, Image, List, Menu, Problem, Row, Screen,
 const look = styles({
   note: { color: tokens.colour.secondaryLabel, maxWidth: tokens.length.readable },
   wrong: { color: tokens.colour.red },
-  icon: { width: tokens.length.sidebarIcon, height: tokens.length.sidebarIcon },
+  icon: { width: tokens.length.sidebarIcon, height: tokens.length.sidebarIcon, borderRadius: tokens.radius.icon },
   // The room the row's menu button has, so the spinner that takes its place is where its mark was.
   working: { width: tokens.length.control, alignItems: "center" },
 })

@@ -36,7 +36,7 @@ defmodule GoogleChatApp do
   @thread ~r{\Aspaces/[A-Za-z0-9_-]+/threads/[A-Za-z0-9_.-]+\z}
 
   @impl true
-  def icon, do: "icon.svg"
+  def icon, do: "icon.png"
 
   # What it keeps is the network's, as its Chat app is: what's posted in a space it's in is shared with the network.
   @impl true

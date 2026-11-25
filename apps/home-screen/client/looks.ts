@@ -169,7 +169,7 @@ export const looks = styles({
   holdItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: tokens.grid[4], minHeight: sizes.menuRow, paddingInline: tokens.grid[4], borderTopWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   holdWhy: { paddingBlock: tokens.grid[2.5], color: tokens.colour.secondaryLabel },
   // Adding a widget: its sizes, each a preview, the one chosen ringed.
-  widgetIcon: { width: tokens.grid[8], height: tokens.grid[8], borderRadius: tokens.radius.medium },
+  widgetIcon: { width: tokens.grid[8], height: tokens.grid[8], borderRadius: tokens.radius.icon },
   sizes: { gap: tokens.grid[4] },
   sizesRow: { flexDirection: "row", gap: tokens.grid[4], padding: tokens.grid[1] },
   sizeOption: { alignItems: "center", gap: tokens.grid[2], flexShrink: 0, color: tokens.colour.secondaryLabel },
@@ -228,7 +228,7 @@ export const looks = styles({
   // Installing an app for an owner, or being told you can't.
   ask: { alignItems: "center", gap: tokens.grid[3] },
   askIcons: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: tokens.grid[3] },
-  askIcon: { width: tokens.grid[16], height: tokens.grid[16], borderRadius: tokens.radius.large },
+  askIcon: { width: tokens.grid[16], height: tokens.grid[16], borderRadius: tokens.radius.icon },
   askWhy: { color: tokens.colour.secondaryLabel, textAlign: "center" },
   askButtons: { alignSelf: "stretch", gap: tokens.grid[3], paddingTop: tokens.grid[2] },
   askButton: { alignSelf: "stretch", paddingTop: tokens.grid[2] },
