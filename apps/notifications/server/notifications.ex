@@ -185,7 +185,9 @@ defmodule Notifications do
       %{
         name: "inbox",
         read_only: true,
-        description: "Lists your notifications, newest first, with how many are unread",
+        ui: "client/index.html",
+        runtime_version: 4,
+        description: "Lists your notifications, newest first, with how many are unread: the Notifications app's only screen",
         inputs: %{
           type: "object",
           properties: %{after: %{type: "integer", description: "Only those after this id, to hear what's new"}}

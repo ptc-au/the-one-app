@@ -1,8 +1,8 @@
 // Notifications: what you've been told, newest first. Tapping one marks it read and opens the app it's from. A phone or
 // a browser that isn't woken by them says so first, and why, and a browser turns them on here. Which apps may notify you
-// is in Settings (settings.tsx).
+// is in Settings (settings.tsx). Its one screen is `notifications_inbox` (`toolInput`).
 import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
-import { call, changed, client, confirm, Empty, List, ListStyle, Menu, open, Problem, render, Row, Screen, Section, since, Spinner, styles, Text, toast, tokens, View } from "ui"
+import { call, changed, client, confirm, Empty, List, ListStyle, Menu, open, Problem, render, Row, Screen, Section, since, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
 import { type Push, PushState } from "./push.tsx"
 
 /** What hasn't been read has a blue dot before it, as Mail's rows do, and a heavier weight. */
@@ -27,21 +27,12 @@ interface Received {
   read: boolean
 }
 
-/** An app that has told its person something, as `notifications_apps` answers it. */
-interface App {
-  app: string
-  name: string
-  allowed: boolean
-}
-
-
 const inbox = createMemo(async () => {
-  const [{ notifications }, apps, { push, settings }]: [{ notifications: Received[] }, App[], { push?: Push; settings?: boolean }] = await Promise.all([
-    call("notifications_inbox").then(JSON.parse),
-    call("notifications_apps").then((text) => JSON.parse(text).apps),
+  const [{ notifications }, { push, settings }]: [{ notifications: Received[] }, { push?: Push; settings?: boolean }] = await Promise.all([
+    call("notifications_inbox", toolInput("notifications_inbox").arguments).then(JSON.parse),
     client(),
   ])
-  return { notifications, apps, push, settings: settings === true }
+  return { notifications, push, settings: settings === true }
 })
 changed(() => refresh(inbox))
 

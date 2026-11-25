@@ -31,25 +31,6 @@
           }
         ]
       },
-      "notifications_apps": {
-        "apps": [
-          {
-            "app": "backups",
-            "name": "Backups",
-            "allowed": true
-          },
-          {
-            "app": "vault",
-            "name": "Vault",
-            "allowed": true
-          },
-          {
-            "app": "sign-in",
-            "name": "Sign-In",
-            "allowed": false
-          }
-        ]
-      },
       "one/client": {
         "device": "Laptop",
         "build": "0.26.0",
@@ -61,9 +42,6 @@
     "answers": {
       "notifications_inbox": {
         "notifications": []
-      },
-      "notifications_apps": {
-        "apps": []
       },
       "one/client": {
         "device": "Laptop",
