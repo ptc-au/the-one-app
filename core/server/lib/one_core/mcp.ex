@@ -826,16 +826,23 @@ defmodule OneCore.Mcp do
   # the page an assistant shows every app's tool in opens (`router/0`), and which tool it was (`_meta.tool`), which
   # that page is told as MCP Apps' `toolInfo`, as the screen it shows is that tool and what it was given.
   defp paged({:ok, %{} = result}, name, %{ui: ui}) when is_binary(ui),
-    do: {:ok, Map.put(result, :_meta, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name})}
+    do: {:ok, with_meta(result, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name})}
 
   defp paged(outcome, _name, _tool), do: outcome
 
   # What a tool that says `no_store` answered says no device may keep it (`_meta.noStore`), as HTTP's
   # `Cache-Control: no-store` does: what an encrypted item holds.
   defp unkept({:ok, %{} = result}, %{no_store: true}),
-    do: {:ok, Map.update(result, :_meta, %{noStore: true}, &Map.put(&1, :noStore, true))}
+    do: {:ok, with_meta(result, %{noStore: true})}
 
   defp unkept(outcome, _tool), do: outcome
+
+  # `result` with `more` in its `_meta`, beside what's there: another server's answer, decoded, says it as "_meta", and
+  # a write's that was done already keeps there what only its device opens (`OneCore.Writes`).
+  defp with_meta(%{"_meta" => meta} = result, more),
+    do: %{result | "_meta" => Map.merge(meta, Map.new(more, fn {k, v} -> {to_string(k), v} end))}
+
+  defp with_meta(result, more), do: Map.update(result, :_meta, more, &Map.merge(&1, more))
 
   # The tool `name` is for `who`, with what One Core's own take and give read as its schemas.
   defp tool(name, who), do: Calls.find(name, who, Tools.tools())

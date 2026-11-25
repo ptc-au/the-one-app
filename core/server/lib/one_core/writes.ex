@@ -15,7 +15,8 @@ defmodule OneCore.Writes do
 
   What it answered can hold secrets, as a Vault call's answer does, so it's kept encrypted to the device that asked
   (`client::sealed`), whose key is in every request it makes: any server hands it back, and only that device opens it.
-  A call from no device, as one over the web, has only that it's done kept, and its client reads again what it did.
+  A call from no device, as one over the web, has only that it's done kept, which it's answered as an error, and its
+  client reads again what it did.
 
   A key is `<milliseconds since 1970 when it was made>-<random>`, so what's past its day goes by its name alone.
   A server that claims a write and then gets stuck still holds it, as Stripe's does: a call waiting for it is told
@@ -115,7 +116,7 @@ defmodule OneCore.Writes do
 
       case record do
         %{"status" => "done"} ->
-          {:done, done(record["sealed"])}
+          done(record["sealed"])
 
         # Passed here by the server that holds it, as one whose call ends where what it needs is: taken over.
         %{"server" => server, "to" => ^me} when server == write.from ->
@@ -146,18 +147,19 @@ defmodule OneCore.Writes do
         {:not_run, taking_longer()}
       end
     else
-      %{"status" => "done"} = record -> {:done, done(record["sealed"])}
+      %{"status" => "done"} = record -> done(record["sealed"])
       _absent -> {:not_run, "That idempotency key is past its day: a client gives each write a key of its own"}
     end
   end
 
   # What a write that ran answered, as MCP's `tools/call` answers it: encrypted to the device that asked, in `_meta`,
-  # which that device opens in its place, or for one from no device, that it was done.
+  # which that device opens in its place. One from no device has only that it's done kept, which isn't an answer that
+  # says what its tool's `outputSchema` does, as MCP has every answer of a tool with one, so it's an error: its client
+  # reads again what it did.
   defp done(sealed) when is_binary(sealed),
-    do: %{content: [%{type: "text", text: "This was done when it was first asked."}], _meta: %{sealed: sealed}}
+    do: {:done, %{content: [%{type: "text", text: "This was done when it was first asked."}], _meta: %{sealed: sealed}}}
 
-  defp done(nil),
-    do: %{content: [%{type: "text", text: "This was done when it was first asked. Read again what it changed to see it."}]}
+  defp done(nil), do: {:not_run, "This was done when it was first asked. Read again what it changed to see it."}
 
   # A write asked again is run only where every server that could have been asked it first keeps to keys.
   defp resendable(%{resent: false}, _actor, _subject), do: :ok
