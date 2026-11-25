@@ -173,19 +173,23 @@ defmodule OneCore.Tools.Apps do
     end
   end
 
-  # Each install as `apps` lists it, with its app's version, trust, update and where it came from, read at once.
+  # Each install as `apps` lists it, with its app's version, trust, update and where it came from, read at once, and
+  # what runs for each owner asked once for all of theirs, where it was asked three times for each (25 Nov: 1.2 s).
   defp listed(installed) do
     apps = for {_at, _name, record} <- installed, do: record["app"]
     latest = Bucket.read_all(Enum.map(apps, &(&1 <> "/latest")))
     updates = Bucket.read_all(Enum.map(apps, &(&1 <> "/update")))
+    owners = installed |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+    running = Map.new(owners, &{&1, Apps.running(&1)})
+    versions = Map.new(owners, &{&1, Apps.versions([&1])})
 
     for {{at, name, record}, latest, update} <- Enum.zip([installed, latest, updates]) do
       about = with {:ok, json, _tag} <- latest, do: JSON.decode!(json), else: (_ -> %{})
       update = with {:ok, json, _tag} when json != "" <- update, do: JSON.decode!(json), else: (_ -> nil)
 
       at
-      |> moved(name, record, about, update)
-      |> Map.merge(%{source: about["source"], from: about["from"], required_by: Requires.required_by(at, name)})
+      |> moved(name, record, about, update, running[at])
+      |> Map.merge(%{source: about["source"], from: about["from"], required_by: Requires.required_by(versions[at], name)})
     end
   end
 
@@ -193,10 +197,11 @@ defmodule OneCore.Tools.Apps do
   # either answers: `record` is its record, or `nil` once it's gone.
   defp moved(owner, name, record) do
     app = record && record["app"]
-    moved(owner, name, record, nil, app && Update.read(app))
+    moved(owner, name, record, nil, app && Update.read(app), Apps.running(owner))
   end
 
-  defp moved(owner, name, record, about, update) do
+  # `running` is what runs for `owner` (`OneCore.Apps.running/1`).
+  defp moved(owner, name, record, about, update, running) do
     record = record || %{}
     app = record["app"]
     about = about || if(app, do: Store.about(app), else: %{})
@@ -220,17 +225,17 @@ defmodule OneCore.Tools.Apps do
             commits: update["commits"] || [],
             why: update["why"]
           },
-      requires: requires(Apps.running(owner)[name]),
-      platform: platform(owner, name, app)
+      requires: requires(running[name]),
+      platform: platform(running, name, app, about)
     }
   end
 
   # Whether an app's version runs on this server's platform: one running here does, and only one that doesn't is
   # read from what it said of itself.
-  defp platform(_owner, _name, nil), do: nil
+  defp platform(_running, _name, nil, _about), do: nil
 
-  defp platform(owner, name, app) do
-    if is_map_key(Apps.running(owner), name), do: %{state: :runs, why: nil}, else: Store.platform(name, app)
+  defp platform(running, name, app, about) do
+    if is_map_key(running, name), do: %{state: :runs, why: nil}, else: Store.platform(name, app, about)
   end
 
   # What failed is an error for whoever asked, as it is where it was asked: the record says so too, until it's tried

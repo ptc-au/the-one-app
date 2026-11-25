@@ -39,7 +39,10 @@ defmodule OneCore.Tools.Builds do
     # (`server`) doesn't, so the edge refused its read of them.
     Apps.here?(by) || raise "This server doesn't act for #{by}, so it can't say which of their devices it has seen"
     keys = OneCore.Apps.covering(owner)
+    # What doesn't need the servers and devices read below is read alongside them, each a trip of its own.
     latest = Task.async(&Builds.latest/0)
+    update = Task.async(&Servers.network/0)
+    waiting = Task.async(fn -> waiting(owner) end)
 
     # Each blob is a trip across the internet where the bucket is far away, so they're all read at once. Every client
     # that shows it asks again as each server of a release comes and goes, so what's read is kept for a few seconds,
@@ -79,14 +82,14 @@ defmodule OneCore.Tools.Builds do
       server: Server.key(),
       build: Builds.build(),
       protocol: Protocol.range(),
-      network: network(servers),
+      network: network(Task.await(update, :infinity), servers),
       edge: edge["build"],
       edge_protocol: edge["protocol"],
       latest: Task.await(latest, :infinity),
       servers: servers,
       devices: devices,
       apps: Apps.synced(),
-      waiting: waiting(owner)
+      waiting: Task.await(waiting, :infinity)
     }
   end
 
@@ -102,8 +105,8 @@ defmodule OneCore.Tools.Builds do
 
   # The network's update, as its updater says it, with the servers that take builds and aren't on its build and `one`
   # yet.
-  defp network(servers) do
-    with {:ok, %{} = network} <- Servers.network() do
+  defp network(update, servers) do
+    with {:ok, %{} = network} <- update do
       behind =
         for server <- servers,
             server["installed"],
@@ -117,13 +120,15 @@ defmodule OneCore.Tools.Builds do
   end
 
   # The apps installed for `owner` whose version doesn't run on this server's platform, and why
-  # (`OneCore.Apps.Version.platform/1`). Only one not running here is read from what it said of itself.
+  # (`OneCore.Apps.Version.platform/1`). Only one not running here is read from what it said of itself, all at once.
   defp waiting(owner) do
     running = Apps.running(owner)
+    apps = for {name, %{"app" => app}} <- Installed.read(owner), is_binary(app) and not is_map_key(running, name), do: {name, app}
+    latest = Bucket.read_all(Enum.map(apps, fn {_name, app} -> app <> "/latest" end))
 
-    for {name, %{"app" => app}} <- Installed.read(owner),
-        is_binary(app) and not is_map_key(running, name),
-        %{state: state, why: why} when state != :runs <- [Store.platform(name, app)],
+    for {{name, app}, latest} <- Enum.zip(apps, latest),
+        about = with({:ok, json, _tag} <- latest, do: JSON.decode!(json), else: (_ -> %{})),
+        %{state: state, why: why} when state != :runs <- [Store.platform(name, app, about)],
         do: %{name: name, state: state, why: why}
   end
 

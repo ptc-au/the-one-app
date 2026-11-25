@@ -82,9 +82,10 @@ defmodule OneCore.Apps.Requires do
   @doc """
   The apps installed for `owner` that `name` is required by, directly or through another, by the names they're
   installed by, nearest first: what can't work for them without it, whether or not it's there for them from the
-  network too.
+  network too. `owner` may be given as what's installed for them (`OneCore.Apps.versions/1`), read already.
   """
-  def required_by(owner, name), do: required_by(Apps.versions([owner]), [name], [name], [])
+  def required_by(owner, name) when is_binary(owner), do: required_by(Apps.versions([owner]), name)
+  def required_by(versions, name), do: required_by(versions, [name], [name], [])
 
   defp required_by(versions, names, seen, found) do
     case for({other, version} <- versions, other not in seen, Enum.any?(names, &is_map_key(version.requires, &1)), do: other) do

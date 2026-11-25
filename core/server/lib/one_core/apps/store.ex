@@ -19,7 +19,7 @@ defmodule OneCore.Apps.Store do
   no version names, which `prune/1` sweeps.
   """
   require Logger
-  alias OneCore.{Bucket, BuildCache, Entrypoint}
+  alias OneCore.{Bucket, BuildCache, Cache, Entrypoint}
   alias OneCore.Apps.{LoadedVersion, Version}
   alias OneCore.Apps.Version.{Compile, Description}
 
@@ -388,16 +388,21 @@ defmodule OneCore.Apps.Store do
   end
 
   @doc """
-  Whether the app `artifact`'s latest version runs on this server's platform, as `name`
-  (`OneCore.Apps.Version.platform/1`): `%{state: :runs | :waiting_for_server, why: ...}`,
-  from what it said of itself, or `nil` where no server has described it.
+  Whether the app `artifact`'s latest version, which `about` says (`about/1`), runs on this server's platform, as
+  `name` (`OneCore.Apps.Version.platform/1`): `%{state: :runs | :waiting_for_server, why: ...}`, from what it said of
+  itself, or `nil` where no server has described it. What a version said never changes, nor does this server's
+  platform while it runs, so it's read once.
   """
-  def platform(name, artifact) do
-    with %{"code" => code} <- about(artifact),
-         {:ok, version} <- described(artifact, code),
-         do: %{state: Version.platform(version), why: Version.waiting(name, version)},
-         else: (_ -> nil)
+  def platform(name, artifact, %{"code" => code}) do
+    Cache.fetch(__MODULE__, {:platform, name, artifact, code}, fn ->
+      case described(artifact, code) do
+        {:ok, version} -> {:commit, %{state: Version.platform(version), why: Version.waiting(name, version)}}
+        _ -> {:ignore, nil}
+      end
+    end)
   end
+
+  def platform(_name, _artifact, _about), do: nil
 
   @doc """
   A set of files of an app, by their paths: the files the server keeps, or with `"source"` the ones they were
