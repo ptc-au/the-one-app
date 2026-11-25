@@ -52,9 +52,61 @@ import question from "@phosphor-icons/core/assets/regular/question.svg?raw"
 import squaresFour from "@phosphor-icons/core/assets/regular/squares-four.svg?raw"
 import videoCamera from "@phosphor-icons/core/assets/regular/video-camera.svg?raw"
 import x from "@phosphor-icons/core/assets/regular/x.svg?raw"
+import sparkle from "@phosphor-icons/core/assets/regular/sparkle.svg?raw"
+import camera from "@phosphor-icons/core/assets/regular/camera.svg?raw"
+import image from "@phosphor-icons/core/assets/regular/image.svg?raw"
+import scan from "@phosphor-icons/core/assets/regular/scan.svg?raw"
+import filePdf from "@phosphor-icons/core/assets/regular/file-pdf.svg?raw"
+import fileArrowUp from "@phosphor-icons/core/assets/regular/file-arrow-up.svg?raw"
+import receipt from "@phosphor-icons/core/assets/regular/receipt.svg?raw"
+import folder from "@phosphor-icons/core/assets/regular/folder.svg?raw"
+import folderOpen from "@phosphor-icons/core/assets/regular/folder-open.svg?raw"
+import envelopeSimple from "@phosphor-icons/core/assets/regular/envelope-simple.svg?raw"
+import paperPlaneTilt from "@phosphor-icons/core/assets/regular/paper-plane-tilt.svg?raw"
+import clockCounterClockwise from "@phosphor-icons/core/assets/regular/clock-counter-clockwise.svg?raw"
+import user from "@phosphor-icons/core/assets/regular/user.svg?raw"
+import bank from "@phosphor-icons/core/assets/regular/bank.svg?raw"
+import creditCard from "@phosphor-icons/core/assets/regular/credit-card.svg?raw"
+import arrowSquareOut from "@phosphor-icons/core/assets/regular/arrow-square-out.svg?raw"
+import link from "@phosphor-icons/core/assets/regular/link.svg?raw"
+import uploadSimple from "@phosphor-icons/core/assets/regular/upload-simple.svg?raw"
+import info from "@phosphor-icons/core/assets/regular/info.svg?raw"
+import arrowsMerge from "@phosphor-icons/core/assets/regular/arrows-merge.svg?raw"
+import arrowsSplit from "@phosphor-icons/core/assets/regular/arrows-split.svg?raw"
+import fileZip from "@phosphor-icons/core/assets/regular/file-zip.svg?raw"
+import listChecks from "@phosphor-icons/core/assets/regular/list-checks.svg?raw"
+import hourglass from "@phosphor-icons/core/assets/regular/hourglass.svg?raw"
+import currencyDollar from "@phosphor-icons/core/assets/regular/currency-dollar.svg?raw"
+import files from "@phosphor-icons/core/assets/regular/files.svg?raw"
 
 // The Phosphor icons the UI library draws with, by Phosphor's own names: each one path in a 256 square.
 const svgs = {
+  sparkle,
+  camera,
+  image,
+  scan,
+  "file-pdf": filePdf,
+  "file-arrow-up": fileArrowUp,
+  receipt,
+  folder,
+  "folder-open": folderOpen,
+  "envelope-simple": envelopeSimple,
+  "paper-plane-tilt": paperPlaneTilt,
+  "clock-counter-clockwise": clockCounterClockwise,
+  user,
+  bank,
+  "credit-card": creditCard,
+  "arrow-square-out": arrowSquareOut,
+  link,
+  "upload-simple": uploadSimple,
+  info,
+  "arrows-merge": arrowsMerge,
+  "arrows-split": arrowsSplit,
+  "file-zip": fileZip,
+  "list-checks": listChecks,
+  hourglass,
+  "currency-dollar": currencyDollar,
+  files,
   "arrow-counter-clockwise": arrowCounterClockwise,
   "arrow-down": arrowDown,
   "arrow-up": arrowUp,

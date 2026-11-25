@@ -374,6 +374,7 @@ export declare function Row(props: {
 }): Element
 
 export type IconName =
+  | "sparkle" | "camera" | "image" | "scan" | "file-pdf" | "file-arrow-up" | "receipt" | "folder" | "folder-open" | "envelope-simple" | "paper-plane-tilt" | "clock-counter-clockwise" | "user" | "bank" | "credit-card" | "arrow-square-out" | "link" | "upload-simple" | "info" | "arrows-merge" | "arrows-split" | "file-zip" | "list-checks" | "hourglass" | "currency-dollar" | "files"
   | "arrow-counter-clockwise" | "arrow-down" | "arrow-elbow-down-left" | "arrow-up" | "calendar-blank" | "caret-down" | "caret-left" | "caret-right" | "caret-up-down" | "check" | "check-circle" | "check-circle-fill" | "copy" | "corners-in"
   | "corners-out" | "device-mobile" | "devices" | "dots-three" | "dots-three-circle" | "download-simple" | "file" | "flag" | "flag-fill" | "gear-six" | "globe" | "hard-drives" | "list" | "magnifying-glass" | "minus" | "minus-circle"
   | "paperclip" | "pencil-simple" | "plus" | "plus-circle" | "question" | "robot" | "squares-four" | "terminal-window" | "trash" | "video-camera" | "warning-circle" | "x"
