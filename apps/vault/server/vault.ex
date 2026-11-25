@@ -385,7 +385,7 @@ defmodule Vault do
         no_store: true,
         description: """
         For an app's code: the items switched on for the app that calls this, each with the service whose
-        sign-in made it, if one did: [{"name": "Google a@example.com", "sign_in": "Google"}].
+        sign-in made it, if one did, and the sites its secrets are sent to: [{"name": "Google a@example.com", "sign_in": "Google", "hosts": ["gmail.googleapis.com"]}].
         """,
         inputs: %{type: "object", properties: %{}},
         outputs: %{
@@ -398,10 +398,11 @@ defmodule Vault do
                 properties: %{
                   name: %{type: "string"},
                   sign_in: %{type: ["string", "null"], description: "The service whose sign-in made it, if one did"},
+                  hosts: %{type: "array", items: %{type: "string"}, description: "The sites its secrets are sent to"},
                   artifact: %{type: "string", description: "The artifact it is, as soft delete knows it"},
                   state: %{type: ["object", "null"], description: "Null when it's ready, else what `state` last said of it: busy or needs_action"}
                 },
-                required: ["name", "sign_in", "artifact", "state"]
+                required: ["name", "sign_in", "hosts", "artifact", "state"]
               }
             }
           },
@@ -791,7 +792,7 @@ defmodule Vault do
 
   defp used_by(db, items, app) do
     for item <- Enum.sort_by(items, &String.downcase(&1["name"])), app in item["access"] do
-      %{name: item["name"], sign_in: item["oauth"] && item["oauth"]["name"], artifact: Store.artifact(db, item["id"]), state: item["status"]}
+      %{name: item["name"], sign_in: item["oauth"] && item["oauth"]["name"], hosts: item["hosts"], artifact: Store.artifact(db, item["id"]), state: item["status"]}
     end
   end
 
