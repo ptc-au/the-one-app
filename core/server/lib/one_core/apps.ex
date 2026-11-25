@@ -151,6 +151,9 @@ defmodule OneCore.Apps do
   @doc "The version running here of the app `artifact`, or `nil`: also where it's only described here."
   def version(artifact), do: ask({:version, artifact})
 
+  @doc "The number of the version of the app `artifact` this server has, running or only described here, or `nil`."
+  def number(artifact), do: ask({:number, artifact})
+
   @doc """
   Every app running here that has scheduled jobs: who it was installed for, its name there, the jobs, whether it's
   trusted, and whose its own artifact is (`OneCore.Apps.Calls.whose/3`). One only described here has its jobs made
@@ -558,6 +561,7 @@ defmodule OneCore.Apps do
   def handle_call(:refresh, _from, state), do: {:reply, :ok, %{state | reloaded: %{}}}
   def handle_call(:installed, _from, state), do: {:reply, state.installed, state}
   def handle_call({:version, artifact}, _from, state), do: {:reply, loaded(state.running[artifact]), state}
+  def handle_call({:number, artifact}, _from, state), do: {:reply, state.latest[artifact] || state.described[artifact], state}
 
   def handle_call({:installed_for, artifact}, _from, state) do
     {:reply, for({owner, installed} <- state.installed, artifact in Map.values(installed), do: owner), state}
