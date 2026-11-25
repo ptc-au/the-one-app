@@ -220,7 +220,9 @@ defmodule OneCore.Apps.Version do
   that opens from what it kept has every file it loads.
   """
   def loaded?(path) do
-    client?(path) and
+    # A `.ts` is TypeScript source, a client's `sizes.ts` or `svg.d.ts`, which a page never loads: the MIME type
+    # database knows the extension only as MPEG transport stream video.
+    client?(path) and Path.extname(path) != ".ts" and
       (Path.extname(path) in ~w(.html .js .css .json) or
          String.starts_with?(MIME.from_path(path), ~w(image/ audio/ video/ font/)))
   end
