@@ -294,7 +294,7 @@ defmodule GoogleAccount do
     kept = Enum.find(vault(call, "items", %{})["items"], &(&1["name"] == item(email)))
 
     if host in @service["hosts"] and host not in kept["hosts"] do
-      state(call, email, :needs_action, "Sign in again", %{label: "Sign In", tool: "sign_in", inputs: %{account: email}})
+      state(call, email, :needs_action, "Sign in again", sign_in(email))
       raise "#{email} isn't signed in for #{host} yet, which a Google app installed since needs: google-account_sign_in with account #{email} gives the link to sign in again."
     end
   end
@@ -393,7 +393,7 @@ defmodule GoogleAccount do
   # call that found it says so to whoever made it, and the Vault shows the dot.
   defp again(call, email, response) do
     if response["status"] == 401 or (response["status"] == 403 and (message(response["body"]) || "") =~ ~r/insufficient|scope/i),
-      do: state(call, email, :needs_action, "Sign in again", %{label: "Sign In", tool: "sign_in", inputs: %{account: email}})
+      do: state(call, email, :needs_action, "Sign in again", sign_in(email))
   end
 
   defp state(call, email, state, message \\ nil, action \\ nil) do
@@ -408,6 +408,9 @@ defmodule GoogleAccount do
       version.artifact == call.caller && version.title
     end)
   end
+
+  # What a person presses on the account in the Vault: the tool the Vault calls, which is given as JSON.
+  defp sign_in(email), do: %{"label" => "Sign In", "tool" => "sign_in", "inputs" => %{"account" => email}}
 
   defp item(email), do: "Google #{email}"
   defp get(url), do: %{"url" => url, "headers" => %{"authorization" => "Bearer {{access_token}}"}}
