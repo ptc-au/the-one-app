@@ -378,9 +378,12 @@ export async function admits(lists: Lists, key: string, shown: string | null): P
   if (!(until !== undefined && until > Date.now())) return null;
   if (device !== key && !(await signedBy(device, attestation, `one/run/1\n${key}`))) return null;
   if (!(await signedBy(by, signature, `one/token/1\n${device}\n${list}\n${until}`))) return null;
-  // Its signer acts for whoever the token's list is, or for the network, which acts for everyone.
+  // Its signer acts for whoever the token's list is, or for the network, which acts for everyone. A token made before
+  // its person was renamed names the list they had, which leads to their new one.
   const [theirs, network] = await Promise.all([servers(lists, list), servers(lists, NETWORK)]);
-  return theirs.includes(by) || network.includes(by) ? { until } : null;
+  if (theirs.includes(by) || network.includes(by)) return { until };
+  const now = list && (await lists.renamed?.(list));
+  return now && (await servers(lists, now)).includes(by) ? { until } : null;
 }
 
 /**
