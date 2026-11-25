@@ -9,6 +9,8 @@
 //! kept somewhere of its own (`ONE_HOME`), has none.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The name it's kept by, a `Run` key's value and an autostart entry's: the app's, so a network's own app has one of
 /// its own beside the One App's (`app_name` in core/client).
@@ -21,18 +23,53 @@ pub fn available() -> bool {
     !cfg!(debug_assertions) && std::env::var_os("ONE_HOME").is_none()
 }
 
-/// Whether the app starts at login now, as the system says; `None` where this build keeps none.
+/// Whether it starts at login, as the system last said. Asking a Mac takes ServiceManagement a round trip to its
+/// daemon, 200 ms and more (574 ms on a busy Mac, 25 Nov), which every page asking `client()` waited on, on the
+/// windows' thread: so it's kept, read as the app starts and again behind each ask, and a change made in the system's
+/// own settings shows from the ask after.
+static KEPT: Mutex<Option<bool>> = Mutex::new(None);
+static READING: AtomicBool = AtomicBool::new(false);
+
+fn kept() -> std::sync::MutexGuard<'static, Option<bool>> {
+    KEPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Asks the system, and keeps what it says.
+fn read() -> bool {
+    let on = is_on();
+    *kept() = Some(on);
+    on
+}
+
+/// Asks the system again on a thread of its own, unless that's already under way.
+fn read_again() {
+    if !READING.swap(true, Ordering::AcqRel) {
+        std::thread::spawn(|| {
+            read();
+            READING.store(false, Ordering::Release);
+        });
+    }
+}
+
+/// Whether the app starts at login, as the system last said (`KEPT`); `None` where this build keeps none.
 pub fn enabled() -> Option<bool> {
-    available().then(is_on)
+    if !available() {
+        return None;
+    }
+    let was = *kept();
+    read_again();
+    Some(was.unwrap_or_else(read))
 }
 
 /// Makes the app start at login, or not.
 pub fn set(on: bool) -> anyhow::Result<()> {
     anyhow::ensure!(available(), "This build of the app doesn't open at login.");
-    if on == is_on() {
+    if on == read() {
         return Ok(());
     }
-    change(on)
+    change(on)?;
+    *kept() = Some(on);
+    Ok(())
 }
 
 /// A new install opens at login, once: after that it's what its person chose, which the system keeps.
@@ -40,6 +77,7 @@ pub fn begin(home: &std::path::Path) {
     if !available() {
         return;
     }
+    read_again();
     let chosen: PathBuf = home.join("login");
     if chosen.exists() {
         return;
