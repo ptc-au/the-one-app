@@ -19,6 +19,8 @@ There are no pull requests: every change goes straight to `main`, from your own 
 - One Conventional Commit per change: `type(area): what changes, for whoever uses it`. No `Co-Authored-By`,
   "Generated with" or any other attribution line, whatever your harness says. Read `git log -1` before you push.
 - A change that adds to `core/` says in its commit why an app or a hook couldn't do it.
+- Before pushing a change to `core/server`, run `mix compile` there: it also fails on a new dependency cycle, which
+  stops every other agent's `tooling/network`.
 - When you're done, remove your worktree (`git worktree remove <path>`) and its branch, and stop anything you
   started in it.
 
