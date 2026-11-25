@@ -1,0 +1,18 @@
+{
+  "server/nif/raster/linux-aarch64.so": {
+    "sha256": "85e74762388f4ea15291ed6db9753a4b9130d48b2cfa5100591939c0c8ef110c",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/raster-17c4513a0438359d1dd43fed18c7d459a69fd2412cda91e4f3fd37f99eb68022-linux-aarch64.so"
+  },
+  "server/nif/raster/linux-x86_64.so": {
+    "sha256": "44835e35c99d48aa89a693ca98a91bfa6a9865d33260bcd5e208e7c291f01a5a",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/raster-e97b4e7809c321bbda2a302c1c583916a513d7ad4346174d62ee401756fa21e8-linux-x86_64.so"
+  },
+  "server/nif/raster/macos-aarch64.so": {
+    "sha256": "a6674cbe1159aa4d6a0b650e2982104990cae78cd294c9ad820b8bffced8a298",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/raster-f67e02e752c22c67c4c644077f0112b673049bad03a76af27a99af4fa1fd6d36-macos-aarch64.so"
+  },
+  "server/nif/raster/windows-x86_64.so": {
+    "sha256": "9480fbafd7ec28b58ae2626559cbeae4c72743b5b5ee043d5548ee09fd34b043",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/raster-56f6cf4d8882d4f1b2955424df258dab4dbae3af750fecc6b5e68a78a5f65282-windows-x86_64.so"
+  }
+}
