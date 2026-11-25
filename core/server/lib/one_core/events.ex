@@ -1,31 +1,37 @@
 defmodule OneCore.Events do
   @moduledoc """
-  MCP's Events, as its extension `io.modelcontextprotocol/events` has them (SEP-3415): what happens in an app, which
-  an agent or another app follows by polling for it, or by being sent each one at an address it gives.
+  What happens in an app, as MCP's extension `io.modelcontextprotocol/events` has it (SEP-3415): an agent or another
+  app follows it by polling for it, by being sent each one at an address it gives, or, inside the network, by hooking
+  into it as an observe hook.
 
   An app declares what happens in it with `events/0`, each with the `inputs` a subscriber filters by and the
-  `outputs` that happened, and says one happened with `OneCore.Events.emit/4`. An event is named as an offered hook
-  is, the app's name where it's installed and the event's: `board.message_posted`.
+  `outputs` that happened, and says one happened with `OneCore.Events.emit/3`, once: each app that hooks into it
+  (`hooks/0`) is told, as of any observe hook (`OneCore.Hooks.observe/3`), and each subscription is sent it. An event is
+  named as a hook is, the app's name where it's installed and the event's: `board.message_posted`.
 
-  What's emitted and who subscribed are kept in the bucket, under `<subject>/events/` (`log.json` and
-  `subscriptions.json`), updated with conditional writes so every server acting for `subject` sees the same order and
-  subscriptions survive restarts. The last 1,000 events of the last seven days are kept. A client reads them from a
-  cursor, `ev_<n>`, which only moves forward. One whose events have since gone is answered `truncated`, since some
-  between it and what's kept aren't there any more. `events/list` says the events of the apps installed for whoever
-  asks, `events/poll` what happened since a cursor, and `events/subscribe` has each one sent to an address.
+  What happened and who subscribed are kept in the app's own database (the `database` app, which an app with events
+  requires), in the tables `events_log`, `events_subscriptions` and `events_retries`, so every server acting for
+  whoever it's for sees the same order, and each event costs one write. The last 1,000 events of the last seven days
+  are kept. A client reads them from a cursor, `ev_<n>`, which only moves forward. One whose events have since gone is
+  answered `truncated`. `events/list` says the events of the apps installed for whoever asks, `events/poll` what
+  happened since a cursor, and `events/subscribe` has each one sent to an address.
 
   A subscription is a webhook, delivered as Standard Webhooks says (`OneCore.Events.Webhook`). Its id is made from who
   subscribed, who for, the address, the event and what it's filtered by, so the same subscription asked again is the
   same one. A secret that changed is kept beside the one before for five minutes, and each delivery in that time is
-  signed with both. A subscription stops when it's unsubscribed, when what it lasts is over (`ttlMs`), or when the app
-  that says the event is no longer installed for whoever it was subscribed for, whose address is told so.
+  signed with both. Its secret is kept with the rest of the app's data, which is encrypted where its owner has a key
+  (the `encryption` app). What its deliveries have been like is written only when it changes. A delivery that fails
+  is tried again, as Standard Webhooks' senders do, by a timer of the app's database, three times at most. A
+  subscription stops when it's unsubscribed, or when what it lasts is over (`ttlMs`).
   """
-  alias OneCore.{Apps, Bucket}
+  alias OneCore.{Apps, Call, Hooks}
+  alias OneCore.Apps.Calls
   alias OneCore.Events.Webhook
 
   @extension "io.modelcontextprotocol/events"
 
-  # What's kept of what happened for each owner: the last of these events, of those this long, in milliseconds.
+  # What's kept of what happened for each app and owner: the last of these events, of those this long, in
+  # milliseconds.
   @most 1_000
   @kept :timer.hours(24 * 7)
 
@@ -40,47 +46,58 @@ defmodule OneCore.Events do
   @ttl_most :timer.hours(24)
   @rotated :timer.minutes(5)
 
-  # How long a delivery waits before trying again, and how many times: a receiver that's down for a moment still gets
-  # what happened, and one that's gone holds no task for long.
-  @waits [1_000, 4_000, 16_000]
+  # How long a delivery that failed waits before it's tried again, in seconds, each time: a receiver that's down for a
+  # while still gets what happened, and one that's gone is given up on within the hour. A database timer fires within
+  # a minute of when it's due (`OneCore.Jobs`).
+  @waits [60, 300, 1_800]
+
+  # The timer of an app's database that tries again what failed (`Database.timer/5`), which `OneCore.Apps.Calls.fire/4`
+  # has this module run.
+  @retry "events/deliver"
 
   @delivery [:poll, :webhook]
+
+  @tables [
+    "create table if not exists events_log (seq integer primary key, at integer not null, name text not null, occurrence text not null)",
+    "create table if not exists events_subscriptions (id text primary key, actor text, name text not null, url text not null, secret text not null, previous_secret text, previous_until integer, arguments text not null, expires_at integer, cursor integer not null, active integer not null, last_delivery_at integer, last_error text, failed_since integer)",
+    "create table if not exists events_retries (id text primary key, subscription text not null, body text not null, tries integer not null, at integer not null)"
+  ]
 
   @doc "What a server says it has of events, among its capabilities' extensions."
   def extension, do: %{@extension => %{}}
 
+  @doc "The timer of an app's database that tries again a delivery that failed."
+  def retry, do: @retry
+
   @doc """
   Says `event` happened in the app whose call is `call`, with `data` about it, for whoever that call runs for: it's
-  kept from now on, and each webhook subscribed to it is sent it in the background.
-
-  `opts` says what a subscription's `arguments` are matched against (`match`, which is `data` unless it says, for what
-  a subscriber filters by that the app chose not to put in it), `event_id` (a stable id for deduplication), and the
-  event's `_meta`. Raises where the app has no such event of its own, as `tools/0` says.
+  kept from now on, each app that hooks into it is told, and each webhook subscribed to it is sent it in the
+  background. Raises where the app has no such event of its own, as `events/0` says.
   """
-  def emit(%OneCore.Call{app: app, subject: subject}, event, data, opts \\ []) do
+  def emit(%Call{app: app, actor: actor, subject: subject} = call, event, data) do
     name = "#{app}.#{event}"
+    with {:error, _code, why} <- declared(name, subject), do: raise(why)
+    data = OneCore.JSON.normalize(data)
+    now = System.system_time(:millisecond)
 
-    case declared(name, subject) do
-      {:ok, _event} ->
-        now = System.system_time(:millisecond)
-        normalized = OneCore.JSON.normalize(data)
-        matched = if opts[:match], do: OneCore.JSON.normalize(opts[:match]), else: normalized
+    {occurrence, subscriptions} =
+      transaction(call, fn db ->
+        [%{"seq" => seq}] = query(db, "select coalesce(max(seq), 0) + 1 as seq from events_log")
+        occurrence = occurrence(name, data, seq)
+        query(db, "insert into events_log (seq, at, name, occurrence) values (?, ?, ?, ?)", [seq, now, name, JSON.encode!(occurrence)])
+        query(db, "delete from events_log where seq <= ? or at < ?", [seq - @most, now - @kept])
+        query(db, "delete from events_subscriptions where expires_at <= ?", [now])
+        {occurrence, query(db, "select * from events_subscriptions where name = ?", [name])}
+      end)
 
-        occurrence =
-          update_blob(log_path(subject), %{"seq" => 0, "events" => []}, fn %{"seq" => seq, "events" => events} ->
-            next = seq + 1
-            occ = occurrence(name, normalized, next, opts[:event_id], opts[:meta])
-            kept = prune(events ++ [[next, now, occ]], now)
-            {%{"seq" => next, "events" => kept}, occ}
-          end)
+    Hooks.observe(name, data, {actor, subject})
+    body = JSON.encode!(occurrence)
 
-        for sub <- subscribed(subject, name), matches?(sub["arguments"], matched), do: told(sub, occurrence)
-
-        :ok
-
-      {:error, _code, why} ->
-        raise why
+    for subscription <- subscriptions, matches?(JSON.decode!(subscription["arguments"]), data) do
+      Task.Supervisor.start_child(OneCore.Asks, fn -> delivered(call, subscription, "msg_" <> random(), body) end)
     end
+
+    :ok
   end
 
   @doc """
@@ -116,15 +133,43 @@ defmodule OneCore.Events do
   `maxAgeMs` leaves out what's older than that (the seven days that are kept, unless it says), `maxEvents` is how many
   at most are given (100, and 1,000 at most), and `arguments` filters them, as a subscription's do.
   """
-  def poll(params, {_actor, subject}) do
+  def poll(params, principal, forwarded) do
     with {:ok, name} <- asked(params["name"]),
          {:ok, arguments} <- arguments(params["arguments"]),
          {:ok, from} <- cursor_of(params["cursor"]),
          {:ok, age} <- aged(params["maxAgeMs"]),
          {:ok, most} <- capped(params["maxEvents"]),
-         {:ok, _event} <- declared(name, subject) do
-      %{"seq" => seq, "events" => events} = read_log(subject)
-      answered(name, arguments, from, age, most, seq, events)
+         {:ok, _event} <- declared(name, elem(principal, 1)) do
+      within(name, {"events/poll", params}, principal, forwarded, fn call ->
+        now = System.system_time(:millisecond)
+
+        {head, oldest, rows} =
+          transaction(call, fn db ->
+            [%{"head" => head, "oldest" => oldest}] = query(db, "select coalesce(max(seq), 0) as head, min(seq) as oldest from events_log")
+            rows = if from, do: query(db, "select seq, occurrence from events_log where seq > ? and at >= ? and name = ? order by seq", [from, now - age, name]), else: []
+            {head, oldest, rows}
+          end)
+
+        matched =
+          for %{"seq" => seq, "occurrence" => kept} <- rows,
+              occurrence = JSON.decode!(kept),
+              matches?(arguments, occurrence["data"]),
+              do: {seq, occurrence}
+
+        # The cursor is after what's given, or after everything that's there where nothing more matches.
+        {given, more} = Enum.split(matched, most)
+        last = if more == [], do: head, else: elem(List.last(given), 0)
+
+        {:ok,
+         %{
+           resultType: "complete",
+           events: Enum.map(given, &elem(&1, 1)),
+           cursor: cursor(last),
+           truncated: truncated?(from, head, oldest),
+           hasMore: more != [],
+           nextPollMs: if(more != [], do: 0, else: @poll)
+         }}
+      end)
     end
   end
 
@@ -137,58 +182,123 @@ defmodule OneCore.Events do
   A cursor begins at what the client last polled, if it says. The same subscription asked again is the same one,
   keeping its place and what its deliveries have been like, unless what it lasts ran out meanwhile.
   """
-  def subscribe(params, {actor, subject}) do
+  def subscribe(params, {actor, subject} = principal, forwarded) do
     with {:ok, name} <- asked(params["name"]),
          {:ok, event} <- declared(name, subject),
          {:ok, url, secret} <- delivery(params["delivery"], event),
          {:ok, ttl} <- ttl(Map.fetch(params, "ttlMs")),
          {:ok, arguments} <- arguments(params["arguments"]),
          {:ok, from} <- cursor_of(params["cursor"]) do
-      now = System.system_time(:millisecond)
       id = id(actor, subject, url, name, arguments)
-      %{"seq" => seq, "events" => events} = read_log(subject)
 
-      record =
-        update_blob(subs_path(subject), %{}, fn subs ->
-          fresh = %{
-            id: id,
-            actor: actor,
-            subject: subject,
-            name: name,
-            url: url,
-            secret: secret,
-            ttl: ttl,
-            arguments: arguments,
-            from: from,
-            head: seq,
-            now: now
-          }
+      within(name, {"events/subscribe", params}, principal, forwarded, fn call ->
+        now = System.system_time(:millisecond)
+        expires = if ttl, do: now + ttl
 
-          rec = upserted(subs[id], fresh)
-          {Map.put(subs, id, rec), rec}
-        end)
+        {kept, head, oldest} =
+          transaction(call, fn db ->
+            [%{"head" => head, "oldest" => oldest}] = query(db, "select coalesce(max(seq), 0) as head, min(seq) as oldest from events_log")
+            live = List.first(query(db, "select * from events_subscriptions where id = ? and (expires_at is null or expires_at > ?)", [id, now]))
 
-      {:ok,
-       %{
-         resultType: "complete",
-         id: id,
-         refreshBefore: if(record["expiresAt"], do: iso(record["expiresAt"])),
-         cursor: cursor(record["cursor"]),
-         truncated: truncated?(record["cursor"], seq, events),
-         deliveryStatus: record["deliveryStatus"]
-       }}
+            # A secret that changed is kept beside the one before for five minutes, so what's sent while the receiver
+            # moves to the new one is taken with either.
+            {previous, until} =
+              cond do
+                live == nil -> {nil, nil}
+                live["secret"] == secret -> {live["previous_secret"], live["previous_until"]}
+                true -> {live["secret"], now + @rotated}
+              end
+
+            kept =
+              Map.merge(live || %{"active" => 1, "last_delivery_at" => nil, "last_error" => nil, "failed_since" => nil}, %{
+                "id" => id,
+                "actor" => actor,
+                "name" => name,
+                "url" => url,
+                "secret" => secret,
+                "previous_secret" => previous,
+                "previous_until" => until,
+                "arguments" => JSON.encode!(arguments),
+                "expires_at" => expires,
+                "cursor" => from || (live && live["cursor"]) || head
+              })
+
+            columns = Map.keys(kept)
+
+            query(
+              db,
+              "insert or replace into events_subscriptions (#{Enum.join(columns, ", ")}) values (#{Enum.map_join(columns, ", ", fn _ -> "?" end)})",
+              Enum.map(columns, &kept[&1])
+            )
+
+            {kept, head, oldest}
+          end)
+
+        {:ok,
+         %{
+           resultType: "complete",
+           id: id,
+           refreshBefore: if(expires, do: iso(expires)),
+           cursor: cursor(kept["cursor"]),
+           truncated: truncated?(kept["cursor"], head, oldest),
+           deliveryStatus: status(kept)
+         }}
+      end)
     end
   end
 
   @doc "Unsubscribes the address a client gave from `name`, as `events/unsubscribe` answers it: `%{}`."
-  def unsubscribe(params, {actor, subject}) do
+  def unsubscribe(params, {actor, subject} = principal, forwarded) do
     with {:ok, name} <- asked(params["name"]),
          {:ok, url} <- url(params["delivery"]),
-         {:ok, arguments} <- arguments(params["arguments"]) do
-      sub_id = id(actor, subject, url, name, arguments)
-      update_blob(subs_path(subject), %{}, fn subs -> {Map.delete(subs, sub_id), :ok} end)
-      {:ok, %{resultType: "complete"}}
+         {:ok, arguments} <- arguments(params["arguments"]),
+         {:ok, _event} <- declared(name, subject) do
+      id = id(actor, subject, url, name, arguments)
+
+      within(name, {"events/unsubscribe", params}, principal, forwarded, fn call ->
+        transaction(call, fn db ->
+          query(db, "delete from events_subscriptions where id = ?", [id])
+          query(db, "delete from events_retries where subscription = ?", [id])
+        end)
+
+        {:ok, %{resultType: "complete"}}
+      end)
     end
+  end
+
+  @doc """
+  Tries again each delivery of the app whose call is `call` that failed and is due, as its database's timer has it,
+  and sets that timer for the next. One whose subscription has gone, or whose tries are over, is given up on.
+  """
+  def redeliver(%Call{} = call) do
+    now = System.system_time(:millisecond)
+
+    due =
+      transaction(call, fn db ->
+        query(db, "select r.id as retry, r.body, r.tries, s.* from events_retries r join events_subscriptions s on s.id = r.subscription where r.at <= ?", [div(now, 1000)])
+      end)
+
+    for retry <- due do
+      case Webhook.send(retry, retry["retry"], retry["body"]) do
+        :ok ->
+          transaction(call, fn db ->
+            query(db, "delete from events_retries where id = ?", [retry["retry"]])
+            succeeded(db, retry)
+          end)
+
+        {:error, why} ->
+          transaction(call, fn db ->
+            case Enum.at(@waits, retry["tries"]) do
+              nil -> query(db, "delete from events_retries where id = ?", [retry["retry"]])
+              wait -> query(db, "update events_retries set tries = tries + 1, at = ? where id = ?", [div(now, 1000) + wait, retry["retry"]])
+            end
+
+            failed(db, retry, why)
+          end)
+      end
+    end
+
+    timed(call)
   end
 
   # The event `name`, as the app installed for `subject` declares it (`OneCore.App`), or why no app of theirs says it.
@@ -205,41 +315,71 @@ defmodule OneCore.Events do
     end
   end
 
-  # What a client polled for, from its params: `events/poll`'s answer.
-  defp answered(_name, _arguments, nil, _age, _most, seq, _events) do
-    {:ok, polled([], seq, false, false)}
+  # Runs `fun` with a call of the app whose event `name` is, for whoever `principal` is for, where its database is.
+  defp within(name, ask, principal, forwarded, fun) do
+    [app, _event] = String.split(name, ".", parts: 2)
+    Calls.within(app, ask, principal, forwarded, fun)
   end
 
-  defp answered(name, arguments, from, age, most, seq, events) do
-    now = System.system_time(:millisecond)
+  defp transaction(call, fun) do
+    database = Call.app(call, "database")
 
-    matched =
-      for [ev_seq, at, occurrence] <- events,
-          ev_seq > from,
-          at >= now - age,
-          occurrence["name"] == name,
-          matches?(arguments, occurrence["data"]),
-          do: {ev_seq, occurrence}
-
-    {given, more} = Enum.split(matched, most)
-
-    last =
-      case List.last(given) do
-        {ev_seq, _occurrence} -> ev_seq
-        nil -> seq
-      end
-
-    {:ok, polled(Enum.map(given, &elem(&1, 1)), last, truncated?(from, seq, events), more != [])}
+    database.transaction(call, fn db ->
+      for table <- @tables, do: database.query(db, table)
+      fun.({database, db})
+    end)
   end
 
-  defp polled(events, last, truncated, has_more) do
+  defp query({database, db}, sql, values \\ []), do: database.query(db, sql, values)
+
+  # A delivery, sent once at once. One that failed is tried again later, by a timer of the app's database.
+  defp delivered(call, subscription, id, body) do
+    case Webhook.send(subscription, id, body) do
+      :ok ->
+        if subscription["active"] != 1 or subscription["last_delivery_at"] == nil,
+          do: transaction(call, &succeeded(&1, subscription))
+
+      {:error, why} ->
+        now = System.system_time(:second)
+
+        transaction(call, fn db ->
+          query(db, "insert into events_retries (id, subscription, body, tries, at) values (?, ?, ?, 0, ?)", [id, subscription["id"], body, now + hd(@waits)])
+          failed(db, subscription, why)
+        end)
+
+        timed(call)
+    end
+  end
+
+  # What a subscription's deliveries have been like, written only where it changed.
+  defp succeeded(db, subscription) do
+    query(
+      db,
+      "update events_subscriptions set active = 1, last_delivery_at = ?, last_error = null, failed_since = null where id = ? and (active = 0 or last_error is not null or last_delivery_at is null)",
+      [System.system_time(:millisecond), subscription["id"]]
+    )
+  end
+
+  defp failed(db, subscription, why) do
+    query(
+      db,
+      "update events_subscriptions set last_error = ?, failed_since = coalesce(failed_since, ?) where id = ? and (last_error is null or last_error != ?)",
+      [why, System.system_time(:millisecond), subscription["id"], why]
+    )
+  end
+
+  # Sets the app's database timer for its next retry, or takes it away where there's none.
+  defp timed(call) do
+    next = transaction(call, fn db -> with [%{"next" => next}] <- query(db, "select min(at) as next from events_retries"), do: next end)
+    Call.app(call, "database").timer(call, @retry, %{}, next)
+  end
+
+  defp status(subscription) do
     %{
-      resultType: "complete",
-      events: events,
-      cursor: cursor(last),
-      truncated: truncated,
-      hasMore: has_more,
-      nextPollMs: if(has_more, do: 0, else: @poll)
+      active: subscription["active"] == 1,
+      lastDeliveryAt: if(subscription["last_delivery_at"], do: iso(subscription["last_delivery_at"])),
+      lastError: subscription["last_error"],
+      failedSince: if(subscription["failed_since"], do: iso(subscription["failed_since"]))
     }
   end
 
@@ -256,17 +396,14 @@ defmodule OneCore.Events do
 
   # An event as it's kept, and as a client is told it: its id, its name, when it happened, what happened, and the
   # cursor it's at.
-  defp occurrence(name, data, seq, event_id, meta) do
-    Map.merge(
-      %{
-        "eventId" => if(is_binary(event_id) and event_id != "", do: event_id, else: "evt_" <> random()),
-        "name" => name,
-        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
-        "data" => data,
-        "cursor" => cursor(seq)
-      },
-      if(meta, do: %{"_meta" => OneCore.JSON.normalize(meta)}, else: %{})
-    )
+  defp occurrence(name, data, seq) do
+    %{
+      "eventId" => "evt_" <> random(),
+      "name" => name,
+      "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "data" => data,
+      "cursor" => cursor(seq)
+    }
   end
 
   defp cursor(seq), do: "ev_#{seq}"
@@ -286,199 +423,15 @@ defmodule OneCore.Events do
   defp refused(cursor),
     do: {:error, -32602, "A cursor is one this server gave, as ev_12, and #{given(cursor)} isn't one."}
 
-  defp log_path(subject), do: "#{subject}/events/log.json"
-  defp subs_path(subject), do: "#{subject}/events/subscriptions.json"
-
-  defp read_log(subject), do: read_blob(log_path(subject), %{"seq" => 0, "events" => []})
-  defp read_subs(subject), do: read_blob(subs_path(subject), %{})
-
-  defp read_blob(path, default) do
-    case Bucket.read(path) do
-      {:ok, data, _tag} -> JSON.decode!(data)
-      :absent -> default
-    end
-  end
-
-  # Changes a JSON blob in the bucket with conditional writes (ETags), retrying if another server wrote meanwhile.
-  defp update_blob(path, default, change) do
-    {was, tag} =
-      case Bucket.read(path) do
-        {:ok, data, tag} -> {JSON.decode!(data), tag}
-        :absent -> {default, nil}
-      end
-
-    {now, result} = change.(was)
-
-    cond do
-      now == was -> result
-      write_or_replace(path, JSON.encode!(now), tag) == :ok -> result
-      true -> update_blob(path, default, change)
-    end
-  end
-
-  defp write_or_replace(path, data, nil), do: Bucket.write(path, data)
-  defp write_or_replace(path, data, tag), do: Bucket.replace(path, data, tag)
-
   # Whether some of what happened after the cursor `from` has gone: it's older than the oldest that's kept.
-  defp truncated?(nil, _seq, _events), do: false
-
-  defp truncated?(from, seq, events) do
-    oldest =
-      case events do
-        [[ev_seq, _at, _occurrence] | _] -> ev_seq
-        [] -> seq + 1
-      end
-
-    from < oldest - 1
-  end
-
-  # What's kept of what happened for a subject: the newest `@most`, and the last seven days' of them.
-  defp prune(events, now) do
-    fresh = for [seq, at, occ] <- events, at >= now - @kept, do: [seq, at, occ]
-    Enum.drop(fresh, max(length(fresh) - @most, 0))
-  end
-
-  # The subscriptions that say `name` happened for `subject`, each as it's kept.
-  defp subscribed(subject, name) do
-    for {_id, sub} <- read_subs(subject), sub["name"] == name, do: sub
-  end
+  defp truncated?(nil, _head, _oldest), do: false
+  defp truncated?(from, head, nil), do: from < head
+  defp truncated?(from, _head, oldest), do: from < oldest - 1
 
   # Whether what happened is what a subscription's arguments filter by: each of them, by its name, is what happened's.
   defp matches?(arguments, _data) when map_size(arguments) == 0, do: true
   defp matches?(arguments, data) when is_map(data), do: Enum.all?(arguments, fn {name, value} -> data[name] == value end)
   defp matches?(_arguments, _data), do: false
-
-  # What a subscription is sent, and what it's sent it as: an id that's the same for every try, and a body of JSON.
-  defp told(sub, occurrence) do
-    Task.Supervisor.start_child(OneCore.Asks, fn -> delivered(sub, occurrence) end)
-  end
-
-  defp delivered(sub, occurrence) do
-    tried(sub, "msg_" <> random(), JSON.encode!(occurrence), @waits)
-  end
-
-  # A delivery, tried again after each wait where the receiver didn't take it, and what the subscription's deliveries
-  # have been like said as it goes. One unsubscribed meanwhile, or whose time is up, is sent nothing more, and one whose
-  # event's app is no longer installed for whoever it was for is told it stops.
-  defp tried(sub, id, body, waits) do
-    cond do
-      subscription(sub) == nil -> :ok
-      expired?(sub) -> forgotten(sub)
-      not installed?(sub) -> terminated(sub)
-      true -> attempt(sub, id, body, waits)
-    end
-  end
-
-  defp attempt(sub, id, body, waits) do
-    case Webhook.send(sub, id, body) do
-      :ok ->
-        status(sub, %{
-          "active" => true,
-          "lastDeliveryAt" => iso(System.system_time(:millisecond)),
-          "lastError" => nil,
-          "failedSince" => nil
-        })
-
-      {:error, why} ->
-        failed(sub, why)
-
-        case waits do
-          [] ->
-            :ok
-
-          [wait | rest] ->
-            # A receiver that's briefly unreachable is sent it again, as Standard Webhooks' senders do.
-            Process.sleep(wait)
-            tried(sub, id, body, rest)
-        end
-    end
-  end
-
-  # The app that says `name` isn't installed for whoever the subscription was for any more: its address is told that
-  # it stops, and it's gone.
-  defp terminated(sub) do
-    body = %{"type" => "terminated", "error" => %{"code" => -32024, "message" => "Forbidden"}}
-    Webhook.send(sub, "msg_terminated_" <> random(), JSON.encode!(body))
-    forgotten(sub)
-  end
-
-  defp forgotten(sub) do
-    update_blob(subs_path(sub["subject"]), %{}, fn subs -> {Map.delete(subs, sub["id"]), :ok} end)
-  end
-
-  defp expired?(sub) do
-    expires = sub["expiresAt"]
-    expires != nil and expires <= System.system_time(:millisecond)
-  end
-
-  defp installed?(sub), do: match?({:ok, _event}, declared(sub["name"], sub["subject"]))
-
-  defp subscription(sub), do: read_subs(sub["subject"])[sub["id"]]
-
-  defp status(sub, status), do: update(sub, fn _stored -> status end)
-
-  defp failed(sub, why) do
-    now = iso(System.system_time(:millisecond))
-    update(sub, &Map.merge(&1, %{"lastError" => why, "failedSince" => &1["failedSince"] || now}))
-  end
-
-  # What a subscription's deliveries have been like, where it's still subscribed.
-  defp update(sub, change) do
-    update_blob(subs_path(sub["subject"]), %{}, fn subs ->
-      case subs[sub["id"]] do
-        nil -> {subs, :ok}
-        stored -> {Map.put(subs, sub["id"], %{stored | "deliveryStatus" => change.(stored["deliveryStatus"])}), :ok}
-      end
-    end)
-  end
-
-  defp upserted(nil, fresh) do
-    %{
-      "id" => fresh.id,
-      "actor" => fresh.actor,
-      "subject" => fresh.subject,
-      "name" => fresh.name,
-      "url" => fresh.url,
-      "secret" => fresh.secret,
-      "previousSecret" => nil,
-      "previousSecretUntil" => nil,
-      "arguments" => fresh.arguments,
-      "expiresAt" => expires(fresh),
-      "cursor" => fresh.from || fresh.head,
-      "deliveryStatus" => active()
-    }
-  end
-
-  defp upserted(existing, fresh) do
-    live = if existing["expiresAt"] == nil or existing["expiresAt"] > fresh.now, do: existing
-
-    # A secret that changed is kept beside the one before for five minutes, so what's sent while the receiver moves to
-    # the new one is taken with either.
-    {previous, until} =
-      case live && live["secret"] do
-        nil -> {nil, nil}
-        secret when secret == fresh.secret -> {live["previousSecret"], live["previousSecretUntil"]}
-        secret -> {secret, fresh.now + @rotated}
-      end
-
-    %{
-      "id" => fresh.id,
-      "actor" => fresh.actor,
-      "subject" => fresh.subject,
-      "name" => fresh.name,
-      "url" => fresh.url,
-      "secret" => fresh.secret,
-      "previousSecret" => previous,
-      "previousSecretUntil" => until,
-      "arguments" => fresh.arguments,
-      "expiresAt" => expires(fresh),
-      "cursor" => fresh.from || (live && live["cursor"]) || fresh.head,
-      "deliveryStatus" => (live && live["deliveryStatus"]) || active()
-    }
-  end
-
-  defp expires(fresh), do: if(fresh.ttl, do: fresh.now + fresh.ttl)
-  defp active, do: %{"active" => true, "lastDeliveryAt" => nil, "lastError" => nil, "failedSince" => nil}
 
   # A subscription's id: the same for the same subscriber, address, event and filter, on any server that speaks this.
   defp id(actor, subject, url, name, arguments) do

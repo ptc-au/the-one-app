@@ -152,9 +152,10 @@ defmodule OneCore.Call do
   @doc """
   Runs `hook`, one this call's app offers (`offers/0`), for whoever this call runs for, as One Core runs its own:
   the apps installed for them and for the network that hook into `<app>.<hook>` are asked. What it gives is
-  the kind's: an observe hook gives `:ok` at once, a mutate hook `{:ok, changes, by}` or `{:refuse, why}`, a
-  validate hook `:ok` or `{:refuse, why}`, and a collect hook `{:ok, parts, failed}`: each app's part by its name,
-  and why each that couldn't answer couldn't. An app runs only the hooks it offers.
+  the kind's: a mutate hook `{:ok, changes, by}` or `{:refuse, why}`, a validate hook `:ok` or `{:refuse, why}`,
+  and a collect hook `{:ok, parts, failed}`: each app's part by its name, and why each that couldn't answer
+  couldn't. An app runs only the hooks it offers. What only says something happened is an event
+  (`OneCore.Events.emit/3`).
 
       OneCore.Call.run_hook(call, "removed", %{"artifact" => name, "what" => "restored"})
   """
@@ -162,7 +163,6 @@ defmodule OneCore.Call do
     name = "#{app}.#{hook}"
 
     case Hooks.offered(name, at) do
-      :observe -> Hooks.observe(name, about, {actor, subject})
       :mutate -> Hooks.mutate(name, about, {actor, subject})
       :validate -> Hooks.validate(name, about, {actor, subject})
       :collect -> Hooks.collect(name, about, {actor, subject})

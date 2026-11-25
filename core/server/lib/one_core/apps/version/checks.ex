@@ -133,6 +133,9 @@ defmodule OneCore.Apps.Version.Checks do
       ),
       hook_problems(hooks, app, prefix),
       requires_problems(requires, prefix),
+      if(description[:events] not in [nil, []] and not (is_map(requires) and is_map_key(requires, "database")),
+        do: "#{prefix}events(): what happens in an app is kept in its database (`OneCore.Events`), so it requires \"database\""
+      ),
       if(own not in [:subject, :installed],
         do:
           "#{prefix}own(): got #{Shape.given(own)}, expected :subject, whoever each call runs for (the default), or " <>

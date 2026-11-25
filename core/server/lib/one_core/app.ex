@@ -340,9 +340,9 @@ defmodule OneCore.App do
 
   An app that knows which app it needs calls it (`OneCore.Call.tool/4`, `OneCore.Call.app/2`). One that can't
   know who will answer offers a hook instead, and whoever wants to hooks into it. `offers/0` lists them, each with a
-  `name`, a `kind` (`:observe`, `:mutate`, `:validate` or `:collect`) and a `description`, and for a collect whose
+  `name`, a `kind` (`:mutate`, `:validate` or `:collect`) and a `description`, and for a collect whose
   parts it only reads as data, `untrusted: true`, which an untrusted app may answer too (no other hook asks one but
-  to observe). `OneCore.Call.run_hook/3` runs one,
+  to observe). What only says something happened, which an app observes, is an event (`events/0`). `OneCore.Call.run_hook/3` runs one,
   as One Core runs its own of that kind, for whoever the call runs for. Another app hooks into it by its full name,
   the app's name and the hook's, in its `hooks/0`, and before the offering app is installed it's never run:
 
@@ -380,7 +380,7 @@ defmodule OneCore.App do
     app isn't installed for whoever it leads to, or that app has no `webhook/2`, is answered 404.
 
   What happens in an app is followed by whoever is told it, rather than asked for: `events/0` says what happens in
-  it, and `OneCore.Events.emit/4` says one happened:
+  it, and `OneCore.Events.emit/3` says one happened, once, for apps and agents alike:
 
       @impl true
       def events do
@@ -397,8 +397,11 @@ defmodule OneCore.App do
   - An event is named `<app>.<event>`, as the app is installed there, as an offered hook is:
     `board.message_posted`. Its `inputs` are what a subscriber filters by, which `emit` matches against what
     happened, and its `outputs` are what happened, as a tool's are.
-  - What's emitted is kept for whoever the call runs for, for seven days and the last 1,000 of them, and an agent
-    follows it as MCP's Events: `events/list` lists what the apps installed for it say, `events/poll` says what
+  - Another app follows it as an observe hook: it names the event in its `hooks/0`, and its `hook/3` is called with
+    what happened. An app offers only the hooks that ask something of whoever hooks in (`offers/0`); what only says
+    something happened is an event.
+  - What's emitted is kept in the app's database for whoever the call runs for, for seven days and the last 1,000 of
+    them, so an app with events requires `database`, and an agent follows it as MCP's Events: `events/list` lists what the apps installed for it say, `events/poll` says what
     happened since a cursor, and `events/subscribe` has each one sent to an address, as a Standard Webhooks webhook.
     `delivery` says how an event is followed, `[:poll]` for one that's never sent, and both unless it says.
 
@@ -731,7 +734,7 @@ defmodule OneCore.App do
   def skill(versions) do
     offered =
       for {name, version} <- Enum.sort(versions),
-          %{name: hook, kind: kind, description: about} = offer <- version.offers,
+          %{name: hook, kind: kind, description: about} = offer <- version.offers ++ observed(version),
           do: {"#{name}.#{hook}", kind, about <> if(offer[:untrusted], do: " An untrusted app may answer it.", else: "")}
 
     """
@@ -747,6 +750,9 @@ defmodule OneCore.App do
         else: "\nThe hooks the apps you have offer:\n\n" <> OneCore.App.Manifest.listed(offered) <> "\n"
       )
   end
+
+  # An app's events, which another app hooks into as observe hooks.
+  defp observed(version), do: for(event <- version.events || [], do: Map.put(event, :kind, :observe))
 
   require OneCore.App.Manifest
   OneCore.App.Manifest.callbacks()

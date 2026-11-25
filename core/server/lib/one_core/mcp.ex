@@ -32,7 +32,8 @@ defmodule OneCore.Mcp do
 
   What happens in an app, which its `events/0` declares, is MCP's Events (`OneCore.Events`): `events/list` lists the
   events of the apps installed for whoever asks, `events/poll` says what happened since a cursor, and
-  `events/subscribe` has each one sent to an address, as Standard Webhooks says.
+  `events/subscribe` has each one sent to an address, as Standard Webhooks says. Each runs where the app's database
+  is, as its tools do.
 
   An agent's client chooses how it calls tools, by what its requests say (`_meta.mode`), which the CLI says for
   `one mcp --code` and the network's address for `/mcp?code`. With none, every tool is listed, and `skills`, and the
@@ -510,9 +511,9 @@ defmodule OneCore.Mcp do
   # MCP's Events, as its extension has them (`OneCore.Events`): the events of the apps installed for whoever asks,
   # what happened since a cursor, and an address that's sent each one.
   defp result("events/list", params, _from, {_actor, subject}, _forwarded), do: Events.list(params, subject)
-  defp result("events/poll", params, _from, principal, _forwarded), do: Events.poll(params, principal)
-  defp result("events/subscribe", params, _from, principal, _forwarded), do: Events.subscribe(params, principal)
-  defp result("events/unsubscribe", params, _from, principal, _forwarded), do: Events.unsubscribe(params, principal)
+  defp result("events/poll", params, _from, principal, forwarded), do: Events.poll(params, principal, forwarded)
+  defp result("events/subscribe", params, _from, principal, forwarded), do: Events.subscribe(params, principal, forwarded)
+  defp result("events/unsubscribe", params, _from, principal, forwarded), do: Events.unsubscribe(params, principal, forwarded)
 
   defp result("skills/get", params, _from, principal, _forwarded) do
     case Enum.find(skills(principal), &(&1.uri == params["uri"])) do

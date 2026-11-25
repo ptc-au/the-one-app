@@ -11,8 +11,9 @@ defmodule OneCore.Events.Webhook do
 
   An address is sent to only if it's https, or http at this machine while the network is being built, and only if its
   name leads to public addresses: an event says what happened to someone, so one whose name leads into the network or
-  into a machine behind it isn't sent to. That's checked again at each delivery, as a name may lead somewhere else than
-  when it was subscribed, and redirects aren't followed, so an answer can't lead one out of it.
+  into a machine behind it isn't sent to. Its name is looked up once at each delivery, and the delivery connects to
+  the address that was checked, with the name for TLS and `Host`, so a name that leads somewhere else a moment later
+  (DNS rebinding) can't take it there. Redirects aren't followed, so an answer can't lead one out of it either.
   """
 
   @timeout 5_000
@@ -40,17 +41,6 @@ defmodule OneCore.Events.Webhook do
 
   def address(url),
     do: {:error, "A subscription's delivery.url is an https address, and #{given(url)} isn't one"}
-
-  @doc """
-  Whether events may be sent to `url` now: `address/1`, at a public address, as its name leads today. `:ok`, or
-  `{:error, why}`.
-  """
-  def allowed?(url) do
-    with :ok <- address(url) do
-      host = URI.parse(url).host
-      if local?(host), do: :ok, else: public(host)
-    end
-  end
 
   @doc """
   The headers a body is sent with, as Standard Webhooks has them: its kind, its id, the time it's sent at, its
@@ -86,23 +76,26 @@ defmodule OneCore.Events.Webhook do
   `{:error, why}` with what it answered, or why it wasn't reached. It's given five seconds, and follows no redirect.
   """
   def send(sub, id, body) do
-    with :ok <- allowed?(sub["url"]) do
-      post(sub, id, body)
+    uri = URI.parse(sub["url"])
+
+    with :ok <- address(sub["url"]),
+         {:ok, at} <- resolved(uri.host) do
+      post(sub, %{uri | host: at}, uri.host, id, body)
     end
   end
 
-  defp post(sub, id, body) do
+  defp post(sub, uri, host, id, body) do
     timestamp = Integer.to_string(System.system_time(:second))
 
     request = [
       method: :post,
-      url: sub["url"],
+      url: uri,
       headers: headers(sub, id, timestamp, body),
       body: body,
       redirect: false,
       retry: false,
       receive_timeout: @timeout,
-      connect_options: [timeout: @timeout]
+      connect_options: [timeout: @timeout, hostname: host]
     ]
 
     case Req.request(request) do
@@ -115,52 +108,86 @@ defmodule OneCore.Events.Webhook do
   # The secret now, and the one it replaced while that's still kept, the new one first.
   defp secrets(sub) do
     rotating =
-      if sub["previousSecret"] && sub["previousSecretUntil"] > System.system_time(:millisecond),
-        do: [sub["previousSecret"]],
+      if sub["previous_secret"] && sub["previous_until"] > System.system_time(:millisecond),
+        do: [sub["previous_secret"]],
         else: []
 
     [sub["secret"] | rotating]
   end
 
-  # Whether a name leads only to addresses an event may be sent to: none of them is this network's or this machine's.
-  defp public(host) do
-    case addresses(host) do
-      [] ->
-        {:error, "#{host} isn't a name this server resolves, so it can't be sent what it subscribed to"}
+  # The address a name leads to that a delivery connects to, once each of the addresses it leads to is one a stranger's
+  # server can reach: `{:ok, address}`, as a URL's host has it, or `{:error, why}`. A developer's own receiver, at
+  # this machine while the network is being built, is the one exception.
+  defp resolved(host) do
+    if local?(host) do
+      {:ok, host}
+    else
+      case addresses(host) do
+        [] ->
+          {:error, "#{host} isn't a name this server resolves, so it can't be sent what it subscribed to"}
 
-      addresses ->
-        if Enum.all?(addresses, &public?/1),
-          do: :ok,
-          else: {:error, "#{host} leads to an address in a network like this one, which a subscription isn't sent to"}
+        [first | _] = addresses ->
+          if Enum.all?(addresses, &public?/1),
+            do: {:ok, at(first)},
+            else: {:error, "#{host} leads to an address in a network like this one, which a subscription isn't sent to"}
+      end
     end
   end
 
   defp addresses(host) do
-    name = String.to_charlist(host)
-    for family <- [:inet, :inet6], {:ok, found} <- [:inet.getaddrs(name, family)], address <- found, do: address
+    case :inet.parse_address(String.to_charlist(host)) do
+      {:ok, address} -> [address]
+      {:error, _} -> for family <- [:inet, :inet6], {:ok, found} <- [:inet.getaddrs(String.to_charlist(host), family)], address <- found, do: address
+    end
   end
 
-  # An address a stranger's server can't reach: this machine's own, its network's, or one that's no machine's.
-  defp public?({0, _, _, _}), do: false
-  defp public?({10, _, _, _}), do: false
-  defp public?({127, _, _, _}), do: false
-  defp public?({169, 254, _, _}), do: false
-  defp public?({172, second, _, _}) when second in 16..31, do: false
-  defp public?({192, 168, _, _}), do: false
-  defp public?({100, second, _, _}) when second in 64..127, do: false
-  defp public?({first, _, _, _}) when first >= 224, do: false
-  defp public?({_, _, _, _}), do: true
+  defp at({_, _, _, _} = address), do: to_string(:inet.ntoa(address))
+  defp at(address), do: "[#{:inet.ntoa(address)}]"
 
-  # An IPv6 address mapped to IPv4 is the IPv4 address, as the IPv4 rules say.
-  defp public?({0, 0, 0, 0, 0, 0xffff, high, low}),
-    do: public?({div(high, 256), rem(high, 256), div(low, 256), rem(low, 256)})
+  # The ranges no stranger's server is in: this machine, private networks, carrier-grade NAT, link-local, benchmarking,
+  # documentation, multicast and reserved addresses, as IANA's special-purpose registries list them, and IPv6's ways of
+  # carrying an IPv4 address, which are checked as that address.
+  @private [
+    {{0, 0, 0, 0}, 8},
+    {{10, 0, 0, 0}, 8},
+    {{100, 64, 0, 0}, 10},
+    {{127, 0, 0, 0}, 8},
+    {{169, 254, 0, 0}, 16},
+    {{172, 16, 0, 0}, 12},
+    {{192, 0, 0, 0}, 24},
+    {{192, 0, 2, 0}, 24},
+    {{192, 88, 99, 0}, 24},
+    {{192, 168, 0, 0}, 16},
+    {{198, 18, 0, 0}, 15},
+    {{198, 51, 100, 0}, 24},
+    {{203, 0, 113, 0}, 24},
+    {{224, 0, 0, 0}, 3},
+    {{0, 0, 0, 0, 0, 0, 0, 0}, 127},
+    {{0x100, 0, 0, 0, 0, 0, 0, 0}, 64},
+    {{0x2001, 0, 0, 0, 0, 0, 0, 0}, 23},
+    {{0x2001, 0xDB8, 0, 0, 0, 0, 0, 0}, 32},
+    {{0xFC00, 0, 0, 0, 0, 0, 0, 0}, 7},
+    {{0xFE80, 0, 0, 0, 0, 0, 0, 0}, 10},
+    {{0xFF00, 0, 0, 0, 0, 0, 0, 0}, 8}
+  ]
 
-  defp public?({0, 0, 0, 0, 0, 0, 0, 0}), do: false
-  defp public?({0, 0, 0, 0, 0, 0, 0, 1}), do: false
-  defp public?({first, _, _, _, _, _, _, _}) when first in 0xfe80..0xfebf, do: false
-  defp public?({first, _, _, _, _, _, _, _}) when first in 0xfc00..0xfdff, do: false
-  defp public?({first, _, _, _, _, _, _, _}) when first in 0xff00..0xffff, do: false
-  defp public?({_, _, _, _, _, _, _, _}), do: true
+  # IPv4 mapped (::ffff:0:0/96), NAT64 (64:ff9b::/96, 64:ff9b:1::/48) and 6to4 (2002::/16) carry an IPv4 address.
+  defp public?({0, 0, 0, 0, 0, 0xFFFF, high, low}), do: public?(four(high, low))
+  defp public?({0x64, 0xFF9B, 0, 0, 0, 0, high, low}), do: public?(four(high, low))
+  defp public?({0x64, 0xFF9B, 1, _, _, _, _, _}), do: false
+  defp public?({0x2002, high, low, _, _, _, _, _}), do: public?(four(high, low))
+  defp public?(address), do: not Enum.any?(@private, fn {range, bits} -> within?(address, range, bits) end)
+
+  defp four(high, low), do: {div(high, 256), rem(high, 256), div(low, 256), rem(low, 256)}
+
+  defp within?(address, range, bits) when tuple_size(address) == tuple_size(range) do
+    size = if tuple_size(address) == 4, do: 8, else: 16
+    <<a::bitstring-size(^bits), _::bitstring>> = for(part <- Tuple.to_list(address), into: <<>>, do: <<part::size(size)>>)
+    <<r::bitstring-size(^bits), _::bitstring>> = for(part <- Tuple.to_list(range), into: <<>>, do: <<part::size(size)>>)
+    a == r
+  end
+
+  defp within?(_address, _range, _bits), do: false
 
   defp local?(host), do: development?() and host in ["localhost", "127.0.0.1"]
 

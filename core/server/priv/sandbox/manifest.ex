@@ -75,7 +75,7 @@ defmodule OneCore.App.Manifest do
       @callback hook(hook :: String.t(), about :: map, OneCore.Call.t()) :: term
       @callback webhook(OneCore.Call.t(), request :: map) :: {:ok, map}
       @callback offers() :: [
-                  %{name: String.t(), kind: :observe | :mutate | :validate | :collect, description: String.t()}
+                  %{name: String.t(), kind: :mutate | :validate | :collect, description: String.t()}
                 ]
       @callback jobs() :: [%{tool: String.t(), every: pos_integer}]
       @callback events() :: [

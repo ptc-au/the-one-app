@@ -491,6 +491,16 @@ defmodule OneCore.Apps.Calls do
          do: Logger.error("#{name}'s scheduled #{job.tool} for #{subject} (installed for #{at}) failed: #{why}")
   end
 
+  @doc """
+  Runs `fun` with a call of the app `name` for whoever `principal` is for, as one of its tools is called, where the app
+  runs: `ask`, what was asked, is passed on to a server that runs it where this one doesn't. Gives what `fun` does, or
+  `{:error, why}`.
+  """
+  def within(name, ask, principal, forwarded, fun) do
+    {_actor, subject} = principal = principal(principal)
+    Apps.run(Apps.chain(subject), name, fn at, versions -> fun.(called(at, name, versions, ask, principal, forwarded)) end)
+  end
+
   @doc "The apps among `versions`, by their names, that keep other apps' schedules."
   def keepers(versions) do
     for {_name, %Version{app: app}} <- versions,
