@@ -53,6 +53,7 @@ interface SchemaBlock {
 
 interface ReactionInfo {
   emoji: string
+  glyph: string
   count: number
   by: string[]
 }
@@ -167,28 +168,11 @@ changed(() => {
 
 const [composing, setComposing] = createSignal(false)
 
-const EMOJI: Record<string, string> = {
-  thumbs_up: "👍",
-  thumbs_down: "👎",
-  check: "✅",
-  eyes: "👀",
-  fire: "🔥",
-  rocket: "🚀",
-  tada: "🎉",
-  heart: "❤️",
-  pray: "🙏",
-  warning: "⚠️",
-}
-
 const FENCE_RE = /```json#[a-z][a-z0-9-]*@[1-9][0-9]*\r?\n[\s\S]*?```/g
 
 function cleanBody(body?: string) {
   if (!body) return ""
   return body.replace(FENCE_RE, "").trim()
-}
-
-function emojiGlyph(name: string) {
-  return EMOJI[name] || `:${name}:`
 }
 
 function firstLine(body?: string) {
@@ -317,7 +301,7 @@ function MessageCard(props: { msg: BoardMessage }) {
               {([k, v]) => <Badge variant="secondary">{`${k}=${v}`}</Badge>}
             </For>
             <For each={props.msg.reactions || []}>
-              {(r) => <Badge variant="secondary">{`${emojiGlyph(r.emoji)} ${r.count}`}</Badge>}
+              {(r) => <Badge variant="secondary">{`${r.glyph} ${r.count}`}</Badge>}
             </For>
           </View>
         </Show>

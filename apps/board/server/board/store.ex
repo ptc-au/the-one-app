@@ -1,7 +1,7 @@
 defmodule Board.Store do
   @moduledoc """
   Board's SQLite schema and pure data helpers: channel/label/profile validation, reaction normalization, fenced
-  structured-data schema block parsing and validation (`ExJsonSchema`), DAG cycle detection, and lease hashing.
+  structured-data schema block parsing and validation (`ExJsonSchema`), and lease hashing.
   """
 
   alias OneCore.Call
@@ -116,23 +116,25 @@ defmodule Board.Store do
   @schema_name_re ~r"\A([a-z][a-z0-9-]{0,63})@([1-9][0-9]*)\z"
   @block_re ~r/```json#([a-z][a-z0-9-]*@[1-9][0-9]*)\r?\n([\s\S]*?)```/
 
-  @emoji_aliases %{
-    "+1" => "thumbs_up",
-    "👍" => "thumbs_up",
-    "-1" => "thumbs_down",
-    "👎" => "thumbs_down",
-    "white_check_mark" => "check",
-    "✅" => "check",
-    "👀" => "eyes",
-    "🔥" => "fire",
-    "🚀" => "rocket",
-    "🎉" => "tada",
-    "❤️" => "heart",
-    "❤" => "heart",
-    "🙏" => "pray",
-    "⚠️" => "warning",
-    "⚠" => "warning"
+  # A reaction is kept by a name, and shown and sent as its emoji: Google Chat, a person's screen and an agent each take the
+  # emoji itself. What isn't named here is kept, and shown, as it was given.
+  @glyphs %{
+    "thumbs_up" => "👍",
+    "thumbs_down" => "👎",
+    "check" => "✅",
+    "eyes" => "👀",
+    "fire" => "🔥",
+    "rocket" => "🚀",
+    "tada" => "🎉",
+    "heart" => "❤️",
+    "pray" => "🙏",
+    "warning" => "⚠️"
   }
+
+  @emoji_aliases Map.merge(
+                   Map.new(@glyphs, fn {name, glyph} -> {glyph, name} end),
+                   %{"+1" => "thumbs_up", "-1" => "thumbs_down", "white_check_mark" => "check", "❤" => "heart", "⚠" => "warning"}
+                 )
 
   def schema, do: @schema
 
@@ -216,6 +218,9 @@ defmodule Board.Store do
 
   def normalize_emoji(_), do: {:error, "Emoji is required."}
 
+  @doc "The emoji a reaction's `name` is, or the name itself where it isn't one of ours."
+  def glyph(name), do: Map.get(@glyphs, name, name)
+
   def display_author(author, nil), do: short_actor(author)
   def display_author(author, ""), do: short_actor(author)
   def display_author(author, profile), do: "#{profile} via #{short_actor(author)}"
@@ -274,6 +279,18 @@ defmodule Board.Store do
     e -> {:error, "Schema #{schema_name} validation error: #{Exception.message(e)}"}
   end
 
+  @doc """
+  A task's state as it stands now: a claimed task whose lease has run out is ready again, whether or not
+  `expire_leases` has written that yet, so a read never has to.
+  """
+  def effective_state("claimed", lease_until), do: if(is_integer(lease_until) and lease_until <= now_ms(), do: "ready", else: "claimed")
+  def effective_state(state, _lease_until), do: state
+
+  @doc "The same as `effective_state/2`, for a query over `tasks` as `t`."
+  def state_sql do
+    "(case when t.state = 'claimed' and t.lease_until <= #{now_ms()} then 'ready' else t.state end)"
+  end
+
   @doc "Expires any claimed tasks whose lease has elapsed, returning details of the newly ready tasks."
   def expire_leases(db) do
     now = now_ms()
@@ -305,23 +322,6 @@ defmodule Board.Store do
 
     for %{"root_id" => id, "channel" => ch, "body" => body, "owner_actor" => owner, "assigned_profile" => assigned} <- expired do
       %{id: id, channel: ch, body: body, owner: owner, assigned_profile: assigned}
-    end
-  end
-
-  @doc "Returns true if adding `task_id -> needs_id` would create a cycle in `task_deps`."
-  def creates_cycle?(db, task_id, needs_id) do
-    task_id == needs_id or reachable?(db, needs_id, task_id, MapSet.new())
-  end
-
-  defp reachable?(_db, current, target, _visited) when current == target, do: true
-
-  defp reachable?(db, current, target, visited) do
-    if MapSet.member?(visited, current) do
-      false
-    else
-      visited = MapSet.put(visited, current)
-      nexts = query(db, "select needs_id from task_deps where task_id = ?", [current]) |> Enum.map(& &1["needs_id"])
-      Enum.any?(nexts, &reachable?(db, &1, target, visited))
     end
   end
 
@@ -371,7 +371,7 @@ defmodule Board.Store do
   def reactions_for(db, message_id) do
     query(db, "select emoji, actor, profile from reactions where message_id = ? order by emoji, actor", [message_id])
     |> Enum.group_by(& &1["emoji"], fn %{"actor" => actor, "profile" => profile} -> display_author(actor, profile) end)
-    |> Enum.map(fn {emoji, actors} -> %{emoji: emoji, count: length(actors), by: actors} end)
+    |> Enum.map(fn {emoji, actors} -> %{emoji: emoji, glyph: glyph(emoji), count: length(actors), by: actors} end)
   end
 
   def deps_for(db, root_id) do
@@ -411,14 +411,16 @@ defmodule Board.Store do
           "updated_at" => updated
         }
       ] ->
+        lapsed = effective_state(state, lease) != state
+
         %{
-          state: state,
+          state: effective_state(state, lease),
           owner: oa,
           owner_display: display_author(oa, op),
           assigned_profile: ap,
           epoch: epoch,
-          claimed_by: if(cba, do: display_author(cba, cbp)),
-          lease_until: lease,
+          claimed_by: if(cba && not lapsed, do: display_author(cba, cbp)),
+          lease_until: if(not lapsed, do: lease),
           block_kind: bk,
           result: res,
           needs: deps_for(db, root_id),

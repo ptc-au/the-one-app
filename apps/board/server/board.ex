@@ -5,7 +5,6 @@ defmodule Board do
   blocks, self-scheduled follow-ups, and MCP Events (`OneCore.Events`).
   """
   @behaviour OneCore.App
-  require Logger
 
   alias Board.Store
   alias OneCore.{Artifact, Call, Events}
@@ -158,7 +157,7 @@ defmodule Board do
       %{
         name: "message_edited",
         kind: :observe,
-        description: "A message was edited, about its `id`, `channel`, `root_id`, its new `body` and its `revision`."
+        description: "A message was edited, about its `id`, `channel`, `root_id`, its `profile` and `display_author`, its new `body` and its `revision`."
       },
       %{
         name: "message_deleted",
@@ -169,7 +168,7 @@ defmodule Board do
         name: "reaction_changed",
         kind: :observe,
         description:
-          "A reaction was added to a message or removed from it, about its `id`, `channel` and normalized `emoji`, " <>
+          "A reaction was added to a message or removed from it, about its `id`, `channel`, normalized `emoji` and its `glyph`, " <>
             "whether it's a `remove`, and the `actor` and `profile` who did it."
       }
     ]
@@ -216,7 +215,7 @@ defmodule Board do
             no_sync: %{type: "boolean", description: "Don't pass it to apps that mirror this channel elsewhere, such as a chat app"},
             file: %{type: "string", format: "upload", description: "Optional uploaded file attachment"},
             file_name: %{type: "string", description: "Filename for the attachment"},
-            mime_type: %{type: "string", description: "MIME type for the attachment"}
+            mime_type: %{type: "string", description: "Its kind: kept for a picture or a PDF, application/octet-stream for anything else"}
           }
         },
         outputs: %{type: "object"}
@@ -236,7 +235,7 @@ defmodule Board do
             no_sync: %{type: "boolean", description: "Don't pass it to apps that mirror this channel elsewhere, such as a chat app"},
             file: %{type: "string", format: "upload", description: "Optional uploaded file attachment"},
             file_name: %{type: "string", description: "Filename for the attachment"},
-            mime_type: %{type: "string", description: "MIME type for the attachment"}
+            mime_type: %{type: "string", description: "Its kind: kept for a picture or a PDF, application/octet-stream for anything else"}
           }
         },
         outputs: %{type: "object"}
@@ -308,7 +307,7 @@ defmodule Board do
             id: %{type: "string", description: "Message ID to attach the file to"},
             file: %{type: "string", format: "upload", description: "Uploaded file blob"},
             name: %{type: "string", description: "Filename shown to readers"},
-            mime_type: %{type: "string", description: "MIME type (default application/octet-stream)"}
+            mime_type: %{type: "string", description: "Its kind: kept for a picture or a PDF, application/octet-stream for anything else"}
           }
         },
         outputs: %{type: "object"}
@@ -351,7 +350,8 @@ defmodule Board do
             assigned_profile: %{type: "string"},
             labels: %{type: "object"},
             needs: %{type: "array", items: %{type: "string"}, description: "Task IDs this task waits on"},
-            plan: %{type: "array", items: %{type: "object"}, description: "Atomic list of up to 100 tasks with optional key and needs"}
+            plan: %{type: "array", items: %{type: "object"}, description: "Atomic list of up to 100 tasks with optional key and needs"},
+            no_sync: %{type: "boolean", description: "Don't pass it to apps that mirror this channel elsewhere, such as a chat app"}
           }
         },
         outputs: %{type: "object"}
@@ -450,8 +450,8 @@ defmodule Board do
       },
       %{
         name: "task_unblock",
-        description: "Unblock a held task back to ready (or waiting if prerequisites remain).",
-        inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}, profile: %{type: "string"}}},
+        description: "Unblock a held task back to ready (or waiting if prerequisites remain). A person does this, not an agent, so it takes no profile.",
+        inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
@@ -462,8 +462,8 @@ defmodule Board do
       },
       %{
         name: "task_reopen",
-        description: "Reopen a failed or canceled task back to ready (or waiting).",
-        inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}, profile: %{type: "string"}}},
+        description: "Reopen a failed or canceled task back to ready (or waiting). A person does this, not an agent, so it takes no profile.",
+        inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
@@ -480,7 +480,8 @@ defmodule Board do
             every_seconds: %{type: "integer", description: "Repeat interval (min 60s)"},
             until: %{type: "string", description: "ISO 8601 stop time"},
             times: %{type: "integer", description: "Max sends"},
-            profile: %{type: "string"}
+            profile: %{type: "string"},
+            no_sync: %{type: "boolean", description: "Don't pass what it posts to apps that mirror this channel elsewhere, such as a chat app"}
           }
         },
         outputs: %{type: "object"}
@@ -536,17 +537,15 @@ defmodule Board do
 
     channels =
       Store.transaction(call, fn db ->
-        Store.expire_leases(db)
-
         rows =
           Store.query(
             db,
             """
             select m.channel,
                    count(distinct m.id) as threads,
-                   sum(case when t.state = 'ready' then 1 else 0 end) as ready_tasks,
-                   sum(case when t.state = 'claimed' then 1 else 0 end) as claimed_tasks,
-                   sum(case when t.state = 'blocked' then 1 else 0 end) as blocked_tasks,
+                   sum(case when #{Store.state_sql()} = 'ready' then 1 else 0 end) as ready_tasks,
+                   sum(case when #{Store.state_sql()} = 'claimed' then 1 else 0 end) as claimed_tasks,
+                   sum(case when #{Store.state_sql()} = 'blocked' then 1 else 0 end) as blocked_tasks,
                    max(m.created_at) as last_at
             from messages m
             left join tasks t on t.root_id = m.id
@@ -574,8 +573,6 @@ defmodule Board do
 
   defp dispatch("read", %{"id" => id}, call) when is_binary(id) and id != "" do
     Store.transaction(call, fn db ->
-      Store.expire_leases(db)
-
       case Store.query(
              db,
              """
@@ -613,7 +610,6 @@ defmodule Board do
     limit = min(max(inputs["limit"] || 50, 1), 200)
 
     Store.transaction(call, fn db ->
-      Store.expire_leases(db)
       {where_sql, params} = read_filters(channel, state, label)
 
       roots =
@@ -813,7 +809,19 @@ defmodule Board do
                       end
                     end
 
-                    {:ok, %{id: id, channel: channel, root_id: root_id, body: body, blocks: blocks, revision: new_rev, edited_at: now}}
+                    {:ok,
+                     %{
+                       id: id,
+                       channel: channel,
+                       root_id: root_id,
+                       author: msg_author,
+                       profile: msg_profile,
+                       display_author: Store.display_author(msg_author, msg_profile),
+                       body: body,
+                       blocks: blocks,
+                       revision: new_rev,
+                       edited_at: now
+                     }}
                   end
               end
 
@@ -829,10 +837,12 @@ defmodule Board do
         {:ok, msg} ->
           Call.changed(call)
 
-          notify_hook(call, "message_edited", %{
+          Call.run_hook(call, "message_edited", %{
             "id" => msg.id,
             "channel" => msg.channel,
             "root_id" => msg.root_id,
+            "profile" => msg.profile,
+            "display_author" => msg.display_author,
             "body" => msg.body,
             "revision" => msg.revision
           })
@@ -867,6 +877,7 @@ defmodule Board do
                   Store.query(db, "update messages set body = '', blocks = '[]', revision = ?, deleted_at = ? where id = ?", [new_rev, now, id])
                   Store.query(db, "delete from labels where message_id = ?", [id])
                   Store.query(db, "delete from reactions where message_id = ?", [id])
+                  blobs = for %{"blob" => blob} <- Store.query(db, "delete from attachments where message_id = ? returning blob", [id]), do: blob
 
                   if root_id == nil do
                     Store.query(
@@ -876,7 +887,7 @@ defmodule Board do
                     )
                   end
 
-                  {:ok, %{id: id, channel: channel, root_id: root_id, deleted: true, revision: new_rev}}
+                  {:ok, %{id: id, channel: channel, root_id: root_id, deleted: true, revision: new_rev, blobs: blobs}}
               end
 
             [%{"deleted_at" => _deleted}] ->
@@ -888,10 +899,11 @@ defmodule Board do
         end)
 
       case result do
-        {:ok, %{channel: channel, root_id: root_id} = res} ->
+        {:ok, %{channel: channel, root_id: root_id, blobs: blobs} = res} ->
           Call.changed(call)
-          notify_hook(call, "message_deleted", %{"id" => res.id, "channel" => channel, "root_id" => root_id})
-          res
+          for blob <- blobs, do: Artifact.remove(call.own, blob)
+          Call.run_hook(call, "message_deleted", %{"id" => res.id, "channel" => channel, "root_id" => root_id})
+          Map.delete(res, :blobs)
 
         {:ok, res} ->
           Call.changed(call)
@@ -931,10 +943,11 @@ defmodule Board do
         {:ok, res} ->
           Call.changed(call)
 
-          notify_hook(call, "reaction_changed", %{
+          Call.run_hook(call, "reaction_changed", %{
             "id" => id,
             "channel" => res.channel,
             "emoji" => emoji,
+            "glyph" => Store.glyph(emoji),
             "remove" => inputs["remove"] == true,
             "actor" => actor,
             "profile" => profile,
@@ -980,7 +993,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
-          emit_safe(call, "labels_changed", res)
+          Events.emit(call, "labels_changed", res)
           res
 
         {:error, why} ->
@@ -1035,7 +1048,7 @@ defmodule Board do
       end)
 
     case found do
-      [%{"blob" => blob, "mime_type" => mime}] -> {:file, mime, call.own, blob}
+      [%{"blob" => blob, "mime_type" => mime}] -> {:file, safe_mime_type(mime), call.own, blob}
       [] -> {:error, "Attachment #{att_id} not found."}
     end
   end
@@ -1098,7 +1111,7 @@ defmodule Board do
           Call.changed(call)
 
           for t <- created, t.state == "ready" do
-            emit_safe(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile}, event_id: "ready_" <> t.id)
+            Events.emit(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile}, event_id: "ready_" <> t.id)
           end
 
           %{tasks: created}
@@ -1179,11 +1192,9 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          Store.expire_leases(db)
-
           cond do
             is_binary(inputs["id"]) and inputs["id"] != "" ->
-              claim_by_id(db, inputs["id"], actor, profile, lease_until)
+              claim_by_id(db, inputs["id"], target_owner, actor, profile, lease_until)
 
             inputs["ready"] == true ->
               claim_oldest_ready(db, inputs["channel"], inputs["label"], target_owner, actor, profile, lease_until)
@@ -1210,8 +1221,6 @@ defmodule Board do
 
     result =
       Store.transaction(call, fn db ->
-        Store.expire_leases(db)
-
         with :ok <- verify_claim(db, id, epoch, token) do
           Store.query(db, "update tasks set lease_until = ?, updated_at = ? where root_id = ?", [lease_until, Store.now_iso(), id])
           {:ok, %{id: id, epoch: epoch, lease_until: lease_until}}
@@ -1234,8 +1243,6 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          Store.expire_leases(db)
-
           with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor),
                [%{"channel" => channel, "owner_actor" => owner}] <- Store.query(db, "select m.channel, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
             now = Store.now_iso()
@@ -1272,10 +1279,10 @@ defmodule Board do
         {:ok, done} ->
           Call.changed(call)
           posted(call, done.reply)
-          emit_safe(call, "task_completed", %{id: done.id, channel: done.channel, result: done.result, author: actor, profile: profile}, match: %{channel: done.channel, owner: done.owner})
+          Events.emit(call, "task_completed", %{id: done.id, channel: done.channel, result: done.result, author: actor, profile: profile}, match: %{channel: done.channel, owner: done.owner})
 
           for r <- done.readied do
-            emit_safe(call, "task_ready", r, event_id: "ready_" <> r.id)
+            Events.emit(call, "task_ready", r, event_id: "ready_" <> r.id)
           end
 
           %{id: done.id, state: "completed", result: done.result, readied: Enum.map(done.readied, & &1.id)}
@@ -1292,8 +1299,6 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          Store.expire_leases(db)
-
           with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor),
                [%{"channel" => channel}] <- Store.query(db, "select channel from messages where id = ?", [id]) do
             now = Store.now_iso()
@@ -1330,8 +1335,6 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          Store.expire_leases(db)
-
           with :ok <- verify_claim(db, id, epoch, token),
                [%{"channel" => channel}] <- Store.query(db, "select channel from messages where id = ?", [id]) do
             now = Store.now_iso()
@@ -1371,8 +1374,6 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          Store.expire_leases(db)
-
           with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor),
                [%{"channel" => channel, "owner_actor" => owner}] <- Store.query(db, "select m.channel, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
             now = Store.now_iso()
@@ -1400,7 +1401,7 @@ defmodule Board do
         {:ok, blocked} ->
           Call.changed(call)
           posted(call, blocked.reply)
-          emit_safe(call, "task_blocked", %{id: blocked.id, channel: blocked.channel, question: blocked.question, kind: blocked.kind, author: actor, profile: profile}, match: %{channel: blocked.channel, owner: blocked.owner, kind: blocked.kind})
+          Events.emit(call, "task_blocked", %{id: blocked.id, channel: blocked.channel, question: blocked.question, kind: blocked.kind, author: actor, profile: profile}, match: %{channel: blocked.channel, owner: blocked.owner, kind: blocked.kind})
           notify_blocked(call, blocked, profile)
           %{id: blocked.id, state: "blocked", kind: blocked.kind}
 
@@ -1410,41 +1411,39 @@ defmodule Board do
     end
   end
 
-  defp dispatch("task_unblock", %{"id" => id} = inputs, call) do
-    with {:ok, profile} <- Store.validate_profile(inputs["profile"]) do
-      actor = call.actor || call.subject
+  defp dispatch("task_unblock", %{"id" => id}, call) do
+    actor = call.actor || call.subject
 
-      result =
-        Store.transaction(call, fn db ->
-          case Store.query(db, "select m.channel, m.body, t.state, t.owner_actor, t.assigned_profile from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
-            [%{"channel" => channel, "body" => body, "state" => "blocked", "owner_actor" => owner, "assigned_profile" => assigned}] ->
-              next_state = if Store.deps_satisfied?(db, id), do: "ready", else: "waiting"
-              Store.query(db, "update tasks set state = ?, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
-              reply_msg = append_system_reply(db, id, channel, actor, profile, "Unblocked.")
-              {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
+    result =
+      Store.transaction(call, fn db ->
+        case Store.query(db, "select m.channel, m.body, t.state, t.owner_actor, t.assigned_profile from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
+          [%{"channel" => channel, "body" => body, "state" => "blocked", "owner_actor" => owner, "assigned_profile" => assigned}] ->
+            next_state = if Store.deps_satisfied?(db, id), do: "ready", else: "waiting"
+            Store.query(db, "update tasks set state = ?, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
+            reply_msg = append_system_reply(db, id, channel, actor, nil, "Unblocked.")
+            {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
 
-            [%{"state" => state}] ->
-              {:error, "Task #{id} is #{state}, not blocked."}
+          [%{"state" => state}] ->
+            {:error, "Task #{id} is #{state}, not blocked."}
 
-            [] ->
-              {:error, "Task #{id} not found."}
-          end
-        end)
+          [] ->
+            {:error, "Task #{id} not found."}
+        end
+      end)
 
-      case result do
-        {:ok, res} ->
-          Call.changed(call)
-          posted(call, res.reply)
+    case result do
+      {:ok, res} ->
+        Call.changed(call)
+        posted(call, res.reply)
 
-          if res.state == "ready" do
-            emit_safe(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
-          end
+        if res.state == "ready" do
+          Events.emit(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
+        end
 
-          %{id: res.id, state: res.state}
+        %{id: res.id, state: res.state}
 
-        {:error, why} ->
-          {:error, why}
-      end
+      {:error, why} ->
+        {:error, why}
     end
   end
 
@@ -1486,41 +1485,39 @@ defmodule Board do
     end
   end
 
-  defp dispatch("task_reopen", %{"id" => id} = inputs, call) do
-    with {:ok, profile} <- Store.validate_profile(inputs["profile"]) do
-      actor = call.actor || call.subject
+  defp dispatch("task_reopen", %{"id" => id}, call) do
+    actor = call.actor || call.subject
 
-      result =
-        Store.transaction(call, fn db ->
-          case Store.query(db, "select m.channel, m.body, t.state, t.owner_actor, t.assigned_profile from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
-            [%{"channel" => channel, "body" => body, "state" => state, "owner_actor" => owner, "assigned_profile" => assigned}] when state in ["failed", "canceled"] ->
-              next_state = if Store.deps_satisfied?(db, id), do: "ready", else: "waiting"
-              Store.query(db, "update tasks set state = ?, result = null, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
-              reply_msg = append_system_reply(db, id, channel, actor, profile, "Reopened.")
-              {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
+    result =
+      Store.transaction(call, fn db ->
+        case Store.query(db, "select m.channel, m.body, t.state, t.owner_actor, t.assigned_profile from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
+          [%{"channel" => channel, "body" => body, "state" => state, "owner_actor" => owner, "assigned_profile" => assigned}] when state in ["failed", "canceled"] ->
+            next_state = if Store.deps_satisfied?(db, id), do: "ready", else: "waiting"
+            Store.query(db, "update tasks set state = ?, result = null, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
+            reply_msg = append_system_reply(db, id, channel, actor, nil, "Reopened.")
+            {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
 
-            [%{"state" => state}] ->
-              {:error, "Only failed or canceled tasks can be reopened (currently #{state})."}
+          [%{"state" => state}] ->
+            {:error, "Only failed or canceled tasks can be reopened (currently #{state})."}
 
-            [] ->
-              {:error, "Task #{id} not found."}
-          end
-        end)
+          [] ->
+            {:error, "Task #{id} not found."}
+        end
+      end)
 
-      case result do
-        {:ok, res} ->
-          Call.changed(call)
-          posted(call, res.reply)
+    case result do
+      {:ok, res} ->
+        Call.changed(call)
+        posted(call, res.reply)
 
-          if res.state == "ready" do
-            emit_safe(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
-          end
+        if res.state == "ready" do
+          Events.emit(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
+        end
 
-          %{id: res.id, state: res.state}
+        %{id: res.id, state: res.state}
 
-        {:error, why} ->
-          {:error, why}
-      end
+      {:error, why} ->
+        {:error, why}
     end
   end
 
@@ -1537,7 +1534,8 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          with {:ok, _blocks} <- Store.parse_and_validate_blocks(db, body) do
+          with :ok <- known_target(db, target),
+               {:ok, _blocks} <- Store.parse_and_validate_blocks(db, body) do
             id = Store.new_id("sch")
             now = Store.now_iso()
 
@@ -1648,7 +1646,6 @@ defmodule Board do
 
             msg
           end
-          |> Enum.reject(&is_nil/1)
 
         {expired, sent}
       end)
@@ -1658,7 +1655,7 @@ defmodule Board do
     end
 
     for r <- expired do
-      emit_safe(call, "task_ready", r)
+      Events.emit(call, "task_ready", r)
     end
 
     for msg <- sent_msgs do
@@ -1671,7 +1668,6 @@ defmodule Board do
   defp dispatch("badge", _inputs, call) do
     count =
       Store.transaction(call, fn db ->
-        Store.expire_leases(db)
         [%{"n" => n}] = Store.query(db, "select count(*) as n from tasks where state = 'blocked'")
         n
       end)
@@ -1682,8 +1678,6 @@ defmodule Board do
   defp dispatch("widget", _inputs, call) do
     {blocked, ready, claimed} =
       Store.transaction(call, fn db ->
-        Store.expire_leases(db)
-
         blocked =
           Store.query(
             db,
@@ -1695,8 +1689,8 @@ defmodule Board do
             """
           )
 
-        [%{"n" => ready}] = Store.query(db, "select count(*) as n from tasks where state = 'ready'")
-        [%{"n" => claimed}] = Store.query(db, "select count(*) as n from tasks where state = 'claimed'")
+        [%{"n" => ready}] = Store.query(db, "select count(*) as n from tasks t where #{Store.state_sql()} = 'ready'")
+        [%{"n" => claimed}] = Store.query(db, "select count(*) as n from tasks t where #{Store.state_sql()} = 'claimed'")
         {blocked, ready, claimed}
       end)
 
@@ -1733,7 +1727,7 @@ defmodule Board do
     Call.changed(call)
 
     if task.state == "ready" do
-      emit_safe(call, "task_ready", %{id: task.id, channel: task.channel, body: task.body, owner: task.owner, assigned_profile: task.assigned_profile}, event_id: "ready_" <> task.id)
+      Events.emit(call, "task_ready", %{id: task.id, channel: task.channel, body: task.body, owner: task.owner, assigned_profile: task.assigned_profile}, event_id: "ready_" <> task.id)
     end
 
     task
@@ -1795,7 +1789,7 @@ defmodule Board do
   end
 
   defp insert_task(db, root_id, channel, body, owner, profile, assigned, needs) do
-    with :ok <- validate_needs(db, root_id, needs) do
+    with :ok <- validate_needs(db, needs) do
       now = Store.now_iso()
       state = if needs == [] or all_completed?(db, needs), do: "ready", else: "waiting"
 
@@ -1816,7 +1810,7 @@ defmodule Board do
     end
   end
 
-  defp validate_needs(db, root_id, needs) do
+  defp validate_needs(db, needs) do
     Enum.reduce_while(needs, :ok, fn dep, :ok ->
       cond do
         not is_binary(dep) or dep == "" ->
@@ -1824,9 +1818,6 @@ defmodule Board do
 
         Store.query(db, "select 1 from tasks where root_id = ?", [dep]) == [] ->
           {:halt, {:error, "invalid_needs: dependency #{dep} is not a task."}}
-
-        Store.creates_cycle?(db, root_id, dep) ->
-          {:halt, {:error, "invalid_needs: dependency #{dep} creates a cycle."}}
 
         true ->
           {:cont, :ok}
@@ -1840,20 +1831,18 @@ defmodule Board do
     end)
   end
 
-  defp claim_by_id(db, id, actor, profile, lease_until) do
-    case Store.query(db, "select state, assigned_profile, claim_epoch from tasks where root_id = ?", [id]) do
-      [%{"state" => "ready", "assigned_profile" => assigned, "claim_epoch" => epoch}] ->
-        if assigned != nil and assigned != profile do
-          {:error, "Task #{id} is assigned to profile #{assigned}."}
-        else
-          do_claim(db, id, epoch, actor, profile, lease_until)
+  defp claim_by_id(db, id, target_owner, actor, profile, lease_until) do
+    case Store.query(db, "select state, owner_actor, assigned_profile, claim_epoch, lease_until from tasks where root_id = ?", [id]) do
+      [%{"owner_actor" => owner}] when owner != target_owner ->
+        {:error, "Task #{id} is #{Store.display_author(owner, nil)}'s: claim it with from: #{owner}."}
+
+      [%{"state" => state, "assigned_profile" => assigned, "claim_epoch" => epoch, "lease_until" => lease}] ->
+        case Store.effective_state(state, lease) do
+          "ready" when assigned != nil and assigned != profile -> {:error, "Task #{id} is assigned to profile #{assigned}."}
+          "ready" -> do_claim(db, id, epoch, actor, profile, lease_until)
+          "claimed" -> {:error, "task_claimed: task #{id} is already claimed."}
+          state -> {:error, "Task #{id} is #{state}, not ready."}
         end
-
-      [%{"state" => "claimed"}] ->
-        {:error, "task_claimed: task #{id} is already claimed."}
-
-      [%{"state" => state}] ->
-        {:error, "Task #{id} is #{state}, not ready."}
 
       [] ->
         {:error, "Task #{id} not found."}
@@ -1870,7 +1859,7 @@ defmodule Board do
         select t.root_id, t.claim_epoch
         from tasks t
         join messages m on m.id = t.root_id
-        where t.state = 'ready' and t.owner_actor = ? and m.deleted_at is null
+        where #{Store.state_sql()} = 'ready' and t.owner_actor = ? and m.deleted_at is null
           and (t.assigned_profile is null or t.assigned_profile = ?)
           #{extra_sql}
         order by case when t.assigned_profile = ? then 0 else 1 end, m.created_at asc
@@ -1907,11 +1896,13 @@ defmodule Board do
   end
 
   defp verify_claim(db, id, epoch, token) when is_integer(epoch) and is_binary(token) do
-    case Store.query(db, "select state, claim_epoch, claim_token_hash from tasks where root_id = ?", [id]) do
-      [%{"state" => "claimed", "claim_epoch" => ^epoch, "claim_token_hash" => stored_hash}] ->
-        if stored_hash == Store.hash_token(token),
-          do: :ok,
-          else: {:error, "claim_lost: invalid claim token."}
+    case Store.query(db, "select state, claim_epoch, claim_token_hash, lease_until from tasks where root_id = ?", [id]) do
+      [%{"state" => "claimed", "claim_epoch" => ^epoch, "claim_token_hash" => stored_hash, "lease_until" => lease}] ->
+        cond do
+          Store.effective_state("claimed", lease) != "claimed" -> {:error, "claim_lost: the lease has run out."}
+          stored_hash == Store.hash_token(token) -> :ok
+          true -> {:error, "claim_lost: invalid claim token."}
+        end
 
       [%{"state" => "claimed", "claim_epoch" => cur}] ->
         {:error, "claim_lost: task is at epoch #{cur}, not #{epoch}."}
@@ -1926,16 +1917,26 @@ defmodule Board do
 
   defp verify_claim(_db, _id, _epoch, _token), do: {:error, "claim_not_held: epoch and token are required."}
 
+  # The claim holder, by epoch and token, or the task's owner while no one holds it: ready or blocked, never one that's
+  # finished.
   defp verify_claim_or_owner(db, id, epoch, token, _actor) when is_integer(epoch) and is_binary(token) do
     verify_claim(db, id, epoch, token)
   end
 
   defp verify_claim_or_owner(db, id, _epoch, _token, actor) do
-    case Store.query(db, "select state, owner_actor from tasks where root_id = ?", [id]) do
-      [%{"state" => state, "owner_actor" => ^actor}] when state != "claimed" -> :ok
-      [%{"state" => "claimed"}] -> {:error, "claim_not_held: task is currently claimed; pass epoch and token."}
-      [_] -> {:error, "Only the claim holder or task owner can update this task."}
-      [] -> {:error, "Task #{id} not found."}
+    case Store.query(db, "select state, owner_actor, lease_until from tasks where root_id = ?", [id]) do
+      [%{"state" => state, "owner_actor" => ^actor, "lease_until" => lease}] ->
+        case Store.effective_state(state, lease) do
+          held when held in ["ready", "blocked"] -> :ok
+          "claimed" -> {:error, "claim_not_held: task is currently claimed; pass epoch and token."}
+          other -> {:error, "Task #{id} is #{other}, not ready or blocked."}
+        end
+
+      [_] ->
+        {:error, "Only the claim holder or task owner can update this task."}
+
+      [] ->
+        {:error, "Task #{id} not found."}
     end
   end
 
@@ -1964,44 +1965,36 @@ defmodule Board do
     }
   end
 
+  # A schedule's target was checked when it was made (a thread, or a channel), and so was its body, so each is there.
   defp fire_scheduled_message(db, target, body, author, profile, no_sync) do
     id = Store.new_id("msg")
     now = Store.now_iso()
-    blocks_json = case Store.parse_and_validate_blocks(db, body) do
-      {:ok, blocks} -> JSON.encode!(blocks)
-      {:error, _} -> "[]"
-    end
+    {:ok, blocks} = Store.parse_and_validate_blocks(db, body)
 
-    case Store.query(db, "select channel from messages where id = ? and root_id is null", [target]) do
-      [%{"channel" => channel}] ->
-        Store.query(
-          db,
-          """
-          insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
-          values (?, ?, ?, null, ?, ?, ?, ?, 1, ?, ?)
-          """,
-          [id, channel, target, author, profile, body, blocks_json, no_sync, now]
-        )
+    {channel, root_id} =
+      case Store.query(db, "select channel from messages where id = ? and root_id is null", [target]) do
+        [%{"channel" => channel}] -> {channel, target}
+        [] -> {:ok, channel} = Store.validate_channel(target); {channel, nil}
+      end
 
-        %{id: id, channel: channel, root_id: target, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}
+    Store.query(
+      db,
+      """
+      insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
+      values (?, ?, ?, null, ?, ?, ?, ?, 1, ?, ?)
+      """,
+      [id, channel, root_id, author, profile, body, JSON.encode!(blocks), no_sync, now]
+    )
 
-      [] ->
-        case Store.validate_channel(target) do
-          {:ok, channel} ->
-            Store.query(
-              db,
-              """
-              insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
-              values (?, ?, null, null, ?, ?, ?, ?, 1, ?, ?)
-              """,
-              [id, channel, author, profile, body, blocks_json, no_sync, now]
-            )
+    %{id: id, channel: channel, root_id: root_id, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}
+  end
 
-            %{id: id, channel: channel, root_id: nil, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}
-
-          _ ->
-            nil
-        end
+  defp known_target(db, target) do
+    with [] <- Store.query(db, "select 1 from messages where id = ? and root_id is null", [target]),
+         {:error, why} <- Store.validate_channel(target) do
+      {:error, "A schedule's target is a thread's id or a channel. #{why}"}
+    else
+      _ -> :ok
     end
   end
 
@@ -2010,7 +2003,7 @@ defmodule Board do
 
     {clauses, params} =
       if is_binary(state) and state != "" do
-        {clauses ++ ["exists (select 1 from tasks t where t.root_id = m.id and t.state = ?)"], params ++ [state]}
+        {clauses ++ ["exists (select 1 from tasks t where t.root_id = m.id and #{Store.state_sql()} = ?)"], params ++ [state]}
       else
         {clauses, params}
       end
@@ -2145,8 +2138,7 @@ defmodule Board do
     case Artifact.size(call.own, blob) do
       {:ok, sz} when sz <= @max_attachment_bytes ->
         filename = if is_binary(name) and name != "", do: Path.basename(name), else: Path.basename(blob)
-        mime_type = if is_binary(mime) and mime != "", do: mime, else: "application/octet-stream"
-        {:ok, %{blob: blob, name: filename, mime_type: mime_type, size: sz}}
+        {:ok, %{blob: blob, name: filename, mime_type: safe_mime_type(mime), size: sz}}
 
       {:ok, _sz} ->
         {:error, "Attachment exceeds 100 MB limit."}
@@ -2155,6 +2147,17 @@ defmodule Board do
         {:error, "Uploaded file #{blob} was not found in the bucket."}
     end
   end
+
+  # What a file is served as: a picture or a PDF as itself, and anything else, an HTML page or an SVG that runs script
+  # included, as plain bytes.
+  @safe_mime_types ~w(image/png image/jpeg image/gif image/webp image/avif application/pdf)
+
+  defp safe_mime_type(mime) when is_binary(mime) do
+    kind = mime |> String.split(";") |> hd() |> String.trim() |> String.downcase()
+    if kind in @safe_mime_types, do: kind, else: "application/octet-stream"
+  end
+
+  defp safe_mime_type(_mime), do: "application/octet-stream"
 
   defp insert_attachment(db, msg_id, %{blob: blob, name: name, mime_type: mime, size: sz}, now) do
     att_id = Store.new_id("att")
@@ -2185,24 +2188,8 @@ defmodule Board do
       "no_sync" => msg.no_sync
     }
 
-    emit_safe(call, "message_posted", data, event_id: msg.id)
-    notify_hook(call, "message_posted", data)
-  end
-
-  defp notify_hook(call, name, payload) do
-    Call.run_hook(call, name, payload)
-  rescue
-    e ->
-      Logger.warning("board failed to run #{name}: #{Exception.message(e)}")
-      :ok
-  end
-
-  defp emit_safe(call, event, data, opts \\ []) do
-    Events.emit(call, event, data, opts)
-  rescue
-    e ->
-      Logger.warning("board failed to emit #{event}: #{Exception.message(e)}")
-      :ok
+    Events.emit(call, "message_posted", data, event_id: msg.id)
+    Call.run_hook(call, "message_posted", data)
   end
 
   defp notify_blocked(call, blocked, profile) do
@@ -2214,9 +2201,5 @@ defmodule Board do
       "text" => String.slice(blocked.question, 0, 140),
       "page" => "read&id=#{blocked.id}"
     })
-  rescue
-    e ->
-      Logger.warning("board failed to notify blocked task #{blocked.id}: #{Exception.message(e)}")
-      :ok
   end
 end
