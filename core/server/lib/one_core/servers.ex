@@ -215,10 +215,13 @@ defmodule OneCore.Servers do
   end
 
   @doc """
-  What was kept of who's ready, and of the build each runs, is read again, once one of the network's servers came or
-  went, and whoever waits for one to be back (`back/1`) looks again.
+  What was kept of which servers there are, who's ready, and the build each runs, is read again, once one of the
+  network's servers came or went, and whoever waits for one to be back (`back/1`) looks again. A server that's new
+  came: kept, `all/0` would leave it out, and the network's apps deployed after it came would never reach it.
   """
   def presence_again do
+    Cache.invalidate(__MODULE__, :all)
+
     for {kept, _key} = what <- Cache.keys(__MODULE__), kept in [:presence, :build],
         do: Cache.invalidate(__MODULE__, what)
 
