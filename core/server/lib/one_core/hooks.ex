@@ -87,11 +87,12 @@ defmodule OneCore.Hooks do
   # to invalidate it: how long a grant that's taken away may still be answered from a server that wasn't told.
   @ttl 10_000
 
-  # Where what each of `cached/0` answered is cached. These two are asked of the same thing again and again: whether
-  # someone may reach an artifact, at every read of one, and whose a device is, at every call from it. What the
+  # Where what each of `cached/0` answered is cached. These are asked of the same thing again and again: whether
+  # someone may reach an artifact, at every read of one, whose a device is, at every call from it, and which groups
+  # someone is in, at every call an assistant makes. What the
   # others are asked is a call's own inputs or a moment that happens once, so an answer kept would never be asked
   # again.
-  @caches %{"reach" => __MODULE__.Reach, "device" => __MODULE__.Device}
+  @caches %{"reach" => __MODULE__.Reach, "device" => __MODULE__.Device, "groups" => __MODULE__.Groups}
 
   @doc "Makes where which apps hook into what is kept. Whatever calls this owns it."
   def keep, do: :ets.new(__MODULE__, [:named_table, read_concurrency: true])
@@ -308,6 +309,21 @@ defmodule OneCore.Hooks do
       end
     end)
   end
+
+  @doc """
+  The groups the user `who` is a member of, as the apps installed for the network that collect `groups` say, kept
+  as `whose/1` keeps a device's. An app that couldn't answer adds none, and what's answered without it isn't kept.
+  """
+  def groups("users/" <> _ = who) do
+    Cache.fetch(@caches["groups"], who, fn ->
+      {:ok, parts, failed} = collect("groups", %{"who" => who}, {nil, "network"})
+      groups = for {_app, %{"groups" => groups}} <- parts, "groups/" <> _ = group <- List.wrap(groups), do: group
+      groups = Enum.sort(Enum.uniq(groups))
+      if failed == %{}, do: {:commit, groups, expire: @ttl}, else: {:ignore, groups}
+    end)
+  end
+
+  def groups(_who), do: []
 
   # A hook whose app keeps what it needs where another server writes it is answered there.
   defp call_hook({at, app}, kind, hook, about, principal) do

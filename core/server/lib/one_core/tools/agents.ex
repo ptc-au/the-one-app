@@ -19,7 +19,7 @@ defmodule OneCore.Tools.Agents do
           query,
           Map.get(inputs, "limit", 8),
           tools,
-          Apps.running(subject),
+          Apps.reached(subject),
           Task.await(deployed, 30_000),
           request.mode
         )
@@ -39,7 +39,7 @@ defmodule OneCore.Tools.Agents do
             output: tool[:outputSchema]
           }
 
-    namespaces = Map.new(Apps.running(subject), fn {name, version} -> {name, Search.described(version)} end)
+    namespaces = Map.new(Apps.reached(subject), fn {name, version} -> {name, Search.described(version)} end)
 
     case CodeMode.run(code, tools, namespaces, request.call) do
       {:ok, text} -> %{text: text}

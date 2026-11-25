@@ -117,11 +117,13 @@ defmodule OneCore.Mcp.Principal do
       else: {:error, "This server doesn't act for #{owner}. The ones that do are the ones to ask."}
   end
 
-  # Whether a request by `by` runs for `subject`: themselves, or whoever the apps that validate `reach` say they're one
-  # of `relations` of. Where they're none, it's why they aren't the first.
-  defp acts(by, by, _relations), do: :ok
+  @doc """
+  Whether a request by `by` runs for `subject`: themselves, or whoever the apps that validate `reach` say they're one
+  of `relations` of. `:ok`, or where they're none, `{:error, why}` they aren't the first.
+  """
+  def acts(by, by, _relations), do: :ok
 
-  defp acts(by, subject, relations) do
+  def acts(by, subject, relations) do
     cond do
       not User.owner?(subject) ->
         {:error, "A request is for a user, a group or the network: users/<name>, groups/<name> or network"}

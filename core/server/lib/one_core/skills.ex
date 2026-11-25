@@ -242,7 +242,7 @@ defmodule OneCore.Skills do
 
     case found do
       [] -> :absent
-      [{_skill, :own, _at}] -> {:ok, App.skill(Apps.running(who))}
+      [{_skill, :own, _at}] -> {:ok, App.skill(Apps.reached(who))}
       [{_skill, {:own, text}, _at}] -> {:ok, text}
       [{skill, :ui, at}] -> {:ok, Entrypoint.library().files[skill.at <> at]}
       [{skill, {artifact, code}, at}] -> file(artifact, code, skill.at <> at)
@@ -268,7 +268,7 @@ defmodule OneCore.Skills do
   # Each skill by its path, with where its files are: One Core's own, then the apps' by the names they're installed
   # by. They're found once for each set of versions running and this build of the server.
   defp found(who) do
-    running = Apps.running(who)
+    running = Apps.reached(who)
     versions = for {name, version} <- Enum.sort(running), do: {name, version.artifact, version.code}
     Cache.fetch(__MODULE__, {:found, Builds.build(), versions}, fn -> {:commit, found_in(running)} end)
   end

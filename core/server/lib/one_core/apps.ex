@@ -122,6 +122,29 @@ defmodule OneCore.Apps do
   @doc "The apps something that runs for `who` finds, by name: each one's `Version`, which holds its tools, its skill and its apps."
   def running(who), do: versions(chain(who))
 
+  @doc """
+  The copies of the apps `who` reaches, by each app's name, each `{owner, version}`, narrowest first. A user (not a
+  sharing link's holder) reaches their own, or else the network's, as `running/1` finds it, and that of each group
+  they're in, as the apps that collect `groups` say (`OneCore.Hooks.groups/1`). Anyone else reaches what `running/1`
+  gives, as theirs.
+  """
+  def copies("users/" <> _ = who) do
+    if User.link?(who) do
+      Map.new(running(who), fn {name, version} -> {name, [{who, version}]} end)
+    else
+      own = versions([who])
+      running = for {name, version} <- running(who), do: {name, {if(is_map_key(own, name), do: who, else: @network), version}}
+      grouped = for group <- Hooks.groups(who), {name, version} <- versions([group]), do: {name, {group, version}}
+      {mine, network} = Enum.split_with(running, fn {_name, {owner, _version}} -> owner == who end)
+      Enum.group_by(mine ++ grouped ++ network, &elem(&1, 0), &elem(&1, 1))
+    end
+  end
+
+  def copies(who), do: Map.new(running(who), fn {name, version} -> {name, [{who, version}]} end)
+
+  @doc "The narrowest copy of each app `who` reaches (`copies/1`), by its name."
+  def reached(who), do: Map.new(copies(who), fn {name, [{_owner, version} | _]} -> {name, version} end)
+
   @doc "The apps installed for `owners`, by name, the first's found first. One this server hasn't looked at is first."
   def versions(owners) do
     with :unknown <- ask({:running, owners}) do

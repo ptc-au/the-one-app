@@ -432,26 +432,26 @@ defmodule OneCore.Mcp do
     end
   end
 
-  defp result("tools/call", %{"name" => name} = params, from, {_actor, subject} = principal, forwarded) do
-    case caller(name, meta(params), principal, from) do
-      {:ok, caller} ->
-        request = %{mode: mode(params), tools: fn -> scripted(subject) end, call: called(from, principal, forwarded)}
+  defp result("tools/call", %{"name" => name} = params, from, principal, forwarded) do
+    with {:ok, principal, params} <- whose(name, params, principal, forwarded),
+         {:ok, caller} <- caller(name, meta(params), principal, from) do
+      {_actor, subject} = principal
+      request = %{mode: mode(params), tools: fn -> scripted(principal) end, call: called(from, principal, forwarded)}
 
-        found = tool(name, subject)
+      found = tool(name, subject)
 
-        run = fn ->
-          inputs = Map.get(params, "arguments", %{})
-          unkept(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found, principal), found)
-        end
+      run = fn ->
+        inputs = Map.get(params, "arguments", %{})
+        unkept(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found, principal), found)
+      end
 
-        # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
-        write = Writes.asked(meta(params), from, Process.get(:"$one_request", %{})[:client], subject, acting(meta(params), principal))
-        outcome = asked(found, name, run, params, principal, caller, write)
-        Writes.answered(write, outcome)
-        outcome
-
-      {:error, why} ->
-        rendered(name, {:error, why}, principal)
+      # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
+      write = Writes.asked(meta(params), from, Process.get(:"$one_request", %{})[:client], subject, acting(meta(params), principal))
+      outcome = asked(found, name, run, params, principal, caller, write)
+      Writes.answered(write, outcome)
+      outcome
+    else
+      {:error, why} -> rendered(name, {:error, why}, principal)
     end
   end
 
@@ -501,8 +501,8 @@ defmodule OneCore.Mcp do
   end
 
   # A sharing link's holder is told of the tools they may call, and of nothing else that's in the network.
-  defp result("tools/list", params, _from, {actor, subject}, _forwarded) do
-    {:ok, %{tools: listed(subject, holder?(actor), mode(params))}}
+  defp result("tools/list", params, _from, principal, _forwarded) do
+    {:ok, %{tools: listed(principal, mode(params))}}
   end
 
   defp result("skills/list", _params, _from, principal, _forwarded),
@@ -531,6 +531,73 @@ defmodule OneCore.Mcp do
   defp result(method, _params, _from, _principal, _forwarded),
     do: {:error, -32601, "This server has no method #{method}"}
 
+  # Who a call of an app's tool is for, where whoever asks asks for themselves: the copy of the app it's of that `for`
+  # names, or the narrowest (`copies/1`), unless that's one of two or more groups', which `for` then says. A group's
+  # runs for the group, by whoever asked, once they may ask for it as they would by naming it (`OneCore.Mcp.Principal`).
+  # Their own, or else the network's, runs for them, as any of theirs does. A call another server passed on was
+  # decided there, and a request that names whose it is says it already.
+  defp whose(name, params, {actor, actor} = principal, false) do
+    arguments = Map.get(params, "arguments") || %{}
+
+    with [app, tool] <- String.split(name, "_", parts: 2),
+         false <- Enum.any?(Tools.tools(), &(&1.name == name)),
+         [{first, version} | _] = having <- having(copies(principal)[app] || [], tool) do
+      owners = Enum.map(having, &elem(&1, 0))
+
+      cond do
+        length(having) == 1 or takes_for?(version, tool) ->
+          ran(first, arguments, params, principal)
+
+        owner = arguments["for"] ->
+          if owner in owners,
+            do: ran(owner, Map.delete(arguments, "for"), params, principal),
+            else: {:error, "`for` is whose #{app} it is, one of #{Enum.join(owners, ", ")}"}
+
+        owner = chosen(having) ->
+          ran(owner, arguments, params, principal)
+
+        true ->
+          {:error, "#{app} is installed for more than one of your groups, so say which, as `for`: #{Enum.join(owners, ", ")}"}
+      end
+    else
+      _ -> {:ok, principal, params}
+    end
+  end
+
+  defp whose(_name, params, principal, _forwarded), do: {:ok, principal, params}
+
+  defp ran("groups/" <> _ = group, arguments, params, {actor, _subject}) do
+    with :ok <- Principal.acts(actor, group, relations("tools/call", params)),
+         do: {:ok, {actor, group}, Map.put(params, "arguments", arguments)}
+  end
+
+  defp ran(_owner, arguments, params, principal), do: {:ok, principal, Map.put(params, "arguments", arguments)}
+
+  # The copies of the apps whoever asks reaches, by each app's name, narrowest first: someone asking for themselves
+  # those of the groups they're in too (`OneCore.Apps.copies/1`), which they'd otherwise reach only by asking for the
+  # group, as an assistant such as claude.ai's can't. A request for someone else, a group or the network, reaches
+  # theirs.
+  defp copies({actor, actor}), do: Apps.copies(actor)
+  defp copies({_actor, subject}), do: Map.new(Apps.running(subject), fn {name, version} -> {name, [{subject, version}]} end)
+
+  # The copies that have the tool `tool`.
+  defp having(copies, tool), do: Enum.filter(copies, fn {_owner, version} -> Enum.any?(version.tools, &(&1.name == tool)) end)
+
+  # The copy a call that doesn't say `for` runs, of those that have its tool: the narrowest, or `nil` where that's
+  # one of two or more groups'.
+  defp chosen([{owner, _} | rest]) do
+    groups = &match?({"groups/" <> _, _}, &1)
+    if groups.({owner, nil}) and Enum.any?(rest, groups), do: nil, else: owner
+  end
+
+  # Whether an app's tool takes an input `for` of its own, as Server Debug's does, which is then its own: it's
+  # called for the narrowest copy, and ours isn't added.
+  defp takes_for?(version, tool) do
+    found = Enum.find(version.tools, &(&1.name == tool))
+    properties = found.inputs[:properties] || found.inputs["properties"] || %{}
+    is_map_key(properties, :for) or is_map_key(properties, "for")
+  end
+
   # Who acts for a write asked here (`OneCore.Writes.asked/5`), a group's servers for its members too
   # (`OneCore.Apps.covering/1`): whether this server does for whose it is, and so keeps its key, and, for one asked
   # again, the servers that could have been asked it first, any of which may have run it.
@@ -549,7 +616,9 @@ defmodule OneCore.Mcp do
       for %{uri: uri, frontmatter: %{"name" => name, "description" => description}} <- Skills.list(who),
           do: %{uri: uri, name: name, description: description, mimeType: "text/markdown"}
 
-    running = Enum.sort(Apps.running(who))
+    # Each copy of an app whoever asks reaches (`OneCore.Apps.copies/1`), a group's too: its tools' pages are under
+    # its own version.
+    running = Enum.uniq(for {app, copies} <- Enum.sort(Apps.copies(who)), {_owner, version} <- copies, do: {app, version})
 
     # A tool's page is listed as an entrypoint's is, under its app's name, with the runtime version it says, but
     # with no icon: it isn't an app on a device's list of them (`clients/app/src/shortcuts.rs`).
@@ -633,7 +702,7 @@ defmodule OneCore.Mcp do
   defp resources("resources/read", %{"uri" => uri}, who) do
     with ["ui:", "", app, code, path] <- String.split(uri, "/", parts: 5),
          true <- Version.client?(path),
-         %{^app => version} <- Apps.running(who),
+         {_owner, version} <- Enum.find(Apps.copies(who)[app] || [], &(elem(&1, 1).code == code)),
          {:ok, data} <- Store.file(version.artifact, code, path) do
       data = if Path.extname(path) == ".html", do: mapped(data, path, [app | Map.keys(version.requires)]), else: data
       {:ok, %{contents: [Map.merge(%{uri: uri, mimeType: Version.kind(path)}, content(data))]}}
@@ -690,7 +759,7 @@ defmodule OneCore.Mcp do
 
   # The tools a script has, and that `search` finds among: those every client is listed but code mode's own, and but
   # those a device fills in with what only it holds, its own key, which a script on a server has none of. An agent calls those as plain tools on the device (`one mcp`, `one encryption …`).
-  defp scripted(who), do: Enum.reject(listed(who, false, :mcp), &on_device?/1)
+  defp scripted(principal), do: Enum.reject(listed(principal, :mcp), &on_device?/1)
 
   @on_device ~w(device device-name)
 
@@ -706,10 +775,13 @@ defmodule OneCore.Mcp do
     end
   end
 
-  # Every tool there is for `who` as `mode` lists them, One Core's own first, or only those a sharing link's holder may
-  # call. Code mode lists only One Core's that say so (`OneCore.Tools`). An app's says whose it is, and one with a page
-  # of its own names it as an MCP App's tool names its UI, and the address its screen is at, its `path`.
-  defp listed(who, holder, mode) do
+  # Every tool there is for whoever asks as `mode` lists them, One Core's own first, or only those a sharing link's
+  # holder may call. Code mode lists only One Core's that say so (`OneCore.Tools`). An app's says whose it is, and one
+  # with a page of its own names it as an MCP App's tool names its UI, and the address its screen is at, its `path`.
+  # One whose app they reach more than one copy of (`copies/1`) takes `for`, whose it is (`whose/4`), listed once by
+  # the narrowest copy that has it.
+  defp listed({actor, _subject} = principal, mode) do
+    holder = holder?(actor)
     open = fn tools -> if holder, do: Enum.filter(tools, &(&1[:by_link] == true)), else: tools end
 
     listed = fn name, tool ->
@@ -729,13 +801,36 @@ defmodule OneCore.Mcp do
           do: listed.(tool.name, tool)
 
     apps =
-      for {app, version} <- Enum.sort(Apps.running(who)), holder or mode != :code, tool <- open.(version.tools) do
+      for {app, copies} <- Enum.sort(copies(principal)),
+          holder or mode != :code,
+          tool <- Enum.uniq_by(Enum.flat_map(copies, &open.(elem(&1, 1).tools)), & &1.name) do
         ui = if tool[:ui], do: %{:ui => %{resourceUri: router()}, "openai/outputTemplate" => router()}, else: %{}
         ui = if tool[:ui] && tool[:path], do: Map.put(ui, :path, tool.path), else: ui
-        Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(ui, :app, app))
+        listed = Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(ui, :app, app))
+        having = having(copies, tool.name)
+        if length(having) > 1 and not takes_for?(elem(hd(having), 1), tool.name), do: with_for(listed, app, having), else: listed
       end
 
     own ++ apps
+  end
+
+  # A tool's schema with `for`, whose copy of `app` it's called for, of those it's in, as whoever asks names them.
+  defp with_for(listed, app, having) do
+    owners = Enum.map(having, &elem(&1, 0))
+    default = chosen(having)
+
+    said =
+      if default,
+        do: "Whose #{app} this is for: #{Enum.join(owners, ", ")}. Left out, it's #{default}'s.",
+        else: "Whose #{app} this is for: #{Enum.join(owners, ", ")}. It's installed for more than one of your groups, so say which."
+
+    # A schema an untrusted app said is JSON, by text, and one in Elixir by atoms: `for` is said the same way.
+    schema = listed.inputSchema
+    key = if Enum.any?(Map.keys(schema), &is_binary/1), do: &Atom.to_string/1, else: & &1
+    property = %{key.(:type) => "string", key.(:enum) => owners, key.(:description) => said}
+    schema = Map.update(schema, key.(:properties), %{key.(:for) => property}, &Map.put(&1, key.(:for), property))
+    schema = if default, do: schema, else: Map.update(schema, key.(:required), ["for"], &(&1 ++ ["for"]))
+    %{listed | inputSchema: schema}
   end
 
   # The page an assistant shows every app's tool with a page of its own in, as one MCP App (Sentry's MCP server's
@@ -971,7 +1066,7 @@ defmodule OneCore.Mcp do
 
     case mode do
       :holder -> network
-      _ -> fitted(Enum.join([network, finding, skills], "\n\n"), Enum.sort(Map.keys(Apps.running(who))))
+      _ -> fitted(Enum.join([network, finding, skills], "\n\n"), Enum.sort(Map.keys(Apps.copies(who))))
     end
   end
 

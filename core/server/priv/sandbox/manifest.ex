@@ -272,6 +272,14 @@ defmodule OneCore.App.Manifest do
      An app that can wake it, as one that holds its push token, does, and answers `%{"woken" => true}`: One Core
      then waits for its app to connect. `nil` is no part.
      """},
+    {"groups", :collect,
+     """
+     An assistant asks what it can use for someone, and One Core is about to list the apps of the groups they're in
+     beside their own and the network's. It's asked of the apps installed for the network, and it's about `who`, a
+     user. An app that keeps who's in which group answers `%{"groups" => ["groups/<name>", …]}`, each group they're a
+     member of, as it would validate `reach` for them. What's answered is kept for a few seconds, and until a tool of
+     the app is called that doesn't only read. `nil` is no part.
+     """},
     {"source", :collect,
      """
      A server is fetching the git repo an app was deployed from, to find its update or take one

@@ -60,8 +60,10 @@ defmodule OneCore.Tools.Apps do
   def run("apps", inputs, {_actor, subject}, _pass, _request) do
     owner = User.owner(subject)
 
+    # A user's own, then those of the groups they're in, whose tools they call too (`OneCore.Apps.copies/1`), then
+    # the network's.
     installed =
-      for at <- Apps.chain(subject),
+      for at <- Enum.uniq(List.wrap(owner) ++ Hooks.groups(subject) ++ Apps.chain(subject)),
           {name, record} <- Enum.sort(Installed.read(at)),
           inputs["name"] in [nil, name],
           at == owner or record["state"] in ["installing", "installed"],
