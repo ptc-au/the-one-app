@@ -259,9 +259,9 @@ defmodule OneCore.Server do
     do: notify(Enum.uniq(Enum.flat_map(owners, &told/1)), owners, what, params)
 
   # The network's apps run on every server, a person's own too, for them (`OneCore.Apps.loads?/1`), and anyone else's on
-  # the servers acting for them.
+  # the servers acting for them, a group's they're in too (`OneCore.Apps.covering/1`).
   defp told("network"), do: Servers.up()
-  defp told(owner), do: Servers.covering(owner)
+  defp told(owner), do: OneCore.Apps.covering(owner)
 
   @doc "Tells `server` to cancel the call it's running for what this server asked it as `request` (`request/3`)."
   def cancel(server, request) do
