@@ -194,6 +194,9 @@ export let front
 export let stack = [{ key: null, at: history.length - 1 }]
 /// How deep the entry the window is on is: 0 at the launcher's.
 export let depth = 0
+/// The key of the app an entry shows, which the launcher's entry, `null`, has as the launcher's.
+/** @param {{ key: string | null } | undefined} entry */
+const shows = (entry) => (entry ? (entry.key ?? baseKey()) : undefined)
 /// The key of the app the window's entry shows, or `null` for the launcher.
 export const here = () => stack[depth]?.key ?? null
 /// Goes back to the launcher's history entry, past each app's screens on the way, the one showing's too: where the
@@ -217,10 +220,10 @@ let quiet = 0
 /** @param {View} view @param {string} place @param {boolean} [navigated] */
 export function reached(view, place, navigated) {
   const now = stack[depth]
-  if (!pathOf || now?.key !== view.key || (now.place ?? "") === place) return
+  if (!pathOf || !now || shows(now) !== view.key || (now.place ?? "") === place) return
   if (!navigated && (now.place ?? "").split("&")[0] === place) return
   const before = stack[depth - 1]
-  if (before?.key === view.key && (before.place ?? "") === place) {
+  if (before && shows(before) === view.key && (before.place ?? "") === place) {
     quiet += 1
     return history.back()
   }
@@ -382,6 +385,12 @@ export function go(link, subject, behind, from) {
   if (behind) return true
   if (next.key === baseKey()) {
     if (depth) backHome()
+    // Its screens are entries of their own as an app's are (`reached`), over the one at the launcher's address.
+    if (pathOf && fragment) {
+      depth += 1
+      history.pushState(depth, "", pathOf(link))
+      stack.splice(depth, Infinity, { key: next.key, at: history.length - 1, place: fragment })
+    }
     return true
   }
   // The way back out of an app is an entry in this window's history, made as it's opened, so the device's back
@@ -451,7 +460,7 @@ addEventListener("popstate", (event) => {
   // Within one app, its page is taken to the entry's place, as a link to it: what's open past it closes (the UI
   // library's `Split`), and an app that follows its links opens it.
   const now = stack[to]
-  if (was && now && was !== now && was.key === now.key) post(view, { method: "ui/notifications/host-context-changed", params: { link: now.place ?? "" } })
+  if (was && now && was !== now && shows(was) === shows(now)) post(view, { method: "ui/notifications/host-context-changed", params: { link: now.place ?? "" } })
 })
 
 // Back online, or back in front, its network is tried again now if it didn't answer.

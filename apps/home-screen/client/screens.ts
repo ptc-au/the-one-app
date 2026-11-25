@@ -1,5 +1,5 @@
 import { createEffect, createMemo, untrack } from "solid-js"
-import { link, safeArea, toolInput, viewport } from "ui"
+import { link, navigate, safeArea, toolInput, viewport } from "ui"
 import { launcherRoom, measure } from "./layout.ts"
 import { type Kind, pack, type Page, shown, spans } from "./machine.ts"
 import { home, state, seen, at, screensOf, lastOf, editingNow, editing, drafts, editingOwner, launcher, room, setRoom, kept, setKept } from "./store.ts"
@@ -49,22 +49,29 @@ export function createScreens(props: { owners: Owner[] }) {
     { defer: true },
   )
   createEffect(laid, ({ owners, screens, fit }) => home.send({ type: "laid", owners, screens, fit }))
-  /// A link to the App Library, `one:home-screen#library` (`home-screen_library`, at /home-screen/library), shows the
-  /// first of it, as its mark in the dots does, once there is one, each time it's followed.
+  /// The App Library is a screen of the page's like any app's, `home-screen_library` at /home-screen/library, and the Home
+  /// screenfuls are `home-screen_pages` at `/`: a link, reload or Back to one shows it, and showing one by hand, as the
+  /// pager or the library button does, navigates to it, so its address says it and Back goes back.
   createEffect(
-    () => (link(), toolInput("home-screen_pages").name === "home-screen_library" && { screens: laid().screens }),
-    (now) => {
-      const library = now ? (now.screens[home.getSnapshot().context.at.owner]?.indexOf("library") ?? -1) : -1
-      if (library >= 0) home.send({ type: "link", screen: library })
+    () => (link(), { wanted: toolInput("home-screen_pages").name === "home-screen_library", screens: laid().screens }),
+    ({ wanted, screens }) => {
+      const { owner, screen } = home.getSnapshot().context.at
+      const library = screens[owner]?.indexOf("library") ?? -1
+      if (library < 0 || wanted === (screen === library)) return
+      home.send(wanted ? { type: "link", screen: library } : { type: "go", screen: library - 1 })
     },
   )
-
   const library = () => kindOf(at().owner) === "library"
   /// The section of the screenful an owner is on: the one shown, for whoever's shown.
   const kindOf = (owner: number) => {
     const [last, screens] = [lastOf(), screensOf()]
     return screens[owner]?.[owner === seen().owner ? seen().screen : (last[owner] ?? 0)] ?? "home"
   }
+  createEffect(
+    () => library(),
+    (now) => navigate(now ? "home-screen_library" : "home-screen_pages"),
+    { defer: true },
+  )
   return { owned, editBar, editBarGoing, overview, overviewGoing, pages, screens, homes, laid, library, kindOf }
 }
 
