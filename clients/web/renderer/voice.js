@@ -20,7 +20,7 @@ export function voices() {
     /** @param {number} id @param {string} name @param {unknown} value */
     set(id, name, value) {
       if (!all.has(id)) return
-      if (name === "ice" || name === "answer" || name === "offer" || name === "muted") ask(id, "set", { name, value })
+      if (name === "ice" || name === "answer" || name === "offer" || name === "muted" || name === "input" || name === "output") ask(id, "set", { name, value })
     },
     dropped(/** @type {number} */ id) {
       if (all.delete(id)) ask(id, "drop")

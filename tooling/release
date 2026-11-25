@@ -451,7 +451,7 @@ servers=($(printf '%s\n' "${mine[@]}" | sed -n 's|^server/||p'))
 mac_bundle_signed() {
   local folder bundle
   folder=$(mktemp -d) && bundle=$folder/app.app && cp -R clients/app/macos "$bundle" && mkdir "$bundle/Contents/MacOS" &&
-    gunzip -c "$1" >"$bundle/Contents/MacOS/one" && chmod +x "$bundle/Contents/MacOS/one" && tooling/developer-id-sign --entitlements-xml-path clients/app/macos/entitlements.plist "$bundle" &&
+    gunzip -c "$1" >"$bundle/Contents/MacOS/one" && chmod +x "$bundle/Contents/MacOS/one" && tooling/developer-id-sign --entitlements-xml-path clients/app/macos.entitlements "$bundle" &&
     { cmp -s "$bundle/Contents/_CodeSignature/CodeResources" clients/app/macos/Contents/_CodeSignature/CodeResources ||
       { echo "The Mac app's seal isn't clients/app/macos's: put rcodesign's in its place." >&2 && false; }; } &&
     gzip -9 -c "$bundle/Contents/MacOS/one" >"$1" && rm -r "$folder"

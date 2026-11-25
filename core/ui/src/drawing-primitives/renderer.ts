@@ -182,6 +182,15 @@ export interface Event {
   height?: number
   /** A `voice`'s `speaking`: whether the person is speaking, as its microphone's level says. */
   speaking?: boolean
+  /** A `voice`'s `devices`: the system's audio inputs and outputs. */
+  inputs?: VoiceDevice[]
+  outputs?: VoiceDevice[]
+}
+
+/** An audio input or output device a `voice` can use. */
+export interface VoiceDevice {
+  id: string
+  label: string
 }
 
 /** A trackpad's fingers' phase, by AppKit's names. */
@@ -206,9 +215,9 @@ export interface Rect {
  * Finder's, an Explorer's), each its `name` and its bytes as base64 (`body`), under `files`. */
 export type EventName = "click" | "input" | "action" | "focus" | "blur" | "keydown" | "pointerenter" | "pointerleave" | "scroll" | "layout" | "intersection" | "range" | "drop" | Moved | Streamed
 
-/** What a `video` tells its page of its stream, and a `voice` of its call: `offer`, `answer`, `state`, `size` and
- * `speaking`. */
-export type Streamed = "offer" | "answer" | "state" | "size" | "speaking"
+/** What a `video` tells its page of its stream, and a `voice` of its call: `offer`, `answer`, `state`, `size`,
+ * `speaking` and `devices`. */
+export type Streamed = "offer" | "answer" | "state" | "size" | "speaking" | "devices"
 
 /** What a page that's moved by hand listens for, as the Home Screen's pages are, a finger's or a mouse's, as the DOM
  * names them: a pointer's (`pointerdown` to `pointercancel`) go to the node under it and to each node it's in that
@@ -383,11 +392,14 @@ export interface Props {
    * (Motion's `layout`), and from where what has the same `layoutId` was a moment ago, where it's new. */
   layout?: boolean
   layoutId?: string
+  input?: string
+  output?: string
   onOffer?: true
   onAnswer?: true
   onState?: true
   onSize?: true
   onSpeaking?: true
+  onDevices?: true
 }
 
 /** What a `video` connects with, as WebRTC's `RTCConfiguration` has it. */

@@ -53,7 +53,7 @@ pub(crate) mod fake;
 #[cfg(feature = "fake")]
 use fake::{Display, Handle, NativeWindow, appearance, button_layout, clipboard, open_files, reduced_motion};
 #[cfg(target_os = "android")]
-mod android;
+pub(crate) mod android;
 /// A native screen's semantic tree as AccessKit's, for each phone's screen reader.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub(crate) mod a11y;

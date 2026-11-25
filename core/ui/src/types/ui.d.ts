@@ -226,6 +226,12 @@ export type VideoProps = {
 }
 export declare function Video(props: VideoProps): Element
 
+/** An audio input or output device a `voice` can use. */
+export type VoiceDevice = {
+  id: string
+  label: string
+}
+
 /** A call's audio over WebRTC, which the host connects and plays (renderer.ts's `voice`): the page does its
  * signalling, a new `ice` connecting, its `offer` answered with the screen's `answer`, and an SFU's `offer` answered
  * as `onAnswer`. It draws nothing. */
@@ -236,11 +242,17 @@ export type VoiceProps = {
   offer?: string
   /** The microphone isn't sent. */
   muted?: boolean
+  /** The audio input device id (empty or omitted for system default). */
+  input?: string
+  /** The audio output device id (empty or omitted for system default). */
+  output?: string
   onOffer?: (event: { sdp: string }) => void
   onAnswer?: (event: { sdp: string }) => void
   onState?: (event: { state: "connecting" | "connected" | "lost" }) => void
   /** Whether the person is speaking, as the microphone's level says. */
   onSpeaking?: (event: { speaking: boolean }) => void
+  /** Available audio input and output devices, once permission is granted and whenever devices change. */
+  onDevices?: (event: { inputs: VoiceDevice[]; outputs: VoiceDevice[] }) => void
 }
 export declare function Voice(props: VoiceProps): Element
 

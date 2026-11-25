@@ -26,6 +26,8 @@ impl Screen {
                         }
                     }
                     "muted" => voice.mute(value.as_bool().unwrap_or(false)),
+                    "input" => voice.input(value.as_str().filter(|name| !name.is_empty())),
+                    "output" => voice.output(value.as_str().filter(|name| !name.is_empty())),
                     _ => {}
                 }
             }

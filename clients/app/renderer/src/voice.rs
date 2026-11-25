@@ -48,6 +48,10 @@ enum Command {
     Offer(String),
     /// The microphone's, mono at its device's rate.
     Mic(Vec<f32>),
+    /// Switch to another audio input device (or system default when `None`).
+    Input(Option<String>),
+    /// Switch to another audio output device (or system default when `None`).
+    Output(Option<String>),
     Close,
 }
 
@@ -65,6 +69,9 @@ pub(crate) struct Voice {
     shared: Arc<Mutex<Shared>>,
     /// Its microphone is off, as its page last said.
     muted: bool,
+    /// Chosen audio input and output device names (system default when `None`).
+    input: Option<String>,
+    output: Option<String>,
     /// An SFU's offer its page set, which its connection may not have been made for yet.
     offer: Option<String>,
     /// It's been in its page, so it's closed once it's out of it (`Screen::sync_voices`).
@@ -90,6 +97,8 @@ impl Voice {
         self.shared = shared.clone();
         self.commands = Some(commands.clone());
         let muted = self.muted;
+        let input = self.input.clone();
+        let output = self.output.clone();
         let offer = self.offer.clone();
         let ice = ice.clone();
         let _ = std::thread::Builder::new().name("voice".into()).spawn(move || {
@@ -98,7 +107,7 @@ impl Voice {
             if let Some(sdp) = offer {
                 let _ = commands.send(Command::Offer(sdp));
             }
-            match connection(ice, muted, &commands, &received, &out) {
+            match connection(ice, muted, input, output, &commands, &received, &out) {
                 Ok(why) => eprintln!("A voice's connection ended: {why}"),
                 Err(why) => eprintln!("A voice's connection failed: {why:#}"),
             }
@@ -131,6 +140,26 @@ impl Voice {
     pub fn mute(&mut self, muted: bool) {
         self.muted = muted;
         lock(&self.shared).muted = muted;
+    }
+
+    /// Its audio input device by name (`None` for the system default).
+    pub fn input(&mut self, name: Option<&str>) {
+        let next = name.map(str::to_owned);
+        if self.input == next {
+            return;
+        }
+        self.input = next.clone();
+        self.send(Command::Input(next));
+    }
+
+    /// Its audio output device by name (`None` for the system default).
+    pub fn output(&mut self, name: Option<&str>) {
+        let next = name.map(str::to_owned);
+        if self.output == next {
+            return;
+        }
+        self.output = next.clone();
+        self.send(Command::Output(next));
     }
 
     fn send(&self, command: Command) {
@@ -169,6 +198,8 @@ impl Out {
 fn connection(
     ice: Value,
     muted: bool,
+    input: Option<String>,
+    output: Option<String>,
     commands: &Sender<Command>,
     received: &Receiver<Command>,
     out: &Out,
@@ -202,9 +233,9 @@ fn connection(
         pt: None,
         sent: 0,
         speaking: false,
-        audio: Audio::open(commands)?,
+        audio: Audio::open(commands, input.as_deref(), output.as_deref(), out)?,
     };
-    session.run(received, out)
+    session.run(commands, received, out)
 }
 
 struct Session {
@@ -225,7 +256,7 @@ struct Session {
 }
 
 impl Session {
-    fn run(&mut self, received: &Receiver<Command>, out: &Out) -> anyhow::Result<String> {
+    fn run(&mut self, commands: &Sender<Command>, received: &Receiver<Command>, out: &Out) -> anyhow::Result<String> {
         loop {
             if let Some(why) = self.ended.take() {
                 return Ok(why);
@@ -262,6 +293,16 @@ impl Session {
                 }
                 Ok(Command::Offer(sdp)) => self.answered(&readable(&sdp), out)?,
                 Ok(Command::Mic(samples)) => self.heard(&samples, out)?,
+                Ok(Command::Input(name)) => {
+                    if DEVICES {
+                        self.audio.microphone(commands, name.as_deref());
+                    }
+                }
+                Ok(Command::Output(name)) => {
+                    if DEVICES {
+                        self.audio.speaker(name.as_deref());
+                    }
+                }
                 // What the TURN server sent, which the next turn takes.
                 Ok(Command::Wake) => {}
                 Ok(Command::Close) | Err(RecvTimeoutError::Disconnected) => return Ok("it was closed".into()),
@@ -554,10 +595,42 @@ struct Audio {
 /// The frame format every codec here takes: 10 ms of 48 kHz mono.
 const FORMAT: AudioFormat = AudioFormat::ten_ms(RATE as u32, 1);
 
+/// Enumerates the host's audio input and output devices for the page's `onDevices` event.
+fn list_devices() -> Value {
+    let host = cpal::default_host();
+    let mut inputs = Vec::new();
+    let mut seen_in = std::collections::HashSet::new();
+    if let Ok(devices) = host.input_devices() {
+        for device in devices {
+            if let (Ok(id), Ok(desc)) = (device.id(), device.description()) {
+                let id = id.to_string();
+                let label = desc.name().to_owned();
+                if !id.is_empty() && !label.is_empty() && seen_in.insert(id.clone()) {
+                    inputs.push(json!({"id": id, "label": label}));
+                }
+            }
+        }
+    }
+    let mut outputs = Vec::new();
+    let mut seen_out = std::collections::HashSet::new();
+    if let Ok(devices) = host.output_devices() {
+        for device in devices {
+            if let (Ok(id), Ok(desc)) = (device.id(), device.description()) {
+                let id = id.to_string();
+                let label = desc.name().to_owned();
+                if !id.is_empty() && !label.is_empty() && seen_out.insert(id.clone()) {
+                    outputs.push(json!({"id": id, "label": label}));
+                }
+            }
+        }
+    }
+    json!({"inputs": inputs, "outputs": outputs})
+}
+
 impl Audio {
     /// The microphone and the speakers, with aec3 and Opus: the devices where this build and this machine have them,
     /// and none where they don't, as a headless machine's or a server's, so a call still connects and is heard.
-    fn open(commands: &Sender<Command>) -> anyhow::Result<Self> {
+    fn open(commands: &Sender<Command>, input: Option<&str>, output: Option<&str>, out: &Out) -> anyhow::Result<Self> {
         let mut audio = Self {
             _mic: None,
             _speaker: None,
@@ -580,15 +653,24 @@ impl Audio {
         audio.encoder.bitrate_bps = 32_000;
         if DEVICES {
             audio._session = Some(AudioSession::open());
-            audio.speaker();
-            audio.microphone(commands);
+            out.tell("devices", list_devices());
+            audio.speaker(output);
+            audio.microphone(commands, input);
         }
         Ok(audio)
     }
 
     /// The speakers, which play what's mixed for them: each frame as it comes, and silence where there's nothing.
-    fn speaker(&mut self) {
-        let Some(device) = cpal::default_host().default_output_device() else {
+    fn speaker(&mut self, wanted: Option<&str>) {
+        self._speaker = None;
+        lock(&self.playing).clear();
+        let host = cpal::default_host();
+        let device = wanted
+            .and_then(|id| id.parse::<cpal::DeviceId>().ok())
+            .and_then(|id| host.device_by_id(&id))
+            .filter(|device| device.supports_output())
+            .or_else(|| host.default_output_device());
+        let Some(device) = device else {
             eprintln!("A voice has no speakers: it plays nothing");
             return;
         };
@@ -622,8 +704,16 @@ impl Audio {
     }
 
     /// The microphone, whose samples it hands its connection as they come, mono.
-    fn microphone(&mut self, commands: &Sender<Command>) {
-        let Some(device) = cpal::default_host().default_input_device() else {
+    fn microphone(&mut self, commands: &Sender<Command>, wanted: Option<&str>) {
+        self._mic = None;
+        self.capture.clear();
+        let host = cpal::default_host();
+        let device = wanted
+            .and_then(|id| id.parse::<cpal::DeviceId>().ok())
+            .and_then(|id| host.device_by_id(&id))
+            .filter(|device| device.supports_input())
+            .or_else(|| host.default_input_device());
+        let Some(device) = device else {
             eprintln!("A voice has no microphone: it sends nothing");
             return;
         };

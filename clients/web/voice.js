@@ -66,6 +66,8 @@ const checkStats = async (/** @type {any} */ voice) => {
           "voice.bytes_received": bytesReceived,
           "voice.packets_received": packetsReceived,
           "voice.state_flips": voice.flips ?? 0,
+          "voice.input_label": voice.track?.label ?? "",
+          "voice.output_id": voice.output ?? "",
         },
       )
     }
@@ -104,6 +106,93 @@ const listen = (/** @type {any} */ voice, /** @type {(event: Record<string, unkn
   }, 100)
 }
 
+/** Audio constraints for `getUserMedia`, targeting `deviceId` when one is chosen. */
+const audioConstraints = (/** @type {string | null} */ deviceId) => ({
+  ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+})
+
+/** Routes an `<audio>` element to the chosen output device where the browser supports `setSinkId`. */
+const applyOutput = (/** @type {any} */ one, /** @type {HTMLAudioElement} */ el) => {
+  if (typeof el.setSinkId !== "function") return
+  el.setSinkId(one.output || "").catch((/** @type {unknown} */ err) => logVoice("set_sink_id", one, err))
+}
+
+/** Enumerates audio inputs and outputs and tells the page (`onDevices`). */
+const listDevices = async (/** @type {any} */ one, /** @type {(event: Record<string, unknown>) => void} */ tell) => {
+  if (!navigator.mediaDevices?.enumerateDevices) return
+  try {
+    const found = await navigator.mediaDevices.enumerateDevices()
+    if (all.get(one.key) !== one) return
+    const seen = new Set()
+    /** @type {{ id: string; label: string }[]} */
+    const inputs = []
+    /** @type {{ id: string; label: string }[]} */
+    const outputs = []
+    for (const d of found) {
+      if (!d.deviceId || d.deviceId === "default" || d.deviceId === "communications") continue
+      const key = `${d.kind}:${d.deviceId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (d.kind === "audioinput") inputs.push({ id: d.deviceId, label: d.label || `Microphone ${inputs.length + 1}` })
+      else if (d.kind === "audiooutput") outputs.push({ id: d.deviceId, label: d.label || `Speaker ${outputs.length + 1}` })
+    }
+    tell({ name: "devices", inputs, outputs })
+  } catch {}
+}
+
+/** Releases the current microphone stream and its speaking analyser. */
+const stopMic = (/** @type {any} */ one) => {
+  clearInterval(one.timer)
+  one.timer = null
+  one.context?.close().catch?.(() => {})
+  one.context = null
+  one.mic?.getTracks().forEach((/** @type {MediaStreamTrack} */ track) => track.stop())
+  one.mic = null
+  one.track = null
+}
+
+/** Opens (or switches to) the chosen microphone, falling back to system default if a saved device is gone. */
+const openMic = async (/** @type {any} */ one, /** @type {(event: Record<string, unknown>) => void} */ tell) => {
+  const seq = ++one.micSeq
+  const wanted = one.input
+  if (!navigator.mediaDevices?.getUserMedia) return
+  let mic
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(wanted) })
+  } catch (/** @type {any} */ err) {
+    if (wanted && (err?.name === "OverconstrainedError" || err?.name === "NotFoundError")) {
+      one.input = null
+      try {
+        mic = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(null) })
+      } catch (fallbackErr) {
+        if (all.get(one.key) !== one || one.micSeq !== seq) return
+        logVoice("get_user_media", one, fallbackErr)
+        tell({ name: "state", state: "lost" })
+        return
+      }
+    } else {
+      if (all.get(one.key) !== one || one.micSeq !== seq) return
+      logVoice("get_user_media", one, err)
+      tell({ name: "state", state: "lost" })
+      return
+    }
+  }
+  if (all.get(one.key) !== one || one.micSeq !== seq) {
+    mic.getTracks().forEach((/** @type {MediaStreamTrack} */ track) => track.stop())
+    return
+  }
+  stopMic(one)
+  one.mic = mic
+  one.track = mic.getAudioTracks()[0] ?? null
+  if (one.track) one.track.enabled = !one.muted
+  one.sender?.replaceTrack(one.track).catch(() => {})
+  listen(one, tell)
+  void listDevices(one, tell)
+}
+
 /** A new connection, each `ice`, the last one closed, as the DOM's `Voice` makes one. */
 const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, /** @type {(event: Record<string, unknown>) => void} */ tell) => {
   voice.over()
@@ -129,6 +218,7 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
       Object.assign(el, { autoplay: true, playsInline: true })
       el.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
       el.srcObject = new MediaStream([track])
+      applyOutput(voice, el)
       document.body.append(el)
       voice.audios.add(el)
       el.play().catch((err) => {
@@ -197,27 +287,35 @@ export function voice(op, key, params, tell) {
   if (op === "create") {
     if (all.has(key)) return
     /** @type {any} */
-    const one = { key, audios: new Set(), peer: null, sender: null, mic: null, track: null, ready: null, muted: false, context: null, timer: null, speaking: false, offer: null, over: () => {} }
+    const one = {
+      key,
+      audios: new Set(),
+      peer: null,
+      sender: null,
+      mic: null,
+      track: null,
+      ready: null,
+      micSeq: 0,
+      micStarted: false,
+      input: null,
+      output: null,
+      muted: false,
+      context: null,
+      timer: null,
+      speaking: false,
+      offer: null,
+      onDeviceChange: () => void listDevices(one, tell),
+      over: () => {},
+    }
     all.set(key, one)
-    // The microphone, with the system's own echo cancellation and noise suppression, as a call asks for. Without one,
-    // the call is heard and not heard from.
-    one.ready = navigator.mediaDevices
-      ?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-      .then(
-        (mic) => {
-          if (all.get(key) !== one) return mic.getTracks().forEach((/** @type {MediaStreamTrack} */ track) => track.stop())
-          one.mic = mic
-          one.track = mic.getAudioTracks()[0] ?? null
-          if (one.track) one.track.enabled = !one.muted
-          one.sender?.replaceTrack(one.track).catch(() => {})
-          listen(one, tell)
-        },
-        // Refused, by the person or the browser: the page hears it as a call that's lost.
-        (err) => {
-          logVoice("get_user_media", one, err)
-          tell({ name: "state", state: "lost" })
-        },
-      )
+    navigator.mediaDevices?.addEventListener?.("devicechange", one.onDeviceChange)
+    // Defer getUserMedia by one microtask so initial `input`/`output`/`muted` props from the same render batch apply
+    // before the microphone is opened.
+    one.ready = Promise.resolve().then(() => {
+      if (all.get(key) !== one || one.micStarted) return
+      one.micStarted = true
+      return openMic(one, tell)
+    })
     return
   }
   const one = all.get(key)
@@ -238,14 +336,23 @@ export function voice(op, key, params, tell) {
     } else if (name === "muted") {
       one.muted = !!value
       if (one.track) one.track.enabled = !one.muted
+    } else if (name === "input") {
+      const next = typeof value === "string" && value ? value : null
+      if (next === one.input) return
+      one.input = next
+      if (one.micStarted) one.ready = openMic(one, tell)
+    } else if (name === "output") {
+      const next = typeof value === "string" && value ? value : null
+      if (next === one.output) return
+      one.output = next
+      for (const el of one.audios) applyOutput(one, el)
     }
     return
   }
   if (op === "drop") {
     one.over()
-    clearInterval(one.timer)
-    one.context?.close()
-    one.mic?.getTracks().forEach((/** @type {MediaStreamTrack} */ track) => track.stop())
+    navigator.mediaDevices?.removeEventListener?.("devicechange", one.onDeviceChange)
+    stopMic(one)
     for (const el of one.audios) el.remove()
     one.audios.clear()
     all.delete(key)
