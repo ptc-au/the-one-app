@@ -107,7 +107,8 @@ defmodule Board.Store do
       created_at text not null
     )
     """,
-    "create index attachments_by_message on attachments (message_id, created_at)"
+    "create index attachments_by_message on attachments (message_id, created_at)",
+    "alter table schedules add column failed text"
   ]
 
   @channel_re ~r"\A[a-z0-9_-]+(?:/[a-z0-9_-]+)*\z"

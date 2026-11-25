@@ -7,6 +7,7 @@ defmodule Board do
   @behaviour OneCore.App
 
   alias Board.Store
+  require Logger
   alias OneCore.{Artifact, Call, Events}
 
   @default_lease 900
@@ -507,7 +508,7 @@ defmodule Board do
       %{
         name: "schedules_list",
         read_only: true,
-        description: "List active scheduled messages.",
+        description: "List scheduled messages, with `failed` saying why one that couldn't be posted won't be.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object", properties: %{schedules: %{type: "array", items: %{type: "object"}}}}
       },
@@ -1606,9 +1607,10 @@ defmodule Board do
               "every_ms" => every_ms,
               "until_at" => until_at,
               "remaining" => rem,
-              "sent_count" => sent
+              "sent_count" => sent,
+              "failed" => failed
             } <-
-              Store.query(db, "select id, target, body, author, profile, no_sync, next_run_at, every_ms, until_at, remaining, sent_count from schedules order by next_run_at asc") do
+              Store.query(db, "select id, target, body, author, profile, no_sync, next_run_at, every_ms, until_at, remaining, sent_count, failed from schedules order by next_run_at asc") do
           %{
             id: id,
             target: target,
@@ -1619,7 +1621,8 @@ defmodule Board do
             every_seconds: if(every_ms, do: div(every_ms, 1000)),
             until: if(until_at, do: DateTime.from_unix!(until_at, :millisecond) |> DateTime.to_iso8601()),
             remaining: rem,
-            sent_count: sent
+            sent_count: sent,
+            failed: failed
           }
         end
       end)
@@ -1659,18 +1662,18 @@ defmodule Board do
   defp dispatch("tick_schedules", _inputs, call) do
     now = Store.now_ms()
 
-    {expired, sent_msgs} =
+    {expired, fired} =
       Store.transaction(call, fn db ->
         expired = Store.expire_leases(db)
 
         due =
           Store.query(
             db,
-            "select id, target, body, author, profile, no_sync, every_ms, until_at, remaining, sent_count from schedules where next_run_at <= ? order by next_run_at asc",
+            "select id, target, body, author, profile, no_sync, every_ms, until_at, remaining, sent_count from schedules where next_run_at <= ? and failed is null order by next_run_at asc",
             [now]
           )
 
-        sent =
+        fired =
           for %{
                 "id" => sid,
                 "target" => target,
@@ -1683,38 +1686,50 @@ defmodule Board do
                 "remaining" => rem,
                 "sent_count" => sent_count
               } <- due do
-            msg = fire_scheduled_message(db, target, body, author, profile, no_sync)
-            next_rem = if is_integer(rem), do: rem - 1, else: nil
-            next_at = if every_ms, do: now + every_ms, else: nil
+            case fire_scheduled_message(db, target, body, author, profile, no_sync) do
+              {:ok, msg} ->
+                next_rem = if is_integer(rem), do: rem - 1, else: nil
+                next_at = if every_ms, do: now + every_ms, else: nil
 
-            keep =
-              next_at != nil and (next_rem == nil or next_rem > 0) and (until_at == nil or next_at <= until_at)
+                keep =
+                  next_at != nil and (next_rem == nil or next_rem > 0) and (until_at == nil or next_at <= until_at)
 
-            if keep do
-              Store.query(db, "update schedules set next_run_at = ?, remaining = ?, sent_count = ? where id = ?", [next_at, next_rem, sent_count + 1, sid])
-            else
-              Store.query(db, "delete from schedules where id = ?", [sid])
+                if keep do
+                  Store.query(db, "update schedules set next_run_at = ?, remaining = ?, sent_count = ? where id = ?", [next_at, next_rem, sent_count + 1, sid])
+                else
+                  Store.query(db, "delete from schedules where id = ?", [sid])
+                end
+
+                {:sent, msg}
+
+              # It stays, with its reason, for whoever scheduled it to read in `schedules_list`, and is fired no more.
+              {:error, why} ->
+                Store.query(db, "update schedules set failed = ? where id = ?", [why, sid])
+                {:failed, sid, why}
             end
-
-            msg
           end
 
-        {expired, sent}
+        {expired, fired}
       end)
 
-    if expired != [] or sent_msgs != [] do
+    sent = for {:sent, msg} <- fired, do: msg
+    failed = for {:failed, sid, why} <- fired, do: {sid, why}
+
+    if expired != [] or fired != [] do
       Call.changed(call)
     end
+
+    for {sid, why} <- failed, do: Logger.error("Board's scheduled message #{sid} couldn't be posted, and is marked failed: #{why}")
 
     for r <- expired do
       Events.emit(call, "task_ready", r)
     end
 
-    for msg <- sent_msgs do
+    for msg <- sent do
       posted(call, msg)
     end
 
-    %{expired_leases: length(expired), sent_schedules: length(sent_msgs)}
+    %{expired_leases: length(expired), sent_schedules: length(sent), failed_schedules: length(failed)}
   end
 
   defp dispatch("badge", _inputs, call) do
@@ -2017,28 +2032,31 @@ defmodule Board do
     }
   end
 
-  # A schedule's target was checked when it was made (a thread, or a channel), and so was its body, so each is there.
+  # A schedule's target was checked when it was made, but a thread can be deleted since, so it's looked at again.
   defp fire_scheduled_message(db, target, body, author, profile, no_sync) do
-    id = Store.new_id("msg")
-    now = Store.now_iso()
-    {:ok, blocks} = Store.parse_and_validate_blocks(db, body)
+    with {:ok, blocks} <- Store.parse_and_validate_blocks(db, body),
+         {:ok, channel, root_id} <- scheduled_in(db, target) do
+      id = Store.new_id("msg")
 
-    {channel, root_id} =
-      case Store.query(db, "select channel from messages where id = ? and root_id is null", [target]) do
-        [%{"channel" => channel}] -> {channel, target}
-        [] -> {:ok, channel} = Store.validate_channel(target); {channel, nil}
-      end
+      Store.query(
+        db,
+        """
+        insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
+        values (?, ?, ?, null, ?, ?, ?, ?, 1, ?, ?)
+        """,
+        [id, channel, root_id, author, profile, body, JSON.encode!(blocks), no_sync, Store.now_iso()]
+      )
 
-    Store.query(
-      db,
-      """
-      insert into messages (id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at)
-      values (?, ?, ?, null, ?, ?, ?, ?, 1, ?, ?)
-      """,
-      [id, channel, root_id, author, profile, body, JSON.encode!(blocks), no_sync, now]
-    )
+      {:ok, %{id: id, channel: channel, root_id: root_id, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}}
+    end
+  end
 
-    %{id: id, channel: channel, root_id: root_id, author: author, profile: profile, display_author: Store.display_author(author, profile), body: body, no_sync: no_sync == 1}
+  defp scheduled_in(db, target) do
+    case Store.query(db, "select channel, deleted_at from messages where id = ? and root_id is null", [target]) do
+      [%{"channel" => channel, "deleted_at" => nil}] -> {:ok, channel, target}
+      [_deleted] -> {:error, "The thread #{target} was deleted."}
+      [] -> with {:ok, channel} <- Store.validate_channel(target), do: {:ok, channel, nil}
+    end
   end
 
   defp known_target(db, target) do
