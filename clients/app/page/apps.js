@@ -16,13 +16,9 @@ export let settings = ""
 /// The runtime version each app's native page needs, by its entrypoint, as its `runtimeVersion` says.
 /** @type {Map<string, number>} */
 export let needs = new Map()
-/// Each app's first app, by the app's name, among this user's: what a notification from it, or a `one:` link to it, opens.
-/** @type {Map<string, string>} */
-export let first = new Map()
-/// Every file of every app listed, by `<app>/<path>`: what a link to a page can open.
-/** @type {Set<string>} */
-export let files = new Set()
-/// Each group's or the network's listed apps (`first`, `files`), by subject, once listed.
+/// What the apps listed for each subject have, once listed, this user's under "" and each group's or the network's under
+/// its own: each app's first page by the app's name (`first`), what a notification from it, or a `one:` link to it,
+/// opens, and every file of every app, by `<app>/<path>` (`files`), what a link to a page can open.
 /** @type {Map<string, { first: Map<string, string>, files: Set<string> }>} */
 export const bySubject = new Map()
 /// Each app's name and icon, by its page, as this user's apps list them.
@@ -115,7 +111,8 @@ export async function list(subject) {
 /** @param {import("./host.js").Resource[]} resources */
 function launcherIn(resources) {
   const got = pagesOf(resources)
-  ;({ first, files, settings, appStore } = got)
+  bySubject.set("", { first: got.first, files: got.files })
+  ;({ settings, appStore } = got)
   const { pages } = got
   names = new Map(pages.map(({ uri, name }) => [named(uri), name ?? ""]))
   icons = new Map(pages.flatMap(({ uri, icons }) => (icons?.[0] ? [[named(uri), icons[0].src]] : [])))
