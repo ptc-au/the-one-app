@@ -110,9 +110,7 @@ defmodule Images do
        do: {:ok, {width, height, components == 1}}
 
   defp frame(<<0xFF, _marker, size::16, rest::binary>>) when size >= 2 and byte_size(rest) >= size - 2 do
-    skip = size - 2
-    <<_::binary-size(skip), more::binary>> = rest
-    frame(more)
+    frame(binary_part(rest, size - 2, byte_size(rest) - (size - 2)))
   end
 
   defp frame(_), do: :error
