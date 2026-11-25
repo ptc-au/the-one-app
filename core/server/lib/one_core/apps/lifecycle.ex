@@ -414,12 +414,16 @@ defmodule OneCore.Apps.Lifecycle do
   @doc """
   Settles every install and update whose task is over, for whoever this server acts for: as it starts, which loses
   what it ran before, and when a server came or went. An app's update is settled by the first of the servers that take
-  it (`OneCore.Servers.first?/1`), where each of them read every app's, as many times as servers came and went in a
-  release.
+  it (`OneCore.Servers.first?/1`), a group's they're in too (`OneCore.Apps.servers/2`), where each of them read every
+  app's, as many times as servers came and went in a release.
   """
   def settle do
     for owner <- Servers.here(), {name, record} <- Installed.read(owner), do: settled(owner, name, record)
-    for %{app: artifact} = app <- Deploy.deployed(), takes?(app), Servers.first?(Servers.covering(Store.whose(artifact))), do: settled(artifact)
+
+    for %{app: artifact, trusted: trusted} = app <- Deploy.deployed(),
+        takes?(app),
+        Servers.first?(Apps.servers(Store.whose(artifact), trusted)),
+        do: settled(artifact)
     :ok
   end
 
