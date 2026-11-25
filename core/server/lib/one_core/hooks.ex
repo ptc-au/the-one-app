@@ -316,7 +316,9 @@ defmodule OneCore.Hooks do
   """
   def groups("users/" <> _ = who) do
     Cache.fetch(@caches["groups"], who, fn ->
-      {:ok, parts, failed} = collect("groups", %{"who" => who}, {nil, "network"})
+      # Asked by them, of the network they're a member of: a server passes a hook asked by nobody on to the one that
+      # runs its app only for a question (`OneCore.Mcp.Principal.asking/4`), and this one runs where they asked.
+      {:ok, parts, failed} = collect("groups", %{"who" => who}, {who, "network"})
       groups = for {_app, %{"groups" => groups}} <- parts, "groups/" <> _ = group <- List.wrap(groups), do: group
       groups = Enum.sort(Enum.uniq(groups))
       if failed == %{}, do: {:commit, groups, expire: @ttl}, else: {:ignore, groups}
