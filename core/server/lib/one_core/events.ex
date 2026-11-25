@@ -24,7 +24,7 @@ defmodule OneCore.Events do
   is tried again, as Standard Webhooks' senders do, by a timer of the app's database, three times at most. A
   subscription stops when it's unsubscribed, or when what it lasts is over (`ttlMs`).
   """
-  alias OneCore.{Apps, Call, Hooks}
+  alias OneCore.{Apps, Call, Hooks, Server}
   alias OneCore.Apps.Calls
   alias OneCore.Events.Webhook
 
@@ -315,10 +315,16 @@ defmodule OneCore.Events do
     end
   end
 
-  # Runs `fun` with a call of the app whose event `name` is, for whoever `principal` is for, where its database is.
+  # Runs `fun` with a call of the app whose event `name` is, for whoever `principal` is for, where its database is. A
+  # server that doesn't run the app passes it on, and answers what the server that does answered.
   defp within(name, ask, principal, forwarded, fun) do
     [app, _event] = String.split(name, ".", parts: 2)
-    Calls.within(app, ask, principal, forwarded, fun)
+
+    case Calls.within(app, ask, principal, forwarded, fun) do
+      {:forwarded, result} -> {:ok, result}
+      :forwarding_loop -> Server.forwarding_loop(name)
+      outcome -> outcome
+    end
   end
 
   defp transaction(call, fun) do
