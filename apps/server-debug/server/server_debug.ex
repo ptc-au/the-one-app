@@ -20,7 +20,7 @@ defmodule ServerDebug do
   def icon, do: "icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.200"}
+  def requires, do: %{"core" => ">= 0.37.16"}
 
   @impl true
   def tools do
@@ -40,12 +40,13 @@ defmodule ServerDebug do
       %{type: "object", properties: Map.merge(common, more), required: ["app" | required]}
     end
 
-    # Each answer says which app, which server and whose calls, with what it found.
+    # Each answer says which app, the version of it that server has, which server and whose calls, with what it found.
     gives = fn more, required ->
       looked = %{
         app: %{type: "string"},
         server: %{type: "string", description: "The server it looked on, by its machine's name or its key"},
-        for: %{type: "string", description: "Whose calls"}
+        for: %{type: "string", description: "Whose calls"},
+        version: %{type: ["integer", "null"], description: "The app's version that server has, running or only described there"}
       }
 
       %{type: "object", properties: Map.merge(looked, more), required: ["app", "server", "for" | required]}
@@ -177,7 +178,8 @@ defmodule ServerDebug do
       inputs |> Map.drop(["app", "subject", "server"]) |> Map.merge(%{"op" => tool, "follower" => call.actor})
 
     result = probed(target, request, tool == "logs")
-    Map.merge(result, %{"app" => target.name, "server" => Servers.name(Server.key()) || Server.key(), "for" => target.whose})
+    looked = %{"app" => target.name, "server" => Servers.name(Server.key()) || Server.key(), "for" => target.whose}
+    Map.merge(result, Map.put(looked, "version", Apps.number(target.version.artifact)))
   end
 
   # The app `app` as whoever `subject` is finds it, if whoever asked may look into it.
