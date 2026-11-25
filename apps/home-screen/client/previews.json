@@ -3247,6 +3247,11 @@
         "gesture": {
           "trace": "traces/mouse-wheel-next-owner.json"
         }
+      },
+      "A mouse wheel's notches go through every owner and back": {
+        "gesture": {
+          "trace": "traces/mouse-wheel-every-owner.json"
+        }
       }
     }
   },
