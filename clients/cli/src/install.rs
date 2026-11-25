@@ -2,9 +2,11 @@
 //! repo's `apps/`, with a `SKILL.md`, and there's nothing to publish. `one install <owner>/<repo>[@<ref>] --app
 //! <name>` fetches the repo with git, deploys that folder as a copy of the installer's own, with where it came from
 //! (`deploy`'s `from`), which the network keeps with the app and `apps` gives back. In a network's repo (a
-//! folder with `apps/`, or an `apps.lock`), `apps.lock` records each too, so `one install` there installs
-//! everything it names at the commits it names: that's how a network is made again from its repo. The network
-//! itself looks for newer commits once a day, and offers them as updates (`one apps check`, `one apps update`).
+//! folder with a network's `app/address`, or an `apps.lock`), `apps.lock` records each too, with the network it's
+//! for (`network`), so `one install` there installs everything it names at the commits it names: that's how a
+//! network is made again from its repo. A lock of another network's is never written, nor replayed, by this one's
+//! CLI: a network's apps go to the network its CLI is on. The network itself looks for newer commits once a day, and
+//! offers them as updates (`one apps check`, `one apps update`).
 
 use std::collections::{BTreeMap, HashSet};
 use std::future::Future;
@@ -22,6 +24,8 @@ use serde_json::{Value, json};
 /// Where an installer says it installed an app, for the directory of apps (`www/app-directory/README.md`).
 const DIRECTORY: &str = "https://one.ptcau.dev/apps/api/installs";
 const LOCK: &str = "apps.lock";
+/// What a network's repo says its address is, which is what tells it from an app's repo (`tooling/networks`).
+const ADDRESS: &str = "app/address";
 
 /// Where an app comes from: a repo as it's written in a lock file (`owner/repo` on GitHub, a git URL, a repo of the
 /// network's Git Repos as git clones it, `one::users/alice/made/git-repos/notes`, or a folder's absolute path), and
@@ -159,26 +163,60 @@ struct Locked {
     requires: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct Lock {
     #[serde(default)]
     apps: BTreeMap<String, Locked>,
+    /// The network whose apps these are, which wrote it: one from before it said so has none, and says it by its
+    /// repo's `app/address` instead.
+    #[serde(default)]
+    network: Option<String>,
 }
 
-/// The lock file, where this is run in a network's repo: a folder with `apps/` or an `apps.lock`.
+/// The lock file, where this is run in a network's repo: a folder with an `apps.lock`, or with a network's own
+/// `app/address`. Every app's repo has an `apps/` too (`the-one-app`'s, `one-apps`'), so that says nothing of it.
 fn lock_file() -> Option<PathBuf> {
-    (Path::new(LOCK).exists() || Path::new("apps").is_dir()).then(|| PathBuf::from(LOCK))
+    (Path::new(LOCK).exists() || Path::new(ADDRESS).exists()).then(|| PathBuf::from(LOCK))
 }
 
-fn read_lock(file: &Path) -> Result<BTreeMap<String, Locked>> {
-    let Ok(text) = fs::read_to_string(file) else { return Ok(BTreeMap::new()) };
-    let lock: Lock = serde_json::from_str(&text).with_context(|| format!("{} says an app wrong", file.display()))?;
-    Ok(lock.apps)
+fn read_lock(file: &Path) -> Result<Lock> {
+    let Ok(text) = fs::read_to_string(file) else { return Ok(Lock::default()) };
+    serde_json::from_str(&text).with_context(|| format!("{} says an app wrong", file.display()))
 }
 
-fn write_lock(file: &Path, locked: &BTreeMap<String, Locked>) -> Result<()> {
-    let text = serde_json::to_string_pretty(&json!({"version": 1, "apps": locked}))?;
+fn write_lock(file: &Path, network: Option<&str>, locked: &BTreeMap<String, Locked>) -> Result<()> {
+    let mut lock = json!({"version": 1, "apps": locked});
+    if let Some(network) = network {
+        lock["network"] = json!(network);
+    }
+    let text = serde_json::to_string_pretty(&lock)?;
     Ok(fs::write(file, text + "\n")?)
+}
+
+/// An address as two networks are told apart by it: a URL's origin, without a path or a trailing slash and in one
+/// case, or an address that isn't a URL with its slashes trimmed.
+fn network(address: &str) -> String {
+    let address = address.trim();
+    match reqwest::Url::parse(address) {
+        Ok(url) => url.origin().ascii_serialization(),
+        Err(_) => address.trim_end_matches('/').to_ascii_lowercase(),
+    }
+}
+
+/// The network a folder's `apps.lock` is for: what it says, or its repo's `app/address` where it's from before it
+/// said so, or `None` where the folder is no network's repo.
+fn repo_network(file: &Path) -> Result<Option<String>> {
+    if let Some(recorded) = read_lock(file)?.network {
+        return Ok(Some(recorded));
+    }
+    Ok(fs::read_to_string(ADDRESS).ok().map(|address| address.trim().to_owned()))
+}
+
+/// The repo's network and this CLI's own, where they're different: apps an install makes go to the CLI's network, so
+/// a repo of another's is never written, nor its apps replayed, as if they were this network's.
+fn other_network(client: &Client, file: &Path) -> Result<Option<(String, String)>> {
+    let (Some(cli), Some(repo)) = (client.address(), repo_network(file)?) else { return Ok(None) };
+    Ok((network(&repo) != network(&cli)).then_some((repo, cli)))
 }
 
 /// Calls a tool for `of` (a user, a group or the network), as `ONE_SUBJECT` would have it, and gives its MCP result.
@@ -448,7 +486,7 @@ impl<'a> Installer<'a> {
                 let it = finish_deploy(self.client, self.of, name, self.source, self.commit, &text).await?;
                 if let Some(file) = self.lock {
                     self.locked.insert(name.to_owned(), it);
-                    write_lock(file, self.locked)?;
+                    write_lock(file, self.client.address().as_deref(), self.locked)?;
                 }
                 self.done.insert(name.to_owned());
                 return Ok(());
@@ -622,11 +660,25 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
             order.push(name);
         }
     }
-    let lock = lock_file();
+    let mut lock = lock_file();
+    let in_repo = lock.is_some();
     let mut locked = match &lock {
-        Some(file) => read_lock(file)?,
+        Some(file) => read_lock(file)?.apps,
         None => BTreeMap::new(),
     };
+    // This network's CLI installs into this network, so another network's repo is left as it is: recording an app
+    // there would install it into that network too, as `one install` there would.
+    if let Some(file) = &lock
+        && let Some((repo, cli)) = other_network(client, file)?
+    {
+        println!(
+            "Not recorded in {}: this folder is {repo}'s network repo, and {} installs into {cli}, this CLI's. Run it \
+             with {repo}'s CLI here to record it there.",
+            file.display(),
+            client::command()
+        );
+        lock = None;
+    }
     let mut installer = Installer {
         client,
         of: &of,
@@ -644,6 +696,7 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
     }
     match lock {
         Some(file) => println!("Recorded in {}.", file.display()),
+        None if in_repo => {}
         None => println!(
             "Not in a network's repo, so no {LOCK} is written: the network keeps where it came from (`{} apps`).",
             client::command()
@@ -652,12 +705,19 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// `one install` in a folder with an `apps.lock`: installs everything it records, at the commits it records, for
-/// whoever it records, as it was, each after the ones it records that it requires. An app whose files hash
-/// differently now (a NIF built again) is said so.
+/// `one install` in a folder with an `apps.lock` of this CLI's network: installs everything it records, at the
+/// commits it records, for whoever it records, as it was, each after the ones it records that it requires. An app
+/// whose files hash differently now (a NIF built again) is said so.
 pub async fn locked(client: &Client) -> Result<ExitCode> {
     let file = PathBuf::from(LOCK);
-    let mut waiting = read_lock(&file)?;
+    if let Some((repo, cli)) = other_network(client, &file)? {
+        bail!(
+            "{LOCK} here records {repo}'s apps, and this CLI is on {cli}: `{} install` here would install them into \
+             {cli}. Run it with {repo}'s CLI, in this folder.",
+            client::command()
+        );
+    }
+    let mut waiting = read_lock(&file)?.apps;
     let count = waiting.len();
     while !waiting.is_empty() {
         let mut deployed = Vec::new();
@@ -691,15 +751,23 @@ pub async fn locked(client: &Client) -> Result<ExitCode> {
 
 
 /// `one uninstall --name <name>` in a network's repo: uninstalls it, and takes it out of `apps.lock` if that
-/// records it for whoever it was uninstalled for, so `one install` there doesn't install it again.
+/// records it for whoever it was uninstalled for, so `one install` there doesn't install it again. It's this CLI's
+/// network's repo: another's is refused, as its `apps.lock` records that network's apps.
 pub async fn uninstall(client: &Client, name: &str) -> Result<ExitCode> {
+    let file = PathBuf::from(LOCK);
+    if let Some((repo, cli)) = other_network(client, &file)? {
+        bail!(
+            "{LOCK} here records {repo}'s apps, and this CLI is on {cli}: `{} uninstall --name {name}` here would \
+             uninstall it from {cli}, not from {repo}. Run it with {repo}'s CLI, in this folder.",
+            client::command()
+        );
+    }
     let (of, _) = installed(client, None).await?;
     println!("{}", call(client, None, "uninstall", json!({"name": name})).await?);
-    let file = PathBuf::from(LOCK);
-    let mut locked = read_lock(&file)?;
+    let mut locked = read_lock(&file)?.apps;
     if locked.get(name).is_some_and(|it| it.of == of) {
         locked.remove(name);
-        write_lock(&file, &locked)?;
+        write_lock(&file, client.address().as_deref(), &locked)?;
         println!("Removed from {LOCK}.");
     }
     Ok(ExitCode::SUCCESS)
