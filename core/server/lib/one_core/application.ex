@@ -102,6 +102,9 @@ defmodule OneCore.Application do
   @lookup_max 30_000
 
   defp joined?(key, owner, wait \\ @lookup) do
+    # One started for someone renamed since is theirs by their new name (`OneCore.User.renamed/1`).
+    owner = OneCore.User.renamed(owner)
+    Application.put_env(:one_core, :owner, owner)
     Servers.joined?(key, owner)
   rescue
     unreachable in OneCore.Edge.Unreachable ->

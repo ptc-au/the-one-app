@@ -369,7 +369,12 @@ export async function admits(lists: Lists, key: string, shown: string | null): P
   if (!isKey(key) || owner(list) !== list) return null;
   // A server's own token says it's one of the network's, on the list it names, which is all it says: a new one is on
   // its list before it says whom it chose, the other side of acting for them (`servers/2`).
-  if (by === undefined) return (await lists(list)).list?.includes(key) ? {} : null;
+  // One started for someone who was renamed since names the list they had, which leads to their new one.
+  if (by === undefined) {
+    if ((await lists(list)).list?.includes(key)) return {};
+    const now = list && (await lists.renamed?.(list));
+    return now ? ((await lists(now)).list?.includes(key) ? {} : null) : null;
+  }
   if (!(until !== undefined && until > Date.now())) return null;
   if (device !== key && !(await signedBy(device, attestation, `one/run/1\n${key}`))) return null;
   if (!(await signedBy(by, signature, `one/token/1\n${device}\n${list}\n${until}`))) return null;
@@ -390,7 +395,7 @@ export async function servers(lists: Lists, of: unknown): Promise<string[]> {
  * The lists of servers, by their prefixes, as one request reads them, and what `Changes` said with the first of them
  * of the blob that request reads, if it asked.
  */
-type Lists = ((prefix: string | undefined) => Promise<Listed>) & { asked?: Promise<Asked> };
+type Lists = ((prefix: string | undefined) => Promise<Listed>) & { asked?: Promise<Asked>; renamed?: (prefix: string) => Promise<string | undefined> };
 
 /** The lists of servers asked for, whether the blob asked about is surely not in the bucket, and when it was asked. */
 interface Asked {
@@ -531,6 +536,13 @@ export function reader(env: Env, key?: string): Lists {
     const listed = asking.asked.then(({ lists }) => lists[at]);
     read.set(prefix, listed);
     return listed;
+  };
+  // Who was renamed (`OneCore.Renames`): each user's prefix they had, as a list is named, and their prefix now.
+  let names: Promise<Record<string, string>> | undefined;
+  lists.renamed = async (prefix) => {
+    names ??= bucket(env).fetch(blob(env, `${NETWORK}renamed`)).then((got) => (got.ok ? got.json() : {}));
+    const now = (await names)[prefix.slice(0, -1)];
+    return now && `${now}/`;
   };
   return lists;
 }
