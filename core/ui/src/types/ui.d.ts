@@ -726,6 +726,15 @@ export declare function haptic(kind: "light" | "medium" | "heavy" | "rigid" | "s
 export declare function connection(): "connecting" | "online" | "offline" | "reconnecting"
 /** Whether this page is shown, as it changes: not while its person is in another app, as their device's Settings. */
 export declare function visible(): boolean
+/** Whether its person is away from this device, as it changes: its screen is locked, it's asleep, or nobody has
+ * touched its keyboard or pointer for five minutes, as a computer's idle time says. A device that can't tell never is. */
+export declare function idle(): boolean
+/** What `menuBarExtra` changes of the app's icon in a computer's menu bar: the `title` beside it (`null` for none), its
+ * `icon`, one of Phosphor's by its name (`"microphone"`, `"moon-fill"`), or `null` for the app's own, and whether its
+ * panel is `open`. */
+export type MenuBarExtra = { title?: string | null; icon?: string | null; open?: boolean }
+/** Changes the app's menu bar extra (`menu_bar_extra/0`), where its device has one: elsewhere it does nothing. */
+export declare function menuBarExtra(change: MenuBarExtra): Promise<void>
 
 /** What `client()` answers: what this device is, and what it can do that an app asks of it. */
 export type Client = {

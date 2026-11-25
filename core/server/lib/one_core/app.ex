@@ -24,7 +24,7 @@ defmodule OneCore.App do
   machine's sandbox, never in the server's.
   Any of the network's servers runs it for anyone, so it needs no server of yours, and whatever its code tries, it
   reaches only what's offered it, as whoever it runs for. What's offered is this interface, each function a message
-  to the server: `tools/0`, `call/3`, `entrypoints/0`, `icon/0`, `widgets/0`, `jobs/0` and
+  to the server: `tools/0`, `call/3`, `entrypoints/0`, `icon/0`, `widgets/0`, `menu_bar_extra/0`, `jobs/0` and
   `requires/0`; `OneCore.Artifact`'s functions but `link`;
   `OneCore.Call`'s `tool` (with `on_behalf_of`), `make`, `reach`, `reaches?`, `member?`, `owns?`, `apps`, `deployed`, `process`,
   `forward_to`, `changed`, `stage` and `ask`; `OneCore.App.file/2`; `OneCore.Nif`; `Logger`; and hooks it observes, and collects that say it may (`untrusted: true`). The apps
@@ -441,6 +441,19 @@ defmodule OneCore.App do
     needing a newer version than it has, and says why in its window. Deploying type checks it against
     the UI library (`OneCore.Entrypoint.lint/3`) and refuses it with the checker's errors where it isn't, or where it writes a raw colour,
     length, shadow or font where a role goes (but a picture's, in `illustration(…)`), and gives its warnings with the deploy's.
+  - `menu_bar_extra/0`, if the app has one, puts it in a computer's menu bar (a Mac's menu bar extra, Windows'
+    notification area, a Linux panel's tray), as Slack's and Raycast's are there: its `icon`, a file of the app in one
+    colour (an SVG or a PNG), which the menu bar draws as a template, as it does its other icons, and its `page`, a
+    page of `client/`, its entrypoint's or one of its own, which a click shows in a panel under the icon, drawn at the
+    panel's narrow width, and clicking anywhere else puts away. Its page starts with the client and runs on with the panel put
+    away, for as long as the client runs, so it keeps whatever it holds open (a call, a person's presence) and hears
+    what comes while nobody's looking. Its page changes the icon's title and icon, and shows the panel itself, with
+    the UI library's `menuBarExtra`, and hears whether its person is at this computer with `idle()`. A phone has
+    none: there its page is only its entrypoint's.
+
+        @impl true
+        def menu_bar_extra, do: %{page: "client/index.html", icon: "menu-bar.svg"}
+
   - An app's settings are in Settings, where it adds a section, or a group in another's page, by the hook
     `settings.sections`, with the component that draws it, as Settings' skill says.
   - An app that keeps something in its people's Vaults (an account at an outside service, a Chrome profile, a key)

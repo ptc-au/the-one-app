@@ -20,7 +20,8 @@ defmodule OneCore.Apps.Version do
   address, the file it names (`OneCore.App`). `entrypoints` lists its entrypoints: each one's `name`, its
   `page`, its `icon` as a `data:` address, its own or else the app's,
   its `category`, its `subject`, its `badge` and its `runtime_version`, which are the app's to say and nil where it says none. `widgets` lists its widgets: each
-  one's `name`, the `tool` that answers its layout, and the `sizes` it comes in.
+  one's `name`, the `tool` that answers its layout, and the `sizes` it comes in. `menu_bar_extra` is its menu bar
+  extra, or nil: its `page`, its `icon` as a `data:` address, and the `runtime_version` its page needs, if it says one.
 
   `services` lists its services: each one's `name`, which is its module's as the app wrote it, what it's `called`
   where a person reads it, what it `needs` of a machine, the `os` it runs on, as npm's `os` names them, or `nil` for any, and whether it runs by itself (`auto`), as its `lacks/0` says. `hooks` names the hooks it hooks into, `offers` lists the
@@ -49,6 +50,7 @@ defmodule OneCore.Apps.Version do
     :tools,
     :entrypoints,
     :widgets,
+    :menu_bar_extra,
     :services,
     :hooks,
     :offers,

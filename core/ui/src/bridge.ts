@@ -114,6 +114,7 @@ const [offered, setOffered] = createSignal<string[]>([])
 // Whether it's drawn in an assistant's chat, which its router says (`clients/web/router.js`): every call the page makes is the assistant's.
 const [assistant, setAssistant] = createSignal(false)
 const [shown, setShown] = createSignal(true)
+const [away, setAway] = createSignal(false)
 interface Context {
   titled?: boolean
   connection?: ReturnType<typeof Page.connection>
@@ -135,6 +136,8 @@ interface Context {
   visible?: boolean
   /** How pressed the device is, as the Compute Pressure API's `PressureRecord.state` says it. */
   pressure?: PressureState
+  /** Whether its person is away from the device: its screen locked, asleep, or untouched a while (`idle()`). */
+  idle?: boolean
 }
 
 type PressureState = "nominal" | "fair" | "serious" | "critical"
@@ -200,6 +203,7 @@ function dress(context?: Context) {
     setShown(context.visible !== false)
     if (missed) tell()
   }
+  if (context && "idle" in context) setAway(context.idle === true)
   if (context?.pressure && context.pressure !== pressure) {
     pressure = context.pressure
     for (const observer of observing) observer.said(pressure)
@@ -279,6 +283,18 @@ export const reducedMotion: typeof Page.reducedMotion = () => still()
 /// changes: not while its app is in the background or its person is in another app, as Settings. For what's asked
 /// again once they're back.
 export const visible: typeof Page.visible = () => shown()
+/// `createEffect(idle, (away) => call("office_presence", { away }))`: whether its person is away from this device, as it
+/// changes: its screen is locked, it's asleep, or nobody has touched its keyboard or pointer for five minutes, as a
+/// computer's idle time says. A device that can't tell (a phone, a browser) never is.
+export const idle: typeof Page.idle = () => away()
+/// `menuBarExtra({ title: "6" })`: changes the app's icon in a computer's menu bar (its `menu_bar_extra/0`): the
+/// `title` beside it, or `null` for none; its `icon`, one of Phosphor's by its name (`"microphone"`, `"moon-fill"`),
+/// or `null` for the app's own; and with `open: true` shows its panel, as a knock that needs its person does, or
+/// `false` puts it away. Any page of the app changes it. Where there's none (a phone, a browser), it does nothing.
+export const menuBarExtra: typeof Page.menuBarExtra = async (change) => {
+  await greeted
+  await ask("one/menu-bar-extra", change).catch(() => {})
+}
 /// `sizeChanged({ height: 420 })`: tells the client how large the page's content is, in CSS pixels, as an MCP App tells
 /// its host (`ui/notifications/size-changed`). A window sized by what it shows, a computer's launcher, takes it; one
 /// whose page fills it keeps its size.

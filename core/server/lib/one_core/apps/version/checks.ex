@@ -20,6 +20,7 @@ defmodule OneCore.Apps.Version.Checks do
       entrypoints: entrypoints,
       icon: icon,
       widgets: widgets,
+      menu_bar_extra: menu_bar_extra,
       exports: exports,
       hooks: hooks
     } =
@@ -30,11 +31,12 @@ defmodule OneCore.Apps.Version.Checks do
     prefix = if app, do: Version.own_name(app) <> ".", else: ""
 
     problems =
-      Enum.flat_map([:tools, :entrypoints, :widgets, :offers, :events], &Shape.problems(&1, description[&1], prefix)) ++
+      Enum.flat_map([:tools, :entrypoints, :widgets, :menu_bar_extra, :offers, :events], &Shape.problems(&1, description[&1], prefix)) ++
         tool_problems(tools, rest, prefix) ++
         entrypoint_problems(entrypoints, rest, prefix) ++
         widget_problems(widgets, tools, prefix) ++
         badge_problems(entrypoints, tools, prefix) ++
+        menu_bar_extra_problems(menu_bar_extra, rest, prefix) ++
         other_problems(description, app, prefix)
 
     case problems do
@@ -43,6 +45,7 @@ defmodule OneCore.Apps.Version.Checks do
 
         title = Version.title(skills)
         version = version(under, app, tools, entrypoints, widgets, Enum.sort(services), rest, icon, title)
+        version = %{version | menu_bar_extra: menu_bar_extra(menu_bar_extra, rest)}
 
         with {:ok, jobs} <- jobs(jobs, tools, prefix),
              do:
@@ -86,6 +89,25 @@ defmodule OneCore.Apps.Version.Checks do
       "#{prefix}entrypoints()[#{at}].#{field}: got #{Shape.given(entrypoint[field])}, #{why}"
     end
   end
+
+  # A menu bar extra shows one of the app's pages, from its icon, which a computer's menu bar draws as a template.
+  defp menu_bar_extra_problems(%{} = extra, rest, prefix) do
+    for {field, why} <- [
+          {:page, is_binary(extra[:page]) && page(extra[:page], rest)},
+          {:icon, is_binary(extra[:icon]) && not is_map_key(rest, extra[:icon]) && "expected a file of the app"}
+        ],
+        why do
+      "#{prefix}menu_bar_extra().#{field}: got #{Shape.given(extra[field])}, #{why}"
+    end
+  end
+
+  defp menu_bar_extra_problems(_extra, _rest, _prefix), do: []
+
+  # The menu bar extra a client draws: its page, its icon as a `data:` address, and the runtime version its page needs.
+  defp menu_bar_extra(nil, _rest), do: nil
+
+  defp menu_bar_extra(extra, rest),
+    do: %{page: extra.page, icon: data(extra.icon, rest), runtime_version: extra[:runtime_version]}
 
   # A widget is drawn from what one of the app's tools answers, which a Home Screen page asks again and again.
   defp widget_problems(widgets, tools, prefix) do

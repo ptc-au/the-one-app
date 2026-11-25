@@ -649,8 +649,12 @@ defmodule OneCore.Mcp do
         resource = if hash, do: Map.put(resource, :_meta, %{sha256: Base.encode16(hash, case: :lower)}), else: resource
 
         # An entrypoint's category goes as it is: a client opens the launcher first, and what the rest mean is the
-        # launcher's. A page that's a tool's UI is an MCP App's page too.
-        case Enum.find(version.entrypoints, &(&1.page == path)) || uis[{app, path}] do
+        # launcher's. A page that's a tool's UI is an MCP App's page too, and so is its menu bar extra's, whose icon
+        # a computer's client puts in its menu bar (`menuBarExtra`).
+        extra = if version.menu_bar_extra && version.menu_bar_extra.page == path, do: version.menu_bar_extra
+
+        case Enum.find(version.entrypoints, &(&1.page == path)) || uis[{app, path}] ||
+               (extra && %{name: version.title, runtime_version: extra.runtime_version}) do
           nil ->
             %{resource | mimeType: String.replace_suffix(resource.mimeType, ";profile=mcp-app", "")}
 
@@ -666,7 +670,8 @@ defmodule OneCore.Mcp do
                   %{
                     category: entrypoint[:category],
                     trusted: version.trusted,
-                    runtimeVersion: entrypoint[:runtime_version]
+                    runtimeVersion: entrypoint[:runtime_version] || (extra && extra.runtime_version),
+                    menuBarExtra: extra && %{icon: extra.icon}
                   },
                   &match?({_, nil}, &1)
                 )

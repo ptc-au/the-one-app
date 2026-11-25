@@ -19,6 +19,7 @@ defmodule OneCore.App.Manifest do
     entrypoints: [],
     icon: nil,
     widgets: [],
+    menu_bar_extra: nil,
     hooks: [],
     offers: [],
     jobs: [],
@@ -27,11 +28,12 @@ defmodule OneCore.App.Manifest do
     own: :subject
   ]
 
-  # The keys of each map in a list an app says, as JSON names them.
+  # The keys of each map an app says, alone or in a list, as JSON names them.
   @keys %{
     tools: ~w(name description inputs outputs read_only by_link ui path runtime_version task_support)a,
     entrypoints: ~w(name page icon category subject badge runtime_version)a,
     widgets: ~w(name tool sizes)a,
+    menu_bar_extra: ~w(page icon runtime_version)a,
     offers: ~w(name kind description untrusted)a,
     jobs: ~w(tool every inputs)a,
     events: ~w(name description inputs outputs delivery)a
@@ -43,6 +45,7 @@ defmodule OneCore.App.Manifest do
     call: 3,
     entrypoints: 0,
     widgets: 0,
+    menu_bar_extra: 0,
     hooks: 0,
     hook: 3,
     webhook: 2,
@@ -71,6 +74,7 @@ defmodule OneCore.App.Manifest do
       @callback call(tool :: String.t(), inputs :: map, OneCore.Call.t()) :: term
       @callback entrypoints() :: [%{required(:page) => String.t(), optional(atom) => String.t()}]
       @callback widgets() :: [%{name: String.t(), tool: String.t(), sizes: [String.t()]}]
+      @callback menu_bar_extra() :: %{required(:page) => String.t(), required(:icon) => String.t(), optional(:runtime_version) => pos_integer}
       @callback hooks() :: [String.t()]
       @callback hook(hook :: String.t(), about :: map, OneCore.Call.t()) :: term
       @callback webhook(OneCore.Call.t(), request :: map) :: {:ok, map}
@@ -142,6 +146,8 @@ defmodule OneCore.App.Manifest do
       {function, decode(function, value)}
     end
   end
+
+  defp decode(:menu_bar_extra, %{} = extra), do: hd(decode(:menu_bar_extra, [extra]))
 
   defp decode(function, list) when is_map_key(@keys, function) and is_list(list) do
     for item <- list do

@@ -1,8 +1,9 @@
 defmodule OneCore.Apps.Version.Shape do
   @moduledoc """
   The shape of each list an app says of itself (`OneCore.App`): `tools/0`, `entrypoints/0`, `widgets/0`, `offers/0`,
-  `jobs/0` and `events/0`, each item a JSON Schema, and the problems `problems/3` finds in one, each saying where
-  (`Glance.widgets()[0].sizes[0]`), what was given and what's expected, as a schema validator does.
+  `jobs/0` and `events/0`, each item a JSON Schema, and of the one map it says, `menu_bar_extra/0`, and the problems
+  `problems/3` finds in one, each saying where (`Glance.widgets()[0].sizes[0]`), what was given and what's expected,
+  as a schema validator does.
   """
   alias ExJsonSchema.Validator.Error
 
@@ -75,6 +76,19 @@ defmodule OneCore.Apps.Version.Shape do
         "name" => %{"type" => "string", "description" => "its name on the card, where it isn't its app's title"}
       }
     },
+    menu_bar_extra: %{
+      "type" => "object",
+      "required" => ["page", "icon"],
+      "properties" => %{
+        "page" => %{"type" => "string", "description" => "an .html page of client/, such as \"client/index.html\""},
+        "icon" => %{"type" => "string", "description" => "a file of the app: its icon in one colour, a template"},
+        "runtime_version" => %{
+          "type" => "integer",
+          "minimum" => 1,
+          "description" => "the runtime version its page needs of a native host, where no entrypoint says it of the same page"
+        }
+      }
+    },
     offers: %{
       "type" => "object",
       "required" => ["name", "kind", "description"],
@@ -125,8 +139,26 @@ defmodule OneCore.Apps.Version.Shape do
   @doc """
   What's wrong with `list`, what an app's function `name` (`:widgets`) gave, as sentences: each says where in it
   (`prefix`, the app's module and function, then the item and its field), what was given and what's expected.
-  `[]` if nothing is.
+  `[]` if nothing is. `menu_bar_extra/0` says one map, or nil for none.
   """
+  def problems(:menu_bar_extra, nil, _prefix), do: []
+
+  def problems(:menu_bar_extra, extra, prefix) do
+    where = "#{prefix}menu_bar_extra()"
+
+    with true <- is_map(extra), {:ok, json} <- json(extra) do
+      schema = ExJsonSchema.Schema.resolve(@items.menu_bar_extra)
+
+      case ExJsonSchema.Validator.validate(schema, json, error_formatter: false) do
+        :ok -> []
+        {:error, wrong} -> Enum.map(wrong, &sentence(&1, where, json, schema.schema))
+      end
+    else
+      false -> ["#{where}: got #{given(extra)}, expected #{keys(:menu_bar_extra)}, or nil"]
+      :error -> ["#{where}: has a value JSON can't hold: give text and numbers"]
+    end
+  end
+
   def problems(name, list, prefix) do
     where = "#{prefix}#{name}()"
 
