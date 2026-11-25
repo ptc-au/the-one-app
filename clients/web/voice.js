@@ -37,52 +37,16 @@ const logVoice = (/** @type {string} */ step, /** @type {any} */ voice, /** @typ
   })
 }
 
-const checkStats = async (/** @type {any} */ voice) => {
-  const pc = voice?.peer
-  if (!pc || all.get(voice.key) !== voice) return
-  try {
-    const stats = await pc.getStats()
-    let bytesSent = 0
-    let packetsSent = 0
-    let bytesReceived = 0
-    let packetsReceived = 0
-    for (const s of stats.values()) {
-      if (s.type === "outbound-rtp" && s.kind === "audio") {
-        bytesSent += s.bytesSent ?? 0
-        packetsSent += s.packetsSent ?? 0
-      } else if (s.type === "inbound-rtp" && s.kind === "audio") {
-        bytesReceived += s.bytesReceived ?? 0
-        packetsReceived += s.packetsReceived ?? 0
-      }
-    }
-    if (bytesSent === 0 || bytesReceived === 0 || voice.playError) {
-      logVoice(
-        "stats",
-        voice,
-        `voice media check: sent=${bytesSent}B (${packetsSent}pkts) recv=${bytesReceived}B (${packetsReceived}pkts) remoteTracks=${voice.audios.size} hasMic=${!!voice.track}${voice.playError ? ` playError=${voice.playError}` : ""}`,
-        {
-          "voice.bytes_sent": bytesSent,
-          "voice.packets_sent": packetsSent,
-          "voice.bytes_received": bytesReceived,
-          "voice.packets_received": packetsReceived,
-          "voice.state_flips": voice.flips ?? 0,
-          "voice.input_label": voice.track?.label ?? "",
-          "voice.output_id": voice.output ?? "",
-        },
-      )
-    }
-  } catch (err) {
-    logVoice("stats_failed", voice, err)
-  }
-}
-
-/** Its local description once its candidates are gathered, or a relay's came, as an SFU needs to reach it. */
+/** Its local description once its candidates are all gathered, as an SFU needs to reach it: its gathering's own event says so. */
 const gathered = (/** @type {RTCPeerConnection} */ pc) => {
   if (pc.iceGatheringState === "complete") return Promise.resolve()
   return new Promise((done) => {
-    const timer = setTimeout(done, 5000)
-    pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && (clearTimeout(timer), done(undefined))
-    pc.onicecandidate = ({ candidate }) => candidate?.type === "relay" && (clearTimeout(timer), setTimeout(done, 300))
+    const changed = () => {
+      if (pc.iceGatheringState !== "complete") return
+      pc.removeEventListener("icegatheringstatechange", changed)
+      done(undefined)
+    }
+    pc.addEventListener("icegatheringstatechange", changed)
   })
 }
 
@@ -140,14 +104,16 @@ const listDevices = async (/** @type {any} */ one, /** @type {(event: Record<str
       else if (d.kind === "audiooutput") outputs.push({ id: d.deviceId, label: d.label || `Speaker ${outputs.length + 1}` })
     }
     tell({ name: "devices", inputs, outputs })
-  } catch {}
+  } catch (err) {
+    logVoice("enumerate_devices", one, err)
+  }
 }
 
 /** Releases the current microphone stream and its speaking analyser. */
 const stopMic = (/** @type {any} */ one) => {
   clearInterval(one.timer)
   one.timer = null
-  one.context?.close().catch?.(() => {})
+  one.context?.close().catch((/** @type {unknown} */ err) => logVoice("close_audio_context", one, err))
   one.context = null
   one.mic?.getTracks().forEach((/** @type {MediaStreamTrack} */ track) => track.stop())
   one.mic = null
@@ -188,9 +154,19 @@ const openMic = async (/** @type {any} */ one, /** @type {(event: Record<string,
   one.mic = mic
   one.track = mic.getAudioTracks()[0] ?? null
   if (one.track) one.track.enabled = !one.muted
-  one.sender?.replaceTrack(one.track).catch(() => {})
+  one.sender?.replaceTrack(one.track).catch((/** @type {unknown} */ err) => logVoice("replace_track", one, err))
   listen(one, tell)
   void listDevices(one, tell)
+}
+
+/** Stops a voice's remote audio, which a connection made as its tracks came: each element is let go of, and its sound with it. */
+const hush = (/** @type {any} */ voice) => {
+  for (const el of voice.audios) {
+    el.pause()
+    el.srcObject = null
+    el.remove()
+  }
+  voice.audios.clear()
 }
 
 /** A new connection, each `ice`, the last one closed, as the DOM's `Voice` makes one. */
@@ -200,7 +176,11 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
   let over = false
   let pc = /** @type {RTCPeerConnection | null} */ (null)
   const lost = () => !over && ((over = true), tell({ name: "state", state: "lost" }))
-  voice.over = () => ((over = true), pc?.close())
+  voice.over = () => {
+    over = true
+    pc?.close()
+    hush(voice)
+  }
   tell({ name: "state", state: "connecting" })
   // Wait for getUserMedia before creating the offer so the SDP carries the real track's msid and SSRC;
   // Cloudflare Realtime SFU drops RTP packets whose SSRC wasn't declared in the initial tracks/new offer.
@@ -221,10 +201,7 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
       applyOutput(voice, el)
       document.body.append(el)
       voice.audios.add(el)
-      el.play().catch((err) => {
-        voice.playError = err instanceof Error ? err.message : String(err)
-        logVoice("audio_play", voice, err)
-      })
+      el.play().catch((err) => logVoice("audio_play", voice, err))
       track.addEventListener("ended", () => {
         voice.audios.delete(el)
         el.remove()
@@ -232,13 +209,8 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
     }
     pc.onconnectionstatechange = () => {
       if (over || !pc) return
-      voice.flips = (voice.flips ?? 0) + 1
       if (pc.connectionState === "connected") {
         tell({ name: "state", state: "connected" })
-        if (!voice.statsChecked) {
-          voice.statsChecked = true
-          setTimeout(() => void checkStats(voice), 4000)
-        }
       } else if (pc.connectionState === "connecting" || pc.connectionState === "disconnected") {
         tell({ name: "state", state: "connecting" })
       } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
@@ -266,12 +238,11 @@ const answered = async (/** @type {any} */ voice, /** @type {string} */ sdp, /**
   const pc = voice.peer
   if (!pc) return
   try {
-    if (pc.signalingState !== "stable") await pc.setLocalDescription({ type: "rollback" }).catch(() => {})
+    if (pc.signalingState !== "stable") await pc.setLocalDescription({ type: "rollback" })
     await pc.setRemoteDescription({ type: "offer", sdp })
     await pc.setLocalDescription()
     await gathered(pc)
     tell({ name: "answer", sdp: pc.localDescription?.sdp })
-    setTimeout(() => void checkStats(voice), 4000)
   } catch (err) {
     logVoice("renegotiate_offer", voice, err)
     voice.over()
@@ -353,8 +324,6 @@ export function voice(op, key, params, tell) {
     one.over()
     navigator.mediaDevices?.removeEventListener?.("devicechange", one.onDeviceChange)
     stopMic(one)
-    for (const el of one.audios) el.remove()
-    one.audios.clear()
     all.delete(key)
   }
 }
