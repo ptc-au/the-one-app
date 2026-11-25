@@ -6,6 +6,7 @@ defmodule AppStore do
   """
   @behaviour OneCore.App
 
+  alias OneCore.Apps.Icons
   alias OneCore.Call
 
   # The app directory's list (www/app-directory/README.md): every app anyone has installed from a git repo.
@@ -15,7 +16,7 @@ defmodule AppStore do
   def icon, do: "client/icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.32.107"}
+  def requires, do: %{"core" => ">= 0.34.604"}
 
   @impl true
   def entrypoints, do: [%{page: "client/index.html", category: "app-store", subject: "user", runtime_version: 4}]
@@ -48,7 +49,7 @@ defmodule AppStore do
         },
         source: %{type: ["string", "null"], description: "The git repo the directory has it from: owner/repo"},
         title: %{type: "string"},
-        icon: %{type: ["string", "null"], description: "A data: address"},
+        icon: %{type: ["string", "null"], description: "Where a client reads it, named for what's in it: ui://icons/<sha256>/icon.svg"},
         subtitle: %{type: ["string", "null"]},
         about: %{type: ["string", "null"]},
         category: %{type: ["string", "null"]},
@@ -146,8 +147,10 @@ defmodule AppStore do
     here =
       for app <- deployed do
         app
-        |> Map.take([:app, :title, :icon, :subtitle, :about, :category, :entrypoints, :widgets, :tools, :trusted, :installed_for])
+        |> Map.take([:app, :title, :subtitle, :about, :category, :widgets, :tools, :trusted, :installed_for])
         |> Map.merge(%{
+          icon: Icons.address(app.icon),
+          entrypoints: for(entrypoint <- app.entrypoints, do: %{entrypoint | icon: Icons.address(entrypoint.icon)}),
           name: Path.basename(app.app),
           source: nil,
           requires:
@@ -198,12 +201,21 @@ defmodule AppStore do
   defp reach("groups/" <> _), do: 1
   defp reach(_user), do: 0
 
-  # The directory's apps. It's a website outside the network, which may not answer: then the Marketplace lists only
-  # the network's own.
+  # The directory's apps, their icons (which it gives as `data:` addresses) as the address a client reads them at
+  # (`OneCore.Apps.Icons`). It's a website outside the network, which may not answer or may give an icon that isn't
+  # one: then the Marketplace lists only the network's own.
   defp directory(call) do
     case Call.fetch(call, %{url: @directory}) do
-      %{status: 200, body: body} -> JSON.decode!(body)["apps"]
-      _ -> []
+      %{status: 200, body: body} ->
+        for app <- JSON.decode!(body)["apps"] do
+          %{app | "icon" => Icons.address(app["icon"])}
+          |> Map.update("entrypoints", [], fn entrypoints ->
+            for entrypoint <- entrypoints, do: %{entrypoint | "icon" => Icons.address(entrypoint["icon"])}
+          end)
+        end
+
+      _ ->
+        []
     end
   rescue
     _ -> []

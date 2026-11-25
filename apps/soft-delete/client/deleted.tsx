@@ -110,8 +110,11 @@ async function purgeAll() {
   if (await confirm(question)) await doing("soft-delete_purge_all")
 }
 
+/// Where this page loads an icon, from its address, `ui://icons/<sha256>/<file>`: beside its app's own files, at that hash, where the client serves every app's files by version (`<app>@<version>/`), so it's asked for once.
+const src = (icon: string) => icon.replace(/^ui:\/\/([^/]+)\/([^/]+)\//, "../../$1@$2/")
+
 /// An item's icon: its app's.
-const Tile = (props: { icon: string | null }) => <Show when={props.icon}>{(icon) => <Image src={icon()} alt="" style={look.icon} />}</Show>
+const Tile = (props: { icon: string | null }) => <Show when={props.icon}>{(icon) => <Image src={src(icon())} alt="" style={look.icon} />}</Show>
 
 /// One item: what it is, how long it has, and Restore and Delete Now as rows of their own.
 function Detail(props: { item: Item }) {

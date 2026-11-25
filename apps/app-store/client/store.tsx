@@ -180,13 +180,16 @@ async function trust(market: Market, owner: Owner, done: Install) {
   act(owner, done.app, "trust", () => call("apps_trust", { name: done.name, trusted: !done.trusted }, { subject: owner.subject }))
 }
 
+/// Where this page loads an icon, from its address, `ui://icons/<sha256>/<file>`: beside its app's own files, at that hash, where the client serves every app's files by version (`<app>@<version>/`), so it's asked for once.
+const src = (icon: string) => icon.replace(/^ui:\/\/([^/]+)\/([^/]+)\//, "../../$1@$2/")
+
 /// An app's icon and its name under it, the size it is on a Home Screen: a long name wraps to a second line, as the App Store's and the Home Screen's do, never cut to a few letters.
 function Tile(props: { listed: { title?: string; name?: string; icon: string | null }; onPress?: () => void; fills?: boolean }) {
   const name = () => props.listed.title ?? props.listed.name
   return (
     <Pressable role={props.onPress ? "button" : undefined} aria-label={props.onPress ? name() : undefined} onPress={props.onPress} style={[look.tile, props.fills && look.fills]}>
       <Show when={props.listed.icon} fallback={<View style={[look.icon, look.blank]} />}>
-        <Image src={props.listed.icon!} alt="" style={look.icon} />
+        <Image src={src(props.listed.icon!)} alt="" style={look.icon} />
       </Show>
       <Text aria-hidden={props.onPress ? "true" : undefined} style={look.name}>{name()}</Text>
     </Pressable>
@@ -404,7 +407,7 @@ function Page(props: { market: Market; all: Owners; listed: Listed }) {
     <View style={look.page}>
       <View style={look.top}>
         <Show when={props.listed.icon} fallback={<View style={[look.largeIcon, look.blank]} />}>
-          <Image src={props.listed.icon!} alt="" style={look.largeIcon} />
+          <Image src={src(props.listed.icon!)} alt="" style={look.largeIcon} />
         </Show>
         <View style={look.about}>
           <View style={look.titles}>

@@ -137,7 +137,7 @@ defmodule SoftDelete do
                         description: "The app whose uninstalling deleted it, by the name it was installed by"
                       },
                       title: %{type: "string", description: "The name of the app its artifacts are of, as people read it"},
-                      icon: %{type: ["string", "null"], description: "That app's icon, a data: address"},
+                      icon: %{type: ["string", "null"], description: "That app's icon, where a client reads it, named for what's in it: ui://icons/<sha256>/icon.svg"},
                       installed: %{
                         type: "boolean",
                         description: "Whether that app is installed for its owner, to open it once it's restored"
@@ -341,7 +341,7 @@ defmodule SoftDelete do
   end
 
   def call("list", _inputs, call) do
-    icons = Map.new(Call.deployed(call), &{Path.basename(&1[:app]), &1[:icon]})
+    icons = Map.new(Call.deployed(call), &{Path.basename(&1[:app]), OneCore.Apps.Icons.address(&1[:icon])})
 
     deleted =
       for {id, %{"state" => state} = record} <- records(call), state in ["deleted", "purging"], owns_item?(call, record) do
