@@ -139,6 +139,9 @@ defmodule ChromeProfiles do
       },
       %{
         name: "rename",
+        ui: "client/update.html",
+        path: "{profile}/rename",
+        runtime_version: 4,
         description: "Rename a profile.",
         inputs: %{type: "object", required: ["profile", "name"], properties: %{profile: @profile, name: %{type: "string", minLength: 1, maxLength: 40}}},
         outputs: %{type: "object", properties: %{profile: @profile, was: %{type: "string"}}, required: ["profile", "was"]}

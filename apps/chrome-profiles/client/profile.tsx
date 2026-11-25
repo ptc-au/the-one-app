@@ -16,11 +16,12 @@ interface Profile {
   updating?: { session: string; until: number; state: State; stage?: string; why?: string }
 }
 
-/** What the Vault gives the component: the profile by its name, who it's for, the sheet of its own that's open (`sheet`, `rename`; a screen of the Vault, which `sheeted` goes to), and what to do once it's renamed or gone. */
+/** What the Vault gives the component: the profile by its name, who it's for, the sheet of its own that's open (`sheet`, `rename`; a screen of the Vault, which `sheeted` goes to), filled in with `name` (`rename`'s), and what to do once it's renamed or gone. */
 interface Props {
   item: string
   subject?: string
   sheet?: string
+  name?: string
   sheeted?: (sheet?: string) => void
   open?: (item: string) => void
   close?: () => void
@@ -147,10 +148,10 @@ function Update(props: { profile: string; subject?: string }) {
 /// A new name for the profile.
 function Rename(props: Props) {
   const [busy, setBusy] = createSignal(false)
-  const [typed, setTyped] = createSignal(props.item)
-  // Opened again, it starts from the name it has, not from what was typed and left.
+  const [typed, setTyped] = createSignal(props.name ?? props.item)
+  // Opened again, it starts from the name it's given, or has, not from what was typed and left.
   const asking = () => props.sheet === "rename"
-  createEffect(asking, (now) => void (now && setTyped(props.item)))
+  createEffect(asking, (now) => void (now && setTyped(props.name ?? props.item)))
   const send = async () => {
     const name = typed().trim()
     if (!name) return
