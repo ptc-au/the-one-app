@@ -43,17 +43,24 @@ let greeted
 /// What the tool was given and answered, which its page is told, and whether the page shown is its.
 /** @type {object | undefined} */
 let input
-/** @type {{ _meta?: { page?: unknown, tool?: unknown } } | undefined} */
+/** @type {{ _meta?: { page?: unknown, tool?: unknown, subject?: unknown } } | undefined} */
 let result
 let tools = false
+/// Whom the page shown is for, where it isn't whoever let the assistant in: the group whose app's tool was called for
+/// it (its result's `_meta.subject`). Its page is that app's, and what it asks is asked for them.
+/** @type {string | undefined} */
+let subject
 
-/** Shows `page`, `<app>/<path>`, at `fragment`, the place in it, in the renderer's frame. @param {string} page @param {string} [fragment] */
-function show(page, fragment) {
+/** Shows `page`, `<app>/<path>`, at `fragment`, the place in it, in the renderer's frame, for `whom` (`subject`). @param {string} page @param {string} [fragment] @param {string} [whom] */
+function show(page, fragment, whom) {
   const [app, ...path] = page.split("/")
-  // By its version, as the web client loads it (`address`): what the page loads is found beside it from there.
-  const version = resources.find(({ uri }) => named(uri) === page)?.uri.split("/")[3]
+  subject = whom
+  // By its version, as the web client loads it (`address`): what the page loads is found beside it from there. One for
+  // someone else is found by its app's name, at the address that says for whom, last part first (`notes.family.groups`).
+  const version = whom ? undefined : resources.find(({ uri }) => named(uri) === page)?.uri.split("/")[3]
+  const host = whom ? [app, ...whom.split("/").reverse()].join(".") : app
   const theme = greeted?.hostContext?.theme
-  const at = `${origin}${apps}/${app}/${version ? `${app}@${version}` : app}/${path.join("/")}${typeof theme === "string" ? `?theme=${theme}` : ""}${fragment ? `#${fragment}` : ""}`
+  const at = `${origin}${apps}/${host}/${version ? `${app}@${version}` : app}/${path.join("/")}${typeof theme === "string" ? `?theme=${theme}` : ""}${fragment ? `#${fragment}` : ""}`
   const shown = /** @type {HTMLIFrameElement} */ (frame.cloneNode())
   shown.src = `${origin}/renderer/#${at}`
   frame.replaceWith(shown)
@@ -68,17 +75,21 @@ const request = (id, method, params) =>
     async (response) => (response.ok ? response.json() : { error: { code: -32000, message: response.status === 401 ? "This page's sign-in ended. Ask your assistant to show it again." : await response.text() } }),
     () => ({ error: { code: -32000, message: "Can't reach your network. Check this device is online." } }),
   )
-/// The tools that only read, by name, as the network lists them: a call to any other may change what the page shows.
-/** @type {Promise<Set<string>> | undefined} */
-let reading
-/** Asks the network what the page asked, and answers the page. After a call that may have changed something, the page
- * asks again for what it was answered, as the web client has it (`request` in host.js). @param {{ id: unknown, method: string, params?: any }} asked */
+/// The tools that only read, by name, as the network lists them for each subject (`""` whoever let the assistant in):
+/// a call to any other may change what the page shows.
+/** @type {Map<string, Promise<Set<string>>>} */
+const reading = new Map()
+/** Asks the network what the page asked, for whom it's for unless it says, and answers the page. After a call that may
+ * have changed something, the page asks again for what it was answered, as the web client has it (`request` in
+ * host.js). @param {{ id: unknown, method: string, params?: any }} asked */
 async function ask({ id, method, params }) {
-  const answered = await request(id, method, params)
+  const meta = subject ? { _meta: { subject, ...params?._meta } } : {}
+  const answered = await request(id, method, { ...params, ...meta })
   toPage(answered.error ? { id, error: answered.error } : { id, result: answered.result })
   if (method !== "tools/call" || answered.error || answered.result?.isError) return
-  reading ??= request(0, "tools/list").then(({ result }) => new Set((result?.tools ?? []).filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name)))
-  if (!(await reading).has(params?.name)) toPage({ method: "notifications/one/changed", params: {} })
+  const whom = meta._meta?.subject ?? ""
+  if (!reading.has(whom)) reading.set(whom, request(0, "tools/list", meta).then(({ result }) => new Set((result?.tools ?? []).filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name))))
+  if (!(await reading.get(whom))?.has(params?.name)) toPage({ method: "notifications/one/changed", params: {} })
 }
 
 addEventListener("message", ({ source, data }) => {
@@ -96,7 +107,7 @@ addEventListener("message", ({ source, data }) => {
       const page = result?._meta?.page
       if (typeof page === "string") {
         tools = true
-        show(page)
+        show(page, undefined, typeof result?._meta?.subject === "string" ? result._meta.subject : undefined)
       }
       return
     }
