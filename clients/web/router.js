@@ -50,13 +50,23 @@ function show(page, fragment) {
   frame = shown
 }
 
-/** Asks the network what the page asked, and answers the page. @param {{ id: unknown, method: string, params?: unknown }} asked */
-async function ask({ id, method, params }) {
-  const answered = await fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then(
+/** Asks the network `method`, as whoever let the assistant in. → its JSON-RPC answer. @param {unknown} id @param {string} method @param {unknown} [params] */
+const request = (id, method, params) =>
+  fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then(
     async (response) => (response.ok ? response.json() : { error: { code: -32000, message: response.status === 401 ? "This page's sign-in ended. Ask your assistant to show it again." : await response.text() } }),
     () => ({ error: { code: -32000, message: "Can't reach your network. Check this device is online." } }),
   )
+/// The tools that only read, by name, as the network lists them: a call to any other may change what the page shows.
+/** @type {Promise<Set<string>> | undefined} */
+let reading
+/** Asks the network what the page asked, and answers the page. After a call that may have changed something, the page
+ * asks again for what it was answered, as the web client has it (`request` in host.js). @param {{ id: unknown, method: string, params?: any }} asked */
+async function ask({ id, method, params }) {
+  const answered = await request(id, method, params)
   toPage(answered.error ? { id, error: answered.error } : { id, result: answered.result })
+  if (method !== "tools/call" || answered.error || answered.result?.isError) return
+  reading ??= request(0, "tools/list").then(({ result }) => new Set((result?.tools ?? []).filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name)))
+  if (!(await reading).has(params?.name)) toPage({ method: "notifications/one/changed", params: {} })
 }
 
 addEventListener("message", ({ source, data }) => {
