@@ -11,8 +11,13 @@
 # an hour, so the secret is never seen here. WINDOWS_SIGNING, jsign's own options naming a keystore of one's own
 # (`--keystore <file>.pfx --storepass <password>`), signs with that instead.
 #
+# The item is in the Vault of this machine's own client, as the Developer ID is in this machine's 1Password: whoever
+# releases signs as the same publisher, whichever network's installer it is (`tooling/installers` runs as that
+# network's client, where there is no such item).
+#
 # Without either, it says in a line that it signed nothing, and the programs ship unsigned.
 set -euo pipefail
+unset ONE_HOME
 item="Artifact Signing"
 if [[ -n ${WINDOWS_SIGNING:-} ]]; then
   read -ra options <<<"$WINDOWS_SIGNING"
