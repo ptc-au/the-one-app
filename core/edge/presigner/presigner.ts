@@ -19,6 +19,15 @@ const SIGNED_FOR = 60;
  * the presigner signs, which says so (`Changes`), and this is only for one that a write it didn't sign changed.
  */
 const KEPT = 30_000;
+/** How long, in milliseconds, what's signed may still land: the time it's signed for, and a few seconds for clocks. */
+const LANDS = (SIGNED_FOR + 5) * 1000;
+/**
+ * An entry of a database's log (`Database.Log`). The server holding a database's lease reads its next one every two
+ * seconds while it's in use, which is almost always absent (`Database.Lease`), so whether it is, is kept (`Changes`).
+ */
+const LOG = /\/log\/\d{16}$/;
+/** How long, in milliseconds, a blob known to be absent is still kept as that after it was last asked for. */
+const FORGOTTEN = 10 * 60_000;
 /**
  * A list of servers is that of a user, a group or the network, `servers` under its prefix. Whoever writes one asks the
  * presigner to sign the write (`sign`), which is how the presigner hears that it's changing.
@@ -158,6 +167,7 @@ export class Network extends WorkerEntrypoint<Env> {
 export class Own extends WorkerEntrypoint<Env, { app: string }> {
   /** Writes the blob `name`, only if there's none. Gives whether it wrote it. */
   async write(name: string, data: BodyInit): Promise<boolean> {
+    await this.writing(name);
     const wrote = await bucket(this.env).fetch(this.blob(name), { method: "PUT", body: data, headers: { "if-none-match": "*" } });
     if (!wrote.ok && wrote.status !== 412) throw new Error(`The bucket answered ${wrote.status} for ${name}`);
     return wrote.ok;
@@ -171,6 +181,7 @@ export class Own extends WorkerEntrypoint<Env, { app: string }> {
    */
   async update(name: string, change: (was: string | null) => string | Promise<string>): Promise<string> {
     const at = this.blob(name);
+    await this.writing(name);
     for (;;) {
       const got = await bucket(this.env).fetch(at);
       if (!got.ok && got.status !== 404) throw new Error(`The bucket answered ${got.status} for ${name}`);
@@ -193,6 +204,12 @@ export class Own extends WorkerEntrypoint<Env, { app: string }> {
   blob(name: string) {
     if (!isBlob(name)) throw new Error("That isn't a blob's name");
     return blob(this.env, `${NETWORK}own/${this.ctx.props.app}/${name}`);
+  }
+
+  /** Tells `Changes` of a write of a log's entry before it's made, as `sign` does. */
+  async writing(name: string) {
+    const key = `${NETWORK}own/${this.ctx.props.app}/${name}`;
+    if (LOG.test(key)) await changes(this.env).writing(key);
   }
 }
 
@@ -241,6 +258,7 @@ async function sign(env: Env, by: string, token: string | null, tokens: string[]
   if (!(await allowed(env, by, token, tokens, ask))) return refuse(403, "You aren't on its list of servers");
   // Said before it's signed, so no list read from now on is believed until what's signed has had its time to land.
   if (LIST.test(ask.key)) await changes(env).hold(ask.operation === "write" ? "absent" : "any");
+  if (LOG.test(ask.key)) await changes(env).writing(ask.key);
   const { method, url, headers } = request(env, ask);
   url.searchParams.set("X-Amz-Expires", String(SIGNED_FOR));
   const signed = await bucket(env).sign(url, { method, headers, aws: { signQuery: true } });
@@ -260,14 +278,25 @@ async function read(env: Env, by: string, token: string | null, tokens: string[]
   }
   const { method, url, headers } = request(env, ask);
   const stop = new AbortController();
-  const response = bucket(env).fetch(url, { method, headers, signal: stop.signal });
-  // One dropped for a server that may not have it isn't an error; awaited below, one that failed still throws.
-  response.catch(() => {});
-  if (!(await allowed(env, by, token, tokens, ask))) {
+  const fetched = () => {
+    const response = bucket(env).fetch(url, { method, headers, signal: stop.signal });
+    // One dropped for a server that may not have it isn't an error; awaited below, one that failed still throws.
+    response.catch(() => {});
+    return response;
+  };
+  // A log's entry is asked about with the lists, and read from the bucket only where it may be there.
+  const logged = ask.operation === "read" && LOG.test(ask.key);
+  const lists = reader(env, logged ? ask.key : undefined);
+  const permitted = allowed(env, by, token, tokens, ask, lists);
+  const asked = logged ? await lists.asked! : undefined;
+  const response = asked?.absent ? undefined : fetched();
+  if (!(await permitted)) {
     stop.abort();
     return refuse(403, "You aren't on its list of servers");
   }
+  if (!response) return new Response(null, { status: 404, headers: { "content-type": "application/octet-stream" } });
   const got = await response;
+  if (asked && got.status === 404) await changes(env).absent(ask.key, asked.at);
   const tag = got.headers.get("etag");
   // Only what the presigner says itself is JSON, so a server tells it from the bucket's answer by its type. A blob's
   // own type isn't passed on, so nothing between here and the server takes it for a page to change.
@@ -279,7 +308,7 @@ async function read(env: Env, by: string, token: string | null, tokens: string[]
  * send the request to the bucket that `ask` is: one acting for the network, or for whoever the key is under, or with
  * a token that says it acts for them.
  */
-async function allowed(env: Env, by: string, token: string | null, tokens: string[], { operation, key }: Ask) {
+async function allowed(env: Env, by: string, token: string | null, tokens: string[], { operation, key }: Ask, lists = reader(env)) {
   const server = SERVER.exec(key)?.[1];
   const reads = operation === "read" || operation === "list";
   const icon = ICON.test(key) && (operation === "read" || operation === "write");
@@ -289,8 +318,7 @@ async function allowed(env: Env, by: string, token: string | null, tokens: strin
   // edge was deployed with (`FIRST_SERVER`), which only whoever deployed it knows: it writes the network's
   // list. The secret opens nothing after that, since the bucket lets only the first write land.
   const first = operation === "write" && key === NETWORK + "servers" && same(claims(token ?? "").first, env.FIRST_SERVER);
-  // Every list that could let it is read at once, each once: one trip to the bucket.
-  const lists = reader(env);
+  // Every list that could let it is read at once, each once: one trip to `Changes`.
   // Another server's word counts for whoever the key is under, and for whoever it says deployed or installed an app:
   // so a group's server, which runs its members' apps, deploys them too.
   const vouched = tokens.filter((shown) => {
@@ -357,8 +385,18 @@ export async function servers(lists: Lists, of: unknown): Promise<string[]> {
   return owner(of) === of ? (await lists(of as string)).acting : [];
 }
 
-/** The lists of servers, by their prefixes, as one request reads them. */
-type Lists = (prefix: string | undefined) => Promise<Listed>;
+/**
+ * The lists of servers, by their prefixes, as one request reads them, and what `Changes` said with the first of them
+ * of the blob that request reads, if it asked.
+ */
+type Lists = ((prefix: string | undefined) => Promise<Listed>) & { asked?: Promise<Asked> };
+
+/** The lists of servers asked for, whether the blob asked about is surely not in the bucket, and when it was asked. */
+interface Asked {
+  lists: Listed[];
+  absent: boolean;
+  at: number;
+}
 
 /** A list of servers as the bucket gave it, `null` where there's none yet, and those on it that chose whoever it's of. */
 interface Listed {
@@ -381,6 +419,38 @@ export class Changes extends DurableObject<Env> {
   #lists = new Map<string, { at: number; list: Promise<string[] | null>; found?: string[] | null }>();
   /** Whom each server chose, by its key, as being read, and when it was asked for. */
   #members = new Map<string, { at: number; members: Promise<string[]> }>();
+  /** Log entries the bucket said weren't there, by key, with when each was last asked about. */
+  #absent = new Map<string, number>();
+  /** When a write of each log entry was last signed, while it may still land. */
+  #written = new Map<string, number>();
+  /** When this copy of the object started: what was signed before, it wasn't told of. */
+  #started = Date.now();
+
+  /**
+   * The lists of servers `prefixes` names, as `lists` gives them, and whether the log entry `key` is surely not in
+   * the bucket: it said so after every write of it that was signed had had its time to land, and none was signed
+   * since. Every write of a blob is signed here (`sign`) or made by an app's part (`Own`), which says so first.
+   */
+  async ask(prefixes: string[], key?: string): Promise<Asked> {
+    const at = Date.now();
+    for (const [old, asked] of this.#absent) if (at - asked >= FORGOTTEN) this.#absent.delete(old);
+    const absent = key !== undefined && this.#absent.has(key);
+    if (absent) this.#absent.set(key, at);
+    return { lists: await this.lists(prefixes), absent, at };
+  }
+
+  /** The bucket said the log entry `key` wasn't there, read once `ask` had answered at `at`. */
+  async absent(key: string, at: number): Promise<void> {
+    if (at - this.#started >= LANDS && !((this.#written.get(key) ?? -Infinity) > at - LANDS)) this.#absent.set(key, Date.now());
+  }
+
+  /** A write of the log entry `key` is signed now, or about to be made. */
+  async writing(key: string): Promise<void> {
+    const at = Date.now();
+    for (const [old, written] of this.#written) if (at - written >= LANDS) this.#written.delete(old);
+    this.#absent.delete(key);
+    this.#written.set(key, at);
+  }
 
   /**
    * The lists of servers `prefixes` names, each with the servers on it that chose whoever it's of. Every copy of the
@@ -434,7 +504,7 @@ export class Changes extends DurableObject<Env> {
 
   /** A write is signed now. The clocks of the copies and this one differ a little, so it's held a few seconds past that. */
   async hold(of: "any" | "absent"): Promise<void> {
-    await this.ctx.storage.put(of, Date.now() + (SIGNED_FOR + 5) * 1000);
+    await this.ctx.storage.put(of, Date.now() + LANDS);
   }
 }
 
@@ -444,22 +514,24 @@ const changes = (env: Env) => env.CHANGES.getByName("lists");
  * Reads the lists of servers for one request: each once, however often it's asked for, and all that are asked for
  * together in one request to `Changes`, which keeps them for every copy of the presigner.
  */
-export function reader(env: Env): Lists {
+export function reader(env: Env, key?: string): Lists {
   const read = new Map<string, Promise<Listed>>();
-  let asking: { prefixes: string[]; listed: Promise<Listed[]> } | undefined;
-  return (prefix) => {
+  let asking: { prefixes: string[]; asked: Promise<Asked> } | undefined;
+  const lists: Lists = (prefix) => {
     if (!prefix) return Promise.resolve({ list: null, acting: [] });
     if (read.has(prefix)) return read.get(prefix)!;
     // What's asked for before this request next waits is asked for at once: `allowed` asks for every list it needs so.
     if (!asking) {
-      const prefixes: string[] = [];
-      asking = { prefixes, listed: Promise.resolve().then(() => ((asking = undefined), changes(env).lists(prefixes))) };
+      const [prefixes, about] = [[] as string[], lists.asked ? undefined : key];
+      asking = { prefixes, asked: Promise.resolve().then(() => ((asking = undefined), changes(env).ask(prefixes, about))) };
+      lists.asked ??= asking.asked;
     }
     const at = asking.prefixes.push(prefix) - 1;
-    const listed = asking.listed.then((listed) => listed[at]);
+    const listed = asking.asked.then(({ lists }) => lists[at]);
     read.set(prefix, listed);
     return listed;
   };
+  return lists;
 }
 
 /** Whom the server `key` chose to act for, as its own `members` blob says, none where it has none yet. */
