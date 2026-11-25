@@ -7,7 +7,7 @@ defmodule OneCore.Tools.Definitions do
   (27 files to 35, 20 Nov 2026).
   """
 
-  # A short-lived link to the bucket, as `OneCore.Bucket.link/2` gives it: sent by its `method` to its `url` with its
+  # A short-lived link to the bucket, as `OneCore.Bucket.link/3` gives it: sent by its `method` to its `url` with its
   # `headers`.
   # A link to send to: a bucket's presigned one, with the headers it was signed with, or the core's release's, with none.
   @link %{

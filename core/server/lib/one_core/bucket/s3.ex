@@ -142,8 +142,9 @@ defmodule OneCore.Bucket.S3 do
 
   # A link is one request to the bucket as the presigner signs it, which works for a minute.
   @impl true
-  def link(address, key, mode) do
-    %{"method" => method, "url" => url, "headers" => headers} = signed(address, %{mode => key}, :transient)
+  def link(address, key, mode, filename) do
+    ask = if filename, do: %{mode => key, filename: filename}, else: %{mode => key}
+    %{"method" => method, "url" => url, "headers" => headers} = signed(address, ask, :transient)
     %{method: method, url: url, headers: headers}
   end
 

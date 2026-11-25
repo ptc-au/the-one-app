@@ -101,8 +101,9 @@ defmodule OneCore.Bucket.Folder do
     end
   end
 
+  # Answered to this machine alone, never to a browser, so the file's name it's saved by isn't said.
   @impl true
-  def link(folder, key, mode) do
+  def link(folder, key, mode, _filename) do
     file(folder, key)
     {port, secret} = links()
     to = Base.url_encode64(:erlang.term_to_binary({folder, key, mode, System.system_time(:second) + @linked_for}))

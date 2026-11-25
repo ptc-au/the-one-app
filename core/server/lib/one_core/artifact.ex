@@ -94,11 +94,13 @@ defmodule OneCore.Artifact do
   def size(%__MODULE__{prefix: prefix}, name), do: Bucket.size(prefix <> name)
 
   @doc "A short-lived link to one of its blobs, for a client to read it with, or to write it if there's none."
-  def link(%__MODULE__{codec: {_module, _with}} = artifact, _name, _mode),
+  def link(artifact, name, mode, filename \\ nil)
+
+  def link(%__MODULE__{codec: {_module, _with}} = artifact, _name, _mode, _filename),
     do: raise("#{name(artifact)} has a codec, so its blobs aren't handed out by a link")
 
-  def link(%__MODULE__{prefix: prefix}, name, :read), do: Bucket.link(prefix <> name, :read)
-  def link(artifact, name, :write), do: Bucket.link(writes(artifact) <> name, :write)
+  def link(%__MODULE__{prefix: prefix}, name, :read, filename), do: Bucket.link(prefix <> name, :read, filename)
+  def link(artifact, name, :write, _filename), do: Bucket.link(writes(artifact) <> name, :write)
 
   @doc "The names of its blobs that start with `starting`, in order."
   def list(%__MODULE__{prefix: prefix}, starting \\ "") do

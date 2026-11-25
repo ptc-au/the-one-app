@@ -24,7 +24,7 @@ defmodule OneCore.Bucket do
   @callback list_tagged(where :: term, prefix :: String.t()) :: [{key, tag}]
   @callback remove(where :: term, key) :: :ok
   @callback size(where :: term, key) :: {:ok, non_neg_integer} | :absent
-  @callback link(where :: term, key, :read | :write) :: link
+  @callback link(where :: term, key, :read | :write, filename :: String.t() | nil) :: link
 
   defmodule Refused do
     @moduledoc "What a bucket raises when it won't do what was asked for the server asking: it's on no list that may."
@@ -107,9 +107,10 @@ defmodule OneCore.Bucket do
 
   @doc """
   A short-lived link to a blob, for something large: to read it, or to write it only if there's none at `key`.
-  A server hands it to a client, which reads or writes the bucket with it and nothing else.
+  A server hands it to a client, which reads or writes the bucket with it and nothing else. A read's `filename` is
+  what a browser saves the blob as (S3's `ResponseContentDisposition`), where its key isn't a file's name.
   """
-  def link(key, mode) when mode in [:read, :write], do: bucket(:link, [key, mode])
+  def link(key, mode, filename \\ nil) when mode in [:read, :write], do: bucket(:link, [key, mode, filename])
 
   @doc """
   Changes a blob in one step: `change` is given what's there, or `nil` for nothing, and gives what's to be there,

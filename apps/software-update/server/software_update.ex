@@ -166,7 +166,7 @@ defmodule SoftwareUpdate do
 
   def call("installer", %{"name" => name}, call) do
     case Enum.find(kept(call), fn {_platform, installer} -> installer["name"] == name end) do
-      {platform, installer} -> Map.merge(shown(platform, installer), %{link: Artifact.link(call.own, installer["file"], :read).url})
+      {platform, installer} -> Map.merge(shown(platform, installer), %{link: Artifact.link(call.own, installer["file"], :read, name).url})
       nil -> raise "The network has no installer named #{name}: `installers` lists them."
     end
   end

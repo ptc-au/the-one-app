@@ -226,6 +226,8 @@ interface Ask {
   after?: string
   /** A list's: whether it lists the folders just under its start, `<start><name>/`, rather than every key. */
   folders?: boolean
+  /** A read's: the file name a browser saves it by, which the link's response says (`response-content-disposition`). */
+  filename?: string
 }
 
 /**
@@ -246,7 +248,8 @@ function parse(body: string): Ask | null {
   const key = ask[operation];
   // A replace names the version it replaces: `*`, any version, would be a write that overwrites blind.
   if (operation === "replace" && !(typeof ask.tag === "string" && ask.tag !== "" && ask.tag.trim() !== "*")) return null;
-  return isBlob(key, operation === "list") ? { operation, key, tag: ask.tag, after: ask.after, folders: ask.folders === true } : null;
+  const filename = operation === "read" && typeof ask.filename === "string" && ask.filename !== "" ? ask.filename : undefined;
+  return isBlob(key, operation === "list") ? { operation, key, tag: ask.tag, after: ask.after, folders: ask.folders === true, filename } : null;
 }
 
 /**
@@ -339,8 +342,9 @@ async function allowed(env: Env, by: string, token: string | null, tokens: strin
 }
 
 /** The request to the bucket that `ask` is, unsigned: its method, URL and headers. */
-function request(env: Env, { operation, key, tag, after, folders }: Ask) {
+function request(env: Env, { operation, key, tag, after, folders, filename }: Ask) {
   const url = new URL(operation === "list" ? env.BUCKET : blob(env, key));
+  if (filename) url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
   if (operation === "list") {
     const listed = { "list-type": "2", prefix: key, ...(after && { "continuation-token": after }), ...(folders && { delimiter: "/" }) };
     url.search = new URLSearchParams(listed).toString();
