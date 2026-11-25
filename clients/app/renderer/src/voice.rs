@@ -241,33 +241,26 @@ impl Session {
             };
             match command {
                 Ok(Command::Answer(sdp)) => {
+                    let sdp = readable(&sdp);
+                    // An answer has the m-lines of the offer it answers. One that doesn't is the SFU's offer of a
+                    // renegotiation, as Cloudflare sends for a track it publishes back to the session, which an app may
+                    // hand its page as either, so it's answered as an offer.
+                    if !answers(&sdp, self.mid) {
+                        self.answered(&sdp, out)?;
+                        continue;
+                    }
                     let Some(pending) = self.pending.take() else { continue };
                     // What the screen reaches the relay from, which the relay takes from only once permitted.
                     for ip in candidates(&sdp) {
                         self.turn.permit(ip);
                     }
-                    self.rtc.sdp_api().accept_answer(
-                        pending,
-                        SdpAnswer::from_sdp_string(&readable(&sdp)).context("the screen's answer")?,
-                    )?;
-                    self.pt = self.opus();
-                    self.turn.flush()?;
-                }
-                Ok(Command::Offer(sdp)) => {
-                    let answer = self
-                        .rtc
+                    self.rtc
                         .sdp_api()
-                        .accept_offer(SdpOffer::from_sdp_string(&readable(&sdp)).context("the SFU's offer")?)?;
-                    let answer = answer.to_sdp_string();
-                    // What it sends now, on the audio m-line it answered as sending.
-                    if let Some(mid) = sending_audio(&answer) {
-                        self.mid = mid;
-                    }
-                    self.pending = None;
+                        .accept_answer(pending, SdpAnswer::from_sdp_string(&sdp).context("the screen's answer")?)?;
                     self.pt = self.opus();
                     self.turn.flush()?;
-                    out.tell("answer", json!({"sdp": answer}));
                 }
+                Ok(Command::Offer(sdp)) => self.answered(&readable(&sdp), out)?,
                 Ok(Command::Mic(samples)) => self.heard(&samples, out)?,
                 // What the TURN server sent, which the next turn takes.
                 Ok(Command::Wake) => {}
@@ -278,6 +271,21 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// Answers the SDP the SFU offered, renegotiating what it publishes back: what it sends now is on the audio m-line
+    /// it answered as sending, which its page hears as `answer`.
+    fn answered(&mut self, sdp: &str, out: &Out) -> anyhow::Result<()> {
+        let answer = self.rtc.sdp_api().accept_offer(SdpOffer::from_sdp_string(sdp).context("the SFU's offer")?)?;
+        let answer = answer.to_sdp_string();
+        if let Some(mid) = sending_audio(&answer) {
+            self.mid = mid;
+        }
+        self.pending = None;
+        self.pt = self.opus();
+        self.turn.flush()?;
+        out.tell("answer", json!({"sdp": answer}));
+        Ok(())
     }
 
     /// Takes what the TURN server sent since it was last asked: each peer's data into the connection.
@@ -434,6 +442,12 @@ impl Session {
 /// How loud a frame is, as RMS, which says whether someone's speaking.
 fn level(frame: &[f32]) -> f32 {
     (frame.iter().map(|sample| sample * sample).sum::<f32>() / frame.len() as f32).sqrt()
+}
+
+/// Whether an SDP answers an offer of the one m-line `mid`, as an answer has the offer's m-lines.
+fn answers(sdp: &str, mid: Mid) -> bool {
+    let mut mids = sdp.lines().filter_map(|line| line.strip_prefix("a=mid:")).map(str::trim);
+    mids.next() == Some(&*mid) && mids.next().is_none()
 }
 
 /// The m-line an SDP's audio is sent on, as it says (`a=sendrecv` or `a=sendonly`), where it sends any.
