@@ -121,10 +121,11 @@ addEventListener("message", ({ source, data }) => {
   if (source !== frame.contentWindow) return
   // A page shown is greeted with what the assistant answered this one, and the tool's is told what it was given and
   // answered, once it says it's ready, as a host tells an MCP App's.
-  // The tool's page is told which tool it shows (MCP Apps' `toolInfo`), which an assistant may not say.
+  // The tool's page is told which tool it shows (MCP Apps' `toolInfo`), which an assistant may not say, and that it's in an
+  // assistant's chat (`inChat`), where what only its person's own device may do is refused.
   if (data.method === "ui/initialize") {
     const tool = tools && typeof result?._meta?.tool === "string" ? { toolInfo: { tool: { name: result._meta.tool } } } : {}
-    return toPage({ id: data.id, result: greeted && { ...greeted, hostContext: { ...tool, ...greeted.hostContext } } })
+    return toPage({ id: data.id, result: greeted && { ...greeted, hostContext: { ...tool, ...greeted.hostContext, assistant: true } } })
   }
   if (data.method === "ui/notifications/size-changed") {
     said = typeof data.params?.height === "number" ? data.params.height : undefined

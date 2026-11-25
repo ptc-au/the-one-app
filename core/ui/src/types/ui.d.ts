@@ -479,6 +479,10 @@ export declare function LiveScreen(props: { label: string; screen?: (inputs: Scr
 
 export declare function Alert(props: { heading: Element; text?: Element; open?: boolean; onClose?: () => void; action?: Element; children?: Element }): Element
 
+/** What only its person's own device may do: its `children` (the action) as they are, and in an assistant's chat (`inChat`)
+ * the way to do it there instead, `link` as a button and a code. */
+export declare function OwnDevice(props: { what: string; link: string; children: Element }): Element
+
 export declare function Sheet(props: { heading?: Element; open?: boolean; onClose?: () => void; children?: Element }): Element
 
 export declare const PresentationContext: Context<() => Rect | undefined>
@@ -784,6 +788,9 @@ export declare function direction(): "ltr" | "rtl"
 /** What the device keeps for itself at each edge of the window (a status bar, a notch, a home indicator), as it
  * changes: the CSS's `env(safe-area-inset-*)`. */
 export declare function safeArea(): { top: number; right: number; bottom: number; left: number }
+/** Whether the page is drawn in an assistant's chat, where every call it makes is the assistant's: what only its
+ * person's own device may do is refused there (`OwnDevice`). */
+export declare function inChat(): boolean
 /** How the client shows the page, as it changes: `"fullscreen"` where the page has the window (a computer's), `"inline"`
  * where it's in something larger, as an assistant's chat is. */
 export declare function displayMode(): "inline" | "fullscreen"

@@ -111,6 +111,8 @@ const [still, setStill] = createSignal(false)
 // How its client shows the page, as MCP Apps' host context says: a computer's window shows it full, an assistant's chat inline.
 const [mode, setMode] = createSignal<"inline" | "fullscreen">("fullscreen")
 const [offered, setOffered] = createSignal<string[]>([])
+// Whether it's drawn in an assistant's chat, which its router says (`clients/web/router.js`): every call the page makes is the assistant's.
+const [assistant, setAssistant] = createSignal(false)
 const [shown, setShown] = createSignal(true)
 interface Context {
   titled?: boolean
@@ -123,6 +125,8 @@ interface Context {
   availableDisplayModes?: string[]
   /** The link the page was opened to: what follows `#` in a page's address (`link()`). */
   link?: string
+  /** Whether the page is in an assistant's chat, where its router says so (`inChat`). */
+  assistant?: boolean
   /** MCP Apps' own: the tool an assistant shows the page for. */
   toolInfo?: { tool?: { name?: string } }
   /** MCP Apps' own: whether a finger points at it, and a mouse hovers. */
@@ -189,6 +193,7 @@ function dress(context?: Context) {
   if (context?.safeAreaInsets) setInsets(context.safeAreaInsets)
   if (context?.containerDimensions) setSize(context.containerDimensions)
   if (context && "reducedMotion" in context) setStill(context.reducedMotion === true)
+  if (context?.assistant) setAssistant(true)
   if (context?.displayMode) setMode(context.displayMode)
   if (context?.availableDisplayModes) setOffered(context.availableDisplayModes)
   if (context && "visible" in context) {
@@ -253,6 +258,9 @@ export const viewport: typeof Page.viewport = () => size()
 export const direction: typeof Page.direction = () => "ltr"
 /** Whether a finger points at it, as its host says (`deviceCapabilities.touch`): a phone's does, a computer's doesn't. */
 export const touch = () => fingered()
+/// `inChat()`: whether the page is drawn in an assistant's chat, where every call it makes is the assistant's, as
+/// its router says. What only its person's own device may do is refused there (`OwnDevice`).
+export const inChat: typeof Page.inChat = () => assistant()
 /// `displayMode()`: how the client shows the page, as MCP Apps' host context has it: `"fullscreen"` where the page has the
 /// window (a computer's), `"inline"` where it's in something larger, as an assistant's chat is.
 export const displayMode: typeof Page.displayMode = () => mode()

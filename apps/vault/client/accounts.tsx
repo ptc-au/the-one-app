@@ -7,7 +7,7 @@
 // one box atop the list, with the one thing that fixes it. A request is an alert, as a system's permission prompt is.
 // It's written as the UI library's skill says, so it runs on a native host as it does on the DOM.
 import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose } from "solid-js"
-import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, illustration, Image, Input, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
+import { Alert, Button, call, changed, Checkbox, client, component, confirm, Empty, Field, Frame, illustration, Image, inChat, Input, List, open as opening, OwnDevice, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
 
 const look = styles({
   fill: { flexGrow: 1, alignSelf: "stretch" },
@@ -157,7 +157,15 @@ type Place = "all" | "passwords" | "accounts" | `section:${string}` | "requests"
 const [whose, setWhose] = createSignal<string>()
 const ask = <T,>(tool: string, inputs?: object): Promise<T> => call(tool, inputs, { subject: whose() }).then(JSON.parse)
 
+/// The network's address, for the links that open a screen on its person's own device (`OwnDevice`).
+const [address, setAddress] = createSignal("")
+void client().then(({ network }) => network && setAddress(network))
+
 const security = createMemo(() => ask<Security>("vault_security"))
+/// The link that opens a request in the Vault it waits in, on a device of its person's, in the One App or the browser: what `vault_request` gives.
+const requestLink = (id: string) => `${address()}/vault/request?id=${encodeURIComponent(id)}&owner=${encodeURIComponent(security().owner)}`
+/// The link that opens one of this Vault's items on a device of its person's.
+const itemLink = (name: string) => `${address()}/?open=${encodeURIComponent(`settings#section&app=vault&section=accounts&owner=${encodeURIComponent(security().owner)}&item=${encodeURIComponent(name)}`)}`
 const nothing = { items: [] as Item[], requests: [] as Request[], apps: [] as App[], types: [] as ItemType[] }
 const contents = createMemo(() => (security().servers.length ? ask<typeof nothing>("vault_list") : nothing))
 const again = () => [security, contents].forEach(refresh)
@@ -176,6 +184,14 @@ const owners = createMemo(async () => {
 })
 /// Whose the Vault is, in a sentence: "your", "The Smiths'", "the network's".
 const whom = () => owners().find((owner) => owner.value === security().owner)?.whose ?? "your"
+
+/// Whose of the Vaults its person can open has this request waiting, if any: not one they can't open, which isn't theirs to answer.
+async function holding(id: string) {
+  for (const owner of await owners()) {
+    const { requests } = await call("vault_list", {}, { subject: owner.value }).then(JSON.parse, () => ({ requests: [] as Request[] }))
+    if (requests.some((request: Request) => request.id === id && request.state === "waiting")) return owner.value
+  }
+}
 
 /// Does something that changes the Vault, and says what the server said if it wouldn't. → whether it did.
 async function does(tool: string, inputs: object) {
@@ -450,6 +466,7 @@ function ItemScreen(props: { item: Item } & Shown) {
         </Show>
       </Section>
       <Section heading="Access">
+        <OwnDevice what="Changing who may use it" link={itemLink(item().name)}>
         <List>
           <Row
             heading="Your agents"
@@ -465,6 +482,7 @@ function ItemScreen(props: { item: Item } & Shown) {
             )}
           </For>
         </List>
+        </OwnDevice>
         <Show when={problem()}>{(problem) => <Problem heading={problem().heading} text={problem().text} />}</Show>
       </Section>
       <List>
@@ -637,7 +655,7 @@ function RequestAlert(props: Shown) {
   const [problem, setProblem] = createSignal<string>()
   const [busy, setBusy] = createSignal(false)
   const item = () => chosen() ?? fits()[0]?.name ?? ""
-  const options = createMemo(() => [...fits().map((item) => ({ value: item.name, label: item.name })), { value: "", label: "New Item" }])
+  const options = () => [...fits().map((item) => ({ value: item.name, label: item.name })), { value: "", label: "New Item" }]
   // Each request asked about starts with nothing chosen or typed.
   createEffect(
     () => request()?.id,
@@ -675,17 +693,18 @@ function RequestAlert(props: Shown) {
       open={!!request()}
       onClose={shut}
       action={
-        <>
+        <OwnDevice what="Answering a request" link={requestLink(props.inputs.request ?? "")}>
           <Button variant="outline" disabled={busy()} onPress={() => answer({ decline: true })}>
             Don't Allow
           </Button>
           <Button loading={busy()} disabled={!request() || !filled()} onPress={allow}>
             Allow
           </Button>
-        </>
+        </OwnDevice>
       }
     >
-      <Show when={request()}>
+      {/* Typed on their own device, where it's theirs to answer. */}
+      <Show when={request() && !inChat()}>
         <Field label={request()!.title}>
           <Select.Root items={options()} value={item()} onValueChange={setChosen} />
         </Field>
@@ -852,7 +871,9 @@ function Banner(props: { request: Request } & Shown) {
         text={props.request.why ?? undefined}
         action={
           <View style={look.inline}>
-            <Button variant="ghost" onPress={() => does("vault_answer", { id: props.request.id, decline: true })}>Don't Allow</Button>
+            <Show when={!inChat()}>
+              <Button variant="ghost" onPress={() => does("vault_answer", { id: props.request.id, decline: true })}>Don't Allow</Button>
+            </Show>
             <Button variant="outline" onPress={() => props.show({ owner: props.inputs.owner, request: props.request.id })}>Choose…</Button>
           </View>
         }
@@ -868,7 +889,7 @@ function Banner(props: { request: Request } & Shown) {
 export default function Accounts(props: Shown) {
   // Whose Vault shows is the screen's `owner`, which this module's calls read; set as it's drawn, so the first call is whose it is.
   setWhose(props.inputs.owner)
-  createEffect(() => props.inputs.owner, setWhose)
+  createEffect(() => props.inputs.owner, (owner) => void setWhose(owner))
   return (
     <Errored fallback={(error) => <Screen heading="Vault" back><Problem heading="Can't show the Vault" text={error() as Error} /></Screen>}>
       <Vault inputs={props.inputs} show={props.show} />
@@ -878,12 +899,19 @@ export default function Accounts(props: Shown) {
 
 function Vault(props: Shown) {
   // A request that isn't waiting any more, as a link to one, or a reload, leaves it.
+  // Not in the Vault shown, it may wait in another of theirs (a group's, the network's), as a link to it says by its
+  // `owner`, which a call that shows it needn't: its Vault opens with it.
   createEffect(
-    () => props.inputs.request !== undefined && !waiting().some(({ id }) => id === props.inputs.request),
+    // Once whose Vault is read is the screen's (`whose` follows `owner` a step behind).
+    () => props.inputs.request !== undefined && props.inputs.owner === whose() && !waiting().some(({ id }) => id === props.inputs.request),
     (missing) => {
       if (!missing) return
-      toast("That request isn't waiting any more.")
-      props.show(base(props))
+      const id = props.inputs.request!
+      void (props.inputs.owner === undefined ? holding(id) : Promise.resolve(undefined)).then((elsewhere) => {
+        if (elsewhere) return props.show({ owner: elsewhere, request: id }, { replace: true })
+        toast("That request isn't waiting any more.")
+        props.show(base(props))
+      })
     },
   )
   const items = (to: Place) => contents().items.filter((item) => placeOf(item) === to)
