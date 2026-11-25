@@ -22,6 +22,8 @@ const DESKTOP = 1280
 const LEAST = 256
 /** A desktop's view: 16:10, as tall as fits under the bar with a line or two left under it. */
 const desktop = (width: number) => Math.max(LEAST, Math.min(width * 0.625, viewport().height - 240))
+/** What a view says in place of its video (a problem, its steps) needs this much room, in CSS pixels, where it's less. */
+const STATES = 480
 const SIZES = { width: 7680, height: [240, 4320] }
 const look = styles({
   root: { gap: tokens.grid[1], minWidth: 0 },
@@ -53,12 +55,12 @@ const look = styles({
 /** What's sent to a screen: its `action`, and what that action takes, as Computer Use's screens have them. */
 export type ScreenInputs = { action: string } & Record<string, unknown>
 
-/** How wide a screen's column is (its readable width, or its room's where that's less), and how far wide media goes out
- * beyond it on each side: to its window's gutters, no further. */
+/** How wide the room inside a screen's gutters is, which wide media fills, and how far that goes out beyond the screen's
+ * readable column on each side, none where the room is narrower. */
 function column() {
   const room = useContext(Room)
   const free = () => room() - safeArea().left - safeArea().right - 2 * pixels(tokens.length.gutter)
-  return () => ({ pull: Math.max(0, (free() - pixels(tokens.length.readable)) / 2), width: Math.max(free(), pixels(tokens.length.readable)) })
+  return () => ({ pull: Math.max(0, (free() - pixels(tokens.length.readable)) / 2), width: free() })
 }
 
 const json = (answer: unknown) => (typeof answer === "string" ? JSON.parse(answer) : answer)
@@ -82,7 +84,7 @@ export function LiveScreen(props: { label: string; screen?: (inputs: ScreenInput
       keyed
       fallback={
         <View style={[look.root, look.bleed(-wide().pull)]}>
-          <View style={[look.view, look.tall(desktop(wide().width))]}>
+          <View style={[look.view, look.tall(Math.max(desktop(wide().width), Math.min(viewport().height - 240, STATES)))]}>
             <View style={look.middle}>{props.children}</View>
           </View>
         </View>
@@ -186,23 +188,25 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
   // The video stays while it's connected to again, under what says so.
   const showsVideo = () => state().matches("live") || state().matches("reconnecting")
 
-  // The screen is resized to the view, in CSS pixels: Chrome on it draws at one pixel each and doesn't take a new
-  // scale while it runs, so a screen of the device's pixels would draw its text smaller than the page's. Its stream
-  // ends as it's resized, and is connected to again at its new size.
+  // The screen is resized to the view's shape, in CSS pixels, at a desktop's width at the least: Chrome on it draws at
+  // one pixel each and doesn't take a new scale while it runs, so a screen of the device's pixels would draw its text
+  // smaller than the page's. Its stream ends as it's resized, and is connected to again at its new size.
   let resizing: ReturnType<typeof setTimeout> | undefined
   const [fixed, setFixed] = createSignal(false)
   let requested = ""
   const resize = () => {
-    const { width: wide, height: tall } = place()!
+    const { width: wide, height } = place()!
+    // The shape the view has with video, not the taller one it has while it says something else.
+    const tall = full() ? height : desktop(wide)
     // A desktop's width, or the view's where that's wider, with the view's shape: its picture is scaled down to fit
     // the view, never squeezed into another shape.
     const width = Math.min(Math.max(DESKTOP, Math.round(wide)), SIZES.width)
-    const height = Math.min(Math.max(Math.round((width * tall) / wide), SIZES.height[0]), SIZES.height[1])
-    if (fixed() || requested === `${width}x${height}`) return
-    requested = `${width}x${height}`
+    const high = Math.min(Math.max(Math.round((width * tall) / wide), SIZES.height[0]), SIZES.height[1])
+    if (fixed() || requested === `${width}x${high}`) return
+    requested = `${width}x${high}`
     // A screen whose display can't be resized (a phone's, or a desktop container made before it could) keeps its shape,
     // and its view takes it.
-    return screen({ action: "resize", width, height }).then(
+    return screen({ action: "resize", width, height: high }).then(
       () => true,
       () => (setFixed(true), false),
     )
@@ -253,7 +257,7 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
           ? look.full
           : (watch || fixed()) && size() && place()
             ? look.tall(Math.min((place()!.width * size()![1]) / size()![0], viewport().height - 128))
-            : look.tall(desktop(props.wide.width)),
+            : look.tall(showsVideo() ? desktop(props.wide.width) : Math.max(desktop(props.wide.width), Math.min(viewport().height - 240, STATES))),
       ]}
     >
       <Pressable onLayout={laid} style={[look.fill, look.surface]}>
