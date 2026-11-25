@@ -17,6 +17,11 @@ defmodule OneCore.Renames do
   """
   def rename("users/" <> _ = old, "users/" <> _ = new) do
     with :ok <- User.user(old), :ok <- User.user(new) do
+      # Only a server of the network's may write everyone's blobs (`core/edge/presigner/presigner.ts`), so a rename
+      # isn't begun anywhere else, where it would stop partway.
+      if not Servers.here?("network"),
+        do: raise("A rename moves what's everyone's, so only a server acting for the network does it")
+
       if Bucket.list(new <> "/") != [],
         do: raise("#{new} has things in the bucket already, so #{old} isn't renamed to it")
 
