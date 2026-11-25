@@ -176,8 +176,11 @@ defmodule ChromeProfiles do
       },
       %{
         name: "update",
+        ui: "client/update.html",
+        path: "{profile}",
+        runtime_version: 4,
         description:
-          "Open a profile's browser for your person, in Vault on any device of theirs, to sign in to sites themselves, or anything else they'd do in their browser. Never sign in for them. It's saved when they tap Save there, or after #{@update_minutes} minutes.",
+          "Open a profile's browser for your person, under this call and in Vault on any device of theirs, to sign in to sites themselves, or anything else they'd do in their browser. Never sign in for them. It's saved when they tap Save there, or after #{@update_minutes} minutes.",
         inputs: %{
           type: "object",
           required: ["profile"],
@@ -309,8 +312,8 @@ defmodule ChromeProfiles do
       session: session,
       until: until,
       then:
-        "It's open for your person, in Vault on any device of theirs, where the profile says Updating under Chrome Profiles. " <>
-          "Ask them to open it there (notifications_send reaches their devices) and sign in to what they want, in its own address bar and tabs. " <>
+        "It's open for your person under this call, where your chat shows apps' pages, and in Vault on any device of theirs, where the profile says Updating under Chrome Profiles. " <>
+          "Ask them to use it (notifications_send reaches their devices, if they aren't in this chat) and sign in to what they want, in its own address bar and tabs. " <>
           "It's saved when they tap Save, or in #{@update_minutes} minutes. Don't sign in for them, and don't use its browser while they do."
     }
   end
