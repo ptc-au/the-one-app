@@ -74,8 +74,10 @@ defmodule OneCore.Renames do
       Servers.invalidate()
       OneCore.Apps.reload(new)
       OneCore.Hooks.invalidate()
-      # Asked for them, and for each group, whose apps keep what they did there too.
-      for whose <- [new | Enum.filter(owners, &String.starts_with?(&1, "groups/"))], reduce: {:ok, %{}, %{}} do
+      # Asked for them, for the network and for each group, whose apps keep what they did there too: an app asked for
+      # one renames them in what it keeps for that one, where its server may write it.
+      for whose <- [new, "network" | Enum.filter(owners, &String.starts_with?(&1, "groups/"))],
+          reduce: {:ok, %{}, %{}} do
         {:ok, heard, unheard} ->
           {:ok, more, failed} = OneCore.Hooks.collect("renamed", %{"who" => old, "to" => new}, {nil, whose})
           {:ok, Map.merge(heard, more), Map.merge(unheard, failed)}

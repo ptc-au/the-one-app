@@ -47,9 +47,9 @@ defmodule Encryption do
   @impl true
   def hook("settings.sections", _about, _call), do: [%{in: "device", component: "device", kinds: ["app"]}]
 
-  # Someone renamed keeps the key they had, sealed by the name it was made under (`keyed/1`): what's encrypted for
-  # them is listed by its new name, and a group's or the network's key is wrapped for them by their new one.
-  def hook("renamed", %{"who" => old, "to" => new}, _call) do
+  # Someone renamed keeps the key they had, sealed by the name it was made under (`keyed/1`), and what's encrypted for
+  # them is listed by its new name. Asked for the network or a group, its key is wrapped for them by their new name.
+  def hook("renamed", %{"who" => old, "to" => new}, %Call{subject: new}) do
     key = key_of(new)
     if Artifact.read(key, "check") != :absent and Artifact.read(key, "name") == :absent, do: Artifact.write(key, "name", old)
 
@@ -58,8 +58,11 @@ defmodule Encryption do
       Artifact.remove(index(new), name)
     end
 
-    for scope <- ["network" | Enum.map(OneCore.Bucket.folders("groups/"), &String.trim_trailing(&1, "/"))],
-        {:ok, wrapped, _tag} <- [Artifact.read(key_of(scope), "owners/" <> old)] do
+    nil
+  end
+
+  def hook("renamed", %{"who" => old, "to" => new}, %Call{subject: scope}) do
+    with {:ok, wrapped, _tag} <- Artifact.read(key_of(scope), "owners/" <> old) do
       Artifact.write(key_of(scope), "owners/" <> new, wrapped)
       Artifact.remove(key_of(scope), "owners/" <> old)
     end
