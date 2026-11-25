@@ -59,6 +59,11 @@ const PONG = 10;
 /** How long an endpoint may say nothing before it's taken as gone: iroh pings its relay every 15 seconds. */
 const SILENT = 45_000;
 /**
+ * How often an endpoint's key is asked about again while it's connected, in milliseconds: one taken off its list is
+ * refused by the presigner on its next request, so what stays open meanwhile is only its connection here.
+ */
+const READMITTED = 60_000;
+/**
  * What the relay asks each server every `SILENT / 3`, over its calls' connection, which its Elixir answers (with
  * nothing, as it does every notification, by the call it came with): a notification, so a server that has stepped
  * aside, which answers no request, answers it too.
@@ -135,6 +140,7 @@ function endpoint(env: RelayEnv, request: Request, url: URL) {
   // What it sends before it's joined waits for that, in the order it was sent.
   let joined: Promise<Joined | undefined> | undefined;
   let received = Date.now();
+  let admitted = Date.now();
   const quiet = setInterval(async () => {
     if (Date.now() - received >= SILENT) {
       clearInterval(quiet);
@@ -143,7 +149,9 @@ function endpoint(env: RelayEnv, request: Request, url: URL) {
     }
     // A server taken off its list, or whose device's token no longer admits it, is cut: what's open isn't the network's.
     const { key } = (await joined) ?? {};
-    if (key && !(await env.NETWORK.admits(key, token))) ours.close(1008, "Not one of this network's");
+    if (!key || Date.now() - admitted < READMITTED) return;
+    admitted = Date.now();
+    if (!(await env.NETWORK.admits(key, token))) ours.close(1008, "Not one of this network's");
   }, SILENT / 3);
   ours.addEventListener("close", () => clearInterval(quiet));
   ours.addEventListener("message", async ({ data }) => {
