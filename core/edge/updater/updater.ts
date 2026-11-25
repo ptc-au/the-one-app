@@ -437,7 +437,7 @@ export class NetworkUpdater extends DurableObject<Env> {
       network_update_status: state.network_update_status,
       build: state.build ?? null,
       latest: state.latest ?? null,
-      serving: state.serving ?? null,
+      serving: state.serving ? serving(state) : null,
       done: state.servers.filter((server) => server.ready !== undefined).length,
       of: state.servers.length,
       waiting_for: state.waiting_for ?? null,
@@ -491,8 +491,19 @@ function said(state: State, status: ReturnType<NetworkUpdater["status"]>) {
  * changed only the app around `one serve run` restarts no server.
  */
 function on(state: State, said: Reported) {
-  const program = said.program_name ? state.serving?.[said.program_name] : undefined;
+  const program = said.program_name ? serving(state)[said.program_name] : undefined;
   return said.version === (state.serving?.["server-code"] ?? state.build) && (!program || !said.program || !newer(program, said.program));
+}
+
+/**
+ * What a server takes of each name: the platform's (`state.serving`), but of a `one` the network's own app is, never
+ * newer than that app (`latest`, its installer's build, `core.ts`), as a server run by a network's own app takes only
+ * its network's build of it (`networks_own` in clients/cli). Where its installer is behind the platform's, its servers
+ * take the server build with the app they have, rather than wait for one that isn't published (PTC's Mac, 25 Nov).
+ */
+function serving(state: State): Record<string, string> {
+  const latest = state.latest ?? {};
+  return Object.fromEntries(Object.entries(state.serving ?? {}).map(([name, build]) => [name, latest[name] && newer(build, latest[name]) ? latest[name] : build]));
 }
 
 /** Whether the build `a` is newer than `b`: `<version>+<count>.<commit>`, by its commit's count. */
