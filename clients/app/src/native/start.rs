@@ -24,7 +24,7 @@ pub(super) struct Started {
 pub(super) fn start(entrypoint: &str, subject: Option<&str>, link: &str, launcher: bool, place: Place, module: &Url, page: Url) -> anyhow::Result<Started> {
     let native = Native::get()?;
     let asked: Arc<Mutex<HashMap<String, Asked>>> = Arc::default();
-    let to = channel(entrypoint, subject, link, launcher, asked.clone(), native, place)?;
+    let to = channel(entrypoint, subject, link, launcher, false, asked.clone(), native, place)?;
     Ok(started(entrypoint, subject, to, asked, module, page))
 }
 

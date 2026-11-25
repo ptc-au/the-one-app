@@ -161,7 +161,13 @@ pub(crate) async fn opens() {
                     views.deploys.lock().expect("no view panics").insert(app.clone(), began);
                 }
             }
-            let listed = views.listed(None).await.unwrap_or_default();
+            let listed = views.listed(None).await;
+            // An app with a menu bar extra installed, removed, or with a new one, as a computer's menu bar shows them.
+            #[cfg(not(mobile))]
+            if let Ok(listed) = &listed {
+                crate::computer::listed(listed);
+            }
+            let listed = listed.unwrap_or_default();
             let stale: Vec<String> = changes.iter().flat_map(|changed| views.stale(changed, &listed)).collect();
             if !stale.is_empty() {
                 eprintln!("a server said {stale:?} were loaded against what's gone");

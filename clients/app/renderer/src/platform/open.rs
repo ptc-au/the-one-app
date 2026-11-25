@@ -137,6 +137,7 @@ impl Windows {
                 on_event: Box::new(on_event),
                 tag: options.tag,
                 places: options.places,
+                under: None,
                 root: options.root,
                 icon: options.icon,
                 pull: None,

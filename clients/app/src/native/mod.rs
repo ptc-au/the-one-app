@@ -73,6 +73,22 @@ pub(crate) async fn open(entrypoint: &str, subject: Option<&str>, link: &str, ic
     })
 }
 
+/// Opens `entrypoint`'s page, an app's menu bar extra's, in a panel put away until its icon is clicked, for its person,
+/// to run for as long as the app does (`computer::menu_bar`). → its window, once it's open; none where it didn't open,
+/// which Telemetry hears.
+#[cfg(not(mobile))]
+pub(crate) async fn menu_bar_extra(entrypoint: &str) -> Option<WindowId> {
+    let started = Instant::now();
+    let (opened_to, opened) = tokio::sync::oneshot::channel();
+    let why = match window(started, entrypoint, None, entrypoint, Kind::MenuBarExtra(Some(opened_to))).await {
+        Ok(true) => return opened.await.ok().flatten(),
+        Ok(false) => "this One App doesn't draw its page: it needs a newer One App".to_owned(),
+        Err(error) => format!("{error:#}"),
+    };
+    reported(entrypoint, started, &why);
+    None
+}
+
 /// Shows the rail's tip over a phone's app windows from now on, or not (`Windows::set_tip`), as the page says as it
 /// opens one.
 #[cfg(mobile)]
@@ -240,6 +256,9 @@ enum Kind {
     Sheet(Sheet),
     /// The client's own, in place of an app's that didn't open (`unopened`).
     Unopened(Unopened),
+    /// An app's menu bar extra's page, in a panel under its icon (`computer::menu_bar`), which tells whoever opens it
+    /// its window.
+    MenuBarExtra(Option<tokio::sync::oneshot::Sender<Option<WindowId>>>),
 }
 
 /// Opens a native window of `kind` for `entrypoint`'s page at `link`, for `subject`, asked to at `started`: its window
@@ -255,6 +274,7 @@ async fn window(started: Instant, entrypoint: &str, subject: Option<&str>, link:
     let name = own.as_ref().and_then(|page| page.name.clone()).or_else(|| listed.as_ref().and_then(listed_name));
     let name = name.unwrap_or_else(|| entrypoint.split('/').next().unwrap_or_default().to_owned());
     let launcher = matches!(kind, Kind::Launcher(..));
+    let menu_bar = matches!(kind, Kind::MenuBarExtra(_));
     // The launcher's window takes the place of the one it had, which may still be closing (its page updated, Update
     // Required, or a problem in its place): that one's forgotten now, so this one isn't taken for a second window of it
     // and told to quit, as the old one's channel ends only once the windows' thread has closed it. A phone's Home Screen
@@ -267,12 +287,12 @@ async fn window(started: Instant, entrypoint: &str, subject: Option<&str>, link:
     // Its window, made at once, and its channel, which its page starts on once it's read (`started`).
     let window: Arc<OnceLock<WindowId>> = Arc::default();
     let asked: Arc<Mutex<HashMap<String, Asked>>> = Arc::default();
-    let to = channel(entrypoint, subject, link, launcher, asked.clone(), Native::get()?, Place::Window(window.clone()))?;
+    let to = channel(entrypoint, subject, link, launcher, menu_bar, asked.clone(), Native::get()?, Place::Window(window.clone()))?;
     let options = options(&kind, entrypoint, subject, &name);
     let title_row = options.title_row;
     let on_event = events(&kind, &to, entrypoint, subject, link, &window, started);
     let told = match &mut kind {
-        Kind::Launcher(told, _) => told.take(),
+        Kind::Launcher(told, _) | Kind::MenuBarExtra(told) => told.take(),
         Kind::App(_) | Kind::Sheet(_) | Kind::Unopened(_) => None,
     };
     let opened = open_window(&view, options, on_event, &window, told)?;
@@ -303,9 +323,9 @@ async fn window(started: Instant, entrypoint: &str, subject: Option<&str>, link:
     let behind = matches!(kind, Kind::Launcher(_, Some(Instead::Behind)));
     // A page of the client's own in the launcher's place floats nothing of its own: the whole panel is its card.
     let instead = matches!(kind, Kind::Launcher(_, Some(_)));
-    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view: view.clone(), page: 0, next: 0, launcher, framed: false, place: fragment.clone().unwrap_or_default(), fragment, sheet, unopened, signing_in, behind, window: window.clone() };
-    // Its title bar, which its page keeps clear, as its host context's `safeAreaInsets` tells it. The launcher has none.
-    let top = if launcher { 0.0 } else { BAR.0 as f32 };
+    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view: view.clone(), page: 0, next: 0, launcher, menu_bar, framed: false, place: fragment.clone().unwrap_or_default(), fragment, sheet, unopened, signing_in, behind, window: window.clone() };
+    // Its title bar, which its page keeps clear, as its host context's `safeAreaInsets` tells it. A panel has none.
+    let top = if launcher || menu_bar { 0.0 } else { BAR.0 as f32 };
     let insets = renderer::geometry::Edges { top, right: 0.0, bottom: 0.0, left: 0.0 };
     let framing = window.clone();
     let screen = move || {
@@ -318,11 +338,12 @@ async fn window(started: Instant, entrypoint: &str, subject: Option<&str>, link:
             screen.page = tokens_page;
             screen.make_frame = trusted.then(|| frames(framing));
             // An app's icon in the middle of its window while its page loads, as a phone's launch screen shows it.
-            screen.splash = if launcher { None } else { icon.clone() };
-            if launcher && !Native::phone() {
+            screen.splash = if launcher || menu_bar { None } else { icon.clone() };
+            if (launcher || menu_bar) && !Native::phone() {
                 // Its glass is the system's, under its page, where there's one; Linux has none, so it's a
-                // popover's colour (DESIGN.md, Launcher).
-                screen.panel = Some(renderer::Panel { corner: computer::CORNER as f32, fill: cfg!(target_os = "linux"), whole: instead });
+                // popover's colour (DESIGN.md, Launcher). A menu bar extra's page is the whole panel, as a page in
+                // the launcher's place is.
+                screen.panel = Some(renderer::Panel { corner: computer::CORNER as f32, fill: cfg!(target_os = "linux"), whole: instead || menu_bar });
             } else if title_row {
                 // Its app's icon and name in its title row (DESIGN.md, App windows).
                 screen.title = Some(renderer::Title { icon, name, start: BAR.1 as f32 });
@@ -352,7 +373,7 @@ async fn shows(kind: &Kind, entrypoint: &str, subject: Option<&str>) -> anyhow::
         Kind::Unopened(unopened) | Kind::Launcher(_, Some(Instead::Unopened(unopened))) => Some((Some(client_page(UNOPENED, &unopened.name).await?), None)),
         Kind::Launcher(_, Some(Instead::SignIn)) => Some((Some(client_page(SIGN_IN, ::client::app_name()).await?), None)),
         Kind::Launcher(_, Some(Instead::Behind)) => Some((Some(client_page(UPDATE, ::client::app_name()).await?), None)),
-        Kind::App(_) | Kind::Launcher(_, None) => listing(entrypoint, subject).await?.map(|resource| (None, Some(resource))),
+        Kind::App(_) | Kind::Launcher(_, None) | Kind::MenuBarExtra(_) => listing(entrypoint, subject).await?.map(|resource| (None, Some(resource))),
     })
 }
 
@@ -365,7 +386,9 @@ fn options(kind: &Kind, entrypoint: &str, subject: Option<&str>, name: &str) -> 
         Kind::Sheet(sheet) => Some(sheet),
         _ => None,
     };
+    let menu_bar = matches!(kind, Kind::MenuBarExtra(_));
     let (size, panel) = match (launcher && !phone, sheet) {
+        _ if menu_bar => ((computer::MENU_BAR_EXTRA.width as f32, computer::MENU_BAR_EXTRA.height as f32), Some(computer::CORNER)),
         (true, _) => ((computer::SIZE.width as f32, computer::SIZE.height as f32), Some(computer::CORNER)),
         (false, Some(_)) => ((440.0, 360.0), None),
         (false, None) => ((1024.0, 720.0), None),
@@ -382,18 +405,18 @@ fn options(kind: &Kind, entrypoint: &str, subject: Option<&str>, name: &str) -> 
         #[cfg(mobile)]
         places: None,
         // An app's window opens where it was left, as each computer's apps do.
-        frame: frame_file(launcher, sheet.is_some(), entrypoint, subject),
+        frame: frame_file(launcher || menu_bar, sheet.is_some(), entrypoint, subject),
         root: launcher && phone,
         icon: match kind {
             Kind::App(from) => *from,
-            Kind::Launcher(..) | Kind::Sheet(_) | Kind::Unopened(_) => None,
+            Kind::Launcher(..) | Kind::Sheet(_) | Kind::Unopened(_) | Kind::MenuBarExtra(_) => None,
         },
         // The recovery key window is a sheet of the app's that asked, as the system attaches one.
         owner: sheet.and_then(|sheet| sheet.owner),
         // An app's window, and the Home Screen, shows its last frame as it opens again.
         snapshot: matches!(kind, Kind::App(_) | Kind::Launcher(..)).then(|| snapshot_file(entrypoint, subject)).flatten(),
         // Its title row is its page's: its app's icon and name (DESIGN.md, App windows).
-        title_row: !phone && !launcher && sheet.is_none(),
+        title_row: !phone && !launcher && !menu_bar && sheet.is_none(),
     }
 }
 
@@ -405,6 +428,8 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
     let launcher_page = matches!(kind, Kind::Launcher(_, None));
     // An app's own window, which says why in a window of the client's own if its page doesn't start (`unopened`).
     let app_window = matches!(kind, Kind::App(_));
+    // A menu bar extra's panel, which closes where its page doesn't start or stops, and opens again from its icon.
+    let menu_bar = matches!(kind, Kind::MenuBarExtra(_));
     let sheet = match kind {
         Kind::Sheet(sheet) => Some(sheet.clone()),
         _ => None,
@@ -423,8 +448,9 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 if !std::mem::replace(&mut opened, true) {
                     let _ = to.send(json!({"id": "opened", "command": "opened", "args": {"view": app, "ms": ms}}));
                 }
-                // A computer's launcher is drawn put away, and is on screen once it's summoned (`Shown`).
-                if !launcher || Native::phone() {
+                // A computer's launcher, and a menu bar extra's panel, is drawn put away, and is on screen once it's
+                // summoned (`Shown`).
+                if !(launcher || menu_bar) || Native::phone() {
                     let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": true}}));
                 }
                 // The device hears its person's notifications once their home is on screen, as the web
@@ -475,6 +501,10 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 if let Some(id) = shown.get().copied().filter(|_| launcher) {
                     launcher_closed(id);
                 }
+                #[cfg(not(mobile))]
+                if let Some(id) = shown.get().copied().filter(|_| menu_bar) {
+                    computer::menu_bar_closed(id);
+                }
                 if let Some(told) = sheet.as_ref().and_then(|sheet| sheet.done.lock().expect("nothing panics holding it").take()) {
                     let _ = told.send(false);
                 }
@@ -503,6 +533,9 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                     return computer::unopened(why, true);
                 }
                 close(&shown);
+                if menu_bar {
+                    return;
+                }
                 crate::hosts::forget(&entrypoint, subject.as_deref());
                 self::unopened(entrypoint.clone(), subject.clone(), link.clone(), why, true);
             }
@@ -524,6 +557,9 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                     crate::hosts::forget(&entrypoint, subject.as_deref());
                     self::unopened(entrypoint.clone(), subject.clone(), link.clone(), why, false);
                 }
+                if menu_bar {
+                    close(&shown);
+                }
             }
             // A computer's window says why it didn't open, as one that didn't start does, and Telemetry hears; a
             // phone opens it in its page.
@@ -539,6 +575,10 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                     close(&shown);
                     crate::hosts::forget(&entrypoint, subject.as_deref());
                     self::unopened(entrypoint.clone(), subject.clone(), link.clone(), why, false);
+                }
+                #[cfg(not(mobile))]
+                if menu_bar {
+                    close(&shown);
                 }
                 #[cfg(mobile)]
                 if launcher {
@@ -676,7 +716,7 @@ fn frames(window: Arc<OnceLock<WindowId>>) -> renderer::MakeFrame {
 /// new page starts over the window's channel, `to`, beside the one it shows, and takes its place in the same window
 /// (`Windows::reload`), whose frame stays on screen until the new page has started. What the page before asked that's
 /// still unanswered is forgotten, so nothing meant for it reaches the new one. → whether its window was open.
-async fn reloaded(window: Arc<OnceLock<WindowId>>, entrypoint: String, subject: Option<String>, link: String, to: UnboundedSender<Value>, asked: Arc<Mutex<HashMap<String, Asked>>>) -> anyhow::Result<bool> {
+async fn reloaded(window: Arc<OnceLock<WindowId>>, entrypoint: String, subject: Option<String>, link: String, menu_bar: bool, to: UnboundedSender<Value>, asked: Arc<Mutex<HashMap<String, Asked>>>) -> anyhow::Result<bool> {
     let view = format!("{}|{entrypoint}", subject.as_deref().unwrap_or_default());
     Opening::begin(&view, Instant::now());
     let Some(Page { page, module, trusted, tables, .. }) = probe(&entrypoint, subject.as_deref()).await? else {
@@ -693,7 +733,7 @@ async fn reloaded(window: Arc<OnceLock<WindowId>>, entrypoint: String, subject: 
     Opening::step(&view, "started");
     let chosen = start["theme"].as_str().map(str::to_owned);
     let fragment = link.split_once('#').map(|(_, fragment)| fragment.to_owned());
-    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.clone(), subject: subject.clone(), view, page: 0, next: 0, launcher: false, framed: false, place: fragment.clone().unwrap_or_default(), fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
+    let state = State { chosen: chosen.clone(), trusted, entrypoint: entrypoint.clone(), subject: subject.clone(), view, page: 0, next: 0, launcher: false, menu_bar, framed: false, place: fragment.clone().unwrap_or_default(), fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
     let (reloaded_to, reloaded) = tokio::sync::oneshot::channel::<anyhow::Result<bool>>();
     Native::get()?.run(move |windows| {
         let Some(id) = window.get().copied() else { return drop(reloaded_to.send(Ok(false))) };
@@ -726,7 +766,7 @@ async fn frame(window: Arc<OnceLock<WindowId>>, node: renderer::tree::Id, src: &
     let started = start(entrypoint, subject, src, false, Place::Frame(window.clone(), node), &module, page)?;
     let view = format!("{}|{entrypoint}", subject.unwrap_or_default());
     let fragment = src.split_once('#').map(|(_, fragment)| fragment.to_owned());
-    let state = State { chosen: None, trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view, page: 0, next: 0, launcher: false, framed: true, place: fragment.clone().unwrap_or_default(), fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
+    let state = State { chosen: None, trusted, entrypoint: entrypoint.to_owned(), subject: subject.map(str::to_owned), view, page: 0, next: 0, launcher: false, menu_bar: false, framed: true, place: fragment.clone().unwrap_or_default(), fragment, sheet: None, unopened: None, signing_in: false, behind: false, window: window.clone() };
     let src = src.to_owned();
     Native::get()?.run(move |windows| {
         let Some(id) = window.get() else { return };
@@ -761,6 +801,7 @@ pub(crate) mod computer {
         pub height: f64,
     }
     pub const SIZE: Size = Size { width: 0.0, height: 0.0 };
+    pub const MENU_BAR_EXTRA: Size = Size { width: 0.0, height: 0.0 };
     pub const CORNER: f64 = 0.0;
 
     /// Opens the launcher's page `entrypoint` as the root window, under every app's (`super::launcher_window`). → why

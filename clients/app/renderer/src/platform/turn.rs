@@ -530,7 +530,7 @@ impl Windows {
             // while it was summoned, 23 Nov).
             // Mutant: one summoned before it had drawn waits for its first frame to be put on the screen, as before.
             if (window.drawn || !crate::mutants::mutant("summon-after-draw")) && std::mem::take(&mut window.placing) {
-                self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room);
+                self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room, window.under);
                 window.came_on_screen();
             }
             // Nothing it shows changed (its page asked for a frame, or something moved that ended where it was): the

@@ -457,7 +457,7 @@ impl Display {
     pub fn set_appearance(&self, _: &NativeWindow, _: Option<crate::Appearance>) {}
 
     // A computer's launcher panel, which a phone has none of: its launcher is its root window (`WindowOptions::root`).
-    pub fn summon(&self, _: &NativeWindow, _: &crate::platform::Places, _: Size<Pixels>) {}
+    pub fn summon(&self, _: &NativeWindow, _: &crate::platform::Places, _: Size<Pixels>, _: Option<crate::geometry::Bounds<f32>>) {}
     /// Hides the window, as a root window is while the page over it shows an app (`Windows::hide`); `show` shows it.
     pub fn put_away(&self, native: &NativeWindow, _: bool) {
         native.window.set_visible(false);

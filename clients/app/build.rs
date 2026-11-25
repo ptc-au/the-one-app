@@ -14,6 +14,10 @@ fn main() {
     }
     #[cfg(feature = "window")]
     ui();
+    #[cfg(feature = "window")]
+    if !phone {
+        phosphor();
+    }
     if target == "windows" {
         embed_manifest::embed_manifest_file("one.manifest").expect("the manifest is embedded");
     }
@@ -48,4 +52,28 @@ fn ui() {
     }
     table.push_str("];\n");
     std::fs::write(out.with_file_name("ui.rs"), table).expect("OUT_DIR takes it");
+}
+
+/// Phosphor's icons, regular and fill, from the UI library's `@phosphor-icons/core` (which `ui` installs), as a sorted
+/// table of each one's SVG by its name there (`microphone`, `moon-fill`), for what an app's page puts in its menu bar
+/// extra's icon's place (`computer::menu_bar`).
+#[cfg(feature = "window")]
+fn phosphor() {
+    use std::fmt::Write;
+    let folder = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("cargo says"));
+    let assets = folder.join("../../core/ui/node_modules/@phosphor-icons/core/assets").canonicalize().expect("the UI library's packages are installed");
+    let mut icons: Vec<(String, std::path::PathBuf)> = ["regular", "fill"]
+        .iter()
+        .flat_map(|weight| std::fs::read_dir(assets.join(weight)).expect("Phosphor has its weights"))
+        .map(|file| file.expect("a file").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "svg"))
+        .map(|path| (path.file_stem().expect("a name").to_string_lossy().into_owned(), path))
+        .collect();
+    icons.sort();
+    let mut table = "/// Phosphor's icons, regular and fill, by their names, sorted.\nstatic PHOSPHOR: &[(&str, &str)] = &[\n".to_owned();
+    for (name, path) in icons {
+        writeln!(table, "    ({name:?}, include_str!({:?})),", path.display().to_string()).expect("a String takes it");
+    }
+    table.push_str("];\n");
+    std::fs::write(std::path::PathBuf::from(std::env::var("OUT_DIR").expect("cargo says")).join("phosphor.rs"), table).expect("OUT_DIR takes it");
 }

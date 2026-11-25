@@ -76,26 +76,31 @@ pub fn keep(shortcuts: Vec<Shortcut>) {
 /// scaled to it.
 #[cfg(not(target_os = "android"))]
 fn png(icon: &str, side: u32) -> anyhow::Result<Vec<u8>> {
-    use resvg::tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
-    use resvg::usvg;
     let (kind, data) = icon
         .strip_prefix("data:")
         .and_then(|icon| icon.split_once(";base64,"))
         .ok_or_else(|| anyhow::anyhow!("an icon is a base64 data: address"))?;
-    let data = data_encoding::BASE64.decode(data.as_bytes())?;
+    Ok(drawn(kind, &data_encoding::BASE64.decode(data.as_bytes())?, side)?.encode_png()?)
+}
+
+/// A picture of `kind`, an SVG or a PNG, drawn `side` pixels square.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn drawn(kind: &str, data: &[u8], side: u32) -> anyhow::Result<resvg::tiny_skia::Pixmap> {
+    use resvg::tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
+    use resvg::usvg;
     let mut drawn = Pixmap::new(side, side).ok_or_else(|| anyhow::anyhow!("an icon has a size"))?;
     let side = side as f32;
     if kind == "image/svg+xml" {
-        let tree = usvg::Tree::from_data(&data, &usvg::Options::default())?;
+        let tree = usvg::Tree::from_data(data, &usvg::Options::default())?;
         let size = tree.size();
         resvg::render(&tree, Transform::from_scale(side / size.width(), side / size.height()), &mut drawn.as_mut());
     } else {
-        let picture = Pixmap::decode_png(&data)?;
+        let picture = Pixmap::decode_png(data)?;
         let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
         let scale = Transform::from_scale(side / picture.width() as f32, side / picture.height() as f32);
         drawn.draw_pixmap(0, 0, picture.as_ref(), &paint, scale, None);
     }
-    Ok(drawn.encode_png()?)
+    Ok(drawn)
 }
 
 /// An app's icon where it leaves the One App (Spotlight, Raycast, the Dock, the Start menu, a launcher), as a square PNG

@@ -23,13 +23,16 @@ impl Display {
     /// Shows a panel's page, `room` points, centred near the top of the monitor the pointer is on, a fifth of the way
     /// down its work area as Spotlight sits, in front with the keyboard, keeping which window was in front; its parts
     /// follow it (`arrange`). Where it was dragged to on that monitor before (`places`), it's there, as much of it as
-    /// fits.
-    pub fn summon(&self, window: &NativeWindow, places: &crate::platform::Places, room: Size<Pixels>) {
+    /// fits. `under` a notification-area icon, it's above it, as the icon's own flyout is, or below it where the taskbar
+    /// is at the top.
+    pub fn summon(&self, window: &NativeWindow, places: &crate::platform::Places, room: Size<Pixels>, under: Option<crate::geometry::Bounds<f32>>) {
         use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint};
         unsafe {
             let mut pointer = POINT::default();
             let _ = GetCursorPos(&mut pointer);
-            let monitor = MonitorFromPoint(pointer, MONITOR_DEFAULTTONEAREST);
+            // The icon's middle, where it's under one: its monitor is the one it shows on.
+            let icon = under.map(|icon| POINT { x: (icon.origin.x + icon.size.width / 2.0) as i32, y: (icon.origin.y + icon.size.height / 2.0) as i32 });
+            let monitor = MonitorFromPoint(icon.unwrap_or(pointer), MONITOR_DEFAULTTONEAREST);
             let mut info = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
             let _ = GetMonitorInfoW(monitor, &mut info);
             let work = info.rcWork;
@@ -37,14 +40,19 @@ impl Display {
             let scale = window.scale();
             let page = ((room.width.0 * scale) as i32, (room.height.0 * scale) as i32);
             let at = window.state.placed.get().map_or((0, 0), |at| ((at.x * scale) as i32, (at.y * scale) as i32));
-            let (x, y) = match places.get(&screen_name(&work)) {
+            let gap = (8.0 * scale) as i32;
+            let (x, y) = match (icon, places.get(&screen_name(&work))) {
+                (Some(icon), _) => (
+                    (icon.x - page.0 / 2).clamp(work.left, work.left + (width - page.0).max(0)),
+                    if icon.y > work.top + height / 2 { (work.bottom - page.1 - gap).max(work.top) } else { work.top + gap },
+                ),
                 // Where it was dragged to, its search and its card kept whole in the work area.
-                Some(kept) => (
+                (None, Some(kept)) => (
                     (work.left + (kept.x * scale) as i32).clamp(work.left + at.0, work.left + at.0 + (width - page.0).max(0)),
                     (work.top + (kept.y * scale) as i32).clamp(work.top + at.1, work.top + at.1 + (height - page.1).max(0)),
                 ),
                 // Its search and its card, as one, in the middle of the monitor's work area, clear of the taskbar.
-                None => (work.left + (width - page.0) / 2 + at.0, work.top + ((height - page.1) / 2).max(0) + at.1),
+                (None, None) => (work.left + (width - page.0) / 2 + at.0, work.top + ((height - page.1) / 2).max(0) + at.1),
             };
             let before = GetForegroundWindow();
             if before != window.hwnd {

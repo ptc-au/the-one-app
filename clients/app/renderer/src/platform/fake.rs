@@ -363,7 +363,7 @@ impl Display {
         Ok(NativeWindow { id: parent.id, size: Cell::new(Size { width: DevicePixels(1), height: DevicePixels(1) }), scale: self.scale, slid: Cell::new(0.0), moved: Cell::new(super::rail::Moved::STILL), shown: Cell::new(true), seen: Cell::new(true) })
     }
 
-    pub fn summon(&self, window: &NativeWindow, _: &super::Places, _: Size<Pixels>) {
+    pub fn summon(&self, window: &NativeWindow, _: &super::Places, _: Size<Pixels>, _: Option<crate::geometry::Bounds<f32>>) {
         window.shown.set(true);
         window.seen.set(false);
         self.summoned.borrow_mut().push(window.id);

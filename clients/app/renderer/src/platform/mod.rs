@@ -380,6 +380,9 @@ struct Window {
     tag: serde_json::Value,
     /// A panel's file of where it was dragged to on each screen (`WindowOptions::places`).
     places: Option<std::path::PathBuf>,
+    /// Where a panel shows under, as its menu bar icon is (`Windows::summon_under`): in the screen's pixels, from the
+    /// top left of its first screen, as the system gives a menu bar icon's place.
+    under: Option<crate::geometry::Bounds<f32>>,
     /// It's the root window (`WindowOptions::root`).
     root: bool,
     /// Where it opened from (`WindowOptions::icon`), and the finger on its rail's line, while there's one, and the

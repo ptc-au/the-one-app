@@ -30,7 +30,7 @@ impl Windows {
         // On the screen with what it last drew, where it has; else as its page draws its first frame (`turn`), so a
         // launcher summoned as the app starts, or opened again in its place, never shows empty.
         match window.drawn {
-            true => self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room),
+            true => self.display.summon(&window.parts[0].native, &places(window.places.as_deref()), window.room, window.under),
             false => window.placing = true,
         }
         // Where the time to show it goes: waiting for this thread, then for the system's to place it, then drawing.
@@ -38,6 +38,17 @@ impl Windows {
         eprintln!("the launcher's summon waited {:.1} ms for its thread and {:.1} ms to be placed", ms(queued), ms(asked.elapsed() - queued));
         // Drawn now, not on the loop's next turn, so its first frame is the one it shows with.
         self.turn();
+    }
+
+    /// Shows panel `id` as `summon` does, but under `under`, its menu bar icon, in the screen's pixels from the top left
+    /// of its first screen, as the system gives one's place: below it, as a Mac's menu bar extra's panel is, or above
+    /// it where it's at the bottom of its screen, as a Windows notification-area icon's flyout is, as much of it as
+    /// fits. With none, where the system doesn't say, it's where `summon` puts it.
+    pub fn summon_under(&mut self, id: WindowId, asked: web_time::Instant, under: Option<crate::geometry::Bounds<f32>>) {
+        if let Some(window) = self.windows.get_mut(&id) {
+            window.under = under;
+        }
+        self.summon(id, asked, None);
     }
 
     /// Puts panel `id` away, and with `give_back`, gives the keyboard back to the window that had it before.

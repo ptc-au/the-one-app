@@ -127,7 +127,7 @@ impl Display {
     }
 
     // A computer's launcher panel, which a frame has none of.
-    pub fn summon(&self, _: &NativeWindow, _: &crate::platform::Places, _: Size<Pixels>) {}
+    pub fn summon(&self, _: &NativeWindow, _: &crate::platform::Places, _: Size<Pixels>, _: Option<crate::geometry::Bounds<f32>>) {}
     pub fn put_away(&self, _: &NativeWindow, _: bool) {}
     pub fn open_part(&self, _: &NativeWindow, _: usize) -> anyhow::Result<NativeWindow> {
         anyhow::bail!("a panel's parts aren't windows of their own on the web")

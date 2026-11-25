@@ -8,6 +8,8 @@ pub(super) struct State {
     pub(super) chosen: Option<String>,
     /// It's the launcher's page, not an app's window, or a page in another's frame.
     pub(super) launcher: bool,
+    /// It's an app's menu bar extra's page, in its panel (`computer::menu_bar`).
+    pub(super) menu_bar: bool,
     pub(super) framed: bool,
     /// The place in its page the link it was opened at names: what follows its `#`.
     pub(super) fragment: Option<String>,
@@ -56,6 +58,14 @@ pub(super) fn signing_in() -> Option<Value> {
     Some(json!({"link": code.link, "typed": typed, "code": code.code, "why": why.map(|why| why.why()), "mark": mark, "markDark": dark}))
 }
 
+/// Whether its person is away from this computer (`idle()`); a phone can't tell.
+fn idle() -> bool {
+    #[cfg(not(mobile))]
+    return computer::idle();
+    #[cfg(mobile)]
+    false
+}
+
 /// Answers what the app's JS posted its client: what the window page answers itself, here, at once, and the rest by
 /// the app's window, as from the app, which comes back as it's heard (`channel`).
 pub(super) fn respond(
@@ -66,7 +76,10 @@ pub(super) fn respond(
     asked: &Arc<Mutex<HashMap<String, Asked>>>,
 ) -> Option<Value> {
     let method = message["method"].as_str()?;
-    let launcher = state.lock().expect("nothing panics holding it").launcher;
+    let (launcher, menu_bar) = {
+        let state = state.lock().expect("nothing panics holding it");
+        (state.launcher, state.menu_bar)
+    };
     // The app asks to be left (`leave`, Escape on its first screen): the launcher is put away, the keyboard back with the
     // app that had it, as Spotlight and Raycast are; a phone's app goes home; a computer's app window stays as it is, as
     // a Mac's and Windows' apps do.
@@ -75,6 +88,9 @@ pub(super) fn respond(
     if method == "ui/notifications/request-teardown" && !framed {
         if launcher {
             computer::hide(true)
+        } else if menu_bar {
+            #[cfg(not(mobile))]
+            computer::menu_bar(state.lock().expect("nothing panics holding it").entrypoint.split('/').next().unwrap_or_default(), json!({"open": false}));
         } else if Native::phone() {
             computer::summon()
         }
@@ -83,6 +99,14 @@ pub(super) fn respond(
     // The launcher is as tall as its page says it is, as Raycast's and Spotlight's panels grow and shrink, and as wide.
     if method == "ui/notifications/size-changed" && launcher {
         computer::resize(message["params"]["width"].as_f64(), message["params"]["height"].as_f64());
+        return None;
+    }
+    // A menu bar extra's panel is as large as its page says, as the launcher's is.
+    #[cfg(not(mobile))]
+    if method == "ui/notifications/size-changed" && menu_bar {
+        if let Some(id) = state.lock().expect("nothing panics holding it").window.get().copied() {
+            computer::resize_panel(id, message["params"]["width"].as_f64(), message["params"]["height"].as_f64());
+        }
         return None;
     }
     // A phone's launcher with something open over its page (a menu, a category): the page has Android's Back come to
@@ -155,10 +179,11 @@ pub(super) fn respond(
                 "availableDisplayModes": ["fullscreen"],
                 "deviceCapabilities": {"touch": Native::phone(), "hover": !Native::phone()},
                 // Whether its window's title row names it, so its first screen doesn't: a page in a frame is named by
-                // nothing above it, nor is the recovery key window's.
-                "titled": !Native::phone() && !state.framed && state.sheet.is_none(),
+                // nothing above it, nor is the recovery key window's, nor a menu bar extra's panel.
+                "titled": !Native::phone() && !state.framed && !state.menu_bar && state.sheet.is_none(),
                 // The place its link names, as its address's `#` says on the DOM (`link()`).
                 "link": state.fragment,
+                "idle": idle(),
                 "connection": "online",
             },
         }))),
@@ -210,6 +235,7 @@ pub(super) fn respond(
                 let mut client = crate::client().unwrap_or_else(|_| json!({}));
                 client["theme"] = json!(state.chosen);
                 client["launcher"] = json!(state.launcher && !Native::phone());
+                client["menuBarExtra"] = json!(state.menu_bar);
                 client["mac"] = json!(cfg!(target_os = "macos"));
                 client["pinsShortcuts"] = json!(false);
                 Some(Ok(client))
@@ -222,6 +248,14 @@ pub(super) fn respond(
                 return None;
             }
         }
+        // Any page of an app changes its menu bar extra, where a computer has one (`computer::menu_bar`).
+        #[cfg(not(mobile))]
+        "one/menu-bar-extra" => {
+            computer::menu_bar(state.entrypoint.split('/').next().unwrap_or_default(), params.clone());
+            Some(Ok(json!({})))
+        }
+        #[cfg(mobile)]
+        "one/menu-bar-extra" => Some(Err(json!({"code": -32000, "message": "A phone has no menu bar"}))),
         // A shortcut on the device's own home screen is Android's page's to pin: a native window has none yet, which it
         // says, as a device without them does (bridge.js).
         "one/pin-shortcut" => Some(Err(json!({"code": -32000, "message": "This device can't put that app on its home screen"}))),
@@ -361,6 +395,7 @@ pub(super) fn channel(
     subject: Option<&str>,
     link: &str,
     launcher: bool,
+    menu_bar: bool,
     asked: Arc<Mutex<HashMap<String, Asked>>>,
     native: Native,
     place: Place,
@@ -373,7 +408,8 @@ pub(super) fn channel(
     let (ours, theirs) = tokio::io::duplex(1 << 16);
     crate::spawn(crate::hosts::talk(theirs));
     let (to, mut out) = unbounded_channel::<Value>();
-    let _ = to.send(json!({"hello": {"entrypoint": entrypoint, "subject": subject, "link": link, "frame": framed.is_some()}}));
+    // A page in a frame, or a menu bar extra's, isn't its app's window, which a link to its app opens beside it.
+    let _ = to.send(json!({"hello": {"entrypoint": entrypoint, "subject": subject, "link": link, "frame": framed.is_some() || menu_bar}}));
     let (read, mut write) = tokio::io::split(ours);
     crate::spawn(async move {
         while let Some(message) = out.recv().await {
@@ -417,7 +453,7 @@ pub(super) fn channel(
                 let (window, native, asked) = (window.clone(), native.clone(), asked_page.clone());
                 let Some(to) = to_page.upgrade() else { return };
                 crate::spawn(async move {
-                    match reloaded(window.clone(), entrypoint.clone(), subject.clone(), link.clone(), to, asked).await {
+                    match reloaded(window.clone(), entrypoint.clone(), subject.clone(), link.clone(), menu_bar, to, asked).await {
                         Ok(_) => {}
                         Err(error) => {
                             eprintln!("{entrypoint} didn't load again in its window, which opens again: {error:#}");
@@ -460,6 +496,7 @@ pub(super) fn channel(
                         let theme = if screen.dark() { "dark" } else { "light" };
                         screen.message(&json!({"jsonrpc": "2.0", "method": "ui/notifications/host-context-changed", "params": {"theme": theme}}));
                     })),
+                    "idle" => on(Box::new(move |screen| screen.message(&json!({"jsonrpc": "2.0", "method": "ui/notifications/host-context-changed", "params": {"idle": payload}})))),
                     "changed" if payload.as_str() == Some(view.as_str()) => {
                         on(Box::new(move |screen| screen.message(&json!({"jsonrpc": "2.0", "method": "notifications/one/changed"}))))
                     }

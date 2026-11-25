@@ -22,7 +22,11 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use crate::native::Instead;
 use crate::{hosts, notifications};
 
+mod idle;
+mod menu_bar;
 mod shortcut;
+pub(crate) use idle::now as idle;
+pub(crate) use menu_bar::{SIZE as MENU_BAR_EXTRA, changed as menu_bar, closed as menu_bar_closed, listed};
 pub(crate) use shortcut::{change as change_shortcut, networks, now as shortcut_now, pause as pause_shortcut, places, switch};
 
 /// The launcher's width and tallest height, in points: Raycast's panel's width, its search bar, two of a phone's pages
@@ -81,6 +85,8 @@ pub(crate) enum Told {
     Open(String),
     /// The network's logo was kept again (`logo`): the ring is drawn from it.
     Logo,
+    /// What's done to the apps' menu bar extras (`menu_bar`).
+    MenuBar(menu_bar::Told),
     Restart,
     Quit,
     /// Every native window closed as it quits (`closing`): it ends.
@@ -114,6 +120,13 @@ pub(crate) fn quit() {
 /// Puts the launcher away, as an app opens from it, or with `give_back`, as it's dismissed.
 pub(crate) fn hide(give_back: bool) {
     tell(Told::Hide(give_back))
+}
+
+/// Makes panel `id`, a menu bar extra's, `width` and `height` points, where its page says, as the launcher is.
+pub(crate) fn resize_panel(id: renderer::platform::WindowId, width: Option<f64>, height: Option<f64>) {
+    let width = width.map(|width| width.clamp(1.0, MOST.width) as f32);
+    let height = height.unwrap_or(MENU_BAR_EXTRA.height).clamp(1.0, MOST.height) as f32;
+    on_native(move |windows| windows.resize(id, width, height));
 }
 
 /// Makes the launcher as tall as `height`, in points, or its tallest, as its page asks.
@@ -519,6 +532,27 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
     #[cfg(target_os = "macos")]
     let _menu = menu();
     let ring = ring(&home);
+    // Each app's menu bar extra, beside the ring, listed as its device signs in, and again as its apps change
+    // (`session`); signed out, it has none.
+    let mut extras = menu_bar::Extras::default();
+    crate::spawn(async {
+        let mut session = crate::app().start.subscribe();
+        loop {
+            let signed_in = matches!(session.borrow_and_update().as_ref(), Some((_, ::client::State::SignedIn { .. })));
+            match signed_in {
+                true => {
+                    if let Ok(apps) = hosts::command("main", "apps", json!({})).await {
+                        listed(&apps);
+                    }
+                }
+                false => listed(&json!({})),
+            }
+            if session.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+    idle::watch();
 
     // The launcher's window, once it's open, whether it says Update Required, and whether it's been decided which it
     // is.
@@ -676,6 +710,7 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 closing(|| std::process::exit(0))
             }
             Event::UserEvent(Told::Shortcut(asked)) => kept = shortcut::take(asked),
+            Event::UserEvent(Told::MenuBar(told)) => extras.told(told),
             Event::UserEvent(Told::Logo) => {
                 if let (Some(ring), Some(icon)) = (&ring, ring_icon(&home)) {
                     // A Mac's is a template again, which `set_icon` would end, and `set_icon_with_as_template` is for a Mac alone.
@@ -996,6 +1031,7 @@ fn menu_events() {
         "open" => tell(Told::Summon),
         "settings" => tell(Told::Open("settings".to_owned())),
         "quit" => tell(Told::Quit),
+        id if menu_bar::chosen(id) => {}
         id => drop(renderer::platform::menu_chosen(id)),
     }));
 }
@@ -1008,7 +1044,6 @@ fn menu_events() {
 fn ring(home: &std::path::Path) -> Option<tray_icon::TrayIcon> {
     use tray_icon::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tray_icon::TrayIconBuilder;
-    #[cfg(windows)]
     use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
     let icon = ring_icon(home)?;
     let open = MenuItem::with_id("open", format!("Open {}", ::client::app_name()), true, None);
@@ -1016,12 +1051,15 @@ fn ring(home: &std::path::Path) -> Option<tray_icon::TrayIcon> {
     let settings = MenuItem::with_id("settings", "Settings…", true, None);
     let quit = MenuItem::with_id("quit", format!("Quit {}", ::client::app_name()), true, None);
     let menu = Menu::with_items(&[&open, &settings, &PredefinedMenuItem::separator(), &quit]).ok()?;
-    #[cfg(windows)]
+    // A click on the ring, on Windows, and on an app's menu bar extra (`menu_bar`).
     TrayIconEvent::set_event_handler(Some(|event: TrayIconEvent| {
-        if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-            tell(Told::Toggle(std::time::Instant::now(), None));
+        if let TrayIconEvent::Click { id, button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            match id.0.as_str() {
+                "ring" if cfg!(windows) => tell(Told::Toggle(std::time::Instant::now(), None)),
+                id => menu_bar::clicked(id),
+            }
         }
     }));
-    let ring = TrayIconBuilder::new().with_icon(icon).with_icon_as_template(cfg!(target_os = "macos")).with_menu(Box::new(menu)).with_menu_on_left_click(cfg!(target_os = "macos")).with_tooltip(::client::app_name()).build();
+    let ring = TrayIconBuilder::new().with_id("ring").with_icon(icon).with_icon_as_template(cfg!(target_os = "macos")).with_menu(Box::new(menu)).with_menu_on_left_click(cfg!(target_os = "macos")).with_tooltip(::client::app_name()).build();
     ring.map_err(|error| eprintln!("the menu bar has no ring: {error}")).ok()
 }

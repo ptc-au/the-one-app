@@ -501,7 +501,7 @@ impl Display {
     /// down as Spotlight sits, never off the bottom of a short screen, and gives it the keyboard, keeping which window
     /// had it; its parts follow it (`arrange`). Where it was dragged to on that screen before (`places`), it's there,
     /// as much of it as fits.
-    pub fn summon(&self, window: &NativeWindow, places: &crate::platform::Places, room: Size<Pixels>) {
+    pub fn summon(&self, window: &NativeWindow, places: &crate::platform::Places, room: Size<Pixels>, _under: Option<crate::geometry::Bounds<f32>>) {
         self.dragged.borrow_mut().remove(&window.x_window);
         self.shown.borrow_mut().insert(window.x_window);
         let size = window.size.get();
