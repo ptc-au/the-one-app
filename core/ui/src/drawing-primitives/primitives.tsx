@@ -313,9 +313,13 @@ export const render: typeof Page.render = (code) => draw((() => (onSettled(() =>
 function over(modal: boolean, content: () => Element) {
   const node = createElement("box")
   spread(node, { style: layer, "aria-modal": modal ? "true" : undefined })
-  insertNode(root, node)
   insert(node, content)
-  onCleanup(() => detach(node))
+  // At the root once what it was made in has settled: Solid puts a page that was loading in place of the root's first
+  // child, which a layer made meanwhile would be, leaving the loading screen drawn beside the page.
+  onSettled(() => {
+    insertNode(root, node)
+    return () => detach(node)
+  })
   return undefined as unknown as Element
 }
 
