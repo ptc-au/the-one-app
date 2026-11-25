@@ -5,38 +5,24 @@
 #     tooling/windows-sign <program.exe>...
 #
 # The certificate is Microsoft's Artifact Signing's, which keeps its key and makes a certificate that lasts three
-# days, so the timestamp is what keeps a signature good after. It signs in as the Vault's "Artifact Signing" item: the
-# Entra app (tenant_id, client_id, client_secret) with the Artifact Signing Certificate Profile Signer role, and the
-# account's endpoint, account and certificate profile. `one vault fetch` swaps the app's secret for a token that lasts
-# an hour, so the secret is never seen here. WINDOWS_SIGNING, jsign's own options naming a keystore of one's own
-# (`--keystore <file>.pfx --storepass <password>`), signs with that instead.
-#
-# The item is in the network's own Vault (`ONE_SUBJECT=network`) of the network that owns the platform's release: the
-# repo in `tooling/networks` under the same GitHub owner as this one (Power to Change's, as the signing identity is),
-# as this machine's client of it, whichever network's installer it is (`tooling/installers` runs as that network's
-# client, where there is no such item).
+# days, so the timestamp is what keeps a signature good after. It signs in as the "Artifact Signing" item in the
+# `ptc-nosudo` 1Password vault, where the platform's other build secrets are: the Entra app (tenant_id, client_id,
+# client_secret) with the Artifact Signing Certificate Profile Signer role, and the account's endpoint, account and
+# certificate profile. The app's secret is swapped for a token that lasts an hour, sent to jsign in its environment.
+# WINDOWS_SIGNING, jsign's own options naming a keystore of one's own (`--keystore <file>.pfx --storepass <password>`),
+# signs with that instead.
 #
 # Without either, it says in a line that it signed nothing, and the programs ship unsigned.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-item="Artifact Signing"
 if [[ -n ${WINDOWS_SIGNING:-} ]]; then
   read -ra options <<<"$WINDOWS_SIGNING"
 else
-  owner=$(git -C "$root" remote get-url origin | sed -E 's#^.*[:/]([^/]+)/[^/]+$#\1#')
-  network=$("$root/tooling/networks" | while read -r repo; do
-    [[ $(git -C "$repo" remote get-url origin) == *[:/]"$owner"/* ]] && echo "$repo" && break
-  done)
-  [[ -n $network ]] || { echo "This machine has no repo of a network owned by $owner (tooling/networks)." >&2 && exit 1; }
-  ONE_HOME=$("$root/tooling/client-home" "$network") || exit 1
-  export ONE_HOME ONE_SUBJECT=network
-  fields=$(one vault list | jq -c --arg item "$item" 'first(.items[] | select(.name == $item) | [.fields[] | {(.name): .value}] | add) // empty')
-  [[ -n $fields ]] || { echo "Windows programs aren't signed: the Vault has no \"$item\" item yet." && exit 0; }
-  token=$(one vault fetch --item "$item" --method POST --url 'https://login.microsoftonline.com/{{tenant_id}}/oauth2/v2.0/token' \
-    --headers '{"content-type": "application/x-www-form-urlencoded"}' \
-    --body 'grant_type=client_credentials&client_id={{client_id}}&client_secret={{client_secret}}&scope=https%3A%2F%2Fcodesigning.azure.net%2F.default' |
-    jq -r '.body | fromjson? | .access_token // empty')
-  [[ -n $token ]] || { echo "Microsoft didn't give a token for the Vault's \"$item\" item." >&2 && exit 1; }
+  fields=$(op item get "Artifact Signing" --vault ptc-nosudo --format json | jq -c '[.fields[] | select(.value) | {(.label): .value}] | add')
+  jq -e '.client_secret' >/dev/null <<<"$fields" || { echo "Windows programs aren't signed: the \"Artifact Signing\" item in 1Password has no client_secret yet." && exit 0; }
+  token=$(jq -rj '"grant_type=client_credentials&client_id=\(.client_id | @uri)&client_secret=\(.client_secret | @uri)&scope=https%3A%2F%2Fcodesigning.azure.net%2F.default"' <<<"$fields" |
+    curl -fsS "https://login.microsoftonline.com/$(jq -r .tenant_id <<<"$fields")/oauth2/v2.0/token" --data-binary @- | jq -r '.access_token // empty')
+  [[ -n $token ]] || { echo "Microsoft didn't give a token for the \"Artifact Signing\" item." >&2 && exit 1; }
   # jsign reads the token from the environment, so no other process sees it in its arguments.
   export WINDOWS_SIGNING_TOKEN=$token
   options=(--storetype TRUSTEDSIGNING --storepass env:WINDOWS_SIGNING_TOKEN
