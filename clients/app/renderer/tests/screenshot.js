@@ -27,7 +27,7 @@
 // first draw must be the window's background (`opening`), light and dark. It says, scene by scene, how much of the pictures
 // differs (a web picture more than 1% from its native one fails, `WEB_DIFFERS_MOST`, as does one drawn on what its frame kept
 // that differs from the same drawn whole, `web-whole.png`, by more than a level, or drawn moved by whole device pixels, `web-moved-<dx>,<dy>.png`, by more than rounding, as animation.js's checks have it natively) and whether the text in sight is the same (any
-// difference fails, however small the pictures'), and keeps them all in `--out` to look at. A native host that can't draw a page yet (an older runtime
+// difference fails, however small the pictures'), and drawn as much (a text whose box has half the ink or less on the web fails, `textDrawnOtherwise`), and keeps them all in `--out` to look at. A native host that can't draw a page yet (an older runtime
 // version) gives nothing, which it says. It says too how quickly the native host drew each (the headless renderer's
 // `--measure`): its first frame, a frame when nothing changes, as its first field is typed in and as its first list
 // scrolls, the memory drawing took and what a second window adds, to compare a change's before and after.
@@ -229,7 +229,7 @@ async function press(frame, name) {
   if (name.key) return page.keyboard.press([...["ctrl", "shift", "alt", "meta"].filter((held) => name[held]).map((held) => ({ ctrl: "Control", shift: "Shift", alt: "Alt", meta: "Meta" })[held]), name.key].join("+"))
   if (name.type) return page.keyboard.type(name.type)
   const at = await page.locator("#page").boundingBox()
-  if (name.x !== undefined) return page.mouse.click(at.x + name.x, at.y + name.y)
+  if (name.x !== undefined) return click(frame, at.x + name.x, at.y + name.y)
   const found = typeof name === "object" ? frame.getByRole(name.role, { name: name.name, exact: true }).first() : frame.locator(`#semantics [aria-label="${name.replaceAll('"', '\\"')}"], #semantics :text-is("${name.replaceAll('"', '\\"')}")`).last()
   let box = await found.boundingBox({ timeout: 5000 }).catch(() => null)
   const out = (/** @type {any} */ box) => box.y < at.y || box.y + box.height > at.y + at.height
@@ -249,7 +249,21 @@ async function press(frame, name) {
   }
   if (!box) throw new Error(`Nothing named or saying "${typeof name === "object" ? name.name : name}" to press`)
   // Its box is the page's, the frame's place in it already in it.
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await click(frame, box.x + box.width / 2, box.y + box.height / 2)
+}
+
+/// How long a click holds the button down on the page's clock, as a person's does and the headless renderer's tap (CLICK_MS in
+/// examples/headless/input.rs): the page, which is stepped, sees it held for that long and not let go as it's pressed, so what
+/// it makes as a press goes down (a category's contents, ahead of its opening) has had its frames.
+const CLICK_MS = 80
+
+/// A click at `x`, `y` of the page, held for CLICK_MS on its clock.
+async function click(frame, x, y) {
+  const { mouse } = frame.page()
+  await mouse.move(x, y)
+  await mouse.down()
+  await frame.evaluate((ms) => /** @type {any} */ (globalThis).inspector.clock({ step: ms }), CLICK_MS)
+  await mouse.up()
 }
 
 /// The web half waits for what a scene's page has pending (a picture decoding, a frame, a transition), however long a loaded
@@ -544,11 +558,13 @@ async function native(built, scene, folder, again = false) {
   // And the pieces of a line (raw text), which the inspector places but doesn't say are seen: those in the window.
   const pieces = queried.filter((node) => node.kind === "raw-text" && node.name && node.rect && node.rect.width > 0 && clear(node.rect)).map((node) => node.name)
   const words = [...inSight(Array.isArray(nodes) ? nodes : [nodes]), ...pieces]
+  // Where each text in sight is, in points, to see on the web's picture that it's drawn there too.
+  const texts = queried.filter((node) => node.kind === "text" && node.rect && node.rect.width > 0 && node.opacity > 0 && node.seen >= 0.99 && clear(node.rect)).map((node) => ({ name: node.name, ...node.rect }))
   // Every word of the tree, in sight or not.
   const every = (list) => list.flatMap((node) => [...(node.name ? [node.name] : []), ...every(node.children ?? [])])
   const all = [...every(Array.isArray(nodes) ? nodes : [nodes]), ...queried.filter((node) => node.kind === "raw-text" && node.name).map((node) => node.name)]
   writeFileSync(join(folder, "native-text.txt"), words.join("\n") + "\n")
-  return { kept: run.kept, refused, tree, words, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, ink, blurring, answers: said, at, asked, requests }
+  return { kept: run.kept, refused, tree, words, texts, all, measured: measured && JSON.parse(measured[1]), unsafe, squeezed, overflowing, broken, ink, blurring, answers: said, at, asked, requests }
 }
 
 /// A panelled scene (a computer's launcher, over the system's glass) drawn natively again as a plain window, `window.png`,
@@ -851,6 +867,46 @@ const EDGE = 8
 /// The most of a scene's web picture that may differ from its native one, from 0 to 1, else the scene fails: our
 /// renderer draws both, so more is the web platform's fault, as the widgets' shapes missing from the web were (L30).
 const WEB_DIFFERS_MOST = 0.01
+/// Each text in sight natively (`texts`, in points of a window `width` wide) whose box has less than half the ink on the web that it
+/// has natively, or more than twice: ink is the pixels a level or more over WEB_TEXT_LEVELS from the box's own background (its
+/// first pixel). A text drawn a pixel along is the same ink. The pictures as a whole differ by a part so small where
+/// its words are few that a picture without them passes WEB_DIFFERS_MOST (the App Library with a category open drew no
+/// text on the web, 0.5%).
+function textDrawnOtherwise(native, web, texts, width) {
+  const [a, b] = [PNG.sync.read(readFileSync(native)), PNG.sync.read(readFileSync(web))]
+  if (a.width !== b.width || a.height !== b.height) return []
+  const scale = a.width / width
+  const ink = (picture, left, top, right, bottom) => {
+    const at = (x, y) => (y * picture.width + x) * 4
+    // Its background is the colour most of its edge is (a corner may be a rounded one's).
+    const edge = new Map()
+    const vote = (x, y) => {
+      const key = [0, 1, 2].map((channel) => picture.data[at(x, y) + channel] >> 3).join()
+      edge.set(key, { at: at(x, y), votes: (edge.get(key)?.votes ?? 0) + 1 })
+    }
+    for (let x = left; x < right; x++) (vote(x, top), vote(x, bottom - 1))
+    for (let y = top; y < bottom; y++) (vote(left, y), vote(right - 1, y))
+    const back = [...edge.values()].sort((one, other) => other.votes - one.votes)[0].at
+    let count = 0
+    for (let y = top; y < bottom; y++) {
+      for (let x = left; x < right; x++) {
+        if ([0, 1, 2].some((channel) => Math.abs(picture.data[at(x, y) + channel] - picture.data[back + channel]) > WEB_TEXT_LEVELS)) count++
+      }
+    }
+    return count
+  }
+  return texts.flatMap((text) => {
+    const [left, top] = [Math.max(0, Math.floor(text.x * scale)), Math.max(0, Math.floor(text.y * scale))]
+    const [right, bottom] = [Math.min(a.width, Math.ceil((text.x + text.width) * scale)), Math.min(a.height, Math.ceil((text.y + text.height) * scale))]
+    if (right <= left || bottom <= top) return []
+    const [here, there] = [ink(a, left, top, right, bottom), ink(b, left, top, right, bottom)]
+    return Math.max(here, there) >= WEB_TEXT_INK && Math.min(here, there) * 2 < Math.max(here, there) ? [{ name: text.name, native: here, web: there }] : []
+  })
+}
+/// How far apart, in levels, a pixel and its box's background must be to be ink, and the fewest inked pixels of a text that count.
+const WEB_TEXT_LEVELS = 48
+const WEB_TEXT_INK = 8
+
 /// Scenes whose web picture, or text, differs for a known reason that isn't a fault, by `<folder> · <scene>`, each with why.
 const WEB_DIFFERS = {}
 
@@ -1011,6 +1067,12 @@ const drawnTargets = await Promise.all(targets.map(async (target) => {
       const over = part === undefined || part > WEB_DIFFERS_MOST
       const apart = `  native and web: pictures ${part === undefined ? "aren't the same size" : `${(part * 100).toFixed(1)}% different${over ? ` (over ${WEB_DIFFERS_MOST * 100}%${excused ? `, known: ${excused}` : ""})` : ""}`}`
       said.push(over && !excused ? failing(apart) : apart)
+      // Where a window's picture is the scene's own (a panel's is of its window, whose points aren't the page's).
+      const unlike = asWindow.picture === join(folder, "native.png") ? textDrawnOtherwise(asWindow.picture, join(folder, "web.png"), drawn.texts ?? [], scene.size[0]) : []
+      if (unlike.length) {
+        const words = `  native and web: text drawn otherwise: ${unlike.slice(0, 4).map((text) => `"${text.name ?? ""}" native ${text.native} inked pixels, web ${text.web}`).join("; ")}${unlike.length > 4 ? `, and ${unlike.length - 4} more` : ""}`
+        said.push(excused ? words : failing(words))
+      }
     }
     const before = against && join(against, name, basename(folder))
     // What changed, where our renderer drew the scene both times.

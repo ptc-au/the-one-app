@@ -562,11 +562,19 @@ function timed(told, stepped = false, framing = (/** @type {boolean} */ _asking)
 function stepping(inspect, page) {
   return async (/** @type {{ step?: number }} */ request) => {
     if (request.step === undefined || !page.next || !page.move) return inspect({ op: "clock", ...request })
-    let [left, answer] = [Math.max(0, request.step), undefined]
+    let [left, answer, moving] = [Math.max(0, request.step), undefined, true]
+    // The page's JS answers what the renderer tells it in the frame that tells it (a `transitionend` that sets its names
+    // fading in), as a native host's display ticks its windows: a frame at each refresh while anything moves, where a
+    // step in one piece drew one frame at its end, and what began there had no time left to run.
+    const settled = async () => {
+      const { pending } = await inspect({ op: "settle", deadline: 120000 })
+      moving = pending.some((/** @type {{ kind: string }} */ one) => one.kind === "transition" || one.kind === "animation")
+    }
     do {
-      const piece = Math.min(page.next(), left)
+      const piece = Math.min(page.next(), left, moving ? 1000 / 60 : Infinity)
       answer = await inspect({ op: "clock", ...request, step: piece })
-      await page.move(piece, () => inspect({ op: "settle", deadline: 120000 }))
+      await page.move(piece, settled)
+      await settled()
       left -= piece
     } while (left > 0)
     return answer
