@@ -165,8 +165,9 @@ function load(entrypoint, subject, fragment) {
   const view = { ...place, frame }
   view.frame.setAttribute("sandbox", sandbox)
   // An app hands a link to the device's share sheet, or copies it, as its person presses Share (the UI library's `share`),
-  // and shows a part of itself full screen (a live screen's Full Screen).
-  view.frame.allow = "clipboard-write; web-share; fullscreen"
+  // and shows a part of itself full screen (a live screen's Full Screen). A call (the UI library's `Voice`) takes the
+  // microphone, which without this it is refused without even asking.
+  view.frame.allow = "clipboard-write; web-share; fullscreen; microphone"
   open.set(at, view)
   document.body.append(view.frame)
   on({ type: "load", view })
