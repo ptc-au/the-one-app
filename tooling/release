@@ -123,10 +123,11 @@ publish() {
       const [, what, kind] = path.split("/").pop().match(/^(server-runtime|server-code|server|one-setup|one-cli|one)-?(.*?)(\.tar\.gz|\.gz|\.exe)$/);
       // A runtime and a client are told by what they were built from, and a `one` by what a server runs of it.
       const said = async (ext) => { const file = Bun.file(path.replace(/(\.tar\.gz|\.gz|\.exe)$/, ext)); return (await file.exists()) ? (await file.text()).trim() : undefined; };
+      const bundle = JSON.parse((await said(".bundle")) ?? "null") ?? undefined;
       const name = kind ? `${what}/${kind}` : what;
       const sha256 = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
       const signature = sign(null, Buffer.from(`${name} ${BUILD} ${sha256}`), key).toString("base64");
-      return { path, what, kind, name, build: BUILD, inputs: await said(".inputs"), serves: await said(".serves"), sha256, signature, size: bytes.length };
+      return { path, what, kind, name, build: BUILD, inputs: await said(".inputs"), serves: await said(".serves"), bundle, sha256, signature, size: bytes.length };
     }));
     const at = `https://github.com/${REPO}/releases/download/${TAG}`;
     const TARGETS = ["linux-x86_64", "linux-aarch64", "macos-aarch64", "windows-x86_64", "android-aarch64"];
@@ -136,11 +137,11 @@ publish() {
     const recent = new Set(assets.filter(({ createdAt }) => Date.now() - Date.parse(createdAt) < 3_600_000).map(({ name }) => name));
     const before = Object.fromEntries(TARGETS.map((target) => [target, have.has(`${target}.json`) ? JSON.parse(gh("release", "download", TAG, "-p", `${target}.json`, "-O", "-")) : null]));
     const lists = structuredClone(before);
-    for (const { what, kind, build, inputs, serves, sha256, signature, size } of builds) {
+    for (const { what, kind, build, inputs, serves, bundle, sha256, signature, size } of builds) {
       for (const target of kind ? [kind] : TARGETS.filter((target) => lists[target] || builds.some((other) => other.kind === target))) {
         const list = (lists[target] ??= {});
         const was = list[what];
-        list[what] = { build, sha256, size, signature, ...(inputs && { inputs }), ...(serves && { serves }), link: { method: "GET", url: `${at}/${sha256}`, headers: {} } };
+        list[what] = { build, sha256, size, signature, ...(inputs && { inputs }), ...(serves && { serves }), ...(bundle && { bundle }), link: { method: "GET", url: `${at}/${sha256}`, headers: {} } };
         if (serves) list[what].serving = was?.serves === serves ? (was.serving ?? was.build) : build;
       }
     }
@@ -445,16 +446,20 @@ fi
 
 servers=($(printf '%s\n' "${mine[@]}" | sed -n 's|^server/||p'))
 
-# A Mac's `one`, gzipped in `$1`, signed in its app bundle, `clients/app/macos`, which is the same for every build: the
-# app puts it in place around each build before it runs it (`cli::serving::bundled`), seal and all, so the seal
-# rcodesign makes must be the one there.
+# A Mac's `one`, gzipped in `$1`, signed in its app bundle, `clients/app/macos`: the app puts it in place around each build
+# before it runs it (`cli::serving::bundled`), seal and all, so the seal rcodesign makes must be the one there. Its files
+# that are small, the Info.plist the program is signed with the hash of, are said beside it (`<build>.bundle`, as the list
+# it's in publishes them), so an app that has an older Info.plist puts the build's in place, not its own.
 mac_bundle_signed() {
   local folder bundle
   folder=$(mktemp -d) && bundle=$folder/app.app && cp -R clients/app/macos "$bundle" && mkdir "$bundle/Contents/MacOS" &&
     gunzip -c "$1" >"$bundle/Contents/MacOS/one" && chmod +x "$bundle/Contents/MacOS/one" && tooling/developer-id-sign --entitlements-xml-path clients/app/macos.entitlements "$bundle" &&
     { cmp -s "$bundle/Contents/_CodeSignature/CodeResources" clients/app/macos/Contents/_CodeSignature/CodeResources ||
       { echo "The Mac app's seal isn't clients/app/macos's: put rcodesign's in its place." >&2 && false; }; } &&
-    gzip -9 -c "$bundle/Contents/MacOS/one" >"$1" && rm -r "$folder"
+    gzip -9 -c "$bundle/Contents/MacOS/one" >"$1" && rm -r "$folder" &&
+    (cd clients/app/macos/Contents && find . -type f -size -64k -print0 | sort -z |
+      xargs -0 -I{} sh -c 'printf "%s\t%s\n" "${1#./}" "$(base64 -w0 "$1")"' _ {}) |
+    jq -Rn '[inputs | split("\t") | {key: .[0], value: .[1]}] | from_entries' >"${1%.gz}.bundle"
 }
 
 # `one`, which is the app too, and on Linux `one-cli`, the same without its window, for a machine with no screen,

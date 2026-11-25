@@ -64,7 +64,7 @@ impl Here {
             .with_context(|| format!("The build {build} of one, which the server's record pairs with its build, isn't kept here"))?;
         #[cfg(target_os = "macos")]
         if bundle_of(program).is_some() {
-            let checked = if new.is_dir() { checked_app(&new, program) } else { Checking::new(&new, program).map(drop) };
+            let checked = if new.is_dir() { checked_app(&new, program) } else { Checking::new(&new, program, &[]).map(drop) };
             if let Err(error) = checked {
                 remove(&new);
                 return Err(error.context(format!("The build {build} of one kept here can't run in this app")));

@@ -15,7 +15,7 @@ pub(super) async fn fetched_program(client: &Client, one: &Value, program: &Path
         true => networks_build(client, build, &program).await?,
         false => unpacked(one, &program).await?,
     };
-    let started = checked(&new, &program).await;
+    let started = checked(one, &new, &program).await;
     if !started.as_ref().is_ok_and(|started| started.as_deref() == Some(build)) {
         remove(&new);
         started?;
@@ -94,14 +94,14 @@ pub(super) fn remove(path: &Path) {
 
 /// The build the build `new` says it is, as `program` is to run it, once it's checked it may: on a Mac, signed by the
 /// platform for its bundle (`bundled`); on Windows, signed by whoever signed the program in place (`signed_alike`).
-async fn checked(new: &Path, program: &Path) -> Result<Option<String>> {
+async fn checked(one: &Value, new: &Path, program: &Path) -> Result<Option<String>> {
     #[cfg(target_os = "macos")]
-    return bundled(new, program).await;
+    return bundled(one, new, program).await;
     #[cfg(windows)]
     signed_alike(new, program).await?;
     #[cfg(not(target_os = "macos"))]
     return {
-        let _ = program;
+        let _ = (one, program);
         build_of(new).await
     };
 }
@@ -191,16 +191,32 @@ async fn networks_build(_: &Client, _: &str, _: &Path) -> Result<PathBuf> {
     bail!("A network's own app updates itself only on a Mac and on Windows.")
 }
 
-/// The One App's bundle but its program: its Info.plist, icon and seal, the same for every build, which each build of
-/// `one` is signed in (`tooling/release`), so an update replaces the program alone, as before it was signed. macOS
-/// runs a program signed in a bundle only as a bundle's program, with an Info.plist, and kills it anywhere else in it.
-/// A change to these files goes out in a build signed without them first.
+/// The One App's bundle but its program: its Info.plist, icon and seal, which each build of `one` is signed in
+/// (`tooling/release`), so an update replaces the program alone, as before it was signed. macOS runs a program signed in
+/// a bundle only as a bundle's program, with an Info.plist, and kills it anywhere else in it. These are the ones this
+/// build was made with, put in place for a build that publishes none of its own (`bundle_files`).
 #[cfg(target_os = "macos")]
 pub(super) const BUNDLE: &[(&str, &[u8])] = &[
     ("Info.plist", include_bytes!("../../../app/macos/Contents/Info.plist")),
     ("Resources/The One App.icns", include_bytes!("../../../app/macos/Contents/Resources/The One App.icns")),
     ("_CodeSignature/CodeResources", include_bytes!("../../../app/macos/Contents/_CodeSignature/CodeResources")),
 ];
+
+/// The files of the bundle the build `one` is signed in: the program is signed with its Info.plist's hash, so an Info.plist
+/// that changed with it must be the one the build says (`bundle` in its list, which `tooling/release` publishes, a file
+/// by its path in base64), and not the one the build that takes it was made with, which fails `codesign --verify`
+/// ("invalid Info.plist (plist or signature have been modified)", on Andre's Mac on 25 Nov 2026). The icon is too big to
+/// publish with it, so it's this build's, and a change to it goes out in a build signed without it first.
+#[cfg(target_os = "macos")]
+fn bundle_files(one: &Value) -> Result<Vec<(&'static str, Vec<u8>)>> {
+    BUNDLE
+        .iter()
+        .map(|(file, bytes)| match one["bundle"][*file].as_str() {
+            Some(published) => Ok((*file, data_encoding::BASE64.decode(published.as_bytes())?)),
+            None => Ok((*file, bytes.to_vec())),
+        })
+        .collect()
+}
 
 /// The platform's Apple Developer ID team, which signs every program it makes for a Mac, the One App's and each
 /// network's app's (`tooling/developer-id-sign`), as `KEY` is its key for every build: a program is put in a Mac's
@@ -260,9 +276,9 @@ async fn networks_build(client: &Client, build: &str, program: &Path) -> Result<
 /// The build a Mac's build `new` says it is, as `program` is to run it, once macOS would: a network's whole app
 /// (`networks_build`) signed by the platform as this app, by its identifier, and notarised (`checked_app`); and a
 /// program alone run as the program of a copy of the bundle it's to be put in, once it's signed for it (`Checking`).
-/// The One App's bundle has `BUNDLE` put in place first, which each build of `one` is signed in.
+/// The One App's bundle has the files the build is signed in (`bundle_files`) put in place once it's checked with them.
 #[cfg(target_os = "macos")]
-pub(super) async fn bundled(new: &Path, program: &Path) -> Result<Option<String>> {
+pub(super) async fn bundled(one: &Value, new: &Path, program: &Path) -> Result<Option<String>> {
     let Some((contents, another)) = bundle_of(program) else { return build_of(new).await };
     if new.is_dir() {
         checked_app(new, program)?;
@@ -270,19 +286,19 @@ pub(super) async fn bundled(new: &Path, program: &Path) -> Result<Option<String>
         ensure!(named.exists(), "The network's app names its program otherwise now, so it's installed again from its download page.");
         return build_of(&named).await;
     }
-    if !another {
-        for (file, bytes) in BUNDLE {
-            let path = contents.join(file);
-            if fs::read(&path).is_ok_and(|was| was == *bytes) {
-                continue;
-            }
-            fs::create_dir_all(path.parent().context("a file is in a folder")?)?;
-            let writing = path.with_extension(format!("{}.new", std::process::id()));
-            fs::write(&writing, bytes)?;
-            fs::rename(&writing, &path)?;
+    let files = if another { Vec::new() } else { bundle_files(one)? };
+    let checking = Checking::new(new, program, &files)?;
+    // Only a build that's checked changes the bundle it's to run in, as the one in place runs from it until it's replaced.
+    for (file, bytes) in &files {
+        let path = contents.join(file);
+        if fs::read(&path).is_ok_and(|was| was == *bytes) {
+            continue;
         }
+        fs::create_dir_all(path.parent().context("a file is in a folder")?)?;
+        let writing = path.with_extension(format!("{}.new", std::process::id()));
+        fs::write(&writing, bytes)?;
+        fs::rename(&writing, &path)?;
     }
-    let checking = Checking::new(new, program)?;
     build_of(&checking.checked).await
 }
 
@@ -323,7 +339,7 @@ pub(super) struct Checking {
 
 #[cfg(target_os = "macos")]
 impl Checking {
-    pub(super) fn new(new: &Path, program: &Path) -> Result<Self> {
+    pub(super) fn new(new: &Path, program: &Path, files: &[(&str, Vec<u8>)]) -> Result<Self> {
         let (contents, _) = bundle_of(program).context("a program in a bundle")?;
         let copy = contents.join("Updates").join(format!("{}.app", std::process::id()));
         let checked = copy.join("Contents/MacOS").join(program.file_name().context("a program has a name")?);
@@ -335,6 +351,11 @@ impl Checking {
                 let copied = command("ditto").arg(entry.path()).arg(copy.join("Contents").join(entry.file_name())).output()?;
                 ensure!(copied.status.success(), "{}", String::from_utf8_lossy(&copied.stderr).trim());
             }
+        }
+        for (file, bytes) in files {
+            let path = copy.join("Contents").join(file);
+            fs::create_dir_all(path.parent().context("a file is in a folder")?)?;
+            fs::write(path, bytes)?;
         }
         let requirement = format!("=anchor apple generic and certificate leaf[subject.OU] = \"{TEAM}\"");
         let verified = command("codesign").args(["--verify", "--strict", "-R", &requirement]).arg(&copy).output()?;

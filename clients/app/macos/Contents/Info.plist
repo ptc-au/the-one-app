@@ -32,7 +32,5 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>The One App connects straight to your other devices on this network.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>The One App uses your microphone for live voice in apps.</string>
 </dict>
 </plist>
