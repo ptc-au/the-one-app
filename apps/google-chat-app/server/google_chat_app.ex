@@ -347,11 +347,14 @@ defmodule GoogleChatApp do
   end
 
   # What Google sends to the webhook configure made: a Pub/Sub push of a Workspace Events event, or an event sent
-  # straight to the Chat app. One Core answers an address with any other token before it comes here.
+  # straight to the Chat app, as a Workspace add-on's (`chat.messagePayload`, Google's default for a new Chat app) or a
+  # Chat app's own (`type`). One Core answers an address with any other token before it comes here.
   @impl true
   def webhook(call, %{method: "POST", body: body, name: "events"}) do
     case JSON.decode(body) do
       {:ok, %{"message" => %{"data" => data} = message}} -> published(call, message, data)
+      {:ok, %{"chat" => %{"messagePayload" => %{"message" => message} = payload}}} -> chat_event(call, %{"message" => message, "space" => payload["space"]})
+      {:ok, %{"chat" => _chat}} -> answer(200)
       {:ok, %{"type" => "MESSAGE", "message" => _} = event} -> chat_event(call, event)
       {:ok, %{"type" => _type}} -> answer(200)
       _ -> answer(400)
