@@ -12,12 +12,14 @@ const QUIET = 0.008
 const all = new Map()
 
 /** Its local description once its candidates are gathered, or a relay's came, as an SFU needs to reach it. */
-const gathered = (/** @type {RTCPeerConnection} */ pc) =>
-  new Promise((done) => {
+const gathered = (/** @type {RTCPeerConnection} */ pc) => {
+  if (pc.iceGatheringState === "complete") return Promise.resolve()
+  return new Promise((done) => {
     const timer = setTimeout(done, 5000)
     pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && (clearTimeout(timer), done(undefined))
     pc.onicecandidate = ({ candidate }) => candidate?.type === "relay" && (clearTimeout(timer), setTimeout(done, 300))
   })
+}
 
 /** Whether the person is speaking, from the microphone's level, as its own audio plays: `onSpeaking`. */
 const listen = (/** @type {any} */ voice, /** @type {(event: Record<string, unknown>) => void} */ tell) => {
@@ -48,21 +50,31 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
   const lost = () => !over && ((over = true), tell({ name: "state", state: "lost" }))
   voice.over = () => ((over = true), pc.close())
   tell({ name: "state", state: "connecting" })
-  // The one track it sends, and the ones it receives: each remote track plays with the others.
-  const transceiver = pc.addTransceiver("audio", { direction: "sendrecv" })
+  // One sendonly track for the local microphone; remote tracks arrive on their own transceivers via SFU offers.
+  const transceiver = pc.addTransceiver("audio", { direction: "sendonly" })
   voice.sender = transceiver.sender
   if (voice.track) voice.sender.replaceTrack(voice.track).catch(() => {})
   pc.ontrack = ({ track }) => {
     if (track.kind !== "audio") return
-    const mix = (voice.mix ??= new MediaStream())
-    if (!mix.getTracks().includes(track)) mix.addTrack(track)
-    voice.audio.srcObject = mix
+    // Each remote track gets its own <audio> element and explicit play() so Chrome starts newly negotiated tracks.
+    const el = document.createElement("audio")
+    Object.assign(el, { autoplay: true, playsInline: true })
+    el.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
+    el.srcObject = new MediaStream([track])
+    document.body.append(el)
+    voice.audios.add(el)
+    el.play().catch(() => {})
+    track.addEventListener("ended", () => {
+      voice.audios.delete(el)
+      el.remove()
+    })
   }
   pc.onconnectionstatechange = () => {
+    if (over) return
     if (pc.connectionState === "connected") tell({ name: "state", state: "connected" })
-    else if (["failed", "closed"].includes(pc.connectionState)) lost()
+    else if (pc.connectionState === "connecting" || pc.connectionState === "disconnected") tell({ name: "state", state: "connecting" })
+    else if (pc.connectionState === "failed" || pc.connectionState === "closed") lost()
   }
-  pc.oniceconnectionstatechange = () => pc.iceConnectionState === "disconnected" && lost()
   pc.setLocalDescription()
     .then(() => gathered(pc))
     .then(
@@ -100,13 +112,8 @@ const answered = async (/** @type {any} */ voice, /** @type {string} */ sdp, /**
 export function voice(op, key, params, tell) {
   if (op === "create") {
     if (all.has(key)) return
-    const audio = document.createElement("audio")
-    Object.assign(audio, { autoplay: true, playsInline: true })
-    // In this page, unseen, so it plays: the browser plays the call's sound, not a picture.
-    audio.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
-    document.body.append(audio)
     /** @type {any} */
-    const one = { key, audio, peer: null, sender: null, mic: null, track: null, muted: false, context: null, timer: null, speaking: false, offer: null, over: () => {} }
+    const one = { key, audios: new Set(), peer: null, sender: null, mic: null, track: null, muted: false, context: null, timer: null, speaking: false, offer: null, over: () => {} }
     all.set(key, one)
     // The microphone, with the system's own echo cancellation and noise suppression, as a call asks for. Without one,
     // the call is heard and not heard from.
@@ -148,7 +155,8 @@ export function voice(op, key, params, tell) {
     clearInterval(one.timer)
     one.context?.close()
     one.mic?.getTracks().forEach((/** @type {MediaStreamTrack} */ track) => track.stop())
-    one.audio.remove()
+    for (const el of one.audios) el.remove()
+    one.audios.clear()
     all.delete(key)
   }
 }
