@@ -757,7 +757,8 @@ defmodule OneCore.Tools.Definitions do
       name: "builds",
       read_only: true,
       description: """
-      Lists the build each of your servers runs, with what its machine is called and whether it's ready: active
+      Lists the build each of your servers runs, with what its machine is called, whether it's `connected` now (and if
+      not, when it was `last_seen`, its update as it last said it under `last_said`), and whether it's ready: active
       (`server_membership`) and running (`server_daemon_status`), or why not; and the build each of your devices
       last said it is, and the latest for each kind of machine, so it says whether everything is on the same build; and whether its apps are `synced` with what's
       installed or `syncing`, under `apps`.
@@ -820,9 +821,19 @@ defmodule OneCore.Tools.Definitions do
                   enum: ["joining", "starting", "draining", "stopped", nil],
                   description: "Why it isn't ready"
                 },
+                connected: %{
+                  type: "boolean",
+                  description:
+                    "Whether it answers the edge's heartbeat now. A machine asleep, suspended or offline doesn't, and the edge can't tell which"
+                },
                 last_seen: %{
                   type: ["integer", "null"],
                   description: "When it was last connected, in milliseconds since 1970, if it isn't now"
+                },
+                last_said: %{
+                  type: "object",
+                  description:
+                    "Where it isn't connected: its `server_update_status`, `server_update_stage` and `went_back` as it last said them, `at` the time it was last seen. They're no longer what it's doing, so they're not given beside the rest"
                 },
                 why: %{
                   type: "string",

@@ -20,8 +20,12 @@ defmodule OneCore.Tools.Builds do
     {:content, %{network: network}, [%{type: "text", text: Release.software_update(network)}]}
   end
 
-  # What the edge says of a server: whether it's ready, why not, and when it was last seen if it isn't connected.
-  @presence ~w(server_membership server_daemon_status server_ready server_ready_reason last_seen)
+  # What the edge says of a server: whether it's connected now, whether it's ready, why not, and when it was last seen
+  # if it isn't connected.
+  @presence ~w(connected server_membership server_daemon_status server_ready server_ready_reason last_seen)
+
+  # What a server said of its update as it last spoke, which isn't what it's doing now once it's gone quiet.
+  @update ~w(server_update_status server_update_stage went_back)
 
   # Which build each of `owner`'s servers runs, with what its machine is called and what it is (`OneCore.Builds.say/1`), as it says
   # it and, where the network's edge says it now, whether it's ready (`OneCore.Servers.edge/1`), and which each
@@ -57,7 +61,7 @@ defmodule OneCore.Tools.Builds do
         info = with {:ok, info, _tag} <- read, do: JSON.decode!(info), else: (:absent -> %{})
         presence = Map.take(edge["presence"][key] || %{}, @presence)
         info = Map.put(info, "protocol", Protocol.of(info["protocol"]))
-        server = Map.merge(info, Map.merge(presence, %{"server" => key, "name" => Servers.name(key)}))
+        server = Map.merge(info, Map.merge(presence, %{"server" => key, "name" => Servers.name(key)})) |> asleep()
         if why = why(server, edge), do: Map.put(server, "why", why), else: server
       end
 
@@ -85,6 +89,16 @@ defmodule OneCore.Tools.Builds do
       waiting: waiting(owner)
     }
   end
+
+  # A server the edge says isn't connected (asleep, suspended, off the internet or stopped: it knows only that no
+  # heartbeat answers) said what its update is as of when it was last seen, so that's under `last_said`, with when,
+  # where a reader can't take it for what it's doing.
+  defp asleep(%{"connected" => false} = server) do
+    {said, server} = Map.split(server, @update)
+    Map.put(server, "last_said", Map.put(said, "at", server["last_seen"]))
+  end
+
+  defp asleep(server), do: server
 
   # The network's update, as its updater says it, with the servers that take builds and aren't on its build and `one`
   # yet.

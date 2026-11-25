@@ -33,7 +33,8 @@ Exactly two rules hold at runtime:
   (`core/edge/relay/relay.ts`), apart from whether they're ready. What updates a part that's behind, `tools/list`,
   `builds`, `download`, `update` and its task's `tasks/get`, is answered whatever it speaks, so a client of any
   version can always update. `one builds` says each part's `protocol`, the `edge_protocol`, each device's
-  `last_seen`, and `why` a server doesn't talk.
+  `last_seen`, whether each server is `connected` now (if not, its update as it last said it is under `last_said`, as of its
+  `last_seen`), and `why` a server doesn't talk.
 - An app runs on a server on its `requires`' `"core" => ">= 0.16.0"` or newer (`OneCore.Apps.Version.platform/1`,
   worked out from the two versions, never kept): `runs`, or `waiting_for_server` on an older one (deploying it there
   is refused, saying so). `one apps` and `one builds` say which, and a server that can't run one says why in
