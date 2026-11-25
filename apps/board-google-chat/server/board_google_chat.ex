@@ -130,17 +130,15 @@ defmodule BoardGoogleChat do
     end
   end
 
+  # The space is watched before the mapping is saved, so a watch that fails leaves nothing mapped that does nothing.
   defp dispatch("map", inputs, call) do
     with {:ok, space} <- space_name(inputs["space"]),
-         {:ok, channel} <- channel_name(inputs["channel"]) do
-      case Store.transaction(call, fn db -> put_mapping(db, space, channel) end) do
-        {:ok, mapping} ->
-          watching = if inputs["watch"] == false, do: false, else: watch(call, space)
-          %{space: mapping.space, channel: mapping.channel, created_at: mapping.created_at, watching: watching}
+         {:ok, channel} <- channel_name(inputs["channel"]),
+         {:ok, _created_at} <- Store.transaction(call, fn db -> mapped(db, space, channel) end) do
+      watching = if inputs["watch"] == false, do: false, else: watch(call, space)
 
-        {:error, why} ->
-          {:error, why}
-      end
+      with {:ok, mapping} <- Store.transaction(call, fn db -> put_mapping(db, space, channel) end),
+           do: %{space: mapping.space, channel: mapping.channel, created_at: mapping.created_at, watching: watching}
     end
   end
 
@@ -194,30 +192,31 @@ defmodule BoardGoogleChat do
 
   defp unwrap({:error, why}, _call), do: {:error, why}
 
-  defp put_mapping(db, space, channel) do
+  # When the space was mapped to the channel, or nil where neither is mapped, or why the mapping can't be made.
+  defp mapped(db, space, channel) do
     case Store.query(db, "select channel, created_at from mappings where space_name = ?", [space]) do
       [%{"channel" => ^channel, "created_at" => created_at}] ->
-        {:ok, %{space: space, channel: channel, created_at: created_at}}
+        {:ok, created_at}
 
       [%{"channel" => other}] ->
         {:error, "#{space} is already mirrored in ##{other}. `unmap` it first."}
 
       [] ->
         case Store.query(db, "select space_name from mappings where channel = ?", [channel]) do
-          [%{"space_name" => other}] ->
-            {:error, "##{channel} is already mirrored in #{other}. `unmap` it first."}
-
-          [] ->
-            created_at = Store.now_iso()
-
-            Store.query(db, "insert into mappings (space_name, channel, created_at) values (?, ?, ?)", [
-              space,
-              channel,
-              created_at
-            ])
-
-            {:ok, %{space: space, channel: channel, created_at: created_at}}
+          [%{"space_name" => other}] -> {:error, "##{channel} is already mirrored in #{other}. `unmap` it first."}
+          [] -> {:ok, nil}
         end
+    end
+  end
+
+  defp put_mapping(db, space, channel) do
+    with {:ok, existing} <- mapped(db, space, channel) do
+      created_at = existing || Store.now_iso()
+
+      if existing == nil,
+        do: Store.query(db, "insert into mappings (space_name, channel, created_at) values (?, ?, ?)", [space, channel, created_at])
+
+      {:ok, %{space: space, channel: channel, created_at: created_at}}
     end
   end
 
