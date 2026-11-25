@@ -1,25 +1,33 @@
 // A screen as it is now, as a remote desktop app shows one: written once on the drawing primitives (#primitives),
 // the same on every host. Its live video is the `Video` primitive, which a host draws.
-import { createEffect, createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { assign, createActor, fromPromise, setup } from "xstate"
 import { Portal, Pressable, Video, View } from "#primitives"
 import { displayMode, requestDisplayMode, safeArea, touch, viewport } from "#bridge"
 import { BarEnd, Button, Icon } from "./button.tsx"
+import { Room } from "./screen.tsx"
 import { Problem, Status } from "./states.tsx"
 import { fullScreen } from "../drawing-primitives/input.ts"
 import type { Ice } from "../drawing-primitives/renderer.ts"
 import type { Laid } from "../types/ui.d.ts"
 import { messages } from "../words.ts"
 import { styles } from "../styles.ts"
-import { tokens } from "../tokens.ts"
+import { pixels, tokens } from "../tokens.ts"
 
-// The sizes a screen is resized to: no narrower than Chrome draws its window (500), and no bigger than Computer Use's
-// screens take.
-const SIZES = { width: [500, 7680], height: [240, 4320] }
+// The sizes a screen is resized to: a desktop's, a common laptop's at the least, scaled down to the view where that's
+// narrower, and no bigger than Computer Use's screens take.
+const DESKTOP = 1280
+// The least tall a view is, in CSS pixels.
+const LEAST = 256
+/** A desktop's view: 16:10, as tall as fits under the bar with a line or two left under it. */
+const desktop = (width: number) => Math.max(LEAST, Math.min(width * 0.625, viewport().height - 240))
+const SIZES = { width: 7680, height: [240, 4320] }
 const look = styles({
   root: { gap: tokens.grid[1], minWidth: 0 },
-  // As wide as its place, and as tall as fits under the bar with a line or two left under it (its `height`).
+  // Wide media runs out beyond the screen's readable column, to the window's gutters (`bleed`), as the App Store's
+  // shelves do; the text and buttons around it keep the column.
+  bleed: (pull: number) => ({ marginStart: pull, marginEnd: pull }),
   view: {
     position: "relative",
     overflow: "hidden",
@@ -45,31 +53,42 @@ const look = styles({
 /** What's sent to a screen: its `action`, and what that action takes, as Computer Use's screens have them. */
 export type ScreenInputs = { action: string } & Record<string, unknown>
 
+/** How wide a screen's column is (its readable width, or its room's where that's less), and how far wide media goes out
+ * beyond it on each side: to its window's gutters, no further. */
+function column() {
+  const room = useContext(Room)
+  const free = () => room() - safeArea().left - safeArea().right - 2 * pixels(tokens.length.gutter)
+  return () => ({ pull: Math.max(0, (free() - pixels(tokens.length.readable)) / 2), width: Math.max(free(), pixels(tokens.length.readable)) })
+}
+
 const json = (answer: unknown) => (typeof answer === "string" ? JSON.parse(answer) : answer)
 
 /// `<LiveScreen label="The browser" screen={(inputs) => call("chrome_screen", { session, ...inputs })} />`: a screen
 /// as it is now, as a remote desktop app shows one, which you click, scroll and type on. It's live video over WebRTC:
 /// `screen` is called with `stream`, for the ICE servers and then with its offer, for the screen's answer, and what's
 /// done on it goes to the screen over the stream's data channel. Video lost is connected to again. Where it can't
-/// connect it's a problem that says why, in the words of what refused it, with Try Again. It's as wide as its place
-/// and as tall as fits, and the screen is resized to match it (`resize`), so its text is as big as the page's. Full
+/// connect it's a problem that says why, in the words of what refused it, with Try Again. It's as wide as its window
+/// gives, beyond the screen's readable column, and as tall as fits (16:10 at most). A desktop is resized to a laptop's
+/// width at the least, or to the view's where that's wider (`resize`), so its text is as big as the page's where there's
+/// room and its picture is scaled down to the view where there isn't; a phone keeps its own shape. Full
 /// Screen (F11, or ⌃⌘F on a Mac) fills the window with it, and on a phone a tap is what opens it. `watch` only looks:
 /// nothing is sent to it, and it keeps its size. Until there's a `screen` (one that's still starting) its place shows
 /// what it's given instead, its `Steps` most often.
 export function LiveScreen(props: { label: string; screen?: (inputs: ScreenInputs) => Promise<unknown>; watch?: boolean; children?: JSX.Element }) {
+  const wide = column()
   return (
     <Show
       when={props.screen}
       keyed
       fallback={
-        <View style={look.root}>
-          <View style={[look.view, look.tall(Math.max(256, viewport().height - 240))]}>
+        <View style={[look.root, look.bleed(-wide().pull)]}>
+          <View style={[look.view, look.tall(desktop(wide().width))]}>
             <View style={look.middle}>{props.children}</View>
           </View>
         </View>
       }
     >
-      {(screen) => <Connected label={props.label} screen={screen} watch={props.watch} />}
+      {(screen) => <Connected label={props.label} screen={screen} watch={props.watch} wide={wide()} />}
     </Show>
   )
 }
@@ -81,7 +100,7 @@ type Happened = { type: "lost" } | { type: "resized" } | { type: "again" }
 /** Why, as words: an error's message, or what was said. */
 const said = (why: string | Error | undefined) => (why instanceof Error ? why.message : (why ?? ""))
 
-function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Promise<unknown>; watch?: boolean }) {
+function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Promise<unknown>; watch?: boolean; wide: { pull: number; width: number } }) {
   // What it's of, for good: what's still on its way once it's gone goes to it.
   const screen = props.screen
   const watch = props.watch
@@ -171,20 +190,21 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
   // scale while it runs, so a screen of the device's pixels would draw its text smaller than the page's. Its stream
   // ends as it's resized, and is connected to again at its new size.
   let resizing: ReturnType<typeof setTimeout> | undefined
-  let fixed = false
+  const [fixed, setFixed] = createSignal(false)
   let requested = ""
   const resize = () => {
     const { width: wide, height: tall } = place()!
-    // A view smaller than the least a screen takes keeps its shape, and is drawn a little smaller.
-    const up = Math.max(1, SIZES.width[0] / wide, SIZES.height[0] / tall)
-    const width = Math.min(Math.round(wide * up), SIZES.width[1])
-    const height = Math.min(Math.round(tall * up), SIZES.height[1])
-    if (fixed || requested === `${width}x${height}`) return
+    // A desktop's width, or the view's where that's wider, with the view's shape: its picture is scaled down to fit
+    // the view, never squeezed into another shape.
+    const width = Math.min(Math.max(DESKTOP, Math.round(wide)), SIZES.width)
+    const height = Math.min(Math.max(Math.round((width * tall) / wide), SIZES.height[0]), SIZES.height[1])
+    if (fixed() || requested === `${width}x${height}`) return
     requested = `${width}x${height}`
-    // A screen whose display can't be resized (a desktop container made before it could) is drawn scaled instead.
+    // A screen whose display can't be resized (a phone's, or a desktop container made before it could) keeps its shape,
+    // and its view takes it.
     return screen({ action: "resize", width, height }).then(
       () => true,
-      () => (fixed = true) && false,
+      () => (setFixed(true), false),
     )
   }
   const fit = () => {
@@ -229,7 +249,11 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
       onKeyDown={(event) => fullScreen(event) && (event.preventDefault(), toggle())}
       style={[
         look.view,
-        full() ? look.full : look.tall(watch && size() && place() ? Math.min((place()!.width * size()![1]) / size()![0], viewport().height - 128) : Math.max(256, viewport().height - 240)),
+        full()
+          ? look.full
+          : (watch || fixed()) && size() && place()
+            ? look.tall(Math.min((place()!.width * size()![1]) / size()![0], viewport().height - 128))
+            : look.tall(desktop(props.wide.width)),
       ]}
     >
       <Pressable onLayout={laid} style={[look.fill, look.surface]}>
@@ -290,7 +314,7 @@ function Connected(props: { label: string; screen: (inputs: ScreenInputs) => Pro
   )
 
   return (
-    <View style={look.root}>
+    <View style={[look.root, look.bleed(-props.wide.pull)]}>
       {!full() && view}
       <Show when={full()}>
         <Portal>{view}</Portal>
