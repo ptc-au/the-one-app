@@ -25,7 +25,8 @@
 # same kind waits for the first. One published while the network's
 # update of the one before is under way takes its place there. A build the network has published from this commit, or
 # from a newer one, which has this one's changes, covers it: it's left as it is, so a release that finishes late
-# doesn't undo a newer one, and one of this commit is published again, so a network that didn't hear of it does. That's
+# doesn't undo a newer one (and `publish` leaves out of a list any build older than the one in it, by the count in its name, for one that
+# was covered by none when it began and by one that published while it built), and one of this commit is published again, so a network that didn't hear of it does. That's
 # the first thing a release looks at, and a release waiting for another looks again as it waits, and ends at once, with
 # the exit status 0, when the one it waits for is of a commit that has its changes, saying which to follow with `one
 # builds`: only a release whose commit nothing covers waits to publish. So is a client built from
@@ -137,17 +138,23 @@ publish() {
     const recent = new Set(assets.filter(({ createdAt }) => Date.now() - Date.parse(createdAt) < 3_600_000).map(({ name }) => name));
     const before = Object.fromEntries(TARGETS.map((target) => [target, have.has(`${target}.json`) ? JSON.parse(gh("release", "download", TAG, "-p", `${target}.json`, "-O", "-")) : null]));
     const lists = structuredClone(before);
-    for (const { what, kind, build, inputs, serves, bundle, sha256, signature, size } of builds) {
+    // A build older than the one a list has is left out of it, whatever order releases end in: the commit counts in
+    // builds names (`+5721.`) only grow on main, as the updater tells a newer one by (`core/edge/updater/updater.ts`).
+    const count = (build) => Number(/\+(\d+)\./.exec(build)?.[1] ?? 0);
+    const published = new Set();
+    for (const { name, what, kind, build, inputs, serves, bundle, sha256, signature, size } of builds) {
       for (const target of kind ? [kind] : TARGETS.filter((target) => lists[target] || builds.some((other) => other.kind === target))) {
         const list = (lists[target] ??= {});
         const was = list[what];
+        if (was && count(was.build) > count(build)) continue;
+        published.add(name);
         list[what] = { build, sha256, size, signature, ...(inputs && { inputs }), ...(serves && { serves }), ...(bundle && { bundle }), link: { method: "GET", url: `${at}/${sha256}`, headers: {} } };
         if (serves) list[what].serving = was?.serves === serves ? (was.serving ?? was.build) : build;
       }
     }
     const out = mkdtempSync(`${tmpdir()}/release-`);
     try {
-      for (const { path, sha256 } of builds.filter(({ sha256 }) => !have.has(sha256))) {
+      for (const { path, sha256 } of builds.filter(({ name, sha256 }) => published.has(name) && !have.has(sha256))) {
         copyFileSync(path, `${out}/${sha256}`);
         gh("release", "upload", TAG, `${out}/${sha256}`);
         have.add(sha256);
@@ -160,7 +167,7 @@ publish() {
     } finally {
       rmSync(out, { recursive: true, force: true });
     }
-    for (const { name, size } of builds) console.log(`${name}  ${BUILD}  ${(size / 1e6).toFixed(1)} MB`);
+    for (const { name, size } of builds) console.log(published.has(name) ? `${name}  ${BUILD}  ${(size / 1e6).toFixed(1)} MB` : `${name}  ${BUILD} is older than the build published, which stays`);
   ' "$@"
 }
 
