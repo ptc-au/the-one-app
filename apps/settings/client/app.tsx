@@ -370,7 +370,10 @@ const notifying = createMemo(() => json<{ apps: { app: string; allowed: boolean 
 
 /// An app's page: who it's for, whether it's trusted, its notifications, its update, what it adds here, and Remove App.
 function AppPage(props: { identity: string }) {
-  const app = () => apps().find((one) => `${one.for}:${one.name}` === props.identity)!
+  const found = () => apps().find((one) => `${one.for}:${one.name}` === props.identity)
+  // Where the app was just removed, `apps` has lost it a tick before this page closes: what it was until it does.
+  let last = found()!
+  const app = () => (last = found() ?? last)
   const [working, setWorking] = createSignal<string>()
   const allowed = () => notifying()?.find((one) => one.app === app().app)
   // Each of the app's services that runs somewhere or can't where it should, with its machines: running, or what each lacks.
