@@ -305,6 +305,7 @@ defmodule Board do
           required: ["id"],
           properties: %{
             id: %{type: "string"},
+            profile: %{type: "string"},
             set: %{type: "object", description: "Map of key -> value to set"},
             unset: %{type: "array", items: %{type: "string"}, description: "Keys to remove"},
             if: %{type: "object", description: "Require these key -> value pairs before writing"},
@@ -321,6 +322,7 @@ defmodule Board do
           required: ["id", "file"],
           properties: %{
             id: %{type: "string", description: "Message ID to attach the file to"},
+            profile: %{type: "string"},
             file: %{type: "string", format: "upload", description: "Uploaded file blob"},
             name: %{type: "string", description: "Filename shown to readers"},
             mime_type: %{type: "string", description: "Its kind: kept for a picture or a PDF, application/octet-stream for anything else"}
@@ -472,7 +474,7 @@ defmodule Board do
       },
       %{
         name: "task_cancel",
-        description: "Cancel a task.",
+        description: "Cancel a task. Only its owner can.",
         inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}, reason: %{type: "string"}, profile: %{type: "string"}}},
         outputs: %{type: "object"}
       },
@@ -511,8 +513,8 @@ defmodule Board do
       },
       %{
         name: "schedule_cancel",
-        description: "Cancel a scheduled message.",
-        inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}}},
+        description: "Cancel a scheduled message. Only whoever scheduled it can.",
+        inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}, profile: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
@@ -980,15 +982,19 @@ defmodule Board do
 
   defp dispatch("label", inputs, call) do
     with id when is_binary(id) <- inputs["id"] || {:error, "Message id is required."},
+         {:ok, profile} <- Store.validate_profile(inputs["profile"]),
          :ok <- validate_labels_map(inputs["set"]),
          :ok <- validate_unset_list(inputs["unset"]) do
+      actor = call.actor || call.subject
+
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select channel from messages where id = ? and deleted_at is null", [id]) do
-            [%{"channel" => channel}] ->
+          case Store.query(db, "select channel, author, profile from messages where id = ? and deleted_at is null", [id]) do
+            [%{"channel" => channel, "author" => author, "profile" => msg_profile}] ->
               current = Store.labels_for(db, id)
 
-              with :ok <- check_if_labels(current, inputs["if"]),
+              with :ok <- author_only(actor, profile, author, msg_profile, "label"),
+                   :ok <- check_if_labels(current, inputs["if"]),
                    :ok <- check_if_unset(current, inputs["if_unset"]) do
                 for k <- inputs["unset"] || [] do
                   Store.query(db, "delete from labels where message_id = ? and key = ?", [id, k])
@@ -1019,18 +1025,22 @@ defmodule Board do
   end
 
   defp dispatch("attach", %{"id" => msg_id, "file" => blob} = inputs, call) when is_binary(msg_id) and is_binary(blob) do
-    with {:ok, upload} <- validate_optional_upload(call, blob, inputs["name"], inputs["mime_type"]) do
+    with {:ok, profile} <- Store.validate_profile(inputs["profile"]),
+         {:ok, upload} <- validate_optional_upload(call, blob, inputs["name"], inputs["mime_type"]) do
+      actor = call.actor || call.subject
+
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select deleted_at from messages where id = ?", [msg_id]) do
-            [%{"deleted_at" => nil}] ->
+          case Store.query(db, "select author, profile, deleted_at from messages where id = ?", [msg_id]) do
+            [%{"author" => author, "profile" => msg_profile, "deleted_at" => nil}] ->
               [%{"n" => count}] = Store.query(db, "select count(*) as n from attachments where message_id = ?", [msg_id])
 
-              if count >= @max_attachments do
-                {:error, "A message can have at most #{@max_attachments} attachments."}
-              else
-                att = insert_attachment(db, msg_id, upload, Store.now_iso())
-                {:ok, att}
+              with :ok <- author_only(actor, profile, author, msg_profile, "attach to") do
+                if count >= @max_attachments do
+                  {:error, "A message can have at most #{@max_attachments} attachments."}
+                else
+                  {:ok, insert_attachment(db, msg_id, upload, Store.now_iso())}
+                end
               end
 
             _ ->
@@ -1470,7 +1480,10 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select m.channel, t.state from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
+          case Store.query(db, "select m.channel, m.profile, t.state, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
+            [%{"owner_actor" => owner, "profile" => msg_profile}] when owner != actor or (profile not in [nil, ""] and profile != msg_profile) ->
+              {:error, "Only the task's owner can cancel it."}
+
             [%{"state" => "completed"}] ->
               {:error, "Task #{id} is already completed."}
 
@@ -1614,10 +1627,33 @@ defmodule Board do
     %{schedules: schedules}
   end
 
-  defp dispatch("schedule_cancel", %{"id" => id}, call) do
-    Store.transaction(call, fn db -> Store.query(db, "delete from schedules where id = ?", [id]) end)
-    Call.changed(call)
-    %{id: id, canceled: true}
+  defp dispatch("schedule_cancel", %{"id" => id} = inputs, call) do
+    with {:ok, profile} <- Store.validate_profile(inputs["profile"]) do
+      actor = call.actor || call.subject
+
+      result =
+        Store.transaction(call, fn db ->
+          case Store.query(db, "select author, profile from schedules where id = ?", [id]) do
+            [%{"author" => author, "profile" => scheduled_profile}] ->
+              with :ok <- author_only(actor, profile, author, scheduled_profile, "cancel") do
+                Store.query(db, "delete from schedules where id = ?", [id])
+                {:ok, %{id: id, canceled: true}}
+              end
+
+            [] ->
+              {:error, "Schedule #{id} not found."}
+          end
+        end)
+
+      case result do
+        {:ok, canceled} ->
+          Call.changed(call)
+          canceled
+
+        {:error, why} ->
+          {:error, why}
+      end
+    end
   end
 
   defp dispatch("tick_schedules", _inputs, call) do
@@ -2075,6 +2111,11 @@ defmodule Board do
 
   defp can_edit?(actor, profile, msg_author, msg_profile) do
     actor == msg_author and (profile == nil or profile == "" or profile == msg_profile)
+  end
+
+  # What's part of a message, or a schedule, is its author's to change, as the message is (`can_edit?/4`).
+  defp author_only(actor, profile, author, author_profile, what) do
+    if can_edit?(actor, profile, author, author_profile), do: :ok, else: {:error, "Only the author can #{what} this."}
   end
 
   defp validate_labels_map(nil), do: :ok
