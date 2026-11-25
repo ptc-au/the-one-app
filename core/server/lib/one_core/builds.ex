@@ -96,8 +96,10 @@ defmodule OneCore.Builds do
   kind, or `<what>/<target>`. A kind whose list can't be read now is left out.
   """
   def latest do
-    for target <- @targets,
-        {:ok, list} <- [listed(target)],
+    # Each kind's list is a request to GitHub of its own, so they're asked at once.
+    lists = Task.async_stream(@targets, &listed/1, timeout: :infinity) |> Enum.map(fn {:ok, list} -> list end)
+
+    for {target, {:ok, list}} <- Enum.zip(@targets, lists),
         {what, build} <- list,
         into: %{},
         do: {if(what == "server-code", do: what, else: "#{what}/#{target}"), Map.delete(build, "link")}
