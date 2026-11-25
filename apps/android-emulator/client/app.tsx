@@ -1,6 +1,6 @@
 // Android Emulator: your emulators on every machine, and one of them live, to use as a phone, start, stop or remove.
 import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast } from "ui"
+import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, navigate, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast, toolInput } from "ui"
 
 /** An emulator, as `android-emulator_list` answers it. */
 interface Emulator {
@@ -21,7 +21,12 @@ const says = (e: Emulator) => (e.state === "stopped" && e.why ? "Couldn't start"
 /// What its menu offers in each state: none while it's being removed.
 const ACTIONS: Record<State, ("start" | "stop" | "remove")[]> = { stopped: ["start", "remove"], starting: ["stop", "remove"], running: ["stop", "remove"], stopping: ["remove"], removing: [] }
 
-const [open, setOpen] = createSignal<string>()
+/// The emulator open beside the list is a screen of its own, `android-emulator_emulator { emulator }` at /android-emulator/pixel-1.
+const open = () => {
+  const { name, arguments: inputs } = toolInput("android-emulator_list")
+  return name === "android-emulator_emulator" ? String(inputs.emulator) : undefined
+}
+const setOpen = (emulator?: string) => navigate(emulator ? "android-emulator_emulator" : "android-emulator_list", emulator ? { emulator } : {})
 
 function Detail(props: { emulator: Emulator }) {
   const e = () => props.emulator

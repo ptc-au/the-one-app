@@ -68,10 +68,22 @@ defmodule AndroidEmulator do
       %{
         name: "list",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description:
           "The emulators you can use, on every machine: each one's name, state (stopped, starting, running, stopping, removing), machine, what it's for, who created it, and when it was created and last used (ms since 1970). A machine that didn't answer is in `failed`, with why.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object", properties: %{emulators: %{type: "array", items: @listed}, failed: @failed}, required: ["emulators", "failed"]}
+      },
+      %{
+        name: "emulator",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{emulator}",
+        runtime_version: 4,
+        description: "One emulator, as `list` gives it: its state, what it's doing and why it didn't start. It is the screen of it beside the list, live where it runs: /android-emulator/pixel-1.",
+        inputs: one(),
+        outputs: @listed
       },
       %{
         name: "machines",
@@ -234,6 +246,11 @@ defmodule AndroidEmulator do
   def call("list", _inputs, call) do
     {emulators, failed} = listed(call)
     %{emulators: emulators, failed: failed}
+  end
+
+  def call("emulator", %{"emulator" => name}, call) do
+    {emulators, _failed} = listed(call)
+    Enum.find(emulators, &(&1["name"] == name)) || raise "No emulator is called #{name}"
   end
 
   def call("machines", _inputs, call), do: %{machines: Service.machines(call, Emulator)}
