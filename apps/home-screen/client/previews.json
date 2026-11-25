@@ -3236,6 +3236,18 @@
           "groups/book-club"
         ]
       }
+    },
+    "motions": {
+      "A trackpad's swipe up moves to the next owner": {
+        "gesture": {
+          "trace": "traces/mac-swipe-to-next-owner.json"
+        }
+      },
+      "A mouse wheel's notch moves to the next owner": {
+        "gesture": {
+          "trace": "traces/mouse-wheel-next-owner.json"
+        }
+      }
     }
   },
   "Launcher, its owners": {

@@ -2,7 +2,7 @@ import { createMemo, createEffect, createSignal, onSettled, untrack } from "soli
 import { createVelocityTracker, type Dragged, haptic, keydown, type Pressed, reducedMotion, viewport, type Wheeled } from "ui"
 import { give, glide, jump, settle, spring, type Spring, stop } from "./pager.ts"
 import { along as alongOf, card as cardOf, cell as cellOf, lefts, PILLS } from "./layout.ts"
-import { type At, carries } from "./machine.ts"
+import { type At, carries, type Event } from "./machine.ts"
 import { cardTop, home, setSeen, setAlong, setRolled, launcher, room, laidPage, quietFor, finger, state, at } from "./store.ts"
 import { type Owner, draft, keep } from "./owners.ts"
 import { type Screens } from "./screens.ts"
@@ -255,23 +255,24 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
     if ((home.getSnapshot().context.held?.stack?.length ?? 0) > before) haptic("selection")
   }
 
-  // On a computer a vertical scroll never moves sideways, so up and down over the Home Screen move nothing: they're for
-  // what scrolls, as the App Library does. The pages move sideways, as they do everywhere else: a wheel held along (a
-  // mouse's Shift+wheel, which turns by notches, or the horizontal wheel of one that has it) turns the pages a screenful
-  // a notch, each by the pages' spring, down the row of them and past the last on to the App Library, and back out of it;
-  // and a trackpad's fingers, where the host doesn't drag the pages along with them, or a wheel that turns smoothly,
-  // page as macOS's Launchpad does: one screenful along a gesture, however hard it's flicked, once its pushes along add
-  // up to 30 points. A gesture starts as the fingers touch (`began`) or the wheel turns after a quiet moment, as a wheel
-  // has no phases, and what the system scrolls on with once the fingers have lifted (`momentum`) is the gesture's, which
-  // moves nothing, as a Mac's paging scroll view and Safari's swipe between pages let it be. A gesture that's mostly up
-  // and down is a scroll, and moves nothing. Owners change with the owner pill, and the arrow keys.
-  const notched = (notches: number) => {
+  // On a computer the pages move as they do on a phone, a swipe's way: sideways between an owner's screenfuls, and up and
+  // down between the owners (the pill and the arrow keys do too), on Home only, as the App Library scrolls itself. A
+  // wheel turned by notches (a mouse's, and Shift+wheel along) turns one a notch, each by the pages' spring, down the
+  // row of screenfuls and past the last on to the App Library, and back out of it; and a trackpad's fingers, where the
+  // host doesn't drag the pages along with them, or a wheel that turns smoothly, move as macOS's Launchpad does: one
+  // along a gesture, however hard it's flicked, once its pushes add up to 30 points. A gesture starts as the fingers
+  // touch (`began`) or the wheel turns after a quiet moment, as a wheel has no phases, and what the system scrolls on
+  // with once the fingers have lifted (`momentum`) is the gesture's, which moves nothing, as a Mac's paging scroll view
+  // and Safari's swipe between pages let it be. A gesture goes the way it's mostly pushed.
+  const toScreen = (way: 1 | -1): Event => ({ type: "step", screen: way })
+  const toOwner = (way: 1 | -1): Event => ({ type: "step", owner: way })
+  const notched = (notches: number, step: (way: 1 | -1) => Event) => {
     if (!home.getSnapshot().matches("nothing")) return
-    for (let turned = 0; turned < Math.abs(notches); turned++) home.send({ type: "step", screen: Math.sign(notches) as 1 | -1 })
+    for (let turned = 0; turned < Math.abs(notches); turned++) home.send(step(Math.sign(notches) as 1 | -1))
   }
   let gesture: { at: number; x: number; y: number; done: boolean } | undefined
   const wheel = (event: Wheeled) => {
-    if (event.notchesY || event.notchesX) return event.notchesX ? notched(event.notchesX) : undefined
+    if (event.notchesY || event.notchesX) return event.notchesX ? notched(event.notchesX, toScreen) : notched(event.notchesY!, toOwner)
     if (event.momentum) return
     const quiet = !gesture || event.timeStamp - gesture.at > 250
     if (event.phase === "began" || (quiet && event.phase !== "ended" && event.phase !== "cancelled")) gesture = { at: event.timeStamp, x: 0, y: 0, done: false }
@@ -281,7 +282,7 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
     const [x, y] = [Math.abs(gesture.x), Math.abs(gesture.y)]
     if (Math.max(x, y) < 30) return
     gesture.done = true
-    if (x > y) home.send({ type: "step", screen: Math.sign(gesture.x) as 1 | -1 })
+    home.send(x > y ? toScreen(Math.sign(gesture.x) as 1 | -1) : toOwner(Math.sign(gesture.y) as 1 | -1))
   }
 
   onSettled(() => {
