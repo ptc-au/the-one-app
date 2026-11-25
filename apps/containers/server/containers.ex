@@ -790,10 +790,13 @@ defmodule Containers do
 
     Enum.find(containers, &(&1.name == name)) ||
       case Enum.find(off(call), &(&1.name == name)) do
-        nil -> raise "You have no container called #{name}#{Service.unanswered(failed)}"
+        nil -> raise "You have no container called #{name}#{Service.unanswered(failed)}#{having(containers)}"
         c -> raise "#{name} is on #{c.machine}, which is off"
       end
   end
+
+  defp having([]), do: ". You have none"
+  defp having(containers), do: ". The ones you have: #{Enum.map_join(containers, ", ", & &1.name)}"
 
   # The containers this call may use, on every machine that's up, and why each that didn't answer couldn't.
   defp containers(call) do

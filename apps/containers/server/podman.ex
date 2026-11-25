@@ -519,7 +519,7 @@ defmodule Containers.Podman do
     host_port =
       case run(service, ["port", id, "#{port}/tcp"], 10) do
         %{exit: 0, stdout: "127.0.0.1:" <> port} -> String.trim(port)
-        _ -> raise "#{port} isn't one of its ports: a container's ports are the ones it was created with"
+        _ -> raise unpublished(service, id, port)
       end
 
     url = "http://127.0.0.1:#{host_port}" <> if(String.starts_with?(path, "/"), do: path, else: "/" <> path)
@@ -541,6 +541,19 @@ defmodule Containers.Podman do
       headers: Map.new(response.headers, fn {key, values} -> {key, Enum.join(values, ", ")} end),
       body: clip(response.body, @largest)
     }
+  end
+
+  # Why a request to a port got nothing: a container's ports are the ones it was created with, so it says which those are.
+  defp unpublished(service, id, port) do
+    published =
+      case run(service, ["port", id], 10) do
+        %{exit: 0, stdout: out} -> for [_, p] <- Regex.scan(~r/^(\d+)\/tcp/m, out), uniq: true, do: p
+        _ -> []
+      end
+
+    "The container has no port #{port}. " <>
+      if(published == [], do: "It has no ports", else: "Its ports are #{Enum.join(published, ", ")}") <>
+      ": a container's ports are the ones it was created with.\n\n`create` with `ports: [#{port}]` makes one with it."
   end
 
   # Enables Podman's `podman-restart` user service, which starts containers whose policy is `always` as the machine

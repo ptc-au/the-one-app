@@ -47,10 +47,14 @@ defmodule Chrome do
   # Starts Chrome (the image's `browser`), at the page given or a new tab, and the MCP server beside it: HTTP on the container's
   # interfaces, from whatever host `request` names it by, on Chrome's DevTools Protocol, with one browser context
   # that every MCP session shares, so a session started again finds the same pages. Neither is the container's own
-  # command, so each is started in a session of its own, to keep running once this has.
+  # command, so each is started in a session of its own, to keep running once this has. It waits, for up to 20
+  # seconds, until the MCP server answers on its port, which takes a second or two after it starts, so a request
+  # made once Chrome is open finds it listening.
   @launch ~s(setsid browser "$@" </dev/null >/dev/null 2>&1 & ) <>
             ~s(setsid playwright-mcp --port #{@port} --host 0.0.0.0 --allowed-hosts '*' ) <>
-            ~s(--cdp-endpoint http://127.0.0.1:9222 --shared-browser-context </dev/null >/tmp/mcp.log 2>&1 &)
+            ~s(--cdp-endpoint http://127.0.0.1:9222 --shared-browser-context </dev/null >/tmp/mcp.log 2>&1 & ) <>
+            ~s[for i in $(seq 80); do curl -s -o /dev/null http://127.0.0.1:#{@port}/ && exit 0; sleep 0.25; done; ] <>
+            ~s[echo "nothing listens on port #{@port} after 20 seconds" >&2; exit 1]
   # Quits Chrome as a person would, over its DevTools Protocol (Browser.close), so it writes everything down, which
   # a signal doesn't wait for. Once it has (or, after 10 seconds, it's killed, as are its helpers) packs what of its
   # user data dir travels: `Local State` and the profile, `Default`, without its caches. The rest is what Chrome
@@ -780,9 +784,8 @@ defmodule Chrome do
     end
   end
 
-  # Begins an MCP session with the server in the session's container, and keeps its id. The server takes a second
-  # or two to listen after its container starts, which is why it's asked again, for up to 20 seconds.
-  defp initialize(call, session, tries \\ 80) do
+  # Begins an MCP session with the server in the session's container, and keeps its id.
+  defp initialize(call, session) do
     request = %{
       "jsonrpc" => "2.0",
       "id" => 0,
@@ -793,11 +796,6 @@ defmodule Chrome do
     %{"status" => 200, "headers" => %{"mcp-session-id" => id}} = request(call, session, nil, request)
     record(call, session, &Map.put(&1, "mcp", id))
     id
-  rescue
-    e ->
-      if tries == 0, do: reraise(e, __STACKTRACE__)
-      Process.sleep(250)
-      initialize(call, session, tries - 1)
   end
 
   defp request(call, session, id, body) do
