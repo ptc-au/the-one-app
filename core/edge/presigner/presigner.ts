@@ -43,9 +43,10 @@ const SERVER = /^servers\/([0-9a-f]{64})\//;
  * network, what's installed for whom, which servers act for whom, who the network's first owner is, the builds its
  * machines take, and what each owner has deployed. That's how a server runs an app someone else deployed, finds
  * the server to pass a call on to, knows who may do anything where no app decides who may, updates, lists
- * every app there is, and lists every server, `servers/`, to find a group's servers for its members.
+ * every app there is, lists every server, `servers/`, to find a group's servers for its members, and knows who was renamed
+ * (`network/renamed`), which every request it's asked is read through (`OneCore.User.renamed/1`).
  */
-const OPEN = /^(?:(?:(?:users|groups)\/[^/]+\/|network\/)(?:apps\/.*|installs|installed|servers)|network\/owner|network\/(?:builds|deployed)\/.*|servers\/)$/;
+const OPEN = /^(?:(?:(?:users|groups)\/[^/]+\/|network\/)(?:apps\/.*|installs|installed|servers)|network\/(?:owner|renamed)|network\/(?:builds|deployed)\/.*|servers\/)$/;
 /**
  * An app's icon, kept by its SHA-256 the first time a server gives its address (`OneCore.Apps.Icons`): what an app's
  * code says, which every server reads already. Any of the network's servers writes one, which lands only once, and
