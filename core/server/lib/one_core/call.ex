@@ -566,7 +566,7 @@ defmodule OneCore.Call do
     with :no_response <- answered(response, server, again), do: given_up()
   end
 
-  # Asks `server`, naming it first as the one a write this server holds is passed to, so it takes it over
+  # Asks `server`, naming it first as the one a write this request holds is passed to, so it takes it over
   # (`OneCore.Writes`).
   defp request(server, method, params, opts \\ []) do
     if method == "tools/call", do: Writes.passing(server)

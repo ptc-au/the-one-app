@@ -8,10 +8,12 @@ defmodule OneCore.Writes do
   holds nothing. Another server asked it again answers what the first answered, kept for a day, once it's done: while
   it runs, it waits for it (`@awaited`).
 
-  A server passing a call on passes its key on (`OneCore.Call`). One that holds its claim names the server it passes
-  it to (`passing/1`), which takes the claim over before it runs it, and takes it back once it gives up on that server
-  (`kept/0`). Each is a replace on the condition that nothing changed it meanwhile, so of the two, only one runs it:
-  so a write passed to a server that's stuck is safe to run elsewhere, as one that only reads is.
+  A server passing a call on passes its key on (`OneCore.Call`). The request that holds its claim names the server it
+  passes it to (`passing/1`), which takes the claim over before it runs it, and takes it back once it gives up on that
+  server (`kept/0`). Each is a replace on the condition that nothing changed it meanwhile, so of the two, only one runs
+  it: so a write passed to a server that's stuck is safe to run elsewhere, as one that only reads is. A request that
+  doesn't hold it, as one asked again of the server running the first, passes nothing on, and waits for the one that
+  does: the claim is the request's, by its `claim`, not its server's.
 
   What it answered can hold secrets, as a Vault call's answer does, so it's kept encrypted to the device that asked
   (`client::sealed`), whose key is in every request it makes: any server hands it back, and only that device opens it.
@@ -179,37 +181,35 @@ defmodule OneCore.Writes do
   end
 
   @doc """
-  Names `server` as the one this process's write is passed to, where this server holds its claim, so that one takes
+  Names `server` as the one this process's write is passed to, where this request holds its claim, so that one takes
   it over (`claim/4`), before it's asked it.
   """
   def passing(server), do: held(&Map.put(&1, "to", server))
 
   @doc """
-  Takes back this process's write from the server it was passed to, which didn't answer: `:ok` where this server holds
-  it, or none does, or where that server took it over meanwhile, what it answered once it's done (`claim/4`), which
-  ends the call.
+  Takes back this process's write from the server it was passed to, which didn't answer: `:ok` where this request holds
+  it, or nothing does, or else what it answered once it's done (`claim/4`), which ends the call: that server took it
+  over meanwhile, or it's another request's, as the first ask's where this one is it asked again.
   """
   def kept do
-    me = Server.key()
-
     case held(&Map.put(&1, "to", nil)) do
-      {path, %{"server" => server, "status" => status}} when server != me or status == "done" -> awaited(path)
-      _ours_or_none -> :ok
+      {:not_held, path} -> awaited(path)
+      _held_or_none -> :ok
     end
   end
 
-  # Changes the claim this process's write holds, by `change`, where it's this server's: gives its path and it as it is
-  # after, or `nil` where there's none.
+  # Changes the claim at this process's write's path by `change`, where this request holds it, running: `{:held, path}`
+  # once it's changed, `{:not_held, path}` where it's another request's, here or on another server, or done, and `nil`
+  # where there's none.
   defp held(change) do
     with {_id, %{write: %{} = write}} <- State.current(),
          path when is_binary(path) <- path(write.subject, write.key),
          {:ok, data, tag} <- Bucket.read(path) do
       record = JSON.decode!(data)
-      changed = change.(record)
 
       cond do
-        record["server"] != Server.key() or record["status"] != "running" -> {path, record}
-        Bucket.replace(path, JSON.encode!(changed), tag) == :ok -> {path, changed}
+        record["claim"] != write.claim or record["status"] != "running" -> {:not_held, path}
+        Bucket.replace(path, JSON.encode!(change.(record)), tag) == :ok -> {:held, path}
         true -> held(change)
       end
     else
