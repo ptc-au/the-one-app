@@ -374,11 +374,14 @@ defmodule OneCore.Apps.Store do
       description = Description.description(version)
 
       # One said otherwise is said again by a build at least as new as the one that said it, as a newer build says
-      # more of a version; one older, as a server back after days away has, never takes its place.
-      with :exists <- Bucket.write(blob, description),
-           {:ok, was, tag} when was != description <- Bucket.read(blob),
-           true <- Description.newer?(description, was),
-           do: Bucket.replace(blob, description, tag)
+      # more of a version; one older, as a server back after days away has, never takes its place. It's read first, since
+      # nearly always it's there already, said by a server of the same build, and a refused write is a request too, the
+      # kind the bucket charges most for.
+      case Bucket.read(blob) do
+        :absent -> Bucket.write(blob, description)
+        {:ok, was, tag} when was != description -> if Description.newer?(description, was), do: Bucket.replace(blob, description, tag)
+        {:ok, _same, _tag} -> :ok
+      end
     end
 
     :ok
