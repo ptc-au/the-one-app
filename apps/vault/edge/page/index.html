@@ -3,8 +3,114 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Vault</title>
-<!-- Drawn by the web's renderer (clients/web/renderer), as the web client's apps are: its page, page.html, here, which
-     reaches what a web page at the network's address does, and nothing elsewhere. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'">
-<meta name="page" content="page.html">
-<script src="/renderer/renderer.js"></script>
+<!-- Plain HTML, not drawn by the renderer: this page finishes a sign-in, and a browser with neither WebGPU nor WebGL2
+     (a container's Chrome) can't draw the renderer's pages, which left the sign-in unfinished and the tab blank. Its
+     colours are tokens.ts's (core/ui/src/tokens.css), the look of the sign-in screen (core/ui/src/styled-components/sign-in.tsx). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<style>
+  :root {
+    color-scheme: light dark;
+    --label: light-dark(oklch(0.224 0.008 285.76), oklch(1 0 0));
+    --secondary-label: light-dark(oklch(0.224 0.008 285.76 / 70%), oklch(1 0 0 / 60%));
+    --quinary-label: color-mix(in oklab, var(--label) 10%, transparent);
+    --background: light-dark(oklch(0.977 0.003 286.35), oklch(0 0 0));
+    --red: light-dark(oklch(0.525 0.204 25.56), oklch(0.745 0.191 23.4));
+    --on-accent: light-dark(oklch(1 0 0), oklch(0 0 0));
+  }
+  body { margin: 0; min-height: 100dvh; display: flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 24px 16px; background: var(--background); color: var(--label); font: 17px/1.4 system-ui, sans-serif; text-align: center; }
+  main { width: 100%; max-width: 360px; display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  img { width: 64px; height: 64px; }
+  .dark { display: none; }
+  @media (prefers-color-scheme: dark) { .light { display: none; } .dark { display: inline; } }
+  h1 { margin: 0; font-size: 28px; line-height: 1.2; }
+  .grey { color: var(--secondary-label); }
+  .small { font-size: 14px; }
+  .problem { color: var(--red); }
+  .connected { align-self: stretch; box-sizing: border-box; padding: 16px; border: 1px solid var(--quinary-label); border-radius: 12px; text-align: start; display: flex; flex-direction: column; gap: 10px; }
+  .connected strong { font-weight: 600; }
+  .connected div { display: flex; gap: 10px; }
+  .answers { align-self: stretch; display: flex; flex-direction: column; gap: 8px; }
+  button { font: inherit; font-weight: 600; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--quinary-label); background: transparent; color: var(--label); cursor: pointer; }
+  button.main { background: var(--label); color: var(--on-accent); border-color: transparent; }
+  button:disabled { opacity: 0.5; cursor: default; }
+</style>
+<main id="page" role="main">
+  <picture>
+    <img class="light" src="/Logo.png" alt="">
+    <img class="dark" src="/Logo-dark.png" alt="">
+  </picture>
+  <h1 id="heading">Adding your account</h1>
+  <p id="status" class="grey">Adding your account…</p>
+</main>
+<script>
+  // The server's answer to finishing it: how it ended and where it began (`ending` in apps/vault/server/vault/sign_ins.ex),
+  // or only a `problem` where it can't say whose it is. Begun on an app's screen, it goes back to that screen; begun by
+  // an agent or `one`, whose link was opened in a tab of its own, it says they're done there. It never sends them
+  // anywhere it's told to (an open redirect).
+  const ask = (body) =>
+    fetch(location.href, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+      .then((response) => response.json())
+      .catch(() => ({ problem: "Couldn't reach the network. Start the sign-in again." }))
+
+  const element = (tag, text, className) => Object.assign(document.createElement(tag), { textContent: text, className: className ?? "" })
+  const listed = (things) => new Intl.ListFormat("en", { type: "conjunction" }).format(things)
+  const titled = (app) => app[0].toUpperCase() + app.split("#")[0].slice(1)
+  const open = (app) => location.assign(`/?open=${encodeURIComponent(app)}`)
+
+  async function again(button) {
+    button.disabled = true
+    const answer = await ask({ again: true })
+    if (answer.url) return location.assign(answer.url)
+    button.disabled = false
+    document.querySelector(".problem")?.remove()
+    button.before(element("p", answer.problem ?? "It couldn't start again.", "problem"))
+  }
+
+  function show(ended) {
+    const { status, began, apps, service, account, item, problem } = ended
+    const screen = began && "screen" in began ? began.screen : undefined
+    const after = began && "agent" in began ? began.agent : began && "cli" in began ? "your terminal" : undefined
+    const page = document.getElementById("page")
+    page.querySelector("#heading").textContent = status === "ok" ? "You're signed in" : status === "cancelled" ? "Sign-in cancelled" : "Not signed in"
+    page.querySelector("#status")?.remove()
+    if (problem && status !== "cancelled") page.append(element("p", problem, "problem"))
+    if (status === "ok") {
+      const box = element("div", "", "connected")
+      box.setAttribute("role", "group")
+      box.append(element("strong", `${account ?? item} is connected to`))
+      for (const name of apps?.length ? apps : [service]) {
+        const row = element("div", "")
+        row.append(element("span", "✓", "grey"), element("span", name))
+        box.append(row)
+      }
+      page.append(box)
+    }
+    if (status === "cancelled") page.append(element("p", `You didn't let ${listed(apps?.length ? apps : ["the One App"])} use your ${service} account.`, "grey"))
+    const answers = element("div", "", "answers")
+    if (status === "ok" && screen) {
+      const button = element("button", `Open ${titled(screen)}`, "main")
+      button.onclick = () => open(screen)
+      answers.append(button)
+    } else if (status !== "ok") {
+      if (began) {
+        const button = element("button", "Try Again", "main")
+        button.onclick = () => again(button)
+        answers.append(button)
+      }
+      if (screen) {
+        const button = element("button", `Open ${titled(screen)}`)
+        button.onclick = () => open(screen)
+        answers.append(button)
+      }
+    }
+    if (answers.children.length) page.append(answers)
+    if (after) page.append(element("p", `You can close this tab and go back to ${after}.`, "grey small"))
+  }
+
+  ask({}).then((answer) => {
+    show(answer)
+    // A tab a script opened, as the Vault's screen opens a service's page, closes, which takes them back to where they
+    // were; any other stays, saying what to do.
+    if (answer.status === "ok") window.close()
+  })
+</script>

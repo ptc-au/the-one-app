@@ -7,8 +7,8 @@
     "vault"
   ],
   "scripts": {
-    "build": "bun ../../../core/ui/dist/build/app.js \"$PWD/page\" \"$PWD/files/vault\"",
-    "typecheck": "tsc && tsc -p page"
+    "build": "mkdir -p files/vault && cp page/index.html files/vault/index.html",
+    "typecheck": "tsc"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261116.1",
