@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Checkbox, Field, Input, RadioGroup, type Scenes, Screen, Search, Select, styles, Switch, Text, Textarea, tokens, View } from "ui"
+import { Checkbox, DatePicker, Field, Input, RadioGroup, type Scenes, Screen, Search, Select, styles, Switch, Text, Textarea, tokens, View } from "ui"
 
 const look = styles({
   form: { gap: tokens.grid[4] },
@@ -118,6 +118,18 @@ const Picked = () => {
   )
 }
 
+const Dated = (props: { value?: string }) => {
+  const [day, setDay] = createSignal(props.value)
+  return (
+    <View style={look.form}>
+      <Field label="Date">
+        <DatePicker value={day()} onValueChange={setDay} placeholder="Choose a date" />
+      </Field>
+      <Text>{`Chosen: ${day() ?? "none"}`}</Text>
+    </View>
+  )
+}
+
 const face = { role: "combobox", name: "Fruit" }
 
 /// A field of each kind a phone's keyboard treats differently, as iOS's and Android's own fields do.
@@ -203,6 +215,18 @@ export default {
   // What people expect of a select, from the UI SDK's own tests (tests/specs/select.spec.ts at the commit select.ts
   // names).
   "Fields/A select chosen by its keys": { render: () => <Picked />, taps: [{ key: "Tab" }, { key: "Enter" }, { key: "ArrowDown" }, { key: "Enter" }] },
+  // A date chosen from a month of days in a sheet: its face says it, and pressing a day sets it, as an ISO date, and closes.
+  "Fields/A date": { render: () => <Dated value="2026-10-14" /> },
+  "Fields/A date not chosen yet": { render: () => <Dated /> },
+  "Fields/A date's calendar open": { render: () => <Dated value="2026-10-14" />, taps: [{ role: "button", name: "Date" }] },
+  "Fields/A date's calendar pressed": {
+    render: () => <Dated value="2026-10-14" />,
+    checks: {
+      "A press on its face opens a month of days": [{ role: "button", name: "Date" }, { expect: { shown: { role: "dialog" } } }, { expect: { shown: { text: "October 2026" } } }],
+      "A press on a day chooses it and closes": [{ role: "button", name: "Date" }, { text: "21" }, { expect: { text: "Chosen: 2026-10-21" } }, { expect: { gone: { role: "dialog" } } }],
+      "Next month steps on": [{ role: "button", name: "Date" }, { role: "button", name: "Next Month" }, { expect: { shown: { text: "November 2026" } } }],
+    },
+  },
   // A computer's popup, in a narrow window: under a finger a select is the system's own picker.
   "Fields/A select and what's chosen": {
     render: () => <Picked />,

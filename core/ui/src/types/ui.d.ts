@@ -464,6 +464,7 @@ export declare function RadioGroup(props: {
 
 /** What a select chooses from, and what it's told of what's chosen, as React Native's `Picker` has them. */
 export type Choice = { value: string; label: string; disabled?: boolean }
+export declare function DatePicker(props: { value?: string; placeholder?: string; disabled?: boolean; "aria-label"?: string; onValueChange?: (value: string) => void }): Element
 export declare const Select: {
   Root: (props: {
     items: Choice[]

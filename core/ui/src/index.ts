@@ -50,6 +50,7 @@ export { Avatar, type Face, refreshAvatars } from "./styled-components/avatar.ts
 export { Badge, Button, Icon, Spinner } from "./styled-components/button.tsx"
 export { Checkbox, Field, Input, RadioGroup, Search, Switch, Textarea } from "./styled-components/field.tsx"
 export { createVelocityTracker, projected } from "./behavior-primitives/velocity.ts"
+export { DatePicker } from "./styled-components/date-picker.tsx"
 export { Select } from "./styled-components/select.tsx"
 export { List, ListStyle, Row } from "./styled-components/list.tsx"
 export { ReorderList } from "./styled-components/reorder.tsx"
