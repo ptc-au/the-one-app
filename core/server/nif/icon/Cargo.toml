@@ -1,0 +1,18 @@
+[package]
+name = "icon"
+description = "The server's NIF for checking an app's icon as a deploy does: a square, opaque to its corners."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A NIF has no tests of its own: it's only whole inside the VM that loads it.
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+# What every client draws an icon with: the renderer's resvg, and the image crate's decoders.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+resvg = { version = "0.47", default-features = false }
+rustler = "0.39"

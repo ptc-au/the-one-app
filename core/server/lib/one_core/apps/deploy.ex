@@ -315,7 +315,21 @@ defmodule OneCore.Apps.Deploy do
        "#{name} has no icon. icon/0 names one of its files, its app's icon or one of its own, as the skill " <>
          "building-apps says."}
 
-  defp icon(_name, _version), do: :ok
+  # Every icon is a square opaque to its corners, which every client clips to the same squircle, as iOS does.
+  defp icon(name, version) do
+    icons = [{name, version.icon} | for(entrypoint <- version.entrypoints, entrypoint[:icon], do: {entrypoint[:name] || name, entrypoint.icon})]
+
+    refused =
+      for {named, "data:" <> address} <- Enum.uniq(icons),
+          [kind, base64] = String.split(address, ";base64,", parts: 2),
+          {:error, why} <- [shaped(OneCore.Icon.check(Base.decode64!(base64), kind))],
+          do: "#{named}'s icon isn't a square that's opaque to its corners: #{why}. Every client clips an icon to its squircle, so draw it full-bleed to its edges with nothing important in the corners, and a company's logo on a square as its own iPhone app icon has it (the skill building-apps)."
+
+    if refused == [], do: :ok, else: {:error, Enum.join(Enum.uniq(refused), "\n")}
+  end
+
+  defp shaped({:ok, _}), do: :ok
+  defp shaped(refused), do: refused
 
   # A version's code, compiled and loaded here, or for an untrusted app only described, by its sandbox's VM.
   defp loaded(artifact, built, true),

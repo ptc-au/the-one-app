@@ -408,7 +408,8 @@ defmodule OneCore.App do
   What of an app runs in a client is its folder `client/`, as the server built it, which reaches each client from
   the server. Its other files that aren't Elixir or skills stay on servers: the source of a program a service brings,
   and its edge function. An app's icon is its own, as an Android package's is, and deploying one without it is
-  refused: `icon/0` names its file, an entrypoint's icon or one of its own, which goes wherever the app itself is shown (the App Store, Settings). `entrypoints/0`, if the app has any, names its app entrypoints: each an icon
+  refused, as is one that isn't a square opaque to its corners, full-bleed with nothing important in them, which every
+  client clips to the same squircle, as iOS does (a company's logo on a square, as its own iPhone app icon has it): `icon/0` names its file, an entrypoint's icon or one of its own, which goes wherever the app itself is shown (the App Store, Settings). `entrypoints/0`, if the app has any, names its app entrypoints: each an icon
   it puts in the launcher, with its page, a page of `client/`, and an icon of its own or else the app's. It's called
   its app's `title`, and has a `name` of its own only where it's something else than its app, and so is a widget.
   People just see apps:

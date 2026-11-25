@@ -3763,6 +3763,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "icon"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "resvg",
+ "rustler",
+]
+
+[[package]]
 name = "icu"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
