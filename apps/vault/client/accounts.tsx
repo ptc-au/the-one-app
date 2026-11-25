@@ -126,7 +126,9 @@ interface Security {
  * whose Vault (`owner`, where its person owns more than their own); an item beside the list (`item`, its name), or
  * Security (`security`); over them a sheet: a field to type (`field`, its name, or nothing for a new one, of `item` or
  * a new item's first), the kinds a section adds (`add`, the section), a new item of a type to name (`create`, the type),
- * or what an app's own component for its item shows (`sheet`); or a request asked about (`request`). */
+ * or what an app's own component for its item shows (`sheet`); or a request asked about (`request`). A field of an item
+ * that isn't there yet is that new item's, and one the item doesn't have is new, named so; it's filled in with what
+ * `vault_set` would be given (`value`, `secret`, `hosts`). An app's sheet is told `name`, as its own tool takes it. */
 interface Open {
   owner?: string
   item?: string
@@ -136,6 +138,10 @@ interface Open {
   create?: string
   sheet?: string
   request?: string
+  value?: string
+  secret?: boolean
+  hosts?: string[] | string
+  name?: string
 }
 interface Shown {
   inputs: Open
@@ -373,6 +379,7 @@ function Drawn(props: { type: ItemType; item: Item } & Shown) {
           item={shown(props.item)}
           subject={whose()}
           sheet={props.inputs.sheet}
+          name={props.inputs.name}
           sheeted={(sheet?: string) => props.show({ ...base(props), sheet })}
           open={(name: string) => props.show({ owner: props.inputs.owner, item: props.type.prefix + name }, { replace: true })}
           close={() => props.show({ owner: props.inputs.owner })}
@@ -474,9 +481,7 @@ function FieldSheet(props: Shown) {
     const { item: named, field: typed } = props.inputs
     if (typed === undefined) return undefined
     const item = named === undefined ? undefined : contents().items.find((one) => one.name === named)
-    if (named !== undefined && !item) return undefined
     const field = typed ? item?.fields.find((one) => one.name === typed) : undefined
-    if (typed && !field) return undefined
     return { item, field }
   }
   // Which it is, so what's typed stays as the Vault is asked again.
@@ -486,14 +491,15 @@ function FieldSheet(props: Shown) {
   const [field, setField] = createSignal("")
   const [value, setValue] = createSignal("")
   const [hosts, setHosts] = createSignal("")
-  // Each time it opens, it starts empty, or with the field's value, and a new field starts secret.
+  // Each time it opens, it starts as its screen says, or empty, or with the field's value, and a new field starts secret.
   createEffect(which, (now) => {
     if (!now) return
-    setSecret(true)
-    setName("")
-    setField("")
-    setValue(at()?.field?.value ?? "")
-    setHosts("")
+    const { item: named, field: typed, value, secret, hosts } = props.inputs
+    setSecret(secret ?? true)
+    setName(at()?.item ? "" : (named ?? ""))
+    setField(at()?.field ? "" : (typed ?? ""))
+    setValue(at()?.field?.value ?? value ?? "")
+    setHosts([hosts ?? []].flat().join(", "))
   })
   // A field's name is a word of letters, digits and _, as a tool's input names it.
   const named = () => /^[A-Za-z0-9_]+$/.test(field())

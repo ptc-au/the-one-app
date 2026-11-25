@@ -213,6 +213,8 @@ defmodule Vault do
       },
       %{
         name: "set",
+        ui: "client/forms.html",
+        runtime_version: 4,
         description: """
         Keeps a key, token or password someone pasted (or any field) in an item, making the item if there's none by
         that name. Nobody reads a secret back, not you either. When the person has the value, use `request`
