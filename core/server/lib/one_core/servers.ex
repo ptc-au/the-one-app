@@ -93,7 +93,7 @@ defmodule OneCore.Servers do
 
   @doc "The services the server whose key is `key` has installed: each one's app and its name."
   def installed(key) do
-    cached({:installed, key}, fn -> for [app, name] <- read("servers/#{key}/services", []), do: {app, name} end)
+    cached({:installed, key}, fn -> pairs(read("servers/#{key}/services", [])) end)
   end
 
   @doc """
@@ -101,7 +101,7 @@ defmodule OneCore.Servers do
   (`OneCore.Service.lacks/0`): each one's app and name, with what its machine lacks, in words its owner reads.
   """
   def lacking(key) do
-    cached({:lacking, key}, fn -> for [app, name, why] <- read("servers/#{key}/lacking", []), do: {app, name, why} end)
+    cached({:lacking, key}, fn -> triples(read("servers/#{key}/lacking", [])) end)
   end
 
   @doc "Says what this server's machine lacks to run the service `{app, name}`, or with `nil` that it lacks nothing."
@@ -575,9 +575,34 @@ defmodule OneCore.Servers do
   """
   def reload(owner) do
     Cache.invalidate(__MODULE__, {:listed, owner})
-    servers = for key <- listed(owner), what <- [{:members, key}, {:installed, key}, {:lacking, key}, {:name, key}], do: what
+    keys = listed(owner)
+    servers = for key <- keys, what <- [{:members, key}, {:installed, key}, {:lacking, key}, {:name, key}], do: what
     Enum.each(if(owner == @network, do: [:first_owner, :renamed | servers], else: servers), &Cache.invalidate(__MODULE__, &1))
+    reread(keys)
   end
+
+  # What's cached of each server in `keys` is read again at once where the bucket is far away and kept, as `members`,
+  # `installed`, `lacking` and `name` would read it one after another: about 2 s for `services` with 7 servers.
+  defp reread(keys) do
+    blobs = for key <- keys, blob <- ~w(members services lacking name), do: {key, blob}
+
+    for {{key, blob}, read} <- Enum.zip(blobs, Bucket.read_all(for {key, blob} <- blobs, do: "servers/#{key}/#{blob}")),
+        {:ok, json, _tag} <- [read] do
+      value = JSON.decode!(json)
+
+      case blob do
+        "members" -> Cache.fetch(__MODULE__, {:members, key}, fn -> {:commit, value} end)
+        "services" -> cached({:installed, key}, fn -> pairs(value) end)
+        "lacking" -> cached({:lacking, key}, fn -> triples(value) end)
+        "name" -> cached({:name, key}, fn -> value end)
+      end
+    end
+
+    :ok
+  end
+
+  defp pairs(services), do: for([app, name] <- services, do: {app, name})
+  defp triples(lacking), do: for([app, name, why] <- lacking, do: {app, name, why})
 
   @doc "Invalidates everything cached here, so that it's read again when next asked for."
   def invalidate, do: Cache.invalidate(__MODULE__)
