@@ -683,6 +683,8 @@ export interface ToolResult {
   structuredContent?: any
   content?: { type: string; text?: string }[]
   isError?: boolean
+  /** What the network says of the answer (`_meta`): a widget's tool says which widget it is, `widget`. */
+  _meta?: Record<string, unknown>
 }
 /** `createEffect(toolResult, (shown) => shown && setWeek(shown.structuredContent.offset))`: what a tool answered, where
  * the page is shown for it, as an assistant shows a tool's page as an MCP App; none in an app's own window. */

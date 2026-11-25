@@ -230,6 +230,16 @@ defmodule OneCore.Apps.Version.Checks do
     widgets =
       for %{tool: tool, sizes: sizes} = widget <- widgets, do: %{name: widget[:name] || title, tool: tool, sizes: sizes}
 
+    # A tool a widget is drawn from says which: the widget's name and sizes, for the page an assistant shows its answer on
+    # (`OneCore.Mcp`).
+    tools =
+      for tool <- tools do
+        case Enum.find(widgets, &(&1.tool == tool.name)) do
+          nil -> tool
+          widget -> Map.put(tool, :widget, Map.take(widget, [:name, :sizes]))
+        end
+      end
+
     %Version{
       under: under,
       app: app,

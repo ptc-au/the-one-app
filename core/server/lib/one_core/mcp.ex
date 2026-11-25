@@ -90,6 +90,9 @@ defmodule OneCore.Mcp do
   # what's installed for them changes what's there.
   @cacheable ~w(server/discover tools/list resources/list resources/read)
 
+  # The page of the Home Screen that draws a widget, which every widget's tool shows its answer on.
+  @widget_page "client/widget.html"
+
   # A local network's code reloader (`tooling/code_reloader.exs`), its `:reloader` setting, loads what a
   # developer changed before a client's request is answered, as Phoenix's code reloader does before a request in
   # development. A server's request, which names who it acts for, came from a client's that was.
@@ -627,6 +630,7 @@ defmodule OneCore.Mcp do
         for {app, version} <- running, %{ui: ui} = tool when is_binary(ui) <- version.tools,
             do: {{app, ui}, %{name: version.title, runtime_version: tool[:runtime_version]}}
       )
+      |> Map.put_new({"home-screen", @widget_page}, %{name: "Widget"})
 
     %{files: files, code: code} = Entrypoint.library()
 
@@ -804,7 +808,7 @@ defmodule OneCore.Mcp do
       for {app, copies} <- Enum.sort(copies(principal)),
           holder or mode != :code,
           tool <- Enum.uniq_by(Enum.flat_map(copies, &open.(elem(&1, 1).tools)), & &1.name) do
-        ui = if tool[:ui], do: %{:ui => %{resourceUri: router()}, "openai/outputTemplate" => router()}, else: %{}
+        ui = if tool[:ui] || tool[:widget], do: %{:ui => %{resourceUri: router()}, "openai/outputTemplate" => router()}, else: %{}
         ui = if tool[:ui] && tool[:path], do: Map.put(ui, :path, tool.path), else: ui
         listed = Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(ui, :app, app))
         having = having(copies, tool.name)
@@ -936,6 +940,13 @@ defmodule OneCore.Mcp do
   # app's, and asks for them too.
   defp paged({:ok, %{} = result}, name, %{ui: ui}, {actor, subject}) when is_binary(ui) do
     meta = %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name}
+    {:ok, with_meta(result, if(subject == actor, do: meta, else: Map.put(meta, :subject, subject)))}
+  end
+
+  # A widget's tool answers a layout, which the Home Screen draws (`@widget_page`), at the size it was asked for or its
+  # first, and says its name and sizes (`_meta.widget`) as a Home Screen page's card has them.
+  defp paged({:ok, %{} = result}, name, %{widget: widget}, {actor, subject}) do
+    meta = %{page: "home-screen/#{@widget_page}", tool: name, widget: widget}
     {:ok, with_meta(result, if(subject == actor, do: meta, else: Map.put(meta, :subject, subject)))}
   end
 

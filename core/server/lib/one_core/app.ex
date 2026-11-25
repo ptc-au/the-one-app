@@ -561,6 +561,8 @@ defmodule OneCore.App do
         def widgets, do: [%{name: "Glance", tool: "glance", sizes: ["2x2"]}]
       end
 
+  - A chat app that shows MCP Apps shows a widget's tool under its call, drawn as a Home Screen page draws it, at the
+    `size` it was called with or the widget's first, its buttons and switches working there.
   - A widget names one of the app's `tool`s that only reads, its `name` on the card, and the `sizes` it comes
     in, a phone's own: `2x2`, `4x2` and `4x4`, columns by rows of a Home Screen page's grid. The smallest is one fact,
     the wide one a few rows, and the large one those rows with a detail each, or a chart.
