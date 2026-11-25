@@ -33,7 +33,7 @@ defmodule GitRepos do
 
   @impl true
   def requires,
-    do: %{"core" => ">= 0.34.604", "software-update" => "to know what the network's own program is called, which owns its repos"}
+    do: %{"core" => ">= 0.35.34", "software-update" => "to know what the network's own program is called, which owns its repos"}
 
   # Every repo is listed in one index, the network's, which a call reads and writes whoever it's for, so what it
   # keeps is whoever Git Repos is installed for's, and it runs on their servers.
@@ -41,7 +41,7 @@ defmodule GitRepos do
   def own, do: :installed
 
   @impl true
-  def hooks, do: ["soft-delete.moved", "permissions.transferred", "source"]
+  def hooks, do: ["soft-delete.moved", "permissions.transferred", "source", "renamed"]
 
   # A repo kept in step with another host, as GitHub Sync keeps one with GitHub, has its say on each change before
   # it's kept, as a git server's pre-receive hook has: there, the change goes to the host first.
@@ -384,11 +384,21 @@ defmodule GitRepos do
   # read it.
   def hook("source", %{"source" => source}, call) do
     with [_, name] <- Regex.run(~r/^[a-z][a-z0-9+.-]*::(.+)$/, source), true <- name =~ @repo do
-      {folder, _state} = read(call, name)
+      {folder, _state} = read(call, OneCore.User.renamed(name))
       %{"bundle" => Base.encode64(Mirror.git!(folder, ["bundle", "create", "--quiet", "-", "--all"], binary: true))}
     else
       _ -> nil
     end
+  end
+
+  # Someone renamed: their repos are listed by their new names.
+  def hook("renamed", %{"who" => old, "to" => new}, _call) do
+    for "index/" <> name <- Artifact.list(index(), "index/#{old}/"), {:ok, data, _tag} <- [Artifact.read(index(), "index/" <> name)] do
+      Artifact.update(index(), "index/" <> new <> String.replace_prefix(name, old, ""), fn _ -> data end)
+      Artifact.remove(index(), "index/" <> name)
+    end
+
+    nil
   end
 
   # A repo moved to another owner is listed at its new name, with what was kept of it.
@@ -1046,18 +1056,19 @@ defmodule GitRepos do
     case String.split(repo, "/") do
       [owner, name] ->
         found =
-          Enum.find(
+          Enum.find_value(
             (if owner == command(call), do: ["network"], else: []) ++ ["users/" <> owner, "groups/" <> owner],
             fn whose ->
-              full = "#{whose}/made/git-repos/#{name}"
-              match?({:ok, _, _}, Artifact.read(index(), "index/" <> full)) and Call.reaches?(call, full)
+              full = OneCore.User.renamed("#{whose}/made/git-repos/#{name}")
+              if match?({:ok, _, _}, Artifact.read(index(), "index/" <> full)) and Call.reaches?(call, full), do: full
             end
           )
 
-        if found, do: %{inputs | "repo" => "#{found}/made/git-repos/#{name}"}, else: inputs
+        if found, do: %{inputs | "repo" => found}, else: inputs
 
+      # A repo of someone renamed since is theirs by their new name, as git's remote for it says the old one.
       _ ->
-        inputs
+        %{inputs | "repo" => OneCore.User.renamed(repo)}
     end
   end
 

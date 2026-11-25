@@ -25,7 +25,7 @@ defmodule Board do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.35.7",
+      "core" => ">= 0.35.34",
       "database" => "to keep channels, threads, tasks, schemas, and schedules",
       "notifications" => "to alert people when a task is blocked"
     }
@@ -43,6 +43,17 @@ defmodule Board do
 
   @impl true
   def jobs, do: [%{tool: "tick_schedules", every: 60}]
+
+  @impl true
+  def hooks, do: ["renamed"]
+
+  # Someone renamed wrote, reacted to, owns and claimed what they did by their new name.
+  @impl true
+  def hook("renamed", %{"who" => old, "to" => new}, call) do
+    columns = [messages: "author", reactions: "actor", tasks: "owner_actor", tasks: "claimed_by_actor", schemas: "created_by", schedules: "author"]
+    Store.transaction(call, fn db -> for {table, column} <- columns, do: Store.query(db, "update or replace #{table} set #{column} = ? where #{column} = ?", [new, old]) end)
+    nil
+  end
 
   @impl true
   def events do

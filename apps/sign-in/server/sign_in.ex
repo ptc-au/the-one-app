@@ -24,7 +24,7 @@ defmodule SignIn do
   def icon, do: "client/security.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.595", "database" => "to keep a copy of whose each device is"}
+  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep a copy of whose each device is"}
 
   # Whose each device is, as the edge last said, and which version of that it was (`changed` in `edge/auth.ts`).
   @schema [
@@ -53,7 +53,7 @@ defmodule SignIn do
         """,
         inputs: %{
           type: "object",
-          properties: %{name: %{type: "string", description: "Their name: lowercase letters, digits and hyphens"}},
+          properties: %{name: %{type: "string", description: "Their username: lowercase letters, digits, dots and hyphens, as their email's name before the @"}},
           required: ["name"]
         },
         outputs: %{
@@ -168,7 +168,7 @@ defmodule SignIn do
           "Takes someone out of the network: their devices, assistants and passkeys stop working, and what they made stays",
         inputs: %{
           type: "object",
-          properties: %{who: %{type: "string", pattern: "^users/[a-z][a-z0-9-]*$", description: "Who: users/<name>"}},
+          properties: %{who: %{type: "string", pattern: "^users/[a-z0-9][a-z0-9.-]*$", description: "Who: users/<name>"}},
           required: ["who"]
         },
         outputs: %{type: "object", properties: %{who: %{type: "string"}}, required: ["who"]}
@@ -328,7 +328,7 @@ defmodule SignIn do
           properties: %{
             users: %{
               type: "array",
-              items: %{type: "string", pattern: "^users/[a-z][a-z0-9-]*$"},
+              items: %{type: "string", pattern: "^users/[a-z0-9][a-z0-9.-]*$"},
               description: "Who: users/<name>. You, if left out"
             }
           }
@@ -410,6 +410,28 @@ defmodule SignIn do
         outputs: %{type: "object", properties: %{called: %{type: "string"}}, required: ["called"]}
       },
       %{
+        name: "username",
+        description: """
+        Changes your username, which your addresses are under (`users/<username>`, `/git-repos/<username>/notes`), or
+        with `who`, someone else's, which only the network's owners do. Everything of theirs moves with it, and their
+        old addresses, sharing links, webhooks and git remotes lead to the new one, as GitHub's old usernames do: nobody
+        else is given an old one. People see each other by name and email, so change it only when asked
+        """,
+        inputs: %{
+          type: "object",
+          properties: %{
+            username: %{type: "string", description: "Lowercase letters, digits, dots and hyphens, starting and ending with a letter or a digit, as jane.doe"},
+            who: %{type: "string", pattern: "^users/[a-z0-9][a-z0-9.-]*$", description: "Whose: users/<name>. You, if left out"}
+          },
+          required: ["username"]
+        },
+        outputs: %{
+          type: "object",
+          properties: %{who: %{type: "string", description: "Who they are now: users/<username>"}},
+          required: ["who"]
+        }
+      },
+      %{
         name: "approve",
         description: "Approves a device as yours by the code it shows, which your person passed on from it",
         inputs: %{
@@ -481,7 +503,7 @@ defmodule SignIn do
   end
 
   @impl true
-  def hooks, do: ["device", "owner", "settings.sections", "privacy.sections"]
+  def hooks, do: ["device", "owner", "renamed", "settings.sections", "privacy.sections"]
 
   @impl true
   # A device the copy doesn't have is copied again first, as a device that was just let in asks. One the edge doesn't
@@ -493,6 +515,19 @@ defmodule SignIn do
     else
       _nobody -> %{}
     end
+  end
+
+  # Someone renamed: their devices are theirs by their new name, as are the name they go by and their pictures.
+  def hook("renamed", %{"who" => "users/" <> old = who, "to" => "users/" <> new = to}, call) do
+    transaction(call, fn {database, db} -> database.query(db, "update devices set who = ? where who = ?", [to, who]) end)
+
+    for blob <- ["people/" <> old | Artifact.list(call.own, "pictures/#{old}/")],
+        {:ok, data, _tag} <- [Artifact.read(call.own, blob)] do
+      Artifact.write(call.own, String.replace(blob, old, new, global: false), data)
+      Artifact.remove(call.own, blob)
+    end
+
+    nil
   end
 
   # Its sections of Settings: whoever's looking (Sign In & Security under their name), Devices, AI, and People & Groups,
@@ -729,6 +764,34 @@ defmodule SignIn do
     %{called: called}
   end
 
+  # Anyone changes their own, and the network's owners anyone's. The edge says whether the name is free, as it keeps
+  # who had which; a group's or an app's name is taken too, as `alice/notes` names a repo of either. The edge is asked
+  # first, everything is moved (`OneCore.Renames.rename/2`), and then the edge renames them, so they sign in as the
+  # name everything's under.
+  def call("username", %{"username" => username} = inputs, call) do
+    me = person(call)
+    old = OneCore.User.renamed(inputs["who"] || me)
+    new = "users/" <> username
+
+    if old != me and not owns_network?(call, call.actor), do: raise("Only the network's owners change someone else's username.")
+    with {:error, why} <- OneCore.User.named(username), do: raise(why)
+
+    if old != new do
+      if OneCore.Bucket.folders("groups/#{username}/") != [] or "network/apps/#{username}/" in OneCore.Bucket.folders("network/apps/"),
+         do: raise("#{username} is a group's or an app's name, so it isn't anyone's username.")
+
+      ask(%{ask: "rename", who: old, to: username, check: true})
+      {:ok, _heard, unheard} = OneCore.Renames.rename(old, new)
+      ask(%{ask: "rename", who: old, to: username})
+      copy(call)
+
+      if unheard != %{},
+        do: raise("#{old} is #{new} now, but these didn't hear it: #{Enum.map_join(unheard, ", ", fn {app, why} -> "#{app} (#{why})" end)}.")
+    end
+
+    %{who: new}
+  end
+
   def call("approve", %{"code" => code}, call) do
     %{"approved" => name} = ask(%{ask: "approve", who: person(call), code: code})
     %{approved: name}
@@ -793,7 +856,7 @@ defmodule SignIn do
         do: {group, members |> Enum.filter(&person?/1) |> Enum.sort()}
   end
 
-  defp person?(subject), do: Regex.match?(~r/^users\/[a-z][a-z0-9-]*$/, subject)
+  defp person?(subject), do: match?("users/" <> _, subject) and OneCore.User.user(subject) == :ok
 
   defp picture_blobs("network"), do: [{"network", "pictures/network"}]
 

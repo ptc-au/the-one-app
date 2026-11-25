@@ -47,7 +47,7 @@ defmodule OneCore.Mcp.Principal do
   def asking(from, meta, question \\ false, relations \\ ["member"])
 
   def asking(from, %{"actor" => actor} = meta, question, relations) when is_binary(actor) or is_nil(actor) do
-    subject = meta["subject"]
+    {actor, subject} = {User.renamed(actor), User.renamed(meta["subject"])}
     whose = User.owner(actor || subject || "") || "network"
     asks = question and actor == nil and is_binary(from) and Servers.acts_for(from) != []
 
@@ -80,7 +80,7 @@ defmodule OneCore.Mcp.Principal do
   def asking(from, meta, _question, relations) do
     with {:ok, actor} <- by(from, meta),
          :ok <- here(actor),
-         subject = Map.get(meta, "subject", actor),
+         subject = User.renamed(Map.get(meta, "subject", actor)),
          :ok <- acts(actor, subject, relations),
          do: {:ok, {actor, subject}, false}
   end
@@ -89,7 +89,7 @@ defmodule OneCore.Mcp.Principal do
 
   defp by(_from, %{"as" => name}) when is_binary(name) do
     if Application.get_env(:one_core, :development, false),
-      do: with(:ok <- User.named(name), do: {:ok, "users/" <> name}),
+      do: with(:ok <- User.named(name), do: {:ok, User.renamed("users/" <> name)}),
       else: {:error, "Acting as a user is for a network being built, and this one wasn't started as one"}
   end
 

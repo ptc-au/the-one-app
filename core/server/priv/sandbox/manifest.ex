@@ -289,6 +289,13 @@ defmodule OneCore.App.Manifest do
      `deploy.js` beside it, and says how that went with `OneCore.Release.edge_deployed/2`. A server says it deploys the
      edge (`deploys_edge`) while an app hooks into this.
      """},
+    {"renamed", :collect,
+     """
+     A user was renamed, as a GitHub account is: they're `to` from now on, and were `who`, each `users/<name>`.
+     Everything of theirs in the bucket is under their new name already, and their old one leads to it in calls
+     (`OneCore.User.renamed/1`). It's asked of the apps installed for them and for the network: one that keeps names in
+     what it keeps, as relation tuples or a list of what's made, renames them there, and answers `nil`.
+     """},
     {"started", :observe,
      """
      This server started: its apps are running and it answers. It's observed by the apps installed for the network,

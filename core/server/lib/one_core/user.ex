@@ -9,6 +9,12 @@ defmodule OneCore.User do
   """
   alias OneCore.{Bucket, Servers}
 
+  # Who was renamed (`OneCore.Renames`): a JSON object of each name a user had, `users/<old>`, and their name now.
+  @renamed "network/renamed"
+
+  @doc "The blob that says who was renamed, and their name now."
+  def renames_blob, do: @renamed
+
   @doc """
   The key of the device a request is from, or `nil`: the device the network's edge says, for what came in
   there over the web, and otherwise the key the connection proved. A run of a client has a key of its own, since
@@ -73,11 +79,17 @@ defmodule OneCore.User do
   def user("users/" <> name), do: named(name)
   def user(who), do: {:error, "#{inspect(who)} isn't a user, users/<name>"}
 
-  @doc "Whether `name` is a user's or a group's name, after `users/` or `groups/`: `:ok`, or `{:error, why}`."
+  @doc """
+  Whether `name` is a user's or a group's name, after `users/` or `groups/`: `:ok`, or `{:error, why}`. A user's is
+  their username, as GitHub's: lowercase letters, digits, dots and hyphens, starting and ending with a letter or a
+  digit, at most 39 of them.
+  """
   def named(name) do
-    if is_binary(name) and name =~ ~r/^[a-z][a-z0-9-]*\z/,
+    if is_binary(name) and name =~ ~r/^[a-z0-9](?:[a-z0-9.-]{0,37}[a-z0-9])?\z/,
       do: :ok,
-      else: {:error, "A user's name is lowercase letters, digits and hyphens, starting with a letter"}
+      else:
+        {:error,
+         "A username is lowercase letters, digits, dots and hyphens, starting and ending with a letter or a digit"}
   end
 
   @doc """
@@ -86,8 +98,54 @@ defmodule OneCore.User do
   relation tuple that names the holder doesn't hold the link. A link that starts with nobody's is nobody's.
   """
   def link(link) do
-    Enum.join(List.wrap(owner(link)) ++ ["links", Base.encode16(:crypto.hash(:sha256, link), case: :lower)], "/")
+    Enum.join(
+      List.wrap(owner(renamed(link))) ++ ["links", Base.encode16(:crypto.hash(:sha256, link), case: :lower)],
+      "/"
+    )
   end
+
+  @doc """
+  What `name` is called now: a name under a user who was renamed since (`rename/2`) is under their username now, as
+  GitHub's old usernames lead to the new one, so an old address, a sharing link or a git remote keeps working. Any
+  other name is as it is.
+  """
+  def renamed(name) when is_binary(name) do
+    with owner when owner != nil <- owner(name),
+         now when now != nil <- renames()[owner] do
+      now <> String.replace_prefix(name, owner, "")
+    else
+      _ -> name
+    end
+  end
+
+  def renamed(name), do: name
+
+  # Each user who was renamed, by every name they had: their name now (`OneCore.Renames`). Kept by One Core, as it
+  # keeps whose each prefix in the bucket is.
+  defp renames do
+    Servers.cached(:renamed, fn ->
+      with {:ok, json, _tag} <- Bucket.read(@renamed), do: JSON.decode!(json), else: (:absent -> %{})
+    end)
+  end
+
+  @doc """
+  A JSON value with each text in it that names `old`, or something of theirs, naming `new`: `users/old`,
+  `users/old/apps/notes`, and a git remote's `one::users/old/made/git-repos/notes`. For an app that keeps records
+  of names, as it hears of a rename (the hook `renamed`).
+  """
+  def renamed_in(text, old, new) when is_binary(text) do
+    cond do
+      text == old -> new
+      String.starts_with?(text, old <> "/") -> new <> String.replace_prefix(text, old, "")
+      true -> String.replace(text, "::" <> old <> "/", "::" <> new <> "/")
+    end
+  end
+
+  def renamed_in(map, old, new) when is_map(map),
+    do: Map.new(map, fn {key, value} -> {renamed_in(key, old, new), renamed_in(value, old, new)} end)
+
+  def renamed_in(list, old, new) when is_list(list), do: Enum.map(list, &renamed_in(&1, old, new))
+  def renamed_in(other, _old, _new), do: other
 
   @doc "Whether `who` is the holder of a sharing link, who is in no network: nothing is theirs, and nothing is installed for them."
   def link?(who), do: match?(["links", _name], Enum.take(String.split(who, "/"), -2))

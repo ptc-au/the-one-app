@@ -6,6 +6,7 @@
 // asked for as the person, wherever the app was opened.
 import { createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
 import { Avatar, Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Spinner, Split, styles, toast, tokens, View } from "ui"
+import { RULE, Username } from "./username.tsx"
 
 const look = styles({
   form: { gap: tokens.length.gutter },
@@ -15,6 +16,7 @@ const look = styles({
 interface Person {
   who: string
   called?: string
+  email?: string | null
   joined?: boolean
   /** The network's first owner, who stays an owner: Permissions writes their tuple again whenever the network is set up. */
   first_owner?: boolean
@@ -48,10 +50,10 @@ changed(() => refresh(all))
 /** Everything People & Groups shows. */
 type All = Awaited<ReturnType<typeof all>>
 
-/// What someone's grey line says: their name in the network, and that they own it, or that this is them.
+/// What someone's grey line says: their email, and that they own the network, or that this is them. Their username is
+/// for addresses, so it's said where one is.
 function about(person: Person, all: All) {
-  const name = person.who.replace("users/", "")
-  return [person.called && person.called !== name ? name : undefined, all.owners.includes(person.who) ? "Owner" : undefined, person.who === all.me ? "You" : undefined]
+  return [person.email ?? undefined, all.owners.includes(person.who) ? "Owner" : undefined, person.who === all.me ? "You" : undefined]
     .filter(Boolean)
     .join(" · ")
 }
@@ -91,6 +93,8 @@ async function remove(person: Person, all: All) {
 
 const [inviting, setInviting] = createSignal(false)
 const [naming, setNaming] = createSignal(false)
+/** Whose username is being changed, from their row's menu. */
+const [renaming, setRenaming] = createSignal<string>()
 const [opened, setOpened] = createSignal<string>()
 const [adding, setAdding] = createSignal<"group" | "member">()
 
@@ -158,7 +162,7 @@ function Invite(props: { open: boolean; onClose: () => void }) {
         when={link()}
         fallback={
           <View style={look.form}>
-            <Field label="Name" hint="Lowercase letters, digits and hyphens. It's who they are here, for good." error={error()}>
+            <Field label="Username" hint={`Their addresses are under it. ${RULE}`} error={error()}>
               <Input name="name" required autoFocus autoCapitalize="none" spellCheck={false} value={name()} onChangeText={setName} onSubmitEditing={make} />
             </Field>
             <Button loading={working()} onPress={make}>Create Link</Button>
@@ -209,13 +213,16 @@ function PersonRow(props: { person: Person; all: All }) {
       heading={name()}
       text={about(props.person, props.all) || undefined}
       end={
-        <Show when={me() || mayRemove() || mayOwn()}>
-          <Menu.Root onSelect={(value) => (value === "rename" ? setNaming(true) : value === "owner" ? own("network", "the network", props.person.who, owner(), props.all) : remove(props.person, props.all))}>
+        <Show when={me() || mayRemove() || mayOwn() || props.all.owners.includes(props.all.me)}>
+          <Menu.Root onSelect={(value) => (value === "rename" ? setNaming(true) : value === "username" ? setRenaming(props.person.who) : value === "owner" ? own("network", "the network", props.person.who, owner(), props.all) : remove(props.person, props.all))}>
             <Menu.Trigger aria-label={`More for ${name()}`} />
             <Menu.Positioner>
               <Menu.Content>
                 <Show when={me()}>
                   <Menu.Item value="rename">Change Name</Menu.Item>
+                </Show>
+                <Show when={me() || (props.all.owners.includes(props.all.me) && !!props.person.joined)}>
+                  <Menu.Item value="username">Change Username</Menu.Item>
                 </Show>
                 <Show when={mayOwn()}>
                   <Menu.Item value="owner">{owner() ? "Remove as Owner" : "Make Owner"}</Menu.Item>
@@ -288,7 +295,7 @@ function AddMember(props: { all: All; group?: Group }) {
     <Sheet heading="Add Member" open={adding() === "member"} onClose={() => setAdding()}>
       <Show when={outside().length} fallback={<Empty>Everyone in the network is in it.</Empty>}>
         <List each={outside()} keyed={(person) => person.who}>
-          {(person) => <Row start={<Avatar subject={person().who} name={props.all.named(person().who)} />} heading={props.all.named(person().who)} text={person().who.replace("users/", "")} onPress={() => (setAdding(), change("permissions_share", { artifact: opened()!, relation: "member", who: person().who }, props.all.me))} />}
+          {(person) => <Row start={<Avatar subject={person().who} name={props.all.named(person().who)} />} heading={props.all.named(person().who)} text={person().email ?? undefined} onPress={() => (setAdding(), change("permissions_share", { artifact: opened()!, relation: "member", who: person().who }, props.all.me))} />}
         </List>
       </Show>
     </Sheet>
@@ -329,6 +336,9 @@ function UsersAndGroups(props: { all: All }) {
       </Split>
       <Invite open={inviting()} onClose={() => setInviting(false)} />
       <Name open={naming()} onClose={() => setNaming(false)} called={props.all.joined.find((person) => person.who === props.all.me)?.called} />
+      <Show when={renaming()} keyed>
+        {(who) => <Username who={who} you={who === props.all.me} open onClose={() => setRenaming()} onChanged={() => refresh(all)} />}
+      </Show>
       <NewGroup open={adding() === "group"} onClose={() => setAdding()} me={props.all.me} />
       <AddMember all={props.all} group={group()} />
     </>

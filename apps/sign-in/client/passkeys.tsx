@@ -5,9 +5,10 @@
 // person says it may. Whoever uses it has their key from then on, so a passkey nobody here allowed never does. Above
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
-import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
 import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Spinner, toast, upload, visible } from "ui"
 import { Remove } from "./mine.tsx"
+import { Username } from "./username.tsx"
 
 /** A passkey, as `sign-in_devices` answers it. */
 interface Passkey {
@@ -72,12 +73,32 @@ function Picture() {
   )
 }
 
+/// Their username, which their addresses are under, to change, as GitHub's account settings have it.
+function Handle() {
+  const [changing, setChanging] = createSignal(false)
+  const name = () => you().who.replace("users/", "")
+  return (
+    <Section heading="Username">
+      <List>
+        <Row
+          heading={name()}
+          text={`Your addresses are under it, like /git-repos/${name()}/notes.`}
+          action={<Button variant="secondary" onPress={() => setChanging(true)}>Change</Button>}
+        />
+      </List>
+      <Username who={you().who} you open={changing()} onClose={() => setChanging(false)} onChanged={() => refresh(you)} />
+    </Section>
+  )
+}
+
 /// The servers waiting for a key a passkey of this person's hands them: their own, and those of the network and the
 /// groups they own, whose keys are encrypted to theirs. One row each, by whose key it is.
 const waitingFor = createMemo(async () => {
   const me: Held = JSON.parse(await call("encryption_key"))
   const groups: { group: string; owners: string[] }[] = JSON.parse(await call("permissions_groups")).groups
-  const scopes = ["network", ...groups.filter((group) => group.owners.includes(me.owner)).map((group) => group.group)]
+  // A key's `owner` is who it was made for, by the username they had then: the groups they own say who they are now.
+  const who: string = JSON.parse(await call("sign-in_people")).people[0].who
+  const scopes = ["network", ...groups.filter((group) => group.owners.includes(who)).map((group) => group.group)]
   const theirs = await Promise.all(scopes.map((subject) => call("encryption_key", {}, { subject }).then((text): Held => JSON.parse(text), () => null)))
   return [me, ...theirs.filter((held): held is Held => !!held?.wrapped)]
     .map((held) => ({ scope: held.owner === me.owner ? undefined : held.owner, servers: [...new Set((held.access ?? []).flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))] }))
@@ -199,6 +220,7 @@ export default function SignInAndSecurity() {
         {(all) => (
           <Screen heading="Sign In & Security" back action={all().passkeys.length ? opening() : undefined}>
             <Picture />
+            <Handle />
             <Waiting />
             <Show
               when={all().passkeys.length}

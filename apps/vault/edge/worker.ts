@@ -21,7 +21,7 @@ declare global {
 }
 
 /** Whose something is: a user, a group or the network, as relation tuples name them. */
-const OWNER = /^(?:(?:users|groups)\/[a-z][a-z0-9-]*|network)$/;
+const OWNER = /^(?:(?:users|groups)\/[a-z0-9][a-z0-9.-]*|network)$/;
 
 /** Whose sign-in a `state` says it is, or nothing if it isn't one a server here made. */
 function whose(state: string) {

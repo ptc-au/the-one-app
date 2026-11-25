@@ -66,7 +66,11 @@ declare global {
 type Adapter = Pick<DBAdapter, "findMany" | "findOne" | "create" | "update" | "delete" | "deleteMany" | "incrementOne">;
 
 /** Someone, as Better Auth keeps them here: `users/<name>`, and the name they go by. */
-type User = AuthUser & { called?: string | null };
+/**
+ * Someone, as Better Auth keeps them here: `users/<name>`, the name they go by, every username they had before
+ * (`was`, a JSON list, oldest first), and the username their key was made under where it was another (`keyed`).
+ */
+type User = AuthUser & { called?: string | null; was?: string | null; keyed?: string | null };
 
 /** Someone's account at this network, as a passkey of theirs is named: what they go by, and the network's address. */
 const account = (user: User, origin: string) => `${user.called || user.name} · ${new URL(origin).host}`;
@@ -457,7 +461,8 @@ const devices = () => ({
     // What the sign-in page opens with a passkey's PRF output, on a new device: the person's key, encrypted to it.
     passkeyEncryptedKey: createAuthEndpoint("/passkey/encrypted-key", { method: "POST" }, async (ctx) => {
       const { passkey, user } = await usedJustNow(ctx);
-      return ctx.json({ owner: who(user), key: passkey.encryptedKey || null });
+      // Their key is sealed to their passkeys by the username it was made under, which a rename doesn't change.
+      return ctx.json({ owner: `users/${(user as User).keyed ?? user.name}`, who: who(user), key: passkey.encryptedKey || null });
     }),
   },
   async onRequest(request: Request) {
@@ -615,7 +620,11 @@ export function options(origin: string, secret: string, database: BetterAuthOpti
     // The name a person chose as they joined, which they can change: the one they're `users/<name>` by is chosen
     // for them, as they're invited, and never changes.
     user: {
-      additionalFields: { called: { type: "string", required: false, input: true } },
+      additionalFields: {
+        called: { type: "string", required: false, input: true },
+        was: { type: "string", required: false, input: false },
+        keyed: { type: "string", required: false, input: false },
+      },
       // Someone new joins with Google only by an invitation, or from a Workspace domain the network's owner named.
       validateUserInfo: async ({ source }) => {
         if (source.oauth?.providerId !== "google" || source.action !== "create-user") return;
@@ -787,7 +796,7 @@ async function answer(adapter: Adapter, code: DeviceCode, user: { id: string; na
  * owner. An owner who lost a passkey adds one on a device they're signed in on, as Apple and Google have it.
  */
 async function invite(adapter: Adapter, origin: string, name: string, user: User | undefined, again: boolean) {
-  if (!/^[a-z][a-z0-9-]*$/.test(name)) return { error: "A user's name is lowercase letters, digits and hyphens, starting with a letter." };
+  if (!user && !(await free(adapter, name))) return { error: USERNAME.test(name) ? `${name} is taken: someone has it, had it, or the network's addresses use it.` : RULE };
   if (user && !again && (await joined(adapter, user)))
     return { error: `${name} has joined already. Only the network's owner invites someone again, and never an owner, who adds a passkey on a device they're signed in on.` };
   const invitee = user ?? (await made(adapter, origin, name));
@@ -886,12 +895,31 @@ async function invitedToGoogle(adapter: Adapter) {
   return user;
 }
 
-/** A name nobody has, made of an email's local part, for someone who joins by signing in with Google. */
+/**
+ * A username, as GitHub's: lowercase letters, digits, dots and hyphens, starting and ending with a letter or a digit,
+ * at most 39 (`OneCore.User.named/1`).
+ */
+const USERNAME = /^[a-z0-9](?:[a-z0-9.-]{0,37}[a-z0-9])?$/;
+const RULE = "A username is lowercase letters, digits, dots and hyphens, starting and ending with a letter or a digit.";
+/** What addresses and tool inputs already use, which nobody is called: `users/network` would read as the network. */
+const RESERVED = new Set(["network", "groups", "users", "settings", "everyone", "servers", "links", "link", "webhooks", "sign-in", "mcp", "apps", "skills", "relay", "ping", "presigner", "llms.txt", "privacy", "admin", "root", "owner"]);
+
+/**
+ * Whether `name` is a username nobody has: it keeps the rule, isn't reserved, and nobody is called it or was before
+ * a rename, as an old name leads to whoever has it now (`was`), as GitHub's old usernames do.
+ */
+async function free(adapter: Adapter, name: string) {
+  if (!USERNAME.test(name) || RESERVED.has(name)) return false;
+  if (await adapter.findOne({ model: "user", where: [{ field: "name", value: name }] })) return false;
+  return !(await env.DB.prepare("select 1 from \"user\", json_each(\"user\".\"was\") where json_each.value = ?").bind(name).first());
+}
+
+/** A username nobody has, made of an email's local part, for someone who joins by signing in with Google. */
 async function freeName(adapter: Adapter, email: string) {
-  const made = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^[^a-z]+|-+$/g, "") || "person";
+  const made = email.split("@")[0].toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/([.-])[.-]+/g, "$1").replace(/^[.-]+|[.-]+$/g, "").slice(0, 36).replace(/[.-]+$/, "") || "person";
   for (let n = 1; ; n++) {
     const name = n === 1 ? made : `${made}-${n}`;
-    if (!(await adapter.findOne({ model: "user", where: [{ field: "name", value: name }] }))) return name;
+    if (await free(adapter, name)) return name;
   }
 }
 
@@ -926,6 +954,9 @@ export interface Ask {
   android_package?: unknown;
   /** With `network`: its own iPhone app's app ID, its team and bundle identifier (`tooling/testflight`), or null where it has none. */
   apple_app?: unknown;
+  /** With `rename`: their new username, and `check`, to only say whether they may have it. */
+  to?: unknown;
+  check?: boolean;
   /** With `picture`: the picture the person sets for themselves, as base64, or null to go back to Google's. */
   image?: unknown;
 }
@@ -936,7 +967,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   let [user] = await adapter.findMany<User>({ model: "user", where: [{ field: "name", value: named }] });
   // In a network being built nobody joins, and a server asks as whoever a client says it is: they're made here as
   // they're first asked about, so they approve a device's code as anyone who joined does.
-  if (!user && building && ask !== "invite" && /^[a-z][a-z0-9-]*$/.test(named)) user = await made(adapter, origin, named);
+  if (!user && building && ask !== "invite" && USERNAME.test(named)) user = await made(adapter, origin, named);
 
   if (ask === "whose") return whose();
   if (ask === "invite") return invite(adapter, origin, named, user, about.again === true);
@@ -1142,6 +1173,21 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
     await env.OWN.remove(`people/${user.name}`);
     await removeAll(user.name);
     return { removed: user.called ?? user.name };
+  }
+  // Their username changes, as GitHub's does: they're `users/<to>` from now on. Every name they had stays theirs, so
+  // nobody else is given it (`free`) and it can be theirs again, and their key stays sealed by the name it was made
+  // under (`keyed`), as a passkey that holds it says. With `check`, it only says whether it may.
+  if (ask === "rename") {
+    const to = String(about.to ?? "");
+    const was: string[] = JSON.parse(user.was ?? "[]");
+    if (to !== user.name && !was.includes(to) && !(await free(adapter, to))) return { error: USERNAME.test(to) ? `${to} is taken: someone has it, had it, or the network's addresses use it.` : RULE };
+    if (about.check || to === user.name) return { who: `users/${to}` };
+    const keyed = user.keyed ?? ((await adapter.findMany<Passkey>({ model: "passkey", where: mine })).some((passkey) => passkey.encryptedKey) ? user.name : null);
+    await env.DB.prepare('update "user" set name = ?, was = ?, keyed = ? where id = ?')
+      .bind(to, JSON.stringify([...new Set([...was, user.name])]), keyed, user.id)
+      .run();
+    await gone();
+    return { who: `users/${to}` };
   }
   // A link that this person makes another passkey by, in a browser, within a quarter of an hour.
   // Its query makes it a page of its own: a browser that has the sign-in page open already (Safari, from the app) loads it

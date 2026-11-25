@@ -14,7 +14,7 @@ is: `users/alice/made/git-repos/notes`. Its address for git is `one::` and its n
 
     git clone one::users/alice/made/git-repos/notes
 
-Each repo is also named as it's shown, `owner/name`: a person's user name, a group's, or the network's own command
+Each repo is also named as it's shown, `owner/name`: a person's username, a group's, or the network's own command
 (`ptc/the-ptc-app`), as GitHub shows an organisation. Any tool takes either as `repo`, and so does `git clone one::alice/notes`.
 
 Git signs in as the device does, with no password. `one` puts `git-remote-one` beside itself on the PATH the first

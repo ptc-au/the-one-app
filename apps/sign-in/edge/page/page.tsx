@@ -368,10 +368,12 @@ const whose = (scope: string) => (scope === "network" ? "the network's" : `${sco
  * made here, sealed to this passkey, which is how anyone's key is first made. Where they have one this passkey can't
  * open, it says how to allow it.
  */
-async function ownKey(): Promise<{ owner: string; key: Uint8Array<ArrayBuffer>; made: boolean }> {
+async function ownKey(): Promise<{ owner: string; who: string; key: Uint8Array<ArrayBuffer>; made: boolean }> {
   if (!used?.prf) throw new Error(NO_PRF)
-  const { owner, key } = await ask<{ owner: string; key: string | null }>("/passkey/encrypted-key", { credential: used.credential })
-  if (key) return { owner, key: await openedKey(used.prf, owner, used.credential, key), made: false }
+  // `owner` is who the key was made for, by the username they had then, which what's sealed with it names; `who` is
+  // who they are now.
+  const { owner, who = owner, key } = await ask<{ owner: string; who?: string; key: string | null }>("/passkey/encrypted-key", { credential: used.credential })
+  if (key) return { owner, who, key: await openedKey(used.prf, owner, used.credential, key), made: false }
   if ((await tool<Held>("encryption_key", {})).check) throw new Error("This passkey can't unlock your key yet. Allow it in Sign In & Security on a device that holds your key, then try again.")
   const made = crypto.getRandomValues(new Uint8Array(32))
   const { passkeys } = await tool<{ passkeys: { id: string; credential: string; prf_key: string | null }[] }>("sign-in_devices", {})
@@ -380,15 +382,15 @@ async function ownKey(): Promise<{ owner: string; key: Uint8Array<ArrayBuffer>; 
   await tool("encryption_store", { check: await check(made) }, owner)
   const keys = JSON.stringify({ [passkey.credential]: { prf_key: passkey.prf_key, key: await forPasskey(made, owner, passkey.credential, passkey.prf_key) } })
   await tool("sign-in_encrypt_for_passkeys", { passkey: passkey.id, keys })
-  return { owner, key: made, made: true }
+  return { owner, who, key: made, made: true }
 }
 
 /// What the encryption app says of whose each scope's key is, for the scopes the person's own key opens: theirs, and
 /// the network's and the groups' they own that are sealed to theirs, all asked at once. One they can't read, or whose
 /// key isn't sealed to theirs, isn't.
-async function sealedTo(owner: string): Promise<[string, Held][]> {
+async function sealedTo(who: string): Promise<[string, Held][]> {
   const { groups } = await tool<{ groups: { group: string; owners: string[] }[] }>("permissions_groups", {})
-  const scopes = ["network", ...groups.filter((group) => group.owners.includes(owner)).map((group) => group.group)]
+  const scopes = ["network", ...groups.filter((group) => group.owners.includes(who)).map((group) => group.group)]
   const held = await Promise.all(scopes.map((scope) => tool<Held>("encryption_key", {}, scope).catch(() => null)))
   return scopes.flatMap((scope, at) => (held[at]?.wrapped ? [[scope, held[at]!] as [string, Held]] : []))
 }
@@ -447,10 +449,10 @@ async function handOver(key: Uint8Array<ArrayBuffer>, owner: string, scope: stri
  */
 async function unlock(device: string | undefined, scope: string | undefined) {
   setStage({ stage: "unlocking", doing: "Unlocking your key…" })
-  const { owner, key, made } = await ownKey()
+  const { owner, who, key, made } = await ownKey()
   try {
     const own = device || !scope || scope === owner ? tool<Held>("encryption_key", {}, owner).then((held) => [[owner, held] as [string, Held]]) : []
-    const others = scope && scope !== owner ? tool<Held>("encryption_key", {}, scope).then((held) => [[scope, held] as [string, Held]]) : scope || made ? [] : sealedTo(owner)
+    const others = scope && scope !== owner ? tool<Held>("encryption_key", {}, scope).then((held) => [[scope, held] as [string, Held]]) : scope || made ? [] : sealedTo(who)
     const scopes = (await Promise.all([own, others])).flat()
     const names = [...new Set(scopes.flatMap(([each, held]) => going(held, each === owner ? device : undefined)))]
     if (names.length) setStage({ stage: "unlocking", doing: `Handing your key to ${listed(names)}…` })

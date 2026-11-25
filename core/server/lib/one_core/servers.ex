@@ -565,12 +565,12 @@ defmodule OneCore.Servers do
 
   @doc """
   Invalidates what's cached of the servers acting for `owner`: their list, and what each server on it acts for, has
-  installed and is called. The network's first owner is the network's.
+  installed and is called. The network's first owner, and who was renamed, are the network's.
   """
   def reload(owner) do
     Cache.invalidate(__MODULE__, {:listed, owner})
     servers = for key <- listed(owner), what <- [{:members, key}, {:installed, key}, {:lacking, key}, {:name, key}], do: what
-    Enum.each(if(owner == @network, do: [:first_owner | servers], else: servers), &Cache.invalidate(__MODULE__, &1))
+    Enum.each(if(owner == @network, do: [:first_owner, :renamed | servers], else: servers), &Cache.invalidate(__MODULE__, &1))
   end
 
   @doc "Invalidates everything cached here, so that it's read again when next asked for."

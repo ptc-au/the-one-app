@@ -62,7 +62,7 @@ defmodule Permissions do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.539", "database" => "to keep who may reach what"}
+  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep who may reach what"}
 
   @impl true
   def offers do
@@ -224,7 +224,7 @@ defmodule Permissions do
             "was shared with them. Taking someone out calls it",
         inputs: %{
           type: "object",
-          properties: %{who: %{type: "string", pattern: "^users/[a-z][a-z0-9-]*$", description: "Who: users/<name>"}},
+          properties: %{who: %{type: "string", pattern: "^users/[a-z0-9][a-z0-9.-]*$", description: "Who: users/<name>"}},
           required: ["who"]
         },
         outputs: %{
@@ -311,7 +311,7 @@ defmodule Permissions do
   end
 
   @impl true
-  def hooks, do: ["reach", "owner"]
+  def hooks, do: ["reach", "owner", "renamed"]
 
   # The network is the top parent of every artifact, and its first owner's tuple is the one nobody shares: it's
   # written as One Core makes them.
@@ -326,6 +326,16 @@ defmodule Permissions do
     else
       {:refuse, "#{who} isn't the network's first owner"}
     end
+  end
+
+  # Someone renamed is named by their new name in every tuple, transfer and move, as everything of theirs is.
+  def hook("renamed", %{"who" => old, "to" => new}, call) do
+    transaction(call, fn db ->
+      for {table, column} <- [tuples: "artifact", tuples: "who", moved: "old", moved: "new", transfers: "artifact", transfers: "receiver", transfers: "sender"],
+          do: query(db, "update or replace #{table} set #{column} = ? || substr(#{column}, length(?) + 1) where #{under(column)}", [new, old, old, old, old])
+    end)
+
+    nil
   end
 
   def hook("reach", %{"who" => who, "relation" => "member", "artifact" => of}, call) do
@@ -659,13 +669,12 @@ defmodule Permissions do
     Bucket.move(artifact <> "/", now <> "/")
 
     transaction(call, fn db ->
-      in_it = fn column -> "(#{column} = ? or substr(#{column}, 1, length(?) + 1) = ? || '/')" end
       rename = "? || substr(%s, length(?) + 1)"
 
-      query(db, "update or replace tuples set artifact = #{String.replace(rename, "%s", "artifact")} where #{in_it.("artifact")}", [now, artifact, artifact, artifact, artifact])
-      query(db, "update or replace tuples set who = #{String.replace(rename, "%s", "who")} where relation = 'parent' and #{in_it.("who")}", [now, artifact, artifact, artifact, artifact])
+      query(db, "update or replace tuples set artifact = #{String.replace(rename, "%s", "artifact")} where #{under("artifact")}", [now, artifact, artifact, artifact, artifact])
+      query(db, "update or replace tuples set who = #{String.replace(rename, "%s", "who")} where relation = 'parent' and #{under("who")}", [now, artifact, artifact, artifact, artifact])
       # Whoever it was whose, and whoever it's whose now, have it by its name: a tuple that says so is no more than that.
-      query(db, "delete from tuples where relation = 'owner' and who in (?, ?) and #{in_it.("artifact")}", [from, to, now, now, now])
+      query(db, "delete from tuples where relation = 'owner' and who in (?, ?) and #{under("artifact")}", [from, to, now, now, now])
       query(db, "delete from moved where old = ?", [now])
       query(db, "update moved set new = ? where new = ?", [now, artifact])
       query(db, "insert or replace into moved (old, new) values (?, ?)", [artifact, now])
@@ -677,6 +686,9 @@ defmodule Permissions do
     if unheard != %{},
       do: raise("#{artifact} is moved to #{now}, but these didn't hear it: #{Enum.map_join(unheard, ", ", fn {app, why} -> "#{app} (#{why})" end)}.")
   end
+
+  # SQL for whether `column` is a name, given twice more, or something under it: `users/alice`, `users/alice/made/notes/7`.
+  defp under(column), do: "(#{column} = ? or substr(#{column}, 1, length(?) + 1) = ? || '/')"
 
   defp waiting!(db, artifact) do
     case query(db, "select receiver, sender from transfers where artifact = ?", [artifact]) do

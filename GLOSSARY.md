@@ -7,7 +7,10 @@ An app's own words are defined in that app's `SKILL.md`.
   and "one app" are wrong. Only the App Store listing, "One App to rule them all", is a different name.
 - **Network**: one user's, one family's or one workplace's whole: its users, its bucket, its servers and its clients. A
   trusted boundary, not a social network. It is an artifact.
-- **User**: someone in the network, as relation tuples name them. How they sign in is not part of who they are.
+- **User**: someone in the network, as relation tuples name them, `users/<username>`. How they sign in is not part of who they are.
+- **Username**: the name a user's addresses are under (`users/andre.vantonder`, `/git-repos/andre.vantonder/notes`), as
+  GitHub's is: their email's name before the @ unless they choose another, which they or the network's owners change.
+  Their old one leads to the new one, and nobody else is given it. People see each other by name and email.
 - **Group**: an artifact whose members share other artifacts. Being in one is a relation tuple: the group, `member`, and
   a user or another group.
 - **Server**: a machine that runs a network's apps and answers its clients. A computer at home, a colleague's, or a

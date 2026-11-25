@@ -1,0 +1,80 @@
+defmodule OneCore.Renames do
+  @moduledoc """
+  Renaming a user, as GitHub renames an account. Their old name leads to the new one from then on
+  (`OneCore.User.renamed/1`), as `network/renamed` says: a JSON object of each name a user had, `users/<old>`, and
+  their name now.
+  """
+  alias OneCore.{Bucket, Servers, User}
+
+  @doc """
+  Renames a user, `users/<old>` to `users/<new>`, as GitHub renames an account: everything that's theirs in the bucket
+  goes to their new prefix (`OneCore.Bucket.move/2`, as a transfer moves one artifact), what One Core keeps that names
+  them says their new name (the network's first owner, the servers that act for them, what's installed and deployed),
+  and their old name leads to the new one from now on (`OneCore.User.renamed/1`). Then every server looks again, and the apps that
+  hook `renamed` rename them in what they keep: `{:ok, heard, unheard}`, as `OneCore.Hooks.collect/3` gives it.
+
+  Whoever may rename someone, and whether the new name is free, is the sign-in app's to say before it calls this.
+  """
+  def rename("users/" <> _ = old, "users/" <> _ = new) do
+    with :ok <- User.user(old), :ok <- User.user(new) do
+      if Bucket.list(new <> "/") != [],
+        do: raise("#{new} has things in the bucket already, so #{old} isn't renamed to it")
+
+      Bucket.move(old <> "/", new <> "/")
+      renamed_in = &User.renamed_in(&1, old, new)
+
+      Bucket.update(User.renames_blob(), fn was ->
+        names = if was, do: JSON.decode!(was), else: %{}
+
+        names
+        |> Map.delete(new)
+        |> Map.new(fn {from, to} -> {from, if(to == old, do: new, else: to)} end)
+        |> Map.put(old, new)
+        |> JSON.encode!()
+      end)
+
+      if User.first_owner?(old), do: Bucket.update("network/owner", fn _was -> new end)
+
+      owners = [
+        "network" | Enum.map(Bucket.folders("users/") ++ Bucket.folders("groups/"), &String.trim_trailing(&1, "/"))
+      ]
+
+      blobs =
+        for(key <- Servers.all(), do: "servers/#{key}/members") ++
+          for(owner <- owners, do: "#{owner}/installs") ++
+          for(app <- Bucket.folders(new <> "/apps/"), do: app <> "latest")
+
+      Enum.each(blobs, fn blob ->
+        Bucket.update(blob, fn was ->
+          if was && String.contains?(was, old), do: was |> JSON.decode!() |> renamed_in.() |> JSON.encode!(), else: was
+        end)
+      end)
+
+      # What names them in its blob's name: that they installed an app, and what they deployed.
+      moved = fn from, to ->
+        with {:ok, data, _tag} <- Bucket.read(from) do
+          Bucket.write(to, renamed_in.(data))
+          Bucket.remove(from)
+        end
+      end
+
+      for owner <- owners,
+          app <- Bucket.folders(owner <> "/apps/"),
+          do: moved.(app <> "installed/" <> old, app <> "installed/" <> new)
+
+      for blob <- Bucket.list("network/deployed/#{old}/"),
+          do: moved.(blob, String.replace_prefix(blob, "network/deployed/#{old}/", "network/deployed/#{new}/"))
+
+      OneCore.Server.notify_servers(["network"], "reload", %{owners: [old, new, "network"]})
+      Servers.invalidate()
+      OneCore.Apps.reload(new)
+      OneCore.Hooks.invalidate()
+      # Asked for them, and for each group, whose apps keep what they did there too.
+      for whose <- [new | Enum.filter(owners, &String.starts_with?(&1, "groups/"))], reduce: {:ok, %{}, %{}} do
+        {:ok, heard, unheard} ->
+          {:ok, more, failed} = OneCore.Hooks.collect("renamed", %{"who" => old, "to" => new}, {nil, whose})
+          {:ok, Map.merge(heard, more), Map.merge(unheard, failed)}
+      end
+    end
+  end
+end

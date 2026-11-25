@@ -63,10 +63,10 @@ defmodule SoftDelete do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.539", "database" => "to keep what you deleted for 30 days"}
+  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep what you deleted for 30 days"}
 
   @impl true
-  def hooks, do: ["uninstalled", "superseded", "settings.sections"]
+  def hooks, do: ["uninstalled", "superseded", "settings.sections", "renamed"]
 
   @impl true
   def offers do
@@ -242,8 +242,19 @@ defmodule SoftDelete do
   def move(%{"state" => "purged"}, _event), do: {:error, "It was deleted for good already."}
   def move(%{"state" => state}, event), do: {:error, "An item that's #{state} can't be moved by #{inspect(event)}."}
 
-  # Recently Deleted is a section of Settings.
   @impl true
+  # Someone renamed: what they deleted is kept by their new name, where its blobs went aside.
+  def hook("renamed", %{"who" => old, "to" => new}, call) do
+    for blob <- Artifact.list(call.own, "items/") do
+      Artifact.update(call.own, blob, fn json ->
+        if json && String.contains?(json, old), do: json |> JSON.decode!() |> User.renamed_in(old, new) |> JSON.encode!(), else: json
+      end)
+    end
+
+    nil
+  end
+
+  # Recently Deleted is a section of Settings.
   def hook("settings.sections", _about, _call),
     do: [%{in: "settings", name: "Recently Deleted", component: "deleted", icon: "client/icon.svg", group: "system", order: 2}]
 

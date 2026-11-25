@@ -288,6 +288,12 @@
       }
     }
   },
+  "Passkeys, changing the username": {
+    "like": "Passkeys",
+    "taps": [
+      "Change"
+    ]
+  },
   "Passkeys error": {
     "like": "Passkeys",
     "answers": {
@@ -401,13 +407,15 @@
             "who": "users/alex",
             "called": "Alex",
             "joined": true,
-            "picture": "own"
+            "picture": "own",
+            "email": "alex@example.com"
           },
           {
             "who": "users/sam",
             "called": "Sam",
             "joined": true,
-            "picture": "google"
+            "picture": "google",
+            "email": "sam.lee@example.com"
           },
           {
             "who": "users/robin",
@@ -482,6 +490,13 @@
     "taps": [
       "More for Sam",
       "Make Owner"
+    ]
+  },
+  "People & Groups, an owner changing someone's username": {
+    "like": "People & Groups",
+    "taps": [
+      "More for Sam",
+      "Change Username"
     ]
   },
   "People & Groups, an owner looking at another owner": {

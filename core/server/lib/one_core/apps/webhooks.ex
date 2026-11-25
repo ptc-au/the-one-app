@@ -28,7 +28,8 @@ defmodule OneCore.Apps.Webhooks do
   """
   def named(webhook) when is_binary(webhook) do
     case Regex.run(@named, webhook) do
-      [_, owner, app, token] -> {:ok, owner, app, token}
+      # A webhook given to a service before its owner was renamed leads to them still.
+      [_, owner, app, token] -> {:ok, OneCore.User.renamed(owner), app, token}
       nil -> {:error, "A webhook's name is #{@what}"}
     end
   end
@@ -43,7 +44,7 @@ defmodule OneCore.Apps.Webhooks do
   def asked(%{"app" => app, "webhook" => webhook} = params, owner) when is_binary(app) and is_binary(webhook) do
     with :ok <- came_in(params, webhook) do
       case named(webhook) do
-        {:ok, ^owner, ^app, token} -> {:ok, webhook, app, token}
+        {:ok, ^owner, ^app, token} -> {:ok, OneCore.User.renamed(webhook), app, token}
         {:ok, _owner, _app, _token} -> {:error, :forbidden, "#{app} has no webhook at that address for #{owner}"}
         {:error, why} -> {:error, :invalid, why}
       end

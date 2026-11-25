@@ -73,19 +73,25 @@ defmodule Notifications do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.32.167",
+      "core" => ">= 0.35.34",
       "database" => "to keep your inbox",
       "encryption" => "to encrypt what's sent to your devices"
     }
   end
 
   @impl true
-  def hooks, do: ["sign-in.device_removed", "wake", "settings.sections"]
+  def hooks, do: ["sign-in.device_removed", "wake", "settings.sections", "renamed"]
 
   # Which apps may notify you, and whether this device is woken, are Settings' Notifications; the inbox stays the app.
   @impl true
   def hook("settings.sections", _about, _call),
     do: [%{in: "settings", name: "Notifications", component: "settings", icon: "client/icon.svg", group: "general", order: 1}]
+
+  # Someone renamed has their inbox, their devices and what they muted by their new name.
+  def hook("renamed", %{"who" => old, "to" => new}, call) do
+    transaction(call, fn db -> for table <- ~w(notifications quiet devices), do: query(db, "update or replace #{table} set user = ? where user = ?", [new, old]) end)
+    nil
+  end
 
   # A removed device is nobody's, so nothing is sent where its push service reaches it.
   def hook("sign-in.device_removed", %{"device" => device, "who" => who}, call) do

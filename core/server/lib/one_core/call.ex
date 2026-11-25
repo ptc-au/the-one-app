@@ -200,6 +200,7 @@ defmodule OneCore.Call do
       {:ok, text, _tag} = OneCore.Artifact.read(note, "text")
   """
   def reach(%__MODULE__{subject: subject, actor: actor} = call, name, relation \\ "viewer") do
+    name = User.renamed(name)
     if why = refused(call, name, relation), do: raise(why)
     # Its blobs are whoever's it is, whom this server may not act for. One that does runs the call.
     owner = User.owner(name) || "network"
@@ -213,6 +214,7 @@ defmodule OneCore.Call do
   @doc "Why this call may not reach the artifact `name` as `relation`, or `nil` if it may."
   def refused(%__MODULE__{subject: subject, actor: actor, app: app} = call, name, relation)
       when relation in ["viewer", "editor", "owner"] do
+    name = User.renamed(name)
     parts = String.split(Bucket.key!(name), "/")
 
     # What's someone's sits under their prefix by what it is: what an app made for them, or an app's own.

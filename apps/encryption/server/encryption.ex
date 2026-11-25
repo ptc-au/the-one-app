@@ -14,6 +14,9 @@ defmodule Encryption do
   `apps/encryption/client/native/src/cipher.rs`, which a server runs too (`Cipher`).
   """
   @behaviour OneCore.App
+  alias Encryption.Keys
+  alias OneCore.{Artifact, Call, Hooks, Server, Servers, User}
+  alias OneCore.Apps.Calls
 
   # Every device's key is kept with it, and the Vault and notifications use it.
   @impl true
@@ -23,7 +26,7 @@ defmodule Encryption do
   @impl true
   def requires,
     do: %{
-      "core" => ">= 0.34.174",
+      "core" => ">= 0.35.34",
       "database" => "to keep when it last checked who holds your keys",
       "telemetry" => "to raise an alert while a server that acts for you is waiting for your key",
       "sign-in" => "to tell a device that can hold your key, an app's, from a browser or an assistant, which can't"
@@ -39,14 +42,51 @@ defmodule Encryption do
 
   # Whether a device of the app holds your key is a group on its page in Settings.
   @impl true
-  def hooks, do: ["settings.sections"]
+  def hooks, do: ["settings.sections", "renamed"]
 
   @impl true
   def hook("settings.sections", _about, _call), do: [%{in: "device", component: "device", kinds: ["app"]}]
 
-  alias Encryption.Keys
-  alias OneCore.{Artifact, Call, Hooks, Server, Servers, User}
-  alias OneCore.Apps.Calls
+  # Someone renamed keeps the key they had, sealed by the name it was made under (`keyed/1`): what's encrypted for
+  # them is listed by its new name, and a group's or the network's key is wrapped for them by their new one.
+  def hook("renamed", %{"who" => old, "to" => new}, _call) do
+    key = key_of(new)
+    if Artifact.read(key, "check") != :absent and Artifact.read(key, "name") == :absent, do: Artifact.write(key, "name", old)
+
+    for name <- Artifact.list(index(new)), String.starts_with?(name, old <> "/") do
+      Artifact.write(index(new), new <> String.replace_prefix(name, old, ""), "")
+      Artifact.remove(index(new), name)
+    end
+
+    for scope <- ["network" | Enum.map(OneCore.Bucket.folders("groups/"), &String.trim_trailing(&1, "/"))],
+        {:ok, wrapped, _tag} <- [Artifact.read(key_of(scope), "owners/" <> old)] do
+      Artifact.write(key_of(scope), "owners/" <> new, wrapped)
+      Artifact.remove(key_of(scope), "owners/" <> old)
+    end
+
+    nil
+  end
+
+  @doc """
+  The name `owner`'s key was made under, which what's sealed with it names (`client/native/src/cipher.rs`), and what an
+  artifact's keys are made from: their name now, unless they were renamed after it was made.
+  """
+  def keyed(owner) do
+    case Artifact.read(key_of(owner), "name") do
+      {:ok, name, _tag} -> name
+      :absent -> owner
+    end
+  end
+
+  @doc "An artifact's name as its keys were made from it: under the name its owner's key was made under (`keyed/1`)."
+  def keyed_name(name) do
+    owner = User.owner(name)
+    keyed = keyed(owner)
+    if keyed == owner, do: name, else: keyed <> String.replace_prefix(name, owner, "")
+  end
+
+  defp key_of(owner), do: %Artifact{prefix: "#{owner}/made/encryption/key/"}
+
 
   @doc """
   `artifact`, encrypted: its blobs are encrypted as they're written and opened as they're read, by everything that
@@ -131,7 +171,7 @@ defmodule Encryption do
     {missing, extra} = {should -- held, held -- should}
 
     %{
-      artifact: name,
+      artifact: keyed_name(name),
       epoch: Task.await(epoch, :infinity),
       servers: names(held),
       missing: names(missing),
@@ -184,7 +224,7 @@ defmodule Encryption do
       |> Enum.map(&Task.async/1)
       |> Task.await_many(:infinity)
 
-    Map.merge(%{artifact: Artifact.name(artifact), epoch: epoch, servers: servers, may: names(should(Artifact.name(artifact)))}, signed)
+    Map.merge(%{artifact: keyed_name(Artifact.name(artifact)), epoch: epoch, servers: servers, may: names(should(Artifact.name(artifact)))}, signed)
   end
 
   # Its owner's signature of which servers open it at its epoch, and the public key that signed it, as the device that
@@ -208,7 +248,9 @@ defmodule Encryption do
   # relation tuple naming it as an `editor`, and each one taken off loses its tuple and its keys. Only whoever the
   # artifact belongs to chooses: the call is theirs, and by them.
   defp choose(%Call{} = call, given) do
-    with %{"artifact" => name, "epoch" => epoch, "was" => was, "slots" => %{} = slots} = given when is_binary(name) <- given,
+    with %{"artifact" => keyed, "epoch" => epoch, "was" => was, "slots" => %{} = slots} = given when is_binary(keyed) <- given,
+         # A device names it as its keys were made (`keyed_name/1`), which leads to its name now.
+         name = User.renamed(keyed),
          %{"signature" => signature, "signer" => signer} when is_binary(signature) and is_binary(signer) <- given,
          true <- is_integer(was) and epoch in [was, was + 1] do
       artifact = %Artifact{prefix: name <> "/"}
@@ -483,7 +525,7 @@ defmodule Encryption do
            else: (_ -> nil)
 
     %{
-      owner: call.subject,
+      owner: keyed(call.subject),
       device: inputs["device"],
       check: read["check"],
       slot: slot,

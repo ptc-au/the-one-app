@@ -19,7 +19,7 @@ that one question for it, and a new device when they also say the code it shows 
   owner invites someone who's already in, as a way back when they've lost every passkey, and never an owner: an owner
   adds a passkey on a device they're signed in on.
 - `domains` says which Google Workspace domains' people join by signing in with Google, with no invitation, and
-  sets them for whoever invites. They're named `users/<their email's name>`, and go by their Google name.
+  sets them for whoever invites. They're `users/<their email's name before the @>`, and go by their Google name.
 - `network` says the network's name, icon and logo, and sets them for whoever invites: null is the One App's. Its icon,
   on a tile of its own, is its web app's tab, Home Screen icon and manifest, and its own apps' icon; its logo, its mark
   alone, is what its sign-in page draws, one for a light page and one for a dark, either alone shown on both (`--name
@@ -41,6 +41,10 @@ that one question for it, and a new device when they also say the code it shows 
   waiting for it, the person's or a group's or the network's they own (`scope`). Sign In & Security shows each key
   servers wait for with Use Passkey, which opens it; the network's owners are notified once when one starts
   waiting (`check`). Open it on their screen, don't pass it on: nobody but the person hands a key over.
+- `username` changes your person's username, which their addresses are under (`users/<username>`,
+  `/git-repos/<username>/notes`), when they ask, or with `--who` someone else's, which only the network's owners do:
+  lowercase letters, digits, dots and hyphens. Everything of theirs moves with it, and their old addresses, sharing
+  links, webhooks and git remotes lead to the new one, as GitHub's do; nobody else is given an old one.
 - `people` says who people are: the name each goes by, chosen as they joined, their email where signing in
   has one, and whose picture they're shown by (`picture`: the one they set, `own`, or Google's, `google`, or none). `name` changes the name your person goes by, when they ask. `picture` sets the picture they go by, which wins over Google's (`--upload-from photo.jpg`: any picture up to 10 MB, made square and small from its middle), and with none takes it away. Signing in with Google gives
   their Google picture, taken again each time. `pictures` gives those of people (`users/<name>`) and the network (`network`, its icon, or the One App's) as `data:` addresses, which

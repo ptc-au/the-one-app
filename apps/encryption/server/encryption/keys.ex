@@ -21,27 +21,36 @@ defmodule Encryption.Keys do
 
   @impl true
   def init({artifact, server}),
-    do: {:ok, %{artifact: artifact, server: server, keys: nil, slot: nil, looked: nil}, {:continue, :index}}
+    do: {:ok, %{artifact: artifact, server: server, keys: nil, slot: nil, looked: nil, keyed: nil}, {:continue, :index}}
 
   # It's listed with what's encrypted for its owner (`Encryption.access/1`).
   @impl true
   def handle_continue(:index, state) do
-    Encryption.known(OneCore.Artifact.name(state.artifact), state.server)
-    {:noreply, state}
+    name = OneCore.Artifact.name(state.artifact)
+    Encryption.known(name, state.server)
+    {:noreply, Map.put(state, :keyed, Encryption.keyed_name(name))}
   end
 
   @impl true
   def handle_call(:keys, _from, state) do
     now = System.monotonic_time(:millisecond)
     state = if state.slot == nil or now - state.looked > @looks_after, do: look(state, now), else: state
-    {:reply, if(state.slot, do: {:ok, state.keys}, else: :none), state}
+    {:reply, if(state.slot, do: {:ok, codec(state)}, else: :none), state}
   end
 
   def handle_call(:look, _from, state), do: {:reply, :ok, look(state, System.monotonic_time(:millisecond))}
   def handle_call(:forget, _from, state), do: {:reply, :ok, forgotten(%{state | looked: nil})}
 
+  # Its blobs are encrypted by their names as its keys were made (`Encryption.keyed_name/1`): under a name its owner
+  # had before a rename, they're opened as if they were still there (`Encryption.Keyed`).
+  defp codec(%{keyed: keyed, artifact: artifact, keys: keys}) do
+    owner = OneCore.User.owner(OneCore.Artifact.name(artifact))
+    was = OneCore.User.owner(keyed)
+    if was == owner, do: keys, else: {Encryption.Keyed, {keys, owner <> "/", was <> "/"}}
+  end
+
   defp look(state, now) do
-    name = OneCore.Artifact.name(state.artifact)
+    name = state.keyed
     state = %{state | looked: now}
 
     case OneCore.Artifact.read(state.artifact, "keys/" <> state.server) do
