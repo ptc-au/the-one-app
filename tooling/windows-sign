@@ -11,17 +11,25 @@
 # an hour, so the secret is never seen here. WINDOWS_SIGNING, jsign's own options naming a keystore of one's own
 # (`--keystore <file>.pfx --storepass <password>`), signs with that instead.
 #
-# The item is in the Vault of this machine's own client, as the Developer ID is in this machine's 1Password: whoever
-# releases signs as the same publisher, whichever network's installer it is (`tooling/installers` runs as that
-# network's client, where there is no such item).
+# The item is in the network's own Vault (`ONE_SUBJECT=network`) of the network that owns the platform's release: the
+# repo in `tooling/networks` under the same GitHub owner as this one (Power to Change's, as the signing identity is),
+# as this machine's client of it, whichever network's installer it is (`tooling/installers` runs as that network's
+# client, where there is no such item).
 #
 # Without either, it says in a line that it signed nothing, and the programs ship unsigned.
 set -euo pipefail
-unset ONE_HOME
+root=$(cd "$(dirname "$0")/.." && pwd)
 item="Artifact Signing"
 if [[ -n ${WINDOWS_SIGNING:-} ]]; then
   read -ra options <<<"$WINDOWS_SIGNING"
 else
+  owner=$(git -C "$root" remote get-url origin | sed -E 's#^.*[:/]([^/]+)/[^/]+$#\1#')
+  network=$("$root/tooling/networks" | while read -r repo; do
+    [[ $(git -C "$repo" remote get-url origin) == *[:/]"$owner"/* ]] && echo "$repo" && break
+  done)
+  [[ -n $network ]] || { echo "This machine has no repo of a network owned by $owner (tooling/networks)." >&2 && exit 1; }
+  ONE_HOME=$("$root/tooling/client-home" "$network") || exit 1
+  export ONE_HOME ONE_SUBJECT=network
   fields=$(one vault list | jq -c --arg item "$item" 'first(.items[] | select(.name == $item) | [.fields[] | {(.name): .value}] | add) // empty')
   [[ -n $fields ]] || { echo "Windows programs aren't signed: the Vault has no \"$item\" item yet." && exit 0; }
   token=$(one vault fetch --item "$item" --method POST --url 'https://login.microsoftonline.com/{{tenant_id}}/oauth2/v2.0/token' \
@@ -35,5 +43,5 @@ else
     --keystore "$(jq -r '.endpoint | sub("^https://"; "") | rtrimstr("/")' <<<"$fields")"
     --alias "$(jq -r '"\(.account)/\(.profile)"' <<<"$fields")")
 fi
-jsign=$(mise -C "$(dirname "$0")/.." which jsign.jar)
+jsign=$(mise -C "$root" which jsign.jar)
 exec java -jar "$jsign" "${options[@]}" --tsaurl http://timestamp.acs.microsoft.com --tsmode RFC3161 --quiet "$@"
