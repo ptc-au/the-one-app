@@ -467,7 +467,8 @@ function linked(to: string) {
 /// names (`one:my-week#week&start=2026-11-23`, which a browser's address says as `/my-week/week?start=2026-11-23`), what
 /// an assistant called where it shows the page as an MCP App, or where the page navigated (`navigate`). `first`, with no
 /// arguments, where nothing names one: the app's first screen. Every screen is a tool that only reads, and answers all
-/// it first draws: `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`.
+/// it first draws: `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`. Each screen's tool
+/// says `ui: "client/index.html"` (and its `path`) in the app's `tools/0`, so an assistant draws the screen under its call.
 export const toolInput: typeof Page.toolInput = (first) => {
   byTools = true
   firstScreen = first

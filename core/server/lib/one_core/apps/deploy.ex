@@ -82,7 +82,7 @@ defmodule OneCore.Apps.Deploy do
              :ok <- step("listed", fn -> listed(artifact) end),
              {:ok, number} <- step("keep", fn -> Store.keep(artifact, name, version, built, files, from, trusted, was) end),
              :ok <- committed(owner, name, %{"number" => number, "code" => version.code, "trusted" => trusted}, version, install, began) do
-          warnings = Enum.join(Enum.reject([warnings, styling | untasked(name, version, built)], &(&1 == "")), "\n")
+          warnings = Enum.join(Enum.reject([warnings, styling | untasked(name, version, built) ++ unrouted(name, version, files)], &(&1 == "")), "\n")
           {:ok, number, warnings}
         end
       after
@@ -172,6 +172,34 @@ defmodule OneCore.Apps.Deploy do
       "#{name}_#{tool.name} says what it's doing or asks a person (OneCore.Call.stage or OneCore.Call.ask), which " <>
         "only a task shows or asks: give it task_support: :optional beside its name in tools/0."
     end
+  end
+
+  # An app's screens are tools (`OneCore.App`): its page reads which it shows with `toolInput` and goes to another with
+  # `navigate`, and each such tool says `ui`, so an assistant draws the screen under its call. A page that never calls
+  # `toolInput`, or a screen whose tool says no `ui`, is warned of, with which.
+  defp unrouted(name, version, files) do
+    sources =
+      for {path, text} <- files,
+          String.starts_with?(path, "client/") and Path.extname(path) in ~w(.ts .tsx .js .jsx) and is_binary(text),
+          not String.contains?(path, "/node_modules/"),
+          do: text
+
+    screens =
+      for text <- sources,
+          [_, screen] <- Regex.scan(~r/\b(?:toolInput|navigate)\(\s*["']#{name}_([^"']+)["']/, text),
+          uniq: true,
+          do: screen
+
+    never =
+      for %{page: page} <- version.entrypoints,
+          sources != [] and not Enum.any?(sources, &String.contains?(&1, "toolInput(")),
+          do: "#{name}'s page #{page} never calls toolInput, so its screens aren't tools: read which screen it shows with toolInput and go to another with navigate."
+
+    never ++
+      for tool <- version.tools,
+          tool.name in screens,
+          tool[:ui] == nil,
+          do: "#{name}_#{tool.name} is a screen (its page shows it with toolInput or navigate) and says no ui: give it ui: \"client/index.html\" beside its name in tools/0."
   end
 
   # Each function the code defines, by its name and arity, and each tool's call/3 clause, by the tool's name.
