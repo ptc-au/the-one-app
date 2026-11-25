@@ -244,8 +244,10 @@ defmodule GoogleDrive do
   end
 
   defp run("drives_list", inputs, at) do
+    query = inputs |> Map.take(~w(q pageSize)) |> Map.put("fields", inputs["fields"] || @drives)
+
     api(at, "GET", "drives",
-      query: %{q: inputs["q"], pageSize: inputs["pageSize"], fields: inputs["fields"] || @drives},
+      query: query,
       hint: "q is Drive's search for shared drives, like name = 'PTC Systems'; " <> @fields_hint
     )
   end
