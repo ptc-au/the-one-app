@@ -18,7 +18,7 @@ use iroh::endpoint::{Connection, VarInt};
 use iroh::{Endpoint, EndpointAddr};
 use rustler::{Atom, Binary, Encoder, Env, LocalPid, NewBinary, OwnedEnv, Resource, ResourceArc, Term};
 use tokio::runtime::Runtime;
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Instant, MissedTickBehavior, interval_at};
 
 mod outside;
@@ -34,7 +34,8 @@ static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| Runtime::new().expect("toki
 /// it was made to. Where the ones watching are is kept in the file `watching` beside its key too, so a server that
 /// starts again still tells them what changes. A server found gone leaves that address with no connection, and a
 /// connection that closed for want of anything to ask leaves nothing. `asks` is what's being answered (`Asks`), and
-/// `aside` whether the server has stepped aside (`aside/2`).
+/// `aside` whether the server has stepped aside (`aside/2`), and `told` what it tells the clients watching, which its
+/// connection to its network's edge says too, for the browsers listening there (`outside`).
 /// Nothing looks inside it after a panic, which is what Rustler needs to hear before it hands one to Elixir.
 struct Reached {
     endpoint: AssertUnwindSafe<Endpoint>,
@@ -44,7 +45,12 @@ struct Reached {
     servers: AssertUnwindSafe<Servers>,
     asks: AssertUnwindSafe<Asks>,
     aside: AssertUnwindSafe<Aside>,
+    told: AssertUnwindSafe<mpsc::Sender<String>>,
 }
+
+/// How many of what a server tells its clients wait for its connection to the edge while that's connecting again, a
+/// few seconds (`outside::EVERY`); more than that are dropped, as what a server says rarely comes faster.
+const TOLD: usize = 64;
 
 /// What's being answered: each message holds it for reading while it is, and a server that's stopping holds it for
 /// writing, so it takes nothing new.
@@ -186,11 +192,12 @@ fn start(
         }
         let address = client::address(&endpoint, network.as_ref()).map_err(|error| format!("{error:#}"))?;
         let aside = Aside::default();
+        let (told, telling) = mpsc::channel(TOLD);
         if let Some(network) = network {
             endpoint.online().await;
             // It listens there while the endpoint is open: one closed, as the server closes it as it stops
             // (`OneCore.Server`), leaves the relay to the next.
-            let listen = outside::listen(network, endpoint.secret_key().clone(), handler, aside.clone());
+            let listen = outside::listen(network, endpoint.secret_key().clone(), handler, aside.clone(), telling);
             tokio::spawn(endpoint.closed().run_until(listen));
         }
         let address = serde_json::to_string(&address).map_err(|error| error.to_string())?;
@@ -217,6 +224,7 @@ fn start(
             servers: AssertUnwindSafe(Mutex::default()),
             asks: AssertUnwindSafe(asks),
             aside: AssertUnwindSafe(aside),
+            told: AssertUnwindSafe(told),
         };
         Ok((ResourceArc::new(reached), address))
     })
@@ -360,9 +368,11 @@ fn watch(reached: ResourceArc<Reached>, client: String, address: Option<String>,
 }
 
 /// Sends `message` to every client that's watching: over the connection it has open to this server, or else over
-/// one made to it for this. A client that can't be reached where it said has gone, and is told nothing more.
+/// one made to it for this. A client that can't be reached where it said has gone, and is told nothing more. The
+/// edge is told it too, for the browsers listening there; a server on no network has none.
 #[rustler::nif]
 fn notify(reached: ResourceArc<Reached>, message: Binary) -> Atom {
+    let _ = reached.told.try_send(String::from_utf8_lossy(message.as_slice()).into_owned());
     let message: Arc<[u8]> = message.as_slice().into();
     let watchers = reached.watchers.lock().expect("no connection panics").clone();
     for (key, watcher) in watchers {

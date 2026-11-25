@@ -1,6 +1,7 @@
 //! A server's connection to its network's edge for outsiders' calls. What an assistant somewhere else asks at
 //! the address over the web is passed down this connection by the relay there (`core/edge/relay/relay.ts`), and the
-//! server's answer goes back up it.
+//! server's answer goes back up it, and so does what it tells the clients watching it, which the relay passes to the
+//! browsers listening to it.
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -23,12 +24,12 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 const EVERY: Duration = Duration::from_secs(10);
 
 /// Keeps the connection open for as long as it runs, which is while its endpoint is open, handing each call to `asked`
-/// as a client's is.
-pub async fn listen(network: Network, key: SecretKey, handler: LocalPid, aside: crate::Aside) {
+/// as a client's is, and saying up it what the server tells its clients (`telling`).
+pub async fn listen(network: Network, key: SecretKey, handler: LocalPid, aside: crate::Aside, mut telling: mpsc::Receiver<String>) {
     loop {
         let tried = Instant::now();
         // Why it ended doesn't matter: the next one is the same either way.
-        let _ = connect(&network, &key, &handler, &aside).await;
+        let _ = connect(&network, &key, &handler, &aside, &mut telling).await;
         // Cloudflare drops the relay's connections where servers connect (Sydney, Melbourne, Auckland), every server's
         // at once and every network's in the same minute, dozens of times a day (`loadShed` in its analytics, 24 Nov),
         // and the next connection is answered at once. So one that was up connects again at once, and the address
@@ -38,7 +39,7 @@ pub async fn listen(network: Network, key: SecretKey, handler: LocalPid, aside: 
     }
 }
 
-async fn connect(network: &Network, key: &SecretKey, handler: &LocalPid, aside: &crate::Aside) -> Result<()> {
+async fn connect(network: &Network, key: &SecretKey, handler: &LocalPid, aside: &crate::Aside, telling: &mut mpsc::Receiver<String>) -> Result<()> {
     let address = network.address.trim_end_matches('/');
     let socket = format!("ws{}/relay/outside", address.strip_prefix("http").context("an address is http or https")?);
     let mut request = socket.into_client_request()?;
@@ -86,6 +87,7 @@ async fn connect(network: &Network, key: &SecretKey, handler: &LocalPid, aside: 
                 None => bail!("the edge closed it"),
             },
             Some(response) = pending.recv() => up.send(Message::text(response)).await?,
+            Some(told) = telling.recv() => up.send(Message::text(json!({"notify": told}).to_string())).await?,
             _ = say.tick() => up.send(Message::Ping(Default::default())).await?,
             _ = &mut quiet => bail!("the edge went quiet"),
         }
