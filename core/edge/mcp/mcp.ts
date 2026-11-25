@@ -49,6 +49,7 @@ export default {
     if (url.pathname === "/llms.txt") return new Response(llms(url.origin), { headers: { "content-type": "text/markdown; charset=utf-8" } });
     if (url.pathname.startsWith("/skills/")) return skill(request, env, url);
     if (url.pathname === "/apps") return apps(request, env);
+    if (PAGES_MCP.test(url.pathname)) return pages(request, env, ctx);
     if (url.pathname.startsWith("/apps/")) return file(request, env, url, ctx);
     // A webhook is asked by whatever a service sends, with whatever method: Slack and GitHub both POST, and a service
     // that checks one first may GET or HEAD it.
@@ -174,6 +175,27 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
   return Response.json({ jsonrpc: "2.0", id: null, error: { code: NOBODY, message: why } }, { status: 401 });
 }
 
+/** Where the page an assistant shows asks the network itself (`pages`): its apps' address, then `/mcp`. */
+const PAGES_MCP = /^\/apps\/[^/]+\/mcp$/;
+/** What a page's frame may ask the network from an assistant's chat, whose origin isn't the network's. */
+const PAGES_CORS = { "access-control-allow-origin": "*" };
+
+/**
+ * What a page the assistant shows asks because its person is using it (`clients/web/router.js`): a tool, a resource,
+ * as whoever let the assistant in, by the session signed into its apps' address (`who`), as the web client's page
+ * asks with its cookie. It doesn't go through the assistant, which asks its person to approve each call its page
+ * makes that changes something (T3 Code's `McpAppFrame`), as it does the calls its model makes: here it's their own
+ * tap, as it is in the app.
+ */
+async function pages(request: Request, env: Env, ctx: ExecutionContext) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...PAGES_CORS, "access-control-allow-methods": "POST", "access-control-allow-headers": "content-type, traceparent", "access-control-max-age": "86400" } });
+  if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
+  const answer = await mcp(request, env, ctx);
+  const headers = new Headers(answer.headers);
+  for (const [name, value] of Object.entries(PAGES_CORS)) headers.set(name, value);
+  return new Response(answer.body, { status: answer.status, headers });
+}
+
 /**
  * The page an assistant shows for every app's tool that has one (`ui://one/<version>/app.html`, as `OneCore.Mcp` lists
  * it), read by an assistant that shows MCP Apps: the router (`clients/web/router.js`), which shows the page of the app
@@ -196,7 +218,7 @@ body[data-unopened] iframe { display: none; } body[data-unopened]::before { cont
 <script type="application/json" id="router">${said}</script>
 <script>${script.replace(/<\/script/gi, "<\\/script")}</script>
 `;
-  const ui = { csp: { frameDomains: [origin] } };
+  const ui = { csp: { frameDomains: [origin], connectDomains: [origin] } };
   return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri: call.params?.uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui } }] } });
 }
 

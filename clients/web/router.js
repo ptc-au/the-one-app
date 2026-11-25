@@ -3,7 +3,8 @@
 // as an MCP App's own page may not compile WebAssembly. Many tools show it, as one view, each saying which page shows
 // what it answered (its result's `_meta.page`, `<app>/<path>`).
 //
-// It passes messages between that frame and the assistant, which calls the app's tools as whoever let it in. It's
+// It passes messages between that frame and the assistant, but what the page asks the network (its tools, its
+// resources) it asks itself, as whoever let the assistant in, as the web client's page does (`ask`). It's
 // greeted by the assistant once, as one page, and answers each page it shows itself with what it was answered, and
 // tells the tool's page what the tool was given and answered, as an MCP App's page is told. A `one:` link a page opens
 // shows what that link opens, as the window's `go` does (`opens`), in this view.
@@ -47,6 +48,15 @@ function show(page, fragment) {
   shown.src = `${origin}/renderer/#${at}`
   frame.replaceWith(shown)
   frame = shown
+}
+
+/** Asks the network what the page asked, and answers the page. @param {{ id: unknown, method: string, params?: unknown }} asked */
+async function ask({ id, method, params }) {
+  const answered = await fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then(
+    async (response) => (response.ok ? response.json() : { error: { code: -32000, message: response.status === 401 ? "This page's sign-in ended. Ask your assistant to show it again." : await response.text() } }),
+    () => ({ error: { code: -32000, message: "Can't reach your network. Check this device is online." } }),
+  )
+  toPage(answered.error ? { id, error: answered.error } : { id, result: answered.result })
 }
 
 addEventListener("message", ({ source, data }) => {
@@ -99,6 +109,9 @@ addEventListener("message", ({ source, data }) => {
     show(to.page, to.fragment)
     return
   }
+  // What the page asks the network, it asks itself, as whoever let the assistant in (`pages` in core/edge/mcp/mcp.ts):
+  // it's its person's tap, which the assistant would otherwise ask them to approve, as it does what its model calls.
+  if (data.id !== undefined && typeof data.method === "string" && !data.method.startsWith("ui/")) return void ask(data)
   // The renderer's frame couldn't open its page, and says why, which is shown here as a native host's window says it.
   if (data.method === "notifications/one/seen" && typeof data.params?.unopened === "string") document.body.dataset.unopened = data.params.unopened
   toHost(data)
