@@ -102,8 +102,14 @@ defmodule OneCore.Application do
   @lookup_max 30_000
 
   defp joined?(key, owner, wait \\ @lookup) do
-    # One started for someone renamed since is theirs by their new name (`OneCore.User.renamed/1`).
-    owner = OneCore.User.renamed(owner)
+    # One started for someone renamed since is theirs by their new name (`OneCore.Renames`), read as it starts, before
+    # what caches it runs.
+    owner =
+      with {:ok, json, _tag} <- OneCore.Bucket.read(OneCore.User.renames_blob()),
+           now when is_binary(now) <- JSON.decode!(json)[owner],
+           do: now,
+           else: (_ -> owner)
+
     Application.put_env(:one_core, :owner, owner)
     Servers.joined?(key, owner)
   rescue
