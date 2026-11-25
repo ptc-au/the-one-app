@@ -27,7 +27,8 @@ An app's own words are defined in that app's `SKILL.md`.
   artifact. It `requires` other apps, its requirements, and is a subject. A git repo can be where its code comes from,
   but needn't be. Avoid: plugin, module.
 - **Owner**: whoever something belongs to: a user, a group or the network, as an artifact's name says. An app is
-  installed for an owner (`for`), and each owner has a Home Screen. Not the relation `owner`, which says who may share
+  installed for an owner (`for`): that owner, and everyone in it, can use it, and it's in their App Library. Each
+  owner's Home Screen is only how they arrange what they can use. Not the relation `owner`, which says who may share
   what an owner has.
 - **App entrypoint**: an icon an app puts in the launcher, with its name, category and page; people just see apps.
   It's on a Home Screen page or in an App Library, and in code it's an `entrypoint`.
