@@ -787,6 +787,7 @@ struct Device {
 unsafe extern "C" {
     fn device_pick(view: *mut c_void, x: f64, y: f64, width: f64, height: f64, options: *const c_char, chosen: *const c_char, context: *mut c_void, node: i64, picked: extern "C" fn(*mut c_void, i64, *const c_char)) -> bool;
     fn device_share(view: *mut c_void, text: *const c_char) -> bool;
+    fn device_scan(view: *mut c_void, context: *mut c_void, scanned: extern "C" fn(*mut c_void, *const c_char)) -> bool;
     fn device_haptic(kind: *const c_char) -> bool;
     fn device_text_size() -> f64;
     fn device_status_bar(view: *mut c_void, context: *mut c_void, tapped: extern "C" fn(*mut c_void));
@@ -807,6 +808,25 @@ impl crate::view::Device for Device {
     fn haptic(&mut self, kind: &str) -> bool {
         unsafe { device_haptic(cstring(kind).as_ptr()) }
     }
+
+    fn scan_documents(&mut self, scanned: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
+        // The scanner tells it once, as it closes, and a scanner that doesn't show tells nothing.
+        let context = Box::into_raw(Box::new(scanned)) as *mut c_void;
+        let shown = unsafe { device_scan(self.view as *mut c_void, context, scanned_told) };
+        if !shown {
+            drop(unsafe { Box::from_raw(context as *mut ScannedTold) });
+        }
+        shown
+    }
+}
+
+type ScannedTold = Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>;
+
+/// The document scanner closed (`device_scan`), `files` the JSON array of the paths of the JPEG pages it scanned.
+extern "C" fn scanned_told(context: *mut c_void, files: *const c_char) {
+    let told = unsafe { Box::from_raw(context as *mut ScannedTold) };
+    let files: Vec<std::path::PathBuf> = serde_json::from_slice(unsafe { CStr::from_ptr(files) }.to_bytes()).unwrap_or_default();
+    told(files);
 }
 
 /// Window `context`'s status bar was tapped, which the windows hear once they aren't in use.

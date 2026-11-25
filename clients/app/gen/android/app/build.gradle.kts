@@ -70,6 +70,8 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
+    // An app's `scanDocuments`: Google Play services' own document scanner, which needs no camera permission.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     // The app's own messaging service (Notifications.kt), at the version the push plugin brings.
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
     implementation("com.google.firebase:firebase-messaging")

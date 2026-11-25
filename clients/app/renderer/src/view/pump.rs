@@ -199,19 +199,21 @@ impl Screen {
                         self.js.send("message", json!({"jsonrpc": "2.0", "id": id, "result": result}));
                         continue;
                     }
-                    // The device's own picker of files, whose choice comes back as the page's next turn (`pump`); a device
-                    // without one says so.
-                    if let (Some(id), Some("one/files")) = (message.get("id"), method.as_deref()) {
+                    // The device's own picker of files, or its document scanner, whose choice comes back as the page's next
+                    // turn (`pump`); a device without one says so.
+                    if let (Some(id), Some(asked @ ("one/files" | "one/scan"))) = (message.get("id"), method.as_deref()) {
                         let accept: Vec<String> = message["params"]["accept"].as_array().into_iter().flatten().filter_map(|kind| kind.as_str().map(str::to_owned)).collect();
-                        let (chosen, wake, asked) = (self.chosen_files.clone(), self.wake.clone(), id.clone());
+                        let (chosen, wake, key) = (self.chosen_files.clone(), self.wake.clone(), id.clone());
                         let done = Box::new(move |files: Vec<std::path::PathBuf>| {
-                            chosen.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((asked, files));
+                            chosen.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((key, files));
                             if let Some(wake) = wake {
                                 wake();
                             }
                         });
-                        if !self.device.open_files(&accept, message["params"]["multiple"] == true, done) {
-                            self.js.send("message", json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": "This device has no file picker"}}));
+                        let has = if asked == "one/scan" { self.device.scan_documents(done) } else { self.device.open_files(&accept, message["params"]["multiple"] == true, done) };
+                        if !has {
+                            let what = if asked == "one/scan" { "scanner" } else { "file picker" };
+                            self.js.send("message", json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": format!("This device has no {what}")}}));
                         }
                         continue;
                     }

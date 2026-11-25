@@ -1,10 +1,12 @@
 // What an iPhone does for a native window's page itself (`Device` in mod.rs): its picker, the pop-up menu a `<select>`
-// opens in Safari, from a button over the picker's box; its share sheet; its haptics; its text size; and a tap on
-// its status bar.
+// opens in Safari, from a button over the picker's box; its share sheet; its document scanner; its haptics; its text
+// size; and a tap on its status bar.
 
 #include <string>
 
+#import <PhotosUI/PhotosUI.h>
 #import <UIKit/UIKit.h>
+#import <VisionKit/VisionKit.h>
 
 typedef void (*DevicePicked)(void* context, int64_t node, const char* value);
 
@@ -65,6 +67,121 @@ extern "C" bool device_share(UIView* view, const char* text) {
   UIActivityViewController* sheet = [[UIActivityViewController alloc] initWithActivityItems:@[ [NSString stringWithUTF8String:text] ] applicationActivities:nil];
   sheet.popoverPresentationController.sourceView = view;
   [over presentViewController:sheet animated:YES completion:nil];
+  return true;
+}
+
+typedef void (*DeviceScanned)(void* context, const char* files);
+
+// What shows a document scanner and hears what it scanned (`device_scan`): VisionKit's, which finds each page's edges,
+// takes it by itself and flattens it, as Notes' does.
+@interface OneScanner : NSObject <VNDocumentCameraViewControllerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate, PHPickerViewControllerDelegate>
+@property(nonatomic) void* context;
+@property(nonatomic) DeviceScanned scanned;
+@end
+
+// The scanner that's showing, which holds itself until it has said what was scanned.
+static OneScanner* scanning;
+
+@implementation OneScanner
+// Tells what was scanned: a JPEG file (quality 90) of each page in a folder of its own, as a JSON array of their paths, none
+// if it was cancelled.
+- (void)finish:(NSArray<UIImage*>*)images {
+  NSString* folder = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID UUID].UUIDString];
+  [[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
+  NSMutableArray<NSString*>* paths = [NSMutableArray array];
+  for (UIImage* image in images) {
+    NSString* path = [folder stringByAppendingPathComponent:[NSString stringWithFormat:@"scan-%lu.jpg", (unsigned long)paths.count + 1]];
+    if ([UIImageJPEGRepresentation(image, 0.9) writeToFile:path atomically:YES]) [paths addObject:path];
+  }
+  NSData* json = [NSJSONSerialization dataWithJSONObject:paths options:0 error:nil];
+  std::string told((const char*)json.bytes, json.length);
+  OneScanner* me = self;
+  scanning = nil;
+  me.scanned(me.context, told.c_str());
+}
+- (void)documentCameraViewController:(VNDocumentCameraViewController*)controller didFinishWithScan:(VNDocumentCameraScan*)scan {
+  NSMutableArray<UIImage*>* images = [NSMutableArray array];
+  for (NSUInteger page = 0; page < scan.pageCount; page++) [images addObject:[scan imageOfPageAtIndex:page]];
+  [controller dismissViewControllerAnimated:YES completion:^{
+    [self finish:images];
+  }];
+}
+- (void)documentCameraViewControllerDidCancel:(VNDocumentCameraViewController*)controller {
+  [controller dismissViewControllerAnimated:YES completion:^{
+    [self finish:@[]];
+  }];
+}
+- (void)documentCameraViewController:(VNDocumentCameraViewController*)controller didFailWithError:(NSError*)error {
+  [controller dismissViewControllerAnimated:YES completion:^{
+    [self finish:@[]];
+  }];
+}
+// Without a scanner (the simulator, an old iPhone), a photo from the camera.
+- (void)imagePickerController:(UIImagePickerController*)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id>*)info {
+  UIImage* image = info[UIImagePickerControllerOriginalImage];
+  [picker dismissViewControllerAnimated:YES completion:^{
+    [self finish:image ? @[ image ] : @[]];
+  }];
+}
+- (void)imagePickerControllerDidCancel:(UIImagePickerController*)picker {
+  [picker dismissViewControllerAnimated:YES completion:^{
+    [self finish:@[]];
+  }];
+}
+// Without a camera either, photos chosen from the library, in the order they were chosen.
+- (void)picker:(PHPickerViewController*)picker didFinishPicking:(NSArray<PHPickerResult*>*)results {
+  NSMutableArray* loaded = [NSMutableArray array];
+  dispatch_group_t group = dispatch_group_create();
+  for (PHPickerResult* result in results) {
+    NSUInteger at = loaded.count;
+    [loaded addObject:[NSNull null]];
+    dispatch_group_enter(group);
+    [result.itemProvider loadObjectOfClass:[UIImage class] completionHandler:^(__kindof id<NSItemProviderReading> image, NSError*) {
+      if ([image isKindOfClass:[UIImage class]]) loaded[at] = image;
+      dispatch_group_leave(group);
+    }];
+  }
+  [picker dismissViewControllerAnimated:YES completion:^{
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+      NSMutableArray<UIImage*>* images = [NSMutableArray array];
+      for (id image in loaded) if ([image isKindOfClass:[UIImage class]]) [images addObject:image];
+      [self finish:images];
+    });
+  }];
+}
+@end
+
+// The document scanner over `view`'s window: VisionKit's where there is one, else the camera's photo, else the photo
+// library's. What it scanned goes to `scanned` as a JSON array of the paths of JPEG files, once it's shown and closed.
+// → whether it showed.
+extern "C" bool device_scan(UIView* view, void* context, DeviceScanned scanned) {
+  UIViewController* over = view.window.rootViewController;
+  while (over.presentedViewController) over = over.presentedViewController;
+  if (!over || scanning) return false;
+  OneScanner* scanner = [[OneScanner alloc] init];
+  scanner.context = context;
+  scanner.scanned = scanned;
+  UIViewController* shown;
+  if ([VNDocumentCameraViewController isSupported]) {
+    VNDocumentCameraViewController* camera = [[VNDocumentCameraViewController alloc] init];
+    camera.delegate = scanner;
+    shown = camera;
+  } else if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]) {
+    UIImagePickerController* camera = [[UIImagePickerController alloc] init];
+    camera.sourceType = UIImagePickerControllerSourceTypeCamera;
+    camera.delegate = scanner;
+    shown = camera;
+  } else {
+    PHPickerConfiguration* configuration = [[PHPickerConfiguration alloc] init];
+    configuration.filter = [PHPickerFilter imagesFilter];
+    configuration.selectionLimit = 0;
+    configuration.selection = PHPickerConfigurationSelectionOrdered;
+    PHPickerViewController* library = [[PHPickerViewController alloc] initWithConfiguration:configuration];
+    library.delegate = scanner;
+    shown = library;
+  }
+  scanning = scanner;
+  [over presentViewController:shown animated:YES completion:nil];
   return true;
 }
 

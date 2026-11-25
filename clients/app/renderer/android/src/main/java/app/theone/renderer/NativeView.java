@@ -108,6 +108,7 @@ public final class NativeView extends SurfaceView implements SurfaceHolder.Callb
             if (c.has("pick")) pick(c.getJSONObject("pick"));
             if (c.has("share")) NativeHost.share(c.getString("share"));
             if (c.has("haptic")) NativeHost.haptic(this, c.getString("haptic"));
+            if (c.optBoolean("scan")) NativeHost.scan();
             textInput(c.optString("method"), c.opt("args"));
         } catch (Exception e) {
             Log.e(TAG, "command " + command, e);

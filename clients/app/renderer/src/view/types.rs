@@ -157,6 +157,12 @@ pub trait Device {
     fn open_files(&mut self, _accept: &[String], _multiple: bool, _chosen: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
         false
     }
+    /// Shows the device's own document scanner, and tells `scanned` the JPEG file of each page, in order (none where
+    /// it was cancelled), on a thread of its own (`scanDocuments` in the UI library). A device with no scanner takes
+    /// a photo instead where it has a camera. → whether it has either.
+    fn scan_documents(&mut self, _scanned: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
+        false
+    }
 }
 
 impl Device for () {

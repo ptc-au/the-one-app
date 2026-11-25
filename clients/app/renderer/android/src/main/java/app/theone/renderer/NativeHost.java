@@ -31,6 +31,10 @@ public final class NativeHost {
     private static OnBackPressedCallback back;
     /** Asks for `RECORD_AUDIO` as Android's permission flow does, and hears its answer (`nativeMicrophone`). */
     private static androidx.activity.result.ActivityResultLauncher<String> microphone;
+    /** Shows Google's document scanner (ML Kit's), and hears what it scanned (`nativeScanned`). */
+    private static androidx.activity.result.ActivityResultLauncher<androidx.activity.result.IntentSenderRequest> scanner;
+    /** Without it (no Google Play services), images chosen from the device's own picker, which come back as `nativeScanned` does. */
+    private static androidx.activity.result.ActivityResultLauncher<String> photos;
     /** What dims what's under an app's view as the rail's line pulls it home (`moved`), under every app's view. */
     private static View dim;
 
@@ -42,6 +46,10 @@ public final class NativeHost {
         NativeHost.changed = changed;
         microphone = activity.registerForActivityResult(
                 new androidx.activity.result.contract.ActivityResultContracts.RequestPermission(), NativeHost::nativeMicrophone);
+        scanner = activity.registerForActivityResult(
+                new androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult(), NativeHost::scanned);
+        photos = activity.registerForActivityResult(
+                new androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents(), NativeHost::chosen);
         nativeAttach(dark(activity), reduced(), activity.getResources().getConfiguration().fontScale);
     }
 
@@ -248,6 +256,53 @@ public final class NativeHost {
         view.performHapticFeedback(played);
     }
 
+    /**
+     * Google's document scanner, as Android's own apps show it (Drive's Scan): it finds each page's edges, takes it by
+     * itself, flattens it and scans as many in a row as its person likes. Full mode, JPEG pages, no limit on pages. With
+     * no Google Play services to show it, the device's picker of images. Rust hears what was scanned (`nativeScanned`).
+     */
+    static void scan() {
+        com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions options = new com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(false)
+                .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+                .build();
+        com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
+                .addOnSuccessListener(sender -> scanner.launch(new androidx.activity.result.IntentSenderRequest.Builder(sender).build()))
+                .addOnFailureListener(failure -> photos.launch("image/*"));
+    }
+
+    private static void scanned(androidx.activity.result.ActivityResult result) {
+        org.json.JSONArray files = new org.json.JSONArray();
+        if (result.getResultCode() == android.app.Activity.RESULT_OK) {
+            com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult scan =
+                    com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(result.getData());
+            if (scan != null && scan.getPages() != null) {
+                for (com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.Page page : scan.getPages()) files.put(page.getImageUri().getPath());
+            }
+        }
+        nativeScanned(files.toString());
+    }
+
+    /** Images chosen from the picker, copied where Rust reads them: a file each, in the order chosen. */
+    private static void chosen(java.util.List<android.net.Uri> images) {
+        org.json.JSONArray files = new org.json.JSONArray();
+        java.io.File folder = new java.io.File(activity.getCacheDir(), "scans/" + java.util.UUID.randomUUID());
+        folder.mkdirs();
+        for (android.net.Uri image : images) {
+            String extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(activity.getContentResolver().getType(image));
+            java.io.File file = new java.io.File(folder, "scan-" + (files.length() + 1) + "." + (extension == null ? "jpg" : extension));
+            try (java.io.InputStream in = activity.getContentResolver().openInputStream(image); java.io.OutputStream out = new java.io.FileOutputStream(file)) {
+                byte[] buffer = new byte[8192];
+                for (int read; (read = in.read(buffer)) > 0; ) out.write(buffer, 0, read);
+                files.put(file.getPath());
+            } catch (java.io.IOException e) {
+                android.util.Log.w("NativeHost", "an image isn't given to its page: " + e);
+            }
+        }
+        nativeScanned(files.toString());
+    }
+
     static float density() {
         return activity.getResources().getDisplayMetrics().density;
     }
@@ -308,5 +363,6 @@ public final class NativeHost {
 
     private static native void nativeAttach(boolean dark, boolean reduced, float fontScale);
     private static native void nativeMicrophone(boolean granted);
+    private static native void nativeScanned(String files);
     private static native void nativeAppearance(boolean dark, boolean reduced, float fontScale);
 }

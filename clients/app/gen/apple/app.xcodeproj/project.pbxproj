@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1086C81FD5F8DF5914BA2EE5 /* AVFAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EBEE1F773C334A5C2BC070A0 /* AVFAudio.framework */; };
 		299814393FFBF154FAD94CA8 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3673D372C5ABDD1AD6E7067 /* QuartzCore.framework */; };
 		2BABE4BF06FB376FD5AC0E7B /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9FACFFCB6E3743955F72464C /* Security.framework */; };
 		2BE2DDCFB4A3AB1884BE24EC /* Notifications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2BDDCD774DAA5CCA3F1D10F5 /* Notifications.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -15,6 +16,7 @@
 		324A1E9A4258E7911D4DAC39 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9FACFFCB6E3743955F72464C /* Security.framework */; };
 		33F0CE3D8FDF1E6837D93EBE /* SystemConfiguration.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4DDC17AC7FD6E2D6EAF940E6 /* SystemConfiguration.framework */; };
 		4343CC8EE1C9E8BD13C5DB0B /* Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71ADFA759954A4D218D3515B /* Layout.swift */; };
+		48CE4B4E581692244B1B0493 /* VisionKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9843D45BA8A155C9641C2692 /* VisionKit.framework */; };
 		51B6CC364B53E6C68172E52A /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA1F122C4039B22DDB2A3A2 /* Shortcuts.swift */; };
 		53CDD0ACFBE8BDF1550B2E53 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 682535EEFE1DA20BE07B123C /* main.mm */; };
 		5C516481BCA83A182C2BCC94 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 3842AE2A64FB9933D0400EA4 /* assets */; };
@@ -23,10 +25,12 @@
 		7CDFF4144E7FBA05FB049AFF /* libicucore.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = A0EAE285B0DF27A7F3EBD46A /* libicucore.tbd */; };
 		836D84C5F07860664DAF79C8 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8F57162F5CC7AEDD55F173D /* WebKit.framework */; };
 		8CCC30797F176D24DDEA4C96 /* Widgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8CE2E66CC1A7DB42E8219D0D /* Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		955E757626D7ABFA8F0D7294 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 66625C6A62704B6E2DACEB56 /* PhotosUI.framework */; };
 		9D59FB167BB4E699DA17D1E9 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 04B56F58E2E44DDE1D67E7B7 /* MetalKit.framework */; };
 		C274968F2B8F8C0105274BEF /* Widgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272D1088713026679FCAC48A /* Widgets.swift */; };
 		C6BD59C055C986EA4A77FDA2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF1DE57E7D9CF13BB2E0E038 /* Assets.xcassets */; };
 		C869023DDFE275D42F3FBF29 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 39EEC6A55698228E08917A52 /* libapp.a */; };
+		CB327C716761EAB0D1B4599B /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ED8DCEE763951A89B0669764 /* AudioToolbox.framework */; };
 		DBB4E90B6991971154343894 /* Network.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875B94DB8334D481E79678BE /* Network.swift */; };
 		E3D31C25F39D5E5EE41B3751 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB33BCC4D7B65D9DF2DF8E4 /* NotificationService.swift */; };
 		E68F6CFDAED6503ABB4044A5 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE1209BFDECB28E00189B168 /* Metal.framework */; };
@@ -96,6 +100,7 @@
 		530594787F0610BC3AB8F349 /* charger.rs */ = {isa = PBXFileReference; path = charger.rs; sourceTree = "<group>"; };
 		569538CC05F602C82BCF185A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5A9D12D6491CCD488A05B135 /* views.rs */ = {isa = PBXFileReference; path = views.rs; sourceTree = "<group>"; };
+		66625C6A62704B6E2DACEB56 /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		682535EEFE1DA20BE07B123C /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		71ADFA759954A4D218D3515B /* Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Layout.swift; sourceTree = "<group>"; };
 		75E390373B76EC08AC3054F6 /* recovery.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = recovery.js; sourceTree = "<group>"; };
@@ -103,9 +108,12 @@
 		82B27E5C44BCFECB5137CFB0 /* Widgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Widgets.swift; sourceTree = "<group>"; };
 		875B94DB8334D481E79678BE /* Network.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Network.swift; sourceTree = "<group>"; };
 		8CE2E66CC1A7DB42E8219D0D /* Widgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = Widgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8D80FB122864C58FD1F94A50 /* logo.rs */ = {isa = PBXFileReference; path = logo.rs; sourceTree = "<group>"; };
 		94EEEA1E646160EFA9FBE4FA /* phone.rs */ = {isa = PBXFileReference; path = phone.rs; sourceTree = "<group>"; };
 		97D9F1D26756C56FDA23B0C6 /* shortcut.rs */ = {isa = PBXFileReference; path = shortcut.rs; sourceTree = "<group>"; };
+		9843D45BA8A155C9641C2692 /* VisionKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = VisionKit.framework; path = System/Library/Frameworks/VisionKit.framework; sourceTree = SDKROOT; };
 		99096391FE2AF4A58B5AA255 /* exited.rs */ = {isa = PBXFileReference; path = exited.rs; sourceTree = "<group>"; };
+		9BD898F7BC98EF17D9E7A5DD /* waited.rs */ = {isa = PBXFileReference; path = waited.rs; sourceTree = "<group>"; };
 		9D4297D0A6EE5436892D48D1 /* ask.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ask.js; sourceTree = "<group>"; };
 		9FACFFCB6E3743955F72464C /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		A0EAE285B0DF27A7F3EBD46A /* libicucore.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libicucore.tbd; path = usr/lib/libicucore.tbd; sourceTree = SDKROOT; };
@@ -128,6 +136,8 @@
 		E3A5ACCD2653B7C0E295F050 /* opening.rs */ = {isa = PBXFileReference; path = opening.rs; sourceTree = "<group>"; };
 		E8C55BD45E0A7224AD1B0127 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E9F2662081C73D431D607AE0 /* sign-in.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "sign-in.js"; sourceTree = "<group>"; };
+		EBEE1F773C334A5C2BC070A0 /* AVFAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFAudio.framework; path = System/Library/Frameworks/AVFAudio.framework; sourceTree = SDKROOT; };
+		ED8DCEE763951A89B0669764 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		EDB33BCC4D7B65D9DF2DF8E4 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		F3673D372C5ABDD1AD6E7067 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		F61815E0E72CBC6B93DA4839 /* Widgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Widgets.entitlements; sourceTree = "<group>"; };
@@ -141,13 +151,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				C869023DDFE275D42F3FBF29 /* libapp.a in Frameworks */,
+				CB327C716761EAB0D1B4599B /* AudioToolbox.framework in Frameworks */,
+				1086C81FD5F8DF5914BA2EE5 /* AVFAudio.framework in Frameworks */,
 				31585529C029A01BE249A285 /* CoreGraphics.framework in Frameworks */,
 				E68F6CFDAED6503ABB4044A5 /* Metal.framework in Frameworks */,
 				9D59FB167BB4E699DA17D1E9 /* MetalKit.framework in Frameworks */,
+				955E757626D7ABFA8F0D7294 /* PhotosUI.framework in Frameworks */,
 				299814393FFBF154FAD94CA8 /* QuartzCore.framework in Frameworks */,
 				324A1E9A4258E7911D4DAC39 /* Security.framework in Frameworks */,
 				33F0CE3D8FDF1E6837D93EBE /* SystemConfiguration.framework in Frameworks */,
 				618672DC8A5E0605441C9935 /* UIKit.framework in Frameworks */,
+				48CE4B4E581692244B1B0493 /* VisionKit.framework in Frameworks */,
 				836D84C5F07860664DAF79C8 /* WebKit.framework in Frameworks */,
 				7CDFF4144E7FBA05FB049AFF /* libicucore.tbd in Frameworks */,
 			);
@@ -168,15 +182,19 @@
 		1BBF8C620E54F8C028CA130C /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				ED8DCEE763951A89B0669764 /* AudioToolbox.framework */,
+				EBEE1F773C334A5C2BC070A0 /* AVFAudio.framework */,
 				1E81BD6B453D87B7F7B1597B /* CoreGraphics.framework */,
 				39EEC6A55698228E08917A52 /* libapp.a */,
 				A0EAE285B0DF27A7F3EBD46A /* libicucore.tbd */,
 				CE1209BFDECB28E00189B168 /* Metal.framework */,
 				04B56F58E2E44DDE1D67E7B7 /* MetalKit.framework */,
+				66625C6A62704B6E2DACEB56 /* PhotosUI.framework */,
 				F3673D372C5ABDD1AD6E7067 /* QuartzCore.framework */,
 				9FACFFCB6E3743955F72464C /* Security.framework */,
 				4DDC17AC7FD6E2D6EAF940E6 /* SystemConfiguration.framework */,
 				0E2B15F176E4B041AE33EEEA /* UIKit.framework */,
+				9843D45BA8A155C9641C2692 /* VisionKit.framework */,
 				D8F57162F5CC7AEDD55F173D /* WebKit.framework */,
 			);
 			name = Frameworks;
@@ -268,6 +286,7 @@
 				B3431230AF429E558DC58A54 /* hosts.rs */,
 				17B52554D60D361AFE791C3E /* lib.rs */,
 				03143B2262EA6319ED2CBF55 /* login.rs */,
+				8D80FB122864C58FD1F94A50 /* logo.rs */,
 				1631E4CFBB715FFDBF919C8C /* main.rs */,
 				164E02504148E6AEBCE900F0 /* memory.rs */,
 				B628B20AE7933EB348719481 /* mobile.rs */,
@@ -283,6 +302,7 @@
 				B580E00ED36101141291801E /* update.js */,
 				B6AA99913DCEA0C4EE189313 /* updater.rs */,
 				5A9D12D6491CCD488A05B135 /* views.rs */,
+				9BD898F7BC98EF17D9E7A5DD /* waited.rs */,
 				3FD0B4F292D0BB255A19CE48 /* computer */,
 				824528399F8A4498B01D3CAB /* native */,
 			);

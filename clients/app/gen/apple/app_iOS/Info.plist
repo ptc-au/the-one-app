@@ -39,6 +39,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan receipts and documents.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used for live voice in apps.</string>
 	<key>UIBackgroundModes</key>

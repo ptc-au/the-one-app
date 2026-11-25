@@ -55,6 +55,9 @@ fn text_input(ours: &[&str], plugin: &[&str]) {
         // FlutterMacros.h's, which mark what Flutter's framework exports and check it's built with ARC, as it is.
         build.define("FLUTTER_DARWIN_EXPORT", Some("")).define("FLUTTER_ASSERT_ARC", Some(""));
         println!("cargo::rustc-link-lib=framework=UIKit");
+        // The document scanner (`device.mm`): VisionKit's, and the photo library's picker where there's no scanner.
+        println!("cargo::rustc-link-lib=framework=VisionKit");
+        println!("cargo::rustc-link-lib=framework=PhotosUI");
         println!("cargo::rustc-link-lib=icucore");
     } else {
         // std::wstring_convert, which Flutter's fml converts UTF-8 and UTF-16 with, is deprecated in C++17; and

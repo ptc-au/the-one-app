@@ -80,6 +80,7 @@ targets:
         # without it, an iPhone holds the app's Core Animation, which WebKit draws a CSS transition and animation and
         # its window's moves with, to 60 Hz.
         CADisableMinimumFrameDurationOnPhone: true
+        NSCameraUsageDescription: Scan receipts and documents.
         NSMicrophoneUsageDescription: Used for live voice in apps.
         UIBackgroundModes: [audio]
     entitlements:
@@ -112,10 +113,12 @@ targets:
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
+      - sdk: PhotosUI.framework
       - sdk: QuartzCore.framework
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
       - sdk: UIKit.framework
+      - sdk: VisionKit.framework
       - sdk: WebKit.framework
       # The system's ICU, which Flutter's text input plugin asks whether a character is an emoji (renderer/build.rs).
       - sdk: libicucore.tbd

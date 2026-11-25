@@ -461,6 +461,33 @@ impl crate::view::Device for Device {
     fn haptic(&mut self, kind: &str) -> bool {
         apply(&self.0, json!({"haptic": kind}))
     }
+
+    fn scan_documents(&mut self, scanned: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
+        let mut waiting = SCANNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if waiting.is_some() {
+            return false;
+        }
+        *waiting = Some(scanned);
+        drop(waiting);
+        let shown = apply(&self.0, json!({"scan": true}));
+        if !shown {
+            SCANNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        }
+        shown
+    }
+}
+
+/// What waits for the document scanner to close (`nativeScanned`).
+static SCANNING: Mutex<Option<Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>>> = Mutex::new(None);
+
+/// The document scanner closed: `files` is a JSON array of the paths of the pages it scanned, none if it was cancelled.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_theone_renderer_NativeHost_nativeScanned(mut env: JNIEnv, _: JClass, files: JString) {
+    let files: String = env.get_string(&files).map(Into::into).unwrap_or_default();
+    let files: Vec<std::path::PathBuf> = serde_json::from_str(&files).unwrap_or_default();
+    if let Some(scanned) = SCANNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
+        scanned(files);
+    }
 }
 
 /// What the system's bars, the display's cutout and the keyboard cover of window `id`'s view, in device pixels at
