@@ -43,12 +43,19 @@ defmodule GoogleChatApp.Api do
     %{messages: Enum.map(found["messages"] || [], &message(&1, space)), next_page_token: found["nextPageToken"]}
   end
 
+  # Where a reply goes when its thread is gone: a thread of its own.
+  @fallback "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+
   @doc "Posts `text` in `space` as the Chat app, in `thread` if it's given, and says what Google made of it."
   def send_message(call, config, space, text, thread) do
-    body = if thread, do: %{"text" => text, "thread" => %{"name" => thread}}, else: %{"text" => text}
+    # A reply option only where there's a thread to reply in: with none, Google refuses it ("does not specify which
+    # message to reply to") in a space whose messages are threaded.
+    {body, path} =
+      if thread,
+        do: {%{"text" => text, "thread" => %{"name" => thread}}, "/messages?messageReplyOption=" <> @fallback},
+        else: {%{"text" => text}, "/messages"}
 
-    message =
-      chat(call, config, @bot, "POST", space <> "/messages?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD", JSON.encode!(body))
+    message = chat(call, config, @bot, "POST", space <> path, JSON.encode!(body))
 
     %{name: message["name"], thread: get_in(message, ["thread", "name"]) || thread, text: message["text"], create_time: message["createTime"]}
   end
