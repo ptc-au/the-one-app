@@ -164,7 +164,11 @@ impl Client {
     }
 
     /// Sends a file that's too large to go in a call to where the network keeps it, for a tool of `app`: a
-    /// server gives a short-lived link to send it by. Gives the name that tool takes for it.
+    /// server gives a short-lived link to send it by. Gives the name that tool takes for it. A send the store
+    /// answers with a server error, or that never reaches it, is tried again with the same link, which lasts a
+    /// minute, as AWS's SDKs try S3's (R2 answered 500 once on 25 Nov, and a network's installers weren't
+    /// published); one that landed though its answer didn't is taken as sent, which the store says by refusing
+    /// another (412, as it's only sent where nothing is yet).
     pub async fn upload(&self, app: &str, file: Vec<u8>) -> Result<String> {
         let response = self.request("tools/call", json!({"name": "upload", "arguments": {"app": app}})).await?;
         let text = response["content"][0]["text"].as_str().unwrap_or_default();
@@ -176,13 +180,26 @@ impl Client {
         else {
             bail!("the server didn't say where to send the file")
         };
-        let mut send = crate::web()?.request(method.parse()?, url).body(file);
-        for (header, value) in to["headers"].as_object().into_iter().flatten() {
-            send = send.header(header, value.as_str().unwrap_or_default());
+        let (web, method) = (crate::web()?, reqwest::Method::from_bytes(method.as_bytes())?);
+        let mut waits = [2, 4, 8].into_iter();
+        let mut again = false;
+        loop {
+            let mut send = web.request(method.clone(), url).body(file.clone());
+            for (header, value) in to["headers"].as_object().into_iter().flatten() {
+                send = send.header(header, value.as_str().unwrap_or_default());
+            }
+            let sent = send.send().await;
+            if let Some(wait) = waits.next().filter(|_| sent.as_ref().map_or(true, |sent| sent.status().is_server_error())) {
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                again = true;
+                continue;
+            }
+            if !(again && sent.as_ref().is_ok_and(|sent| sent.status() == reqwest::StatusCode::PRECONDITION_FAILED)) {
+                sent.and_then(reqwest::Response::error_for_status)
+                    .context("The file couldn't be sent. Check this device is online, then try again.")?;
+            }
+            return Ok(name.to_owned());
         }
-        let sent = async { send.send().await?.error_for_status() };
-        sent.await.context("The file couldn't be sent. Check this device is online, then try again.")?;
-        Ok(name.to_owned())
     }
 }
 
@@ -465,3 +482,4 @@ fn changes_tools(method: &str, params: &Value) -> bool {
             .as_str()
             .is_some_and(|name| !name.contains('_') || name.starts_with("apps_"))
 }
+
