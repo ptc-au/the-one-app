@@ -44,16 +44,20 @@ let key
 /// What this browser kept of its network from when it last opened, as the app's client keeps it on disk, so it opens
 /// from that at once while each is asked for again, as stale-while-revalidate has it: where its apps' files are and who
 /// it is (`apps`, `device`, `key`), the files a server listed for each subject (`lists`, by subject, `""` its user's),
-/// the tools (`tools`), and what each app was answered that only reads (`reads`, by app and by what it asked). A
+/// the tools (`tools`, by subject, `""` its user's), and what each app was answered that only reads (`reads`, by app and by what it asked). A
 /// browser that's no longer signed in, or signed in as someone else, keeps none of it.
 const KEPT = "kept"
-/** @type {{ apps?: string, device?: string, key?: string, lists: Record<string, any>, tools?: any[], reads: Record<string, Record<string, unknown>> }} */
+/** @type {{ apps?: string, device?: string, key?: string, lists: Record<string, any>, tools: Record<string, any[]>, reads: Record<string, Record<string, unknown>> }} */
 const kept = (() => {
   try {
-    return JSON.parse(localStorage.getItem(KEPT) ?? "null") ?? { lists: {}, reads: {} }
-  } catch {
-    return { lists: {}, reads: {} }
-  }
+    const stored = JSON.parse(localStorage.getItem(KEPT) ?? "null")
+    if (stored) {
+      if (Array.isArray(stored.tools)) stored.tools = { "": stored.tools }
+      stored.tools ??= {}
+      return stored
+    }
+  } catch {}
+  return { lists: {}, tools: {}, reads: {} }
 })()
 /// It's written a moment after it changes, once for each run of changes; a browser out of room keeps what it had.
 /** @type {ReturnType<typeof setTimeout> | undefined} */
@@ -238,7 +242,7 @@ function answered(now) {
   connected(now ? "online" : "offline")
   if (was === connection) return
   if (now && lost) {
-    listTools().catch(() => {})
+    for (const subject of new Set(["", ...tools.keys()])) listTools(subject || undefined).catch(() => {})
     for (const view of views.keys()) refresh(view)
   }
   if (!now) unanswered ||= performance.now()
@@ -331,31 +335,48 @@ async function read(view, method, params) {
   return /** @type {CachedQuery} */ (responses(view).get(request)).response
 }
 
-/// The tools a server lists, by which a call is known to only read: asked for as soon as this browser is signed in,
-/// as nearly every app's first call waits on it, and again once something may have changed them. Those kept from
-/// before say it meanwhile, as which tools only read hardly changes.
-/** @type {Promise<{ name: string, annotations?: { readOnlyHint?: boolean }, inputSchema?: { properties?: Record<string, { format?: string }> } }[]> | undefined} */
-let tools
-const listTools = () =>
-  (tools = mcp("tools/list").then(
+/// The tools a server lists for each subject (`""` its user's), by which a call is known to only read: asked for as
+/// soon as this browser is signed in, as nearly every app's first call waits on it, and for any other subject on its
+/// first call. Those kept from before say it meanwhile, refreshed once in the background, as which tools only read
+/// hardly changes.
+/** @typedef {{ name: string, annotations?: { readOnlyHint?: boolean }, inputSchema?: { properties?: Record<string, { format?: string }> } }} ListedTool */
+/** @type {Map<string, Promise<ListedTool[]>>} */
+const tools = new Map()
+/** @param {string} [subject] */
+function listTools(subject) {
+  const at = subject ?? ""
+  const listing = mcp("tools/list", subject ? { _meta: { subject } } : {}).then(
     (listed) => {
-      kept.tools = listed.tools
+      kept.tools[at] = listed.tools
       keep()
       return listed.tools
     },
     (error) => {
-      tools = undefined
+      tools.delete(at)
       throw error
     },
-  ))
-const known = () => (kept.tools ? Promise.resolve(kept.tools) : (tools ?? listTools()))
+  )
+  tools.set(at, listing)
+  return listing
+}
+/** @param {string} [subject] @returns {Promise<ListedTool[]>} */
+function known(subject) {
+  const at = subject ?? ""
+  if (kept.tools[at]) {
+    if (!tools.has(at)) listTools(subject).catch(() => {})
+    return Promise.resolve(kept.tools[at])
+  }
+  return tools.get(at) ?? listTools(subject)
+}
+/** @param {Record<string, any> | undefined} params */
+const subjectOf = (params) => (typeof params?._meta?.subject === "string" ? params._meta.subject : undefined)
 
 /// A tool's call with the inputs a device fills in itself filled in where none is given, as the app's client fills
 /// them (`core/client/src/resolve.rs`): `device`, this browser's key as a server knows it, and `device-name`, what
 /// it's called. The rest are filled in by what only a device holds, which a browser doesn't.
 /** @param {Record<string, any>} params */
 async function filled(params) {
-  const listed = /** @type {Awaited<NonNullable<typeof tools>>} */ (await known())
+  const listed = await known(subjectOf(params))
   const tool = listed.find(({ name }) => name === params.name)
   /** @type {Record<string, string>} */
   const own = { device: key, "device-name": called() }
@@ -364,12 +385,12 @@ async function filled(params) {
   return { ...params, arguments: { ...params.arguments, ...Object.fromEntries(fills.map(([name, says]) => [name, own[/** @type {string} */ (says.format)]])) } }
 }
 
-/// Whether asking `method` only reads. A tool does when the server's list of tools says so.
+/// Whether asking `method` only reads. A tool does when the server's list of tools for its subject says so.
 /** @param {string} method @param {Record<string, unknown>} params */
 async function reads(method, params) {
   if (["tools/list", "resources/list", "resources/read"].includes(method)) return true
   if (method !== "tools/call") return false
-  return (await known()).some((/** @type {{ name: string, annotations?: { readOnlyHint?: boolean } }} */ tool) => tool.name === params.name && tool.annotations?.readOnlyHint === true)
+  return (await known(subjectOf(params))).some((tool) => tool.name === params.name && tool.annotations?.readOnlyHint === true)
 }
 
 /// Asks again, in the background, for each tool `view` was answered, or with `app`, each of that app's, as a write may
@@ -602,10 +623,12 @@ const commands = {
   async request({ view, method, params }) {
     if (await reads(method, params)) return read(view, method, params)
     const response = await mcp(method, params)
+    // A failed tool call changed nothing on the server; invalidating on it loops when a view calls an uninstalled tool.
+    if (response?.isError) return response
     const name = typeof params?.name === "string" ? params.name : ""
     // One Core's own tools (`install`, `apps_update`) may change anything, the tools listed too.
     const core = !name.includes("_") || name.startsWith("apps_")
-    if (method === "tools/call" && core) listTools().catch(() => {})
+    if (method === "tools/call" && core) listTools(subjectOf(params)).catch(() => {})
     // The view that wrote asks again for all it was answered, as the app's client's does (`Subscription::request`).
     // A server tells every client it's connected to what an app's call changed, that app's tools
     // (`notifications/one/changed`); a browser isn't connected, so every other open view asks again for the called
@@ -691,7 +714,7 @@ export const sandbox = "allow-scripts allow-forms"
 /// again opens the same place, and a copied address opens it for whoever may see it: at the path its screen's tool
 /// says, among the tools kept (path.js's `pathOf`).
 /** @type {typeof import("../app/page/host.js").pathOf} */
-export const pathOf = (link) => path.pathOf(link, kept.tools ?? [])
+export const pathOf = (link) => path.pathOf(link, kept.tools[""] ?? [])
 
 /// An app's page updated under it asks its person to reload it while it's on screen ("Updated · Reload"), as a web
 /// app in a browser offers its update.
