@@ -38,7 +38,7 @@ function size() {
   if (height !== told) toHost({ method: "ui/notifications/size-changed", params: { height: (told = height) } })
 }
 /// What the assistant answered this page's `ui/initialize`, once it has.
-/** @type {{ hostContext?: Record<string, unknown> } | undefined} */
+/** @type {{ hostContext?: Record<string, unknown>, hostCapabilities?: unknown, hostInfo?: unknown } | undefined} */
 let greeted
 /// What the tool was given and answered, which its page is told, and whether the page shown is its.
 /** @type {object | undefined} */
@@ -50,11 +50,44 @@ let tools = false
 /// it (its result's `_meta.subject`). Its page is that app's, and what it asks is asked for them.
 /** @type {string | undefined} */
 let subject
+/// The app whose page is shown.
+/** @type {string | undefined} */
+let showing
+
+/// What the page says until the renderer's frame has drawn, in its place, and what it says where the frame can't: a
+/// link that opens the app at the network's address, in its person's browser, which any assistant lets a page open.
+const note = /** @type {HTMLElement} */ (document.getElementById("note"))
+/** Says `text` where the page would be, with a link to open `app` at the network's address. @param {string} text @param {string} [app] */
+function say(text, app) {
+  delete document.body.dataset.drawn
+  note.textContent = text
+  if (!app) return
+  const link = Object.assign(document.createElement("a"), { href: `${origin}/${app}`, target: "_blank", textContent: `Open it at ${new URL(origin).host}` })
+  link.addEventListener("click", (event) => {
+    event.preventDefault()
+    toHost({ id: `open-${Date.now()}`, method: "ui/open-link", params: { url: link.href } })
+  })
+  note.append(link)
+}
+
+/// Whether the assistant lets this page frame the network's address. An assistant may refuse a page's frames whatever
+/// it declares (`frameDomains` in `core/edge/mcp/mcp.ts`), as Claude does a connector added by its address, and then
+/// says which it allows (MCP Apps' `hostCapabilities.sandbox.csp.frameDomains`); one that doesn't say may still.
+function framed() {
+  const allowed = /** @type {{ hostCapabilities?: { sandbox?: { csp?: { frameDomains?: unknown } } } } | undefined} */ (greeted)?.hostCapabilities?.sandbox?.csp?.frameDomains
+  if (!Array.isArray(allowed)) return true
+  const { protocol, host } = new URL(origin)
+  return allowed.some((entry) => entry === origin || (typeof entry === "string" && entry.startsWith(`${protocol}//*.`) && host.endsWith(entry.slice(`${protocol}//*`.length))))
+}
 
 /** Shows `page`, `<app>/<path>`, at `fragment`, the place in it, in the renderer's frame, for `whom` (`subject`). @param {string} page @param {string} [fragment] @param {string} [whom] */
 function show(page, fragment, whom) {
   const [app, ...path] = page.split("/")
   subject = whom
+  showing = app
+  const assistant = /** @type {{ hostInfo?: { name?: unknown } } | undefined} */ (greeted)?.hostInfo?.name
+  if (!framed()) return say(`${typeof assistant === "string" ? assistant : "This assistant"} doesn't let this chat show pages from ${new URL(origin).host}, so this app can't open here.`, app)
+  say("Opening…", app)
   // By its version, as the web client loads it (`address`): what the page loads is found beside it from there. One for
   // someone else is found by its app's name, at the address that says for whom, last part first (`notes.family.groups`).
   const version = whom ? undefined : resources.find(({ uri }) => named(uri) === page)?.uri.split("/")[3]
@@ -108,6 +141,10 @@ addEventListener("message", ({ source, data }) => {
       if (typeof page === "string") {
         tools = true
         show(page, undefined, typeof result?._meta?.subject === "string" ? result._meta.subject : undefined)
+      } else {
+        // A call that failed has no page, and says why, as a host shows a tool's text.
+        const text = /** @type {{ content?: { type?: string, text?: string }[] } | undefined} */ (result)?.content?.find((item) => item.type === "text")?.text
+        say(text ?? "This tool has no page to show.")
       }
       return
     }
@@ -153,8 +190,10 @@ addEventListener("message", ({ source, data }) => {
   // What the page asks the network, it asks itself, as whoever let the assistant in (`pages` in core/edge/mcp/mcp.ts):
   // it's its person's tap, which the assistant would otherwise ask them to approve, as it does what its model calls.
   if (data.id !== undefined && typeof data.method === "string" && !data.method.startsWith("ui/")) return void ask(data)
-  // The renderer's frame couldn't open its page, and says why, which is shown here as a native host's window says it.
-  if (data.method === "notifications/one/seen" && typeof data.params?.unopened === "string") document.body.dataset.unopened = data.params.unopened
+  // The renderer's frame has drawn its page, which is shown from then; or couldn't open it, and says why, which is
+  // said here as a native host's window says it.
+  if (data.method === "notifications/one/seen" && "drawn" in (data.params ?? {})) document.body.dataset.drawn = ""
+  if (data.method === "notifications/one/seen" && typeof data.params?.unopened === "string") say(`This app couldn't open here: ${data.params.unopened}`, showing)
   toHost(data)
 })
 

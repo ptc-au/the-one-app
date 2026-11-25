@@ -212,8 +212,10 @@ async function router(env: Env, call: Call, origin: string, who: Who) {
   const script = await (await env.ASSETS.fetch(new Request(`${origin}/router.js`))).text();
   const page = `<!doctype html>
 <meta charset="utf-8">
-<style>html, body { margin: 0; height: 100%; overflow: hidden; } iframe { display: block; border: 0; width: 100%; height: 100%; }
-body[data-unopened] iframe { display: none; } body[data-unopened]::before { content: "This app couldn't open here: " attr(data-unopened); display: block; padding: 16px; font: 15px system-ui; }</style>
+<meta name="color-scheme" content="light dark">
+<style>html, body { margin: 0; height: 100%; overflow: hidden; } iframe { position: absolute; inset: 0; border: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+body[data-drawn] iframe { opacity: 1; pointer-events: auto; } body[data-drawn] #note { display: none; } #note { margin: 0; padding: 16px; font: 15px/1.4 system-ui; } #note a { display: block; margin-top: 8px; }</style>
+<p id="note">Opening…</p>
 <iframe sandbox="allow-scripts allow-forms" allow="clipboard-write"></iframe>
 <script type="application/json" id="router">${said}</script>
 <script>${script.replace(/<\/script/gi, "<\\/script")}</script>
