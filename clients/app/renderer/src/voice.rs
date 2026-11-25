@@ -474,12 +474,59 @@ fn sending_audio(sdp: &str) -> Option<Mid> {
     (audio && sending).then_some(mid).flatten()
 }
 
+/// Platform audio session held while a voice is live: on iOS switches `AVAudioSession` to `PlayAndRecord`/`VoiceChat`
+/// (with speaker + Bluetooth HFP) so the microphone captures and playback ignores the silent switch; on Android switches
+/// `AudioManager` to `MODE_IN_COMMUNICATION` and requests `RECORD_AUDIO` if not yet granted.
+struct AudioSession;
+
+impl AudioSession {
+    fn open() -> Self {
+        #[cfg(target_os = "ios")]
+        unsafe {
+            use objc2_avf_audio::{
+                AVAudioSession, AVAudioSessionCategoryOptions, AVAudioSessionCategoryPlayAndRecord,
+                AVAudioSessionModeVoiceChat,
+            };
+            let session = AVAudioSession::sharedInstance();
+            if let (Some(category), Some(mode)) = (AVAudioSessionCategoryPlayAndRecord, AVAudioSessionModeVoiceChat) {
+                let options =
+                    AVAudioSessionCategoryOptions::AllowBluetoothHFP | AVAudioSessionCategoryOptions::DefaultToSpeaker;
+                if let Err(why) = session.setCategory_mode_options_error(category, mode, options) {
+                    eprintln!("A voice's iOS audio session category failed: {why:?}");
+                }
+            }
+            if let Err(why) = session.setActive_error(true) {
+                eprintln!("A voice's iOS audio session activation failed: {why:?}");
+            }
+        }
+        #[cfg(target_os = "android")]
+        if !crate::platform::android::ensure_microphone() {
+            eprintln!("A voice asked Android for microphone permission");
+        }
+        Self
+    }
+}
+
+impl Drop for AudioSession {
+    fn drop(&mut self) {
+        #[cfg(target_os = "ios")]
+        unsafe {
+            use objc2_avf_audio::{AVAudioSession, AVAudioSessionSetActiveOptions};
+            let _ = AVAudioSession::sharedInstance()
+                .setActive_withOptions_error(false, AVAudioSessionSetActiveOptions::NotifyOthersOnDeactivation);
+        }
+        #[cfg(target_os = "android")]
+        crate::platform::android::release_audio();
+    }
+}
+
 /// What the speakers play, and what the microphone hears once it's taken out, at 48 kHz mono: aec3's echo canceller
 /// and Opus, from the microphone's device rate to the call's.
 struct Audio {
     /// Kept for as long as the connection: a stream that's dropped stops.
     _mic: Option<cpal::Stream>,
     _speaker: Option<cpal::Stream>,
+    _session: Option<AudioSession>,
     /// What the speakers are to play, and what they've played, which the echo canceller listens to for what it takes
     /// out of the microphone.
     playing: Arc<Mutex<VecDeque<f32>>>,
@@ -514,6 +561,7 @@ impl Audio {
         let mut audio = Self {
             _mic: None,
             _speaker: None,
+            _session: None,
             playing: Arc::new(Mutex::new(VecDeque::new())),
             played: Arc::new(Mutex::new(VecDeque::new())),
             capture: Vec::new(),
@@ -531,6 +579,7 @@ impl Audio {
         };
         audio.encoder.bitrate_bps = 32_000;
         if DEVICES {
+            audio._session = Some(AudioSession::open());
             audio.speaker();
             audio.microphone(commands);
         }

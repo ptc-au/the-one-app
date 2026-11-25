@@ -60,6 +60,30 @@ pub fn start() -> anyhow::Result<super::Native> {
     STARTED.get().cloned().map(super::Native).ok_or_else(|| anyhow::anyhow!("the app's activity hasn't attached its native host"))
 }
 
+/// Switches Android's audio to voice communication and asks for `RECORD_AUDIO` if not yet granted.
+pub(crate) fn ensure_microphone() -> bool {
+    let Some(sender) = STARTED.get() else { return false };
+    let (tx, rx) = mpsc::sync_channel(1);
+    let _ = sender.send(Box::new(move |_| {
+        let granted = java(|env, host| {
+            env.call_static_method(<&JClass>::from(host.as_obj()), "ensureMicrophone", "()Z", &[])?.z()
+        })
+        .unwrap_or(false);
+        let _ = tx.send(granted);
+    }));
+    rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap_or(false)
+}
+
+/// Returns Android's audio routing to normal once a voice ends.
+pub(crate) fn release_audio() {
+    let Some(sender) = STARTED.get() else { return };
+    let _ = sender.send(Box::new(|_| {
+        java(|env, host| {
+            env.call_static_method(<&JClass>::from(host.as_obj()), "releaseAudio", "()V", &[]).map(drop)
+        });
+    }));
+}
+
 pub fn appearance() -> Appearance {
     if DARK.load(Ordering::Relaxed) { Appearance::Dark } else { Appearance::Light }
 }

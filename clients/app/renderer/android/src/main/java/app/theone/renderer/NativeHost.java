@@ -276,6 +276,33 @@ public final class NativeHost {
         if (changed != null) changed.run();
     }
 
+    /** Switches Android's audio to voice communication and asks for RECORD_AUDIO if not yet granted. */
+    static boolean ensureMicrophone() {
+        if (activity == null) return false;
+        android.media.AudioManager audio = activity.getSystemService(android.media.AudioManager.class);
+        if (audio != null) {
+            audio.setMode(android.media.AudioManager.MODE_IN_COMMUNICATION);
+            audio.setSpeakerphoneOn(true);
+        }
+        if (androidx.core.content.ContextCompat.checkSelfPermission(activity, android.Manifest.permission.RECORD_AUDIO)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return true;
+        }
+        androidx.core.app.ActivityCompat.requestPermissions(
+                activity, new String[] { android.Manifest.permission.RECORD_AUDIO }, 1001);
+        return false;
+    }
+
+    /** Returns Android's audio routing to normal once a voice ends. */
+    static void releaseAudio() {
+        if (activity == null) return;
+        android.media.AudioManager audio = activity.getSystemService(android.media.AudioManager.class);
+        if (audio != null) {
+            audio.setSpeakerphoneOn(false);
+            audio.setMode(android.media.AudioManager.MODE_NORMAL);
+        }
+    }
+
     private static native void nativeAttach(boolean dark, boolean reduced, float fontScale);
     private static native void nativeAppearance(boolean dark, boolean reduced, float fontScale);
 }

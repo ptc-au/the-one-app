@@ -221,6 +221,8 @@ rquickjs = { version = "0.14", features = ["bindgen"] }
 accesskit_ios = "0.2.2"
 # Its display's frames, by a display link (`Display::frame`).
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["CADisplayLink", "CAFrameRateRange"] }
+# Its audio session (`voice`), switched to PlayAndRecord/VoiceChat so the microphone and speaker work on iOS.
+objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
 
 # Android: a native screen is a SurfaceView over the app's web view (`platform/android`), on the UI thread, whose
 # keyboard bridge (Flutter's) and accessibility delegate (AccessKit's) are Java that calls in through JNI.

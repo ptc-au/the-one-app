@@ -37,7 +37,7 @@ notarised() { "$rcodesign" notary-submit --api-key-file "$work/key.json" --wait 
 
 # Apple notarises only a program signed with the hardened runtime, and a secure timestamp, which rcodesign adds. The
 # app and the image each have their ticket stapled, so a Mac that's offline opens either.
-"$root/tooling/developer-id-sign" --code-signature-flags runtime "$work/stage/$name.app"
+"$root/tooling/developer-id-sign" --code-signature-flags runtime --entitlements-xml-path "$root/clients/app/macos/entitlements.plist" "$work/stage/$name.app"
 notarised "$work/stage/$name.app"
 
 size=$(($(du -sm "$work/stage" | cut -f1) * 12 / 10 + 10))

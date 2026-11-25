@@ -81,6 +81,7 @@ targets:
         # its window's moves with, to 60 Hz.
         CADisableMinimumFrameDurationOnPhone: true
         NSMicrophoneUsageDescription: Used for live voice in apps.
+        UIBackgroundModes: [audio]
     entitlements:
       path: app_iOS/app_iOS.entitlements
       properties:

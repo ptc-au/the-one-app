@@ -65,5 +65,5 @@ else
   cp "$root/clients/app/macos/Contents/Resources/The One App.icns" "$out/Contents/Resources/AppIcon.icns"
 fi
 
-"$root/tooling/developer-id-sign" "$out"
+"$root/tooling/developer-id-sign" --entitlements-xml-path "$root/clients/app/macos/entitlements.plist" "$out"
 echo "$out: $name ($identifier, \`$command\`), on $(cat "$work/app/address"), $(jq -r .build <<<"$build")"
