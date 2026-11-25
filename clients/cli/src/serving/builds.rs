@@ -491,12 +491,14 @@ pub(super) async fn own(client: &Client, program: &Path, mut builds: Map<String,
 /// platform's, and checks it's the size and SHA-256 it said. A download that fails, or stalls (`STALLED`), is tried
 /// again soon, waiting twice as long each time, as curl's `--retry` does: a home router's NAT, or GitHub, now and then
 /// drops a connection, or leaves it open with nothing coming. On 22 Nov a Mac just back online waited 18 minutes on
-/// one that had stalled, until the connection was reset, and its try 2 s later downloaded it.
+/// one that had stalled, until the connection was reset, and its try 2 s later downloaded it. A link refused (4xx) is
+/// never tried again, as curl doesn't: a link read before a sleep is gone once the release has moved on (a Surface back
+/// from Modern Standby on 25 Nov 2026 spent a minute on a 404 before it read the newer list).
 pub(super) async fn fetch(name: &str, build: &Value, file: &Path) -> Result<()> {
     signed(name, build)?;
     for wait in [2, 4, 8, 16, 32, 60] {
         match download_to(build, file).await {
-            Err(error) => {
+            Err(error) if !refused(&error) => {
                 eprintln!("The build {} didn't download ({error:#}); trying again in {wait} s", build["build"]);
                 tokio::time::sleep(Duration::from_secs(wait)).await;
             }
@@ -504,6 +506,11 @@ pub(super) async fn fetch(name: &str, build: &Value, file: &Path) -> Result<()> 
         }
     }
     download_to(build, file).await
+}
+
+/// Whether a download failed as its link was refused (4xx), which trying again doesn't change.
+fn refused(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<reqwest::Error>().and_then(reqwest::Error::status).is_some_and(|status| status.is_client_error())
 }
 
 /// How long a download may go with nothing arriving before it's taken as failed: a connection can stay open with
