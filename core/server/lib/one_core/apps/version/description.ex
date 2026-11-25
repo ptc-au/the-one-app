@@ -9,14 +9,14 @@ defmodule OneCore.Apps.Version.Description do
 
   Each is held as `OneCore.Apps.LoadedVersion` holds a version, by its app and its code.
   """
-  alias OneCore.{Entrypoint, Skills}
+  alias OneCore.Skills
   alias OneCore.App.Manifest
   alias OneCore.Apps.{LoadedVersion, Version}
   alias OneCore.Apps.Version.Checks
 
   # What a server keeps of a version besides what its app said: the version's own fields, and of what it keeps as
   # it's held, its files a page loads and its skills.
-  @kept [:exports, :services, :code, :ui, :title, :icon, :core]
+  @kept [:exports, :services, :code, :title, :icon, :core]
 
   @doc """
   What a loaded version says of itself, as the bucket keeps it: its manifest's JSON form (`OneCore.App.Manifest`)
@@ -105,7 +105,6 @@ defmodule OneCore.Apps.Version.Description do
       version = %{
         version
         | code: code,
-          ui: Entrypoint.ui(files),
           artifact: artifact,
           trusted: false
       }

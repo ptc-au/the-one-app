@@ -341,7 +341,7 @@ defmodule OneCore.Apps.Deploy do
     deployed =
       for {{artifact, about}, {:ok, description, _tag}} <- Enum.zip(abouts, described),
           {:ok, listing} <- [Version.listed(artifact, description)],
-          do: Map.merge(listing, %{app: artifact, trusted: Store.trusted?(about), repo: Store.repo(about["from"])})
+          do: Map.merge(listing, %{app: artifact, trusted: Store.trusted?(about), repo: Store.repo(about["from"]), ui: about["ui"]})
 
     :ets.insert(__MODULE__, {:deployed, deployed, System.monotonic_time(:millisecond)})
     deployed
@@ -426,23 +426,26 @@ defmodule OneCore.Apps.Deploy do
   end
 
   @doc """
-  Builds again, from its source, the app of each app anyone has deployed that was built against another UI library
-  than this server's, installed or not, as a server acting for whoever the app is, as they would deploy it again.
-  A server does it once it's up, on a build no published server build is newer than: so a server release rebuilds
-  every app once, and a server left on an older build never builds them back. For each whose apps they are, one
-  server does it (`rebuilds?/2`), and the others run what it built as each version reaches them. One another server
-  built meanwhile against the same UI library is done, not a failure. Once a newer server build is out, it stops: that
-  build builds them all again, and this server is about to take it, which builds nothing well while it goes (each app
-  left failed as it restarted, the YAML library it reads a skill with said "malformed yaml" on 20 Nov).
+  Builds again, from its source, the app of each app anyone has deployed whose client isn't known to be built right for
+  this server's UI library (`OneCore.Apps.Store`'s `ui`), installed or not, as a server acting for whoever the app is,
+  as they would deploy it again, and deploys it only if that gives another client. A client that comes out the same is
+  made no new version: its `latest` says so, and no server reads or loads anything more of it. A server does it once
+  it's up, on a build no published server build is newer than: so a server release builds every app once, and a server
+  left on an older build never builds them back. For each whose apps they are, one server does it (`rebuilds?/2`), and
+  the others run what it built as each version reaches them. One another server built meanwhile against the same UI
+  library is done, not a failure. Once a newer server build is out, it stops: that build builds them all again, and
+  this server is about to take it, which builds nothing well while it goes (each app left failed as it restarted, the
+  YAML library it reads a skill with said "malformed yaml" on 20 Nov).
   """
   def rebuild do
     code = Entrypoint.library().code
 
-    # Each app's latest version is read from the bucket, which a round trip takes, so they're read at once.
     stale =
-      for {:ok, {_whose, _artifact} = stale} <-
-            Task.async_stream(if(newest?(), do: deployed(), else: []), &stale(&1.app, code), max_concurrency: 16, timeout: :infinity),
-          do: stale
+      for %{app: artifact, trusted: trusted, ui: ui} <- if(newest?(), do: deployed(), else: []),
+          ui != code,
+          whose = Store.whose(artifact),
+          Apps.runs?(whose, trusted),
+          do: {whose, artifact}
 
     # One server builds each one's apps again: four building the same apps at once wrote the same blobs at once,
     # which R2 refuses ("Reduce your concurrent request rate for the same object"), and lost to each other.
@@ -452,22 +455,40 @@ defmodule OneCore.Apps.Deploy do
     at_once(Enum.filter(stale, fn {whose, _artifact} -> whose in ours end), fn {whose, artifact} ->
       name = Path.basename(artifact)
 
-      with {_number, hash, _tag} <- Store.latest(artifact),
-           # It stays as installed, or not, as it was.
-           install? = fn _version -> Apps.app(whose, name) == artifact end,
-           true <- newest?(),
-           {:error, why} <- rebuilt(whose, name, Store.source(artifact, hash), install?),
-           true <- built_with(artifact) != code,
-           do: Logger.error("#{artifact}'s app wasn't built again against this server's UI library: #{why}")
+      with %{"code" => hash} = about <- Store.about(artifact),
+           true <- about["ui"] != code and newest?() do
+        files = Store.source(artifact, hash)
+
+        if unchanged?(artifact, hash, name, files, Store.trusted?(about)) do
+          Store.built(artifact)
+        else
+          # It stays as installed, or not, as it was.
+          install? = fn _version -> Apps.app(whose, name) == artifact end
+
+          with {:error, why} <- rebuilt(whose, name, files, install?),
+               true <- Store.about(artifact)["ui"] != code,
+               do: Logger.error("#{artifact}'s app wasn't built again against this server's UI library: #{why}")
+        end
+      end
     end)
   end
 
-  # `{whose, artifact}` if the app `artifact` is one this server builds again: it runs here, and was built against another UI
-  # library than `code`.
-  defp stale(artifact, code) do
-    whose = Store.whose(artifact)
-    if Apps.runs?(whose, Store.trusted?(artifact)) and built_with(artifact) not in [nil, code], do: {whose, artifact}
+  # Whether building an app's source against this server's UI library gives the client it has, as a build system that
+  # finds what it built the same as it was makes nothing after it. Most changes of the library, a component or an
+  # icon, change no app's build: it only reads the library's tokens and styles (`OneCore.Entrypoint`).
+  defp unchanged?(artifact, hash, name, files, trusted) do
+    with true <- Entrypoint.client?(files), {:ok, built} <- Entrypoint.build(name, files, trusted) do
+      client(built) == client(Store.files(artifact, hash))
+    else
+      false -> true
+      _failed -> false
+    end
   end
+
+  # An app's client as built. A set deployed before `latest` said the UI library holds its code in `client/ui`, which
+  # is no part of what was built.
+  defp client(files),
+    do: for({path, text} <- files, String.starts_with?(path, "client/") and path != "client/ui", into: %{}, do: {path, text})
 
   # How many apps are deployed at once when a server takes its apps to its build: each one's build and compile use a
   # core of this machine, and what it writes goes to the bucket, a round trip at a time. One after another, they were
@@ -482,15 +503,6 @@ defmodule OneCore.Apps.Deploy do
     with {:error, why, _details} <- deploy(whose, name, files, :stored, :stored, install?), do: {:error, why}
   rescue
     error -> {:error, Exception.message(error)}
-  end
-
-  # The code of the UI library the latest version of an app's entrypoint was built against, as the bucket has it, or `nil`
-  # for one with no app.
-  defp built_with(artifact) do
-    with {_number, hash, _tag} <- Store.latest(artifact),
-         {:ok, code} <- Store.file(artifact, hash, "client/ui"),
-         do: code,
-         else: (_ -> nil)
   end
 
   # Whether no server build the network has published is newer than this server's, by the count of commits in its

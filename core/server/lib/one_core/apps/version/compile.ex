@@ -11,7 +11,7 @@ defmodule OneCore.Apps.Version.Compile do
   restarts compiles again only the apps whose code, or what they're compiled with, changed, and a server of another
   network on the machine, deployed the same app, compiles none of it.
   """
-  alias OneCore.{BuildCache, Entrypoint, Builds, Nif, Server, Skills}
+  alias OneCore.{BuildCache, Builds, Nif, Server, Skills}
   alias OneCore.App.Manifest
   alias OneCore.Apps.Version
   alias OneCore.Apps.Version.Checks
@@ -40,8 +40,7 @@ defmodule OneCore.Apps.Version.Compile do
         own: Map.reject(rest, fn {path, _} -> Version.client?(path) end)
       }
 
-      {:ok, %{version | code: Version.code(files), ui: Entrypoint.ui(files), }, warnings,
-       kept}
+      {:ok, %{version | code: Version.code(files)}, warnings, kept}
     end
   end
 

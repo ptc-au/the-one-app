@@ -5,7 +5,8 @@ defmodule OneCore.Entrypoint do
   its `:ui` setting, as an app ships with the framework it's written in: a server's build is what changes it. An app is
   built with the build the UI library holds, its folder `build/` (`core/ui/app.js`), which Bun runs, so the UI library
   an app is built against is the one its server serves it with. What a client is served at `client/` is what that
-  built. The code of the UI library it was built against is kept there too, as `client/ui`, which no page loads.
+  built. The code of the UI library it was built against is kept in its `latest` (`OneCore.Apps.Store`), which says
+  too whether what it built is still what the library of a newer build builds (`OneCore.Apps.Deploy.rebuild/0`).
 
   The files deployed are kept beside the app's code as they were (`OneCore.Apps`), to change and deploy again.
   An app that names packages of its own in `client/package.json` has them installed as it's built; one that names none
@@ -15,7 +16,6 @@ defmodule OneCore.Entrypoint do
   alias OneCore.Apps.Version
 
   @client "client/"
-  @ui "client/ui"
   @build "build/"
 
   # An app's page is checked and built in minutes, and one that stops answering is ended.
@@ -81,7 +81,7 @@ defmodule OneCore.Entrypoint do
       as_is =
         Map.filter(app, fn {path, _} -> String.starts_with?(MIME.from_path(path), ~w(image/ audio/ video/ font/)) end)
 
-      {:ok, rest |> Map.merge(as_is) |> Map.merge(built) |> Map.put(@ui, library().code)}
+      {:ok, rest |> Map.merge(as_is) |> Map.merge(built)}
     end
   end
 
@@ -174,9 +174,6 @@ defmodule OneCore.Entrypoint do
   end
 
   defp not_checked(said), do: "The app's page uses what the UI library doesn't have, where its entrypoint's runtime_version says it has only that:\n#{String.trim(said)}"
-
-  @doc "The code of the UI library an app was built against, from the files a server keeps of its app, or `nil` for one with no app."
-  def ui(settings), do: settings[@ui]
 
   # The UI library's build, with what it builds with installed: its folder, made whole beside it and moved in, so a
   # folder that's there is ready. It's every server's on the machine (`OneCore.BuildCache`), each of which may run another

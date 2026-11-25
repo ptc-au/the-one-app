@@ -16,8 +16,6 @@ defmodule OneCore.Apps.Version do
   So they're kept apart from the struct, where reading them copies nothing (`OneCore.Apps.LoadedVersion.kept/1`),
   and a call costs the same however many files an app has.
 
-  `ui` is the code of the UI library its app was built against, or `nil` for an app with no entrypoint (`OneCore.Entrypoint`).
-
   `title` is its name where a person reads it, which its skill's metadata says (`title/1`), and `icon` its icon as a `data:`
   address, the file it names (`OneCore.App`). `entrypoints` lists its entrypoints: each one's `name`, its
   `page`, its `icon` as a `data:` address, its own or else the app's,
@@ -57,7 +55,6 @@ defmodule OneCore.Apps.Version do
     :jobs,
     :events,
     :code,
-    :ui,
     :artifact,
     :title,
     :icon,

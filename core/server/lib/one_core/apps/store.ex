@@ -11,13 +11,15 @@ defmodule OneCore.Apps.Store do
   hash, its `source`, and the git repo it was installed from, if it was, its `from`: as a lock file has it, where
   it was fetched from, the ref asked for, the commit and the hash of the files as installed (`one install`). Each
   version after keeps its `from`, so one whose `source` isn't that hash was changed since. `trusted` says whether it's
-  trusted: an untrusted app runs in a sandbox (`OneCore.Sandbox`). What a set of files says of itself once loaded is
+  trusted: an untrusted app runs in a sandbox (`OneCore.Sandbox`). `ui` is the code of the UI library its client
+  is built right for: the one it was built against, or a newer one that builds the same from its source
+  (`built/1`). What a set of files says of itself once loaded is
   kept at `described/<its hash>`, for the servers that don't load it (`described/2`). A deploy writes a set, and
   what it describes, before it swaps `latest`, which is what commits it (`keep/8`): one that stops before leaves a set
   no version names, which `prune/1` sweeps.
   """
   require Logger
-  alias OneCore.{Bucket, BuildCache}
+  alias OneCore.{Bucket, BuildCache, Entrypoint}
   alias OneCore.Apps.{LoadedVersion, Version}
   alias OneCore.Apps.Version.{Compile, Description}
 
@@ -174,7 +176,7 @@ defmodule OneCore.Apps.Store do
       end
 
     next =
-      %{number: number, code: code, source: source, from: from, trusted: trusted}
+      %{number: number, code: code, source: source, from: from, trusted: trusted, ui: Entrypoint.library().code}
       |> Map.reject(&is_nil(elem(&1, 1)))
       |> JSON.encode!()
 
@@ -192,6 +194,19 @@ defmodule OneCore.Apps.Store do
       {:ok, number}
     else
       {:error, "#{name} was deployed by someone else just now. Look at it, and do this again."}
+    end
+  end
+
+  @doc """
+  Says that the client of the app `artifact`'s latest version is what this server's UI library builds from its source
+  too, as its `latest` says by the code of the library (`ui`): replaced only if it's unchanged, so a deploy after
+  it was read isn't undone. No version is made, so no server loads or reads anything. `:ok`, or not where it changed.
+  """
+  def built(artifact) do
+    with {:ok, latest, tag} <- Bucket.read("#{artifact}/latest") do
+      Bucket.replace("#{artifact}/latest", JSON.encode!(Map.put(JSON.decode!(latest), "ui", Entrypoint.library().code)), tag)
+    else
+      :absent -> :absent
     end
   end
 
