@@ -21,13 +21,15 @@ defmodule OneCore.Apps.Update do
   alias OneCore.Artifact
 
   @doc "Where the app `artifact`'s updates are: its record, or `nil` while it's up to date."
-  def read(artifact) do
-    case Artifact.read(%Artifact{prefix: "#{artifact}/"}, "update") do
-      {:ok, "", _tag} -> nil
-      {:ok, json, _tag} -> JSON.decode!(json)
-      :absent -> nil
-    end
-  end
+  def read(artifact), do: decoded(Artifact.read(%Artifact{prefix: "#{artifact}/"}, "update"))
+
+  @doc "Each of `artifacts`' records, as `read/1` gives it, in order, read at once where the bucket is far away."
+  def read_all(artifacts),
+    do: Enum.map(Artifact.read_all(%Artifact{prefix: ""}, Enum.map(artifacts, &"#{&1}/update")), &decoded/1)
+
+  defp decoded({:ok, "", _tag}), do: nil
+  defp decoded({:ok, json, _tag}), do: JSON.decode!(json)
+  defp decoded(:absent), do: nil
 
   @doc "Moves it by `event` (`move/2`): the record it's at, `nil` for up to date, or `{:error, why}`."
   def change(artifact, event) do
