@@ -52,7 +52,7 @@ export default {
     if (url.pathname.startsWith("/apps/")) return file(request, env, url, ctx);
     // A webhook is asked by whatever a service sends, with whatever method: Slack and GitHub both POST, and a service
     // that checks one first may GET or HEAD it.
-    if (url.pathname.startsWith("/webhooks/")) return webhook(request, env, url);
+    if (url.pathname.startsWith("/webhooks/")) return webhook(request, env, url, ctx);
     // MCP's streamable HTTP: each message is a POST, answered with JSON, or a stream of its progress and then its
     // answer. There's no stream to GET.
     if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
@@ -264,7 +264,7 @@ const STATUS: Record<number, number> = { [-32023]: 404, [-32024]: 403, [-32602]:
  * answers is the HTTP answer (`OneCore.App.webhook/2`): a server passes on to the app what came in, and tells which
  * webhook it is in `_meta`, which only the edge does.
  */
-async function webhook(request: Request, env: Env, url: URL) {
+async function webhook(request: Request, env: Env, url: URL, ctx: ExecutionContext) {
   const path = url.pathname.slice("/webhooks/".length);
   const of = LEADS_TO.exec(path)?.[0];
   const [app = "", token = "", ...rest] = of ? path.slice(of.length).split("/") : [];
@@ -292,12 +292,15 @@ async function webhook(request: Request, env: Env, url: URL) {
       },
     },
   });
-  const answering = forward(env, message, { webhook: at }, [of, NETWORK]).catch((error) => {
+  // A webhook not answered in time is given up on as a client that went is: the server running it is told, and stops.
+  const signal = AbortSignal.timeout(WEBHOOK_WAIT);
+  const gaveUp = new Promise<null>((done) => signal.addEventListener("abort", () => done(null), { once: true }));
+  const answering = forward(env, message, { webhook: at }, [of, NETWORK], undefined, undefined, { signal, ctx }).catch((error) => {
     // Never log the token: it's the secret in the webhook's address.
     console.error(JSON.stringify({ webhook: `${of}${app}`, error: String(error) }));
     return null;
   });
-  const answer = await Promise.race([answering, scheduler.wait(WEBHOOK_WAIT).then(() => null)]);
+  const answer = await Promise.race([answering, gaveUp]);
   if (!answer || answer.status === 503) return new Response("None of this network's servers answered. Try again in a moment.", { status: 503, headers: { "retry-after": "5" } });
   const { result, error } = await answer.json<{ result?: { status?: number; headers?: [string, string][]; body?: string }; error?: { code?: number; message?: string } }>();
   if (error) return failed(STATUS[error.code ?? 0] ?? 502, error.message ?? "The server couldn't say what happened");
