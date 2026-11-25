@@ -8,7 +8,7 @@ defmodule OneCore.Call do
   # the server. `id` is the call's, which the server knows it by: a call that has ended asks nothing more.
   alias OneCore.Sandbox.Child
 
-  defstruct [:id, :own, :installed, :folder, :server, :subject, :actor, :caller, :app, :app_artifact, :loaded]
+  defstruct [:id, :own, :installed, :folder, :server, :subject, :actor, :caller, :app, :app_artifact, :loaded, :forwarded]
 
   def app(%__MODULE__{loaded: loaded, app: app}, name) do
     case loaded do
@@ -58,8 +58,20 @@ defmodule OneCore.Call do
   @doc "Asks the person the call is for `question`, and gives their answer, as the server's own does."
   def ask(%__MODULE__{id: id}, question), do: Child.request("ask", %{"question" => question}, id)
 
-  @doc "Has the server holding what this call needs run it instead: it ends here if that server runs it."
-  def forward_to(%__MODULE__{id: id}, server), do: Child.request("forward_to", %{"server" => server}, id)
+  @doc """
+  Has the server holding what this call needs run it instead: it ends here if that server runs it, as the server's
+  own says. A `gone` task of this VM's can't be waited on by the server, so a wait is ended only by `within`.
+  """
+  def forward_to(%__MODULE__{id: id}, server, within \\ :infinity, _gone \\ nil),
+    do: outcome(Child.request("forward_to", %{"server" => server, "within" => within}, id))
+
+  @doc "Has one of `servers` run this call instead, as the server's own does: it ends here if one runs it."
+  def forward(%__MODULE__{id: id}, servers) when is_list(servers),
+    do: outcome(Child.request("forward", %{"servers" => servers}, id))
+
+  # Why a call passed on didn't run there, as the server's own says it, which JSON carried as text.
+  defp outcome(outcome) when outcome in ["no_response", "forwarding_loop"], do: String.to_atom(outcome)
+  defp outcome(outcome), do: outcome
 
   @doc """
   A process of this VM's that keeps running between calls: one for each `module` and `key`, a GenServer or a
@@ -114,6 +126,67 @@ defmodule OneCore.Artifact do
     do: Child.request("list", %{"handle" => handle, "starting" => starting})
 end
 
+defmodule OneCore.Edge.Unreachable do
+  @moduledoc false
+  # What a request raises where the server couldn't reach the network's edge, as the server's own does.
+  defexception [:message]
+end
+
+# What an app whose code runs inside an untrusted app, as `database` does, reads of the server it's on: what the server
+# last told this VM of itself (`OneCore.Sandbox`), and what it asks it. Each has the name and function of the
+# server's own.
+
+defmodule OneCore.Server do
+  @moduledoc false
+  def key, do: OneCore.Sandbox.Child.server()["key"]
+  def up?, do: OneCore.Sandbox.Child.server()["up"]
+end
+
+defmodule OneCore.Release do
+  @moduledoc false
+  def status, do: OneCore.Sandbox.Child.server()["status"]
+end
+
+defmodule OneCore.Writes do
+  @moduledoc false
+  def taking_longer, do: OneCore.Sandbox.Child.server()["taking_longer"]
+end
+
+defmodule OneCore.Otlp do
+  @moduledoc false
+  # Its meter makes nothing (no SDK is started here), so what its histograms are counted in is no matter.
+  def buckets, do: []
+end
+
+defmodule OneCore.Servers do
+  @moduledoc false
+  alias OneCore.Sandbox.Child
+  def name(key), do: Child.request("server_name", %{"key" => key}, nil)
+  def answers?(key, within), do: Child.request("answers", %{"key" => key, "within" => within}, nil)
+end
+
+defmodule OneCore.User do
+  @moduledoc false
+  def owner(who), do: OneCore.Sandbox.Child.request("owner", %{"who" => who}, nil)
+end
+
+defmodule OneCore.Apps do
+  @moduledoc false
+  alias OneCore.Sandbox.Child
+  # The servers that run this call's app for whose data it keeps, and what the server knows of its app.
+  def servers(whose), do: Child.request("servers", %{"whose" => whose})
+  def version(artifact), do: with(%{"title" => title} <- Child.request("version", %{"artifact" => artifact}), do: %{title: title})
+end
+
+defmodule OneCore.Bucket do
+  @moduledoc false
+  # Only the keys of the alarms of the call's app, for whose data it keeps (`OneCore.Jobs`).
+  alias OneCore.Sandbox.Child
+  def list(prefix), do: Child.request("alarms", %{"list" => prefix})
+  def write(key, data), do: Child.request("alarms", %{"write" => key, "data" => Base.encode64(data)})
+  def remove(key), do: Child.request("alarms", %{"remove" => key})
+end
+
 defmodule OneCore.App do
   @moduledoc false
   # The interface an app is written against (the server's `OneCore.App` says it all).
@@ -155,12 +228,17 @@ defmodule OneCore.Sandbox.Child do
     :logger.add_handler(:server, __MODULE__.Logged, %{level: :warning})
     OneCore.Redact.install()
     {:ok, _} = Registry.start_link(keys: :unique, name: __MODULE__.Processes)
+    # Who waits for the server's status to change, as on the server (`OneCore.Release`).
+    {:ok, _} = Registry.start_link(keys: :duplicate, name: OneCore.Waiting)
     port = Port.open({:fd, 0, 1}, [:binary, :eof, packet: 4])
     loop(%{port: port, waiting: %{}, calls: %{}, next: 0, loaded: %{}})
   end
 
   @doc false
   def send_json(message), do: send(__MODULE__, {:send, JSON.encode!(message)})
+
+  @doc "What the server last told this VM of itself: its `key`, whether it's `up`, its `status` and whether writes are taking longer."
+  def server, do: :persistent_term.get({__MODULE__, :server})
 
   @doc "Asks the server `op` with `args`, for the call `call` (its id, or nil), and gives its answer, or raises why."
   def request(op, args, call \\ Process.get(:"$one_call")) do
@@ -170,6 +248,7 @@ defmodule OneCore.Sandbox.Child do
     receive do
       {^ref, {:ok, result}} -> result
       {^ref, {:raise, why}} -> raise why
+      {^ref, {:unreachable, why}} -> raise OneCore.Edge.Unreachable, why
     end
   end
 
@@ -208,6 +287,13 @@ defmodule OneCore.Sandbox.Child do
     {{from, ref}, waiting} = Map.pop(state.waiting, rid)
     send(from, {ref, result})
     %{state | waiting: waiting}
+  end
+
+  # The server says what it is as the VM starts and whenever its status changes, which is told as on the server.
+  defp received({:server, about}, state) do
+    :persistent_term.put({__MODULE__, :server}, about)
+    Registry.dispatch(OneCore.Waiting, :status, fn waiting -> for {process, _} <- waiting, do: send(process, :status) end)
+    state
   end
 
   defp received({:load, sets, target, cache}, state) do
@@ -257,6 +343,15 @@ defmodule OneCore.Sandbox.Child do
   defp run({:tool, tool, inputs}, call), do: app().call(tool, inputs, call)
   defp run({:hook, hook, about}, call), do: app().hook(hook, about, call)
   defp run({:webhook, request}, call), do: app().webhook(call, request)
+
+  # The app's scheduled jobs, which each app inside it that keeps them has called when they're due, as the server
+  # does for a trusted app (`OneCore.Apps.Calls.schedule/4`): a job's call is made by the server, maybe after this
+  # call has ended.
+  defp run({:schedule, jobs}, call) do
+    fire = fn job -> request("fire", %{"tool" => job.tool, "inputs" => job.inputs}, nil) end
+    for {_name, keeper} <- call.loaded, function_exported?(keeper, :schedule, 3), do: keeper.schedule(call, jobs, fire)
+    :ok
+  end
 
   # What `server-debug` asks: its own code to run here, and what to ask it, as it would run on a server for an app
   # there. A call here runs for whoever it says, and the app's processes kept between calls are its own. An app
@@ -311,6 +406,7 @@ defmodule OneCore.Sandbox.Child do
       caller: about["caller"],
       app: about["app"],
       app_artifact: about["app_artifact"],
+      forwarded: about["forwarded"],
       loaded:
         for(
           name <- about["loaded"],

@@ -459,9 +459,8 @@ defmodule OneCore.Apps.Calls do
   given its jobs, as the app, and a function that makes one's call here. That app has one server make each call,
   once. The call runs for `subject`, asked by nobody, and is never passed on: it's made where the schedule is kept.
 
-  An untrusted app's schedule is kept the same way, by the keeper's code here, never in its sandbox: only its calls
-  run there, each as any call of its tools does. The keeper keeps it in an artifact of its own for the app, not the
-  app's own artifact, which the app writes, so what this server reads of it is nothing the app wrote.
+  An untrusted app's schedule is kept by the keeper's code inside it, in its sandbox, in its own artifact, as its
+  tools' data is (`OneCore.Sandbox`): each call it makes is asked of this server, for whoever's sandbox it is.
   """
   def schedule(at, name, subject, forwarded \\ false) do
     clock = {nil, subject}
@@ -469,26 +468,25 @@ defmodule OneCore.Apps.Calls do
     Apps.run([at], name, fn at, versions ->
       version = versions[name]
       scheduled = called(at, name, versions, {"apps/schedule", %{installed: at, app: name}}, clock, forwarded)
-      scheduled = if version.trusted, do: scheduled, else: apart(scheduled, name)
 
-      fire = &fire(at, name, subject, &1)
-      for keeper <- keepers(Map.delete(versions, name)), do: keeper.schedule(scheduled, version.jobs, fire)
+      # An untrusted app's is kept by the apps inside it, in its sandbox, as its tools' data is.
+      if Version.runs(version) == :sandbox do
+        Sandbox.call(versions, name, {:schedule, version.jobs}, scheduled)
+      else
+        fire = &fire(at, name, subject, &1)
+        for keeper <- keepers(Map.delete(versions, name)), do: keeper.schedule(scheduled, version.jobs, fire)
+      end
 
       {:ok, :ok}
     end)
   end
 
-  # Where an untrusted app's schedule is kept: in the sandbox app's own artifact for whoever its own is, a folder for
-  # each app, which no untrusted app is given.
-  defp apart(%Call{own: own} = call, name) do
-    own = "#{User.owner(Artifact.name(own))}/own/sandbox/#{name}"
-    %{call | own: %Artifact{prefix: own <> "/"}, folder: Path.join(Server.home(), own)}
-  end
-
-  # Makes a scheduled job's call, the `tool` of the app that `name` is for `at` with its `inputs`, as the clock: for
-  # `subject`, asked by nobody, and never passed on. What went wrong is logged. Nobody is told it ran: a job that
-  # changes what a screen shows says so itself (`OneCore.Call.changed/1`).
-  defp fire(at, name, subject, job) do
+  @doc """
+  Makes a scheduled job's call, the `tool` of the app that `name` is for `at` with its `inputs`, as the clock: for
+  `subject`, asked by nobody, and never passed on. What went wrong is logged. Nobody is told it ran: a job that
+  changes what a screen shows says so itself (`OneCore.Call.changed/1`).
+  """
+  def fire(at, name, subject, job) do
     with {:error, why} <- call(name, job.tool, job.inputs, {nil, subject}, true),
          do: Logger.error("#{name}'s scheduled #{job.tool} for #{subject} (installed for #{at}) failed: #{why}")
   end

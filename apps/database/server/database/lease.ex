@@ -816,12 +816,14 @@ defmodule Database.Lease do
 
   @doc """
   Makes what a lease is measured by, OpenTelemetry's instruments, where they aren't yet: how long a call waited on
-  another server holding it (`Database.transaction/3`), and how often it moved here.
+  another server holding it (`Database.transaction/3`), and how often it moved here. A meter that can't say which it
+  has, as the API's own with no SDK, in an untrusted app's sandbox, has them made, which makes nothing.
   """
   def measures do
-    meter = :opentelemetry_experimental.get_meter(:opentelemetry.get_application_scope(__MODULE__))
+    {module, _} = meter = :opentelemetry_experimental.get_meter(:opentelemetry.get_application_scope(__MODULE__))
 
-    if :otel_meter.lookup_instrument(meter, :"one.database.lease.moves") == :undefined do
+    if not function_exported?(module, :lookup_instrument, 2) or
+         :otel_meter.lookup_instrument(meter, :"one.database.lease.moves") == :undefined do
       Counter.create(:"one.database.lease.moves", %{description: "A database's lease that moved to this server, and why"})
 
       Histogram.create(:"one.database.lease.wait", %{

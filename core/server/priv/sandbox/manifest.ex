@@ -325,10 +325,20 @@ defmodule OneCore.App.Manifest do
   def offered do
     %{
       "OneCore.Call" =>
-        ~w(app tool make reach reaches? member? owns? apps deployed process forward_to changed stage ask __struct__)a,
+        ~w(app tool make reach reaches? member? owns? apps deployed process forward forward_to changed stage ask __struct__)a,
       "OneCore.Call.Refused" => ~w(exception message __struct__)a,
       "OneCore.Artifact" => ~w(name read read_all write replace remove size list __struct__)a,
-      "OneCore.App" => ~w(file behaviour_info)a
+      "OneCore.App" => ~w(file behaviour_info)a,
+      # What an app whose code runs inside another, as `database` does, reads of the server it's on.
+      "OneCore.Edge.Unreachable" => ~w(exception message __struct__)a,
+      "OneCore.Server" => ~w(key up?)a,
+      "OneCore.Servers" => ~w(name answers?)a,
+      "OneCore.Release" => ~w(status)a,
+      "OneCore.Writes" => ~w(taking_longer)a,
+      "OneCore.Otlp" => ~w(buckets)a,
+      "OneCore.User" => ~w(owner)a,
+      "OneCore.Apps" => ~w(servers version)a,
+      "OneCore.Bucket" => ~w(list write remove)a
     }
   end
 end

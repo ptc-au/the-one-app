@@ -39,7 +39,8 @@ defmodule OneCore.Sandbox do
   """
   @behaviour :gen_statem
   require Logger
-  alias OneCore.{Artifact, Bucket, Builds, Call, Command, Apps, Server, User}
+  alias OneCore.{Artifact, Bucket, Builds, Call, Command, Apps, Release, Server, Servers, User, Writes}
+  alias OneCore.Apps.Calls
   alias OneCore.Call.State
   alias OneCore.Apps.{Store, Version}
 
@@ -167,13 +168,15 @@ defmodule OneCore.Sandbox do
         "app" => call.app,
         "app_artifact" => call.app_artifact,
         "server" => call.server,
+        "forwarded" => call.forwarded,
         "loaded" => Map.keys(versions) -- [name]
       }
 
       command(port, {:call, id, what, about})
       waited(child, port, id, call, context)
     after
-      :gen_statem.cast(child, {:ended, id})
+      # One that ended here, passed on to another server say, ends there too.
+      :gen_statem.cast(child, {:cancel, id})
     end
   end
 
@@ -242,6 +245,7 @@ defmodule OneCore.Sandbox do
   defp handled(request, call, context) do
     {:ok, op(request["op"], request, call, context)}
   rescue
+    unreachable in OneCore.Edge.Unreachable -> {:unreachable, Exception.message(unreachable)}
     error -> {:raise, Exception.message(error)}
   end
 
@@ -268,7 +272,51 @@ defmodule OneCore.Sandbox do
   defp op("list", %{"handle" => handle, "starting" => starting}, _call, context),
     do: Artifact.list(artifact!(context, handle), listed!(starting))
 
+  # What an app inside it, as `database`, reads of this server.
+  defp op("server_name", %{"key" => key}, _call, _context) when is_binary(key), do: Servers.name(key)
+
+  defp op("answers", %{"key" => key, "within" => within}, _call, _context) when is_binary(key) and is_integer(within),
+    do: Servers.answers?(key, min(within, 5_000))
+
+  defp op("owner", %{"who" => who}, _call, _context) when is_binary(who), do: User.owner(who)
+
+  # A job of its own that's due, which its schedule's keeper inside it fires, maybe after the schedule's call ended:
+  # its tool, called as a trusted app's is (`OneCore.Apps.Calls.fire/4`), for whoever's VM it is.
+  defp op("fire", %{"tool" => tool, "inputs" => inputs}, _call, context) when is_binary(tool) do
+    {at, name} = Apps.installed(context.owner, context.artifact) || raise("#{context.name} isn't installed for #{context.owner}")
+    Calls.fire(at, name, context.owner, %{tool: tool, inputs: inputs})
+  end
+
   defp op(op, _request, nil, _context), do: raise("#{op} is asked within a call, and that call has ended")
+
+  defp op("servers", %{"whose" => whose}, call, context) do
+    if whose != context.owner, do: raise("#{context.name} runs for #{context.owner} here, not #{inspect(whose)}")
+    Apps.servers(call.installed, false, whose)
+  end
+
+  defp op("version", %{"artifact" => artifact}, call, _context) do
+    with true <- artifact == call.app_artifact, %Version{title: title} <- Apps.version(artifact), do: %{"title" => title}, else: (_ -> nil)
+  end
+
+  defp op("forward", %{"servers" => servers}, call, _context) when is_list(servers),
+    do: Call.forward(call, Enum.filter(servers, &is_binary/1))
+
+  defp op("forward_to", %{"server" => server, "within" => within}, call, _context)
+       when is_binary(server) and (is_integer(within) or within == "infinity"),
+       do: Call.forward_to(call, server, if(within == "infinity", do: :infinity, else: within))
+
+  # The bucket's keys of the alarms of the call's app, for whose data it keeps, which is all it may reach there.
+  defp op("alarms", request, call, _context) do
+    alarms = "#{User.owner(Artifact.name(call.own))}/alarms/#{call.installed}/#{call.app}/"
+    key = request["list"] || request["write"] || request["remove"]
+    if not (is_binary(key) and String.starts_with?(key, alarms)), do: raise("An app reaches only its own alarms, #{alarms}")
+
+    cond do
+      request["list"] -> Bucket.list(key)
+      request["write"] -> Bucket.write(key, Base.decode64!(request["data"]))
+      true -> Bucket.remove(key)
+    end
+  end
 
   defp op("tool", %{"app" => app, "tool" => tool, "inputs" => inputs} = request, call, context)
        when is_binary(app) and is_binary(tool) and is_map(inputs) do
@@ -295,7 +343,6 @@ defmodule OneCore.Sandbox do
   defp op("owns", _request, call, _context), do: Call.owns?(call)
   defp op("apps", _request, call, _context), do: Call.apps(call)
   defp op("deployed", _request, call, _context), do: Call.deployed(call)
-  defp op("forward_to", %{"server" => server}, call, _context) when is_binary(server), do: Call.forward_to(call, server)
   defp op("changed", _request, call, _context), do: Call.changed(call)
   defp op("stage", %{"text" => text}, call, _context) when is_binary(text), do: Call.stage(call, text)
   defp op("ask", %{"question" => question}, call, _context), do: Call.ask(call, question)
@@ -463,6 +510,8 @@ defmodule OneCore.Sandbox do
     }
 
     data = %{context: context, port: nil, buffer: "", calls: %{}, requests: 0, logged: {0, 0}}
+    # So its VM hears what this server says of itself, as a process on the server does (`OneCore.Release`).
+    Registry.register(OneCore.Waiting, :status, nil)
     {:ok, :loading, data, [{:next_event, :internal, {:start, sets}}]}
   end
 
@@ -487,6 +536,7 @@ defmodule OneCore.Sandbox do
     case started(cached && data.context.cache) do
       {:ok, port} ->
         cache = cached && %{"ebin" => data.context.cache, "modules" => cached}
+        command(port, {:server, server()})
         command(port, {:load, sets.(), Builds.target(), cache})
         # Only a VM that compiled the code itself, before any call, has what it compiled kept.
         context = if cached, do: %{data.context | cache: nil}, else: data.context
@@ -515,8 +565,7 @@ defmodule OneCore.Sandbox do
     {:next_state, :busy, %{data | calls: calls}, [{:reply, from, loaded(data)}]}
   end
 
-  def handle_event(:cast, {:ended, id}, state, data), do: ended(state, data, id, false)
-  def handle_event(:cast, {:cancel, id}, state, data), do: ended(state, data, id, true)
+  def handle_event(:cast, {:cancel, id}, state, data), do: ended(state, data, id)
 
   def handle_event(:info, {port, {:data, received}}, state, %{port: port} = data),
     do: frames(state, %{data | buffer: data.buffer <> received})
@@ -526,12 +575,19 @@ defmodule OneCore.Sandbox do
 
   def handle_event(:info, {:DOWN, monitor, :process, _caller, _why}, state, data) do
     case Enum.find(data.calls, fn {_id, {_caller, watched}} -> watched == monitor end) do
-      {id, _} -> ended(state, data, id, true)
+      {id, _} -> ended(state, data, id)
       nil -> :keep_state_and_data
     end
   end
 
   def handle_event(:info, :replied, _state, data), do: {:keep_state, %{data | requests: data.requests - 1}}
+
+  def handle_event(:info, :status, _state, %{port: port}) when is_port(port) do
+    command(port, {:server, server()})
+    :keep_state_and_data
+  end
+
+  def handle_event(:info, :status, _state, _data), do: :keep_state_and_data
 
   @impl true
   # Its port closes as this process ends, but that doesn't end the program behind it, which is killed.
@@ -616,13 +672,23 @@ defmodule OneCore.Sandbox do
 
   defp loaded(data), do: {:ok, self(), data.port, data.context}
 
+  # What its VM is told of this server, which an app inside it reads with the server's own functions there.
+  defp server do
+    %{
+      "key" => Server.key(),
+      "up" => Server.up?(),
+      "status" => Map.take(Release.status(), ["server_membership", "server_daemon_status"]),
+      "taking_longer" => Writes.taking_longer()
+    }
+  end
+
   # A call ended, here or in the child: one the child may still be running is cancelled there. A child running none
   # is ready again.
-  defp ended(state, data, id, cancel) do
+  defp ended(state, data, id) do
     case Map.pop(data.calls, id) do
       {{_caller, monitor}, calls} ->
         Process.demonitor(monitor, [:flush])
-        if cancel, do: command(data.port, {:cancel, id})
+        command(data.port, {:cancel, id})
         {:next_state, if(calls == %{}, do: :ready, else: state), %{data | calls: calls}}
 
       {nil, _calls} ->
