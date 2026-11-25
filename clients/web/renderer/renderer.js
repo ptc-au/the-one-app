@@ -154,7 +154,15 @@
     // moved by whole device pixels, saying where it draws glass.
     const inspect = (/** @type {object} */ request) => renderer.inspect(JSON.stringify({ v: 1, id: 0, ...request }))
     Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), clock: stepped ? stepping(inspect, browser) : (/** @type {object} */ request) => inspect({ op: "clock", ...request }), whole: () => renderer.whole(), frame: (/** @type {FrameRequestCallback} */ callback) => browser.requestAnimationFrame(callback), moved: (/** @type {number} */ dx, /** @type {number} */ dy) => [...renderer.moved(dx, dy)] } })
-    addEventListener("message", ({ source, data }) => source === parent && !answered(data) && renderer.message(data))
+    addEventListener("message", ({ source, data }) => {
+      if (source !== parent || answered(data)) return
+      // Its client's answer that a voice was made, and nothing to draw.
+      if (typeof data?.id === "string" && data.id.startsWith("voice:")) return
+      if (data?.method === "notifications/one/voice") return calls.heard(data.params)
+      renderer.message(data)
+    })
+    // Its page is gone, and its microphone with it.
+    addEventListener("pagehide", () => calls.ended())
     // The canvas as the DOM says it is, in device pixels, and how many to a CSS pixel (the display's and the zoom),
     // and what happens on it.
     new ResizeObserver(([entry]) => {

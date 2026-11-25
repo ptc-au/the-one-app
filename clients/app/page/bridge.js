@@ -90,6 +90,12 @@ async function respond(view, method, params) {
   const trusts = async () => (await trusted.get(view.subject))?.has(app) === true
   /** Who the page asks for: whoever it says, if its app is trusted. @param {string} [said] */
   const whom = async (said) => (said && (await trusts()) ? said : view.subject)
+  // A call's microphone and connection are this page's, not the app's frame's, which has no origin to take one from
+  // (`clients/web/voice.js`): the frame hands over what its page gives a voice, and hears what the voice says.
+  if (method === "one/voice") {
+    const { op, id: node, ...rest } = params
+    return invoke("voice", op, `${view.key}|${node}`, rest, (event) => post(view, { method: "notifications/one/voice", params: { id: node, ...event } }))
+  }
   if (method === "ui/initialize") {
     // A page in a frame of another's has none of the window's edges to keep clear, and nothing names it above it.
     const inFrame = [...nested.values()].includes(/** @type {any} */ (view))

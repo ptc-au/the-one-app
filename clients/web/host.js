@@ -5,6 +5,7 @@
 
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping"
 import * as path from "../app/page/path.js"
+import { voice } from "./voice.js"
 
 /** @import { Commands } from "../app/page/host.js" */
 
@@ -551,6 +552,9 @@ setInterval(() => {
 
 /** @type {{ [Command in keyof Commands]?: (...args: Parameters<Commands[Command]>) => ReturnType<Commands[Command]> | Promise<ReturnType<Commands[Command]>> }} */
 const commands = {
+  /// A page's call, whose microphone and connection this page takes, not its app's frame: a frame has no origin of
+  /// its own to ask from (`voice.js`).
+  voice,
   /// Where this browser is with its network, as the app's client says a device's session (`State` in core/client):
   /// signed in here, or sent to sign in, and whether its network answers. A browser keeps nothing of a network's, so
   /// with its address not answering it's still opening, and asks again by itself (`tryAgain`).

@@ -169,6 +169,8 @@ export type Moved =
 export interface Commands {
   /** Where the device is with its network as the window opens, whether its network answers, whether a phone hears taps on notifications, whether each app opens in a window of its own (a computer's), which app this window is if it's an app's own, where the window's title bar is over the page, which keeps it clear, if it's known yet (`title_bar` says it as it changes), and the Colour Mode chosen on the device, if one has been. */
   start(): { state: State; taps?: boolean; testflight?: boolean; runtimeVersion?: number; open?: string | null; windows?: boolean; window?: { entrypoint: string; subject?: string; name?: string | null } | null; titleBar?: TitleBar; theme?: "light" | "dark" | null; unnative?: string | null }
+  /** A page's call: its microphone, connection and sound, made here where the browser lets this page take a microphone, not in the page's frame, which has no origin to ask from (`clients/web/voice.js`). */
+  voice(op: string, key: string, params: Record<string, unknown>, tell: (event: Record<string, unknown>) => void): void
   /** The files a server lists for `subject`, and the apps whose open apps are out of date. */
   apps(args: { subject: string | undefined }): { resources: Resource[]; outdated: string[] }
   request(args: { view: string; method: string; params: Record<string, unknown> }): unknown
