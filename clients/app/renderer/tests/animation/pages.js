@@ -131,9 +131,11 @@ export async function build(target, built) {
   const unbuilt = await bundle(join(target, "client"), at)
   if (unbuilt) return `its components: ${unbuilt}`
   for (const component of named) {
-    writeFileSync(join(at, `${component}.scene.js`), `import { ListStyle, render } from "/ui/client/ui.js"
+    // Drawn as Settings draws a section: told its screen's own arguments, and how to go to another (`settings_section`).
+    writeFileSync(join(at, `${component}.scene.js`), `import { ListStyle, navigate, render, toolInput } from "/ui/client/ui.js"
 import Shown from "./${component}.js"
-render(() => ListStyle({ value: "insetGrouped", get children() { return Shown({}) } }))
+const first = "${basename(target)}_${component}"
+render(() => ListStyle({ value: "insetGrouped", get children() { return Shown({ get inputs() { return toolInput(first).arguments }, show: (inputs) => navigate(first, inputs) }) } }))
 `)
     writeFileSync(join(at, `${component}.html`), `<!doctype html>
 <html lang="en">

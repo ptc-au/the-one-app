@@ -110,6 +110,12 @@ const open = () => {
   const theirs = sidebar(added()).filter((one) => one.app === inputs.app)
   return (theirs.find((one) => one.group !== "you") ?? theirs[0])?.id
 }
+/// What a section's own screen says beyond which it is: `settings_section`'s other arguments (`device` in
+/// `settings_section { app: "sign-in", section: "devices", device: "mac" }`, at /settings/sign-in/devices?device=mac).
+const sectionInputs = () => {
+  const { name, arguments: { app, section, ...inputs } } = toolInput("settings_sections")
+  return name === "settings_section" ? inputs : {}
+}
 /// Shows what an id names beside the sidebar, as a step Back goes back from, or the sidebar alone.
 function setOpen(id?: string) {
   if (!id) return navigate("settings_sections")
@@ -229,7 +235,8 @@ function Detail(props: { id: string }) {
 }
 
 /// A section, drawn by its app's own component in this page, with what Settings' page may do. It's given the groups
-/// other apps add to the places it offers (`Groups`).
+/// other apps add to the places it offers (`Groups`), the arguments its screen has beyond which it is (`inputs`), and
+/// `show(inputs)` to go to another of its screens, a step Back goes back from, as `navigate` does for a page's.
 function Drawn(props: { section: Added }) {
   const drawn = createMemo(() => component(props.section.app, props.section.component).then((module) => module.default))
   const heading = () => props.section.name ?? props.section.title
@@ -237,7 +244,7 @@ function Drawn(props: { section: Added }) {
     <Errored fallback={(error) => <Screen heading={heading()} back><Problem heading={`Can't show ${heading()}`} text={error() as Error} /></Screen>}>
       <Loading fallback={<Screen heading={heading()} back><Spinner delay /></Screen>}>
         <Show when={drawn()} keyed>
-          {(Drawn) => <Drawn groups={Groups} />}
+          {(Drawn) => <Drawn groups={Groups} inputs={sectionInputs()} show={(inputs?: object) => navigate("settings_section", { app: props.section.app, section: props.section.component, ...inputs })} />}
         </Show>
       </Loading>
     </Errored>

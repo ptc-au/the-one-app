@@ -96,7 +96,8 @@ defmodule Settings do
         runtime_version: 4,
         description:
           "One section of Settings' sidebar, as `sections` lists it, by the app that adds it and its component: " <>
-            "Settings' screen of it, /settings/vault/accounts. Without `section`, the app's first.",
+            "Settings' screen of it, /settings/vault/accounts. Without `section`, the app's first. Its other inputs are the section's own, " <>
+            "which its component reads for its screens: a device or a group open in it, a form (`/settings/sign-in/devices?device=mac`).",
         inputs: %{
           type: "object",
           properties: %{
