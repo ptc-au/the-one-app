@@ -215,7 +215,7 @@ defmodule OneCore.Apps do
   def reload(owner, only \\ :all, deployed \\ nil) do
     # Told only which apps changed, it's their versions that are new, not the servers.
     if only == :all, do: Servers.reload(owner)
-    OneCore.Apps.Deploy.forget()
+    OneCore.Apps.Deploy.forget(if(only == :all, do: :all, else: Map.keys(only)))
     if sync(owner, [], only), do: changed([owner], nil, deployed)
     # An app updated by a server elsewhere may require what isn't installed for them yet.
     if Servers.here?(owner), do: Task.start(fn -> OneCore.Apps.Lifecycle.required(owner) end)

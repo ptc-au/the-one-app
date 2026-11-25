@@ -120,7 +120,7 @@ defmodule OneCore.Apps.Deploy do
   # held every deploy that long (133 s while a network updated). It supersedes the narrower copies of itself, once
   # it's answered.
   defp committed(owner, name, %{"number" => number} = latest, %Version{artifact: artifact} = version, install, began) do
-    forget()
+    forget([artifact])
     moved = step("installed", fn -> if install, do: Installed.change(owner, name, {:deployed, artifact, nil}), else: %{} end)
     # The other servers load it while this one takes it over.
     owners = Enum.uniq([owner | Installed.installed_for(artifact)])
@@ -306,7 +306,7 @@ defmodule OneCore.Apps.Deploy do
   `latest`, as that version described itself (`OneCore.Apps.Store.described/2`): so it's never older than what
   runs. It's three trips to the bucket with a request for each app, and changes only when someone deploys, so
   it's kept: read again behind a request once it's five minutes old, as `OneCore.Apps` looks at what's installed,
-  and forgotten when this server deploys or is told to look again (`forget/0`).
+  and for the apps this server deploys or is told have changed, read again alone (`forget/1`).
   """
   def deployed do
     now = System.monotonic_time(:millisecond)
@@ -323,8 +323,21 @@ defmodule OneCore.Apps.Deploy do
     end
   end
 
-  @doc "Forgets what was kept of what everyone has deployed, which has changed: the next ask reads it again."
-  def forget, do: :ets.delete(__MODULE__, :deployed)
+  @doc """
+  Reads again what was kept of what everyone has deployed, for the apps in `artifacts` that changed, or with `:all`
+  the next ask reads all of it again. A deploy changes one app, and a server told so reads what that one's `latest`
+  says, where every app's was read again as each of them was deployed (a release deploys many).
+  """
+  def forget(:all), do: :ets.delete(__MODULE__, :deployed)
+
+  def forget(artifacts) do
+    with [{:deployed, deployed, at}] <- :ets.lookup(__MODULE__, :deployed) do
+      kept = Enum.reject(deployed, &(&1.app in artifacts))
+      :ets.insert(__MODULE__, {:deployed, Enum.sort_by(kept ++ listings(artifacts), & &1.app), at})
+    end
+
+    :ok
+  end
 
   defp read_deployed do
     named =
@@ -332,19 +345,22 @@ defmodule OneCore.Apps.Deploy do
           [owner, name] <- [Regex.run(~r{^#{@deployed}(.+)/([^/]+)$}, blob, capture: :all_but_first)],
           do: "#{owner}/apps/#{name}"
 
+    deployed = listings(named)
+    :ets.insert(__MODULE__, {:deployed, deployed, System.monotonic_time(:millisecond)})
+    deployed
+  end
+
+  # What each of the apps `named` that has a latest version says of it (`deployed/0`).
+  defp listings(named) do
     abouts =
       for {artifact, {:ok, about, _tag}} <- Enum.zip(named, Bucket.read_all(Enum.map(named, &"#{&1}/latest"))),
           do: {artifact, JSON.decode!(about)}
 
     described = Bucket.read_all(for {artifact, about} <- abouts, do: "#{artifact}/described/#{about["code"]}")
 
-    deployed =
-      for {{artifact, about}, {:ok, description, _tag}} <- Enum.zip(abouts, described),
-          {:ok, listing} <- [Version.listed(artifact, description)],
-          do: Map.merge(listing, %{app: artifact, trusted: Store.trusted?(about), repo: Store.repo(about["from"]), ui: about["ui"]})
-
-    :ets.insert(__MODULE__, {:deployed, deployed, System.monotonic_time(:millisecond)})
-    deployed
+    for {{artifact, about}, {:ok, description, _tag}} <- Enum.zip(abouts, described),
+        {:ok, listing} <- [Version.listed(artifact, description)],
+        do: Map.merge(listing, %{app: artifact, trusted: Store.trusted?(about), repo: Store.repo(about["from"]), ui: about["ui"]})
   end
 
   # The app `artifact` is among what everyone has deployed, under whose it is: a person who deploys the network's
