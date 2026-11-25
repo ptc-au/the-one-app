@@ -178,6 +178,16 @@ defmodule OneCore.Servers do
     Enum.any?(all() -- [Server.key()], &(ready?(&1) == true and Builds.count(build(&1)) > mine))
   end
 
+  @doc """
+  Whether this server is the one of `keys` to do what one of them is enough for: the first by its key of those ready
+  and on a build as new as its own. A server that's stepped aside is behind (`behind?/0`), so the next does it in its
+  place.
+  """
+  def first?(keys) do
+    {me, mine} = {Server.key(), Builds.count(Builds.build())}
+    not Enum.any?(keys, &(&1 < me and ready?(&1) == true and Builds.count(build(&1)) >= mine))
+  end
+
   @doc "The build the server whose key is `key` says it runs (`OneCore.Builds.say/1`), `nil` where it says none."
   def build(key), do: cached({:build, key}, fn -> read("servers/#{key}/build", %{})["build"] end)
 

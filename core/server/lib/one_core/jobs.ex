@@ -16,7 +16,7 @@ defmodule OneCore.Jobs do
   """
   use GenServer
   require Logger
-  alias OneCore.{Apps, Bucket, Builds, Edge, Server, Servers}
+  alias OneCore.{Apps, Bucket, Edge, Servers}
   alias OneCore.Apps.Calls
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
@@ -105,16 +105,11 @@ defmodule OneCore.Jobs do
   # looks in its place.
   defp looked_at do
     everyone =
-      if Servers.here?("network") and first?(),
+      if Servers.here?("network") and Servers.first?(Servers.own("network")),
         do: ["network" | for(folder <- Bucket.folders("users/") ++ Bucket.folders("groups/"), do: String.trim_trailing(folder, "/"))],
         else: []
 
     Enum.uniq(everyone ++ Servers.here())
-  end
-
-  defp first? do
-    {me, mine} = {Server.key(), Builds.count(Builds.build())}
-    not Enum.any?(Servers.own("network"), &(&1 < me and Servers.ready?(&1) == true and Builds.count(Servers.build(&1)) >= mine))
   end
 
   # An alarm's key: whoever the app was installed for, the app's name, and when it's due, in seconds since 1970.
