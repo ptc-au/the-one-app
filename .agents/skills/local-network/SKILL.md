@@ -20,6 +20,8 @@ Run it in the background and let your harness tell you when it ends; put the fol
   and app NIFs), the UI library built again and served, and an app deployed as `one deploy --files-from` deploys
   it. A build error is that request's error, saying so, as is a changed One Core NIF, which needs a start again.
   What only a start builds (a supervisor's children) stays as it was until then.
+- The client's page (`clients/app/page`, `clients/web`) is built as the network starts, minified as a deploy builds it, so
+  a change to it takes a start again.
 - The edge (`core/edge/`, an app's `edge/`) changed: start it with `--live-edge`, and `wrangler dev` builds each Worker
   again as it's saved. Without it, the edge runs its Workers bundled as they're deployed, which saves about 110 MB,
   and an edge change takes a start again.

@@ -67,12 +67,13 @@ mkdirSync(built, { recursive: true });
 // The web client is the app's own page, the files its window is given (`clients/app/tauri.conf.json`), with the
 // web's files over them (`clients/web`), which answer what the page asks in a browser in place of the app's Rust half,
 // and the UI library, which an app's page finds at `/ui/client/`. The edge serves them from `<built>/web`. A
-// deploy's are copies; a local network's are links to where each is made (a `cp -s` farm), so it serves the page as
-// it is now, and the UI library as its code reloader last built it, through a rebase and a deploy alike.
+// deploy's are copies, as a local network's are, so each serves the page the same way, built (below); but for the UI
+// library, which a local network links to where its code reloader builds it, so it serves it as it last built it,
+// through a rebase and a deploy alike.
 const web = `${built}/web`;
 const app = `${root}/clients/app`;
 const pageFiles = (await Bun.file(`${app}/tauri.conf.json`).json()).build.frontendDist;
-const place = (/** @type {string} */ from, /** @type {string} */ to) => (what === "dev" ? symlinkSync(from, to) : cpSync(from, to, { recursive: true }));
+const place = (/** @type {string} */ from, /** @type {string} */ to) => cpSync(from, to, { recursive: true });
 mkdirSync(`${web}/ui`, { recursive: true });
 for (const file of pageFiles) place(`${app}/${file}`, `${web}/${basename(file)}`);
 for (const file of readdirSync(`${root}/clients/web`).filter((file) => !["dist", "node_modules", "renderer"].includes(file))) {
@@ -86,11 +87,11 @@ await $`bun install --frozen-lockfile && bun build sw.js --format iife --minify 
 // A deploy's page is bundled, as a web app's build bundles it: its scripts in one file and its styles in another, each
 // named by what's in it under `/assets/` (`_headers` keeps them for good), so a browser that opened it before asks for
 // none of them again, and one opening it for the first time waits for one of each, not each module as the one before
-// it imports it. A local network's is served as it is, so a change to it shows as the page is loaded again. The
-// network's logo stays at `/Logo.png`, which Sign-In answers with the network's own (`apps/sign-in/edge/worker.ts`),
-// and XState's UMD build sets its global as a classic script does, which the page's modules read (`XState`), rather
+// it imports it. A local network's is built the same, as it starts, so a bug of a minified page shows there as it does
+// where it's deployed (a minifier writes `300ms` as `.3s`). The network's logo stays at `/Logo.png`, which Sign-In
+// answers with the network's own (`apps/sign-in/edge/worker.ts`), and XState's UMD build sets its global as a classic script does, which the page's modules read (`XState`), rather
 // than being taken for a CommonJS module, which sets none.
-if (what !== "dev") {
+{
   const built = await Bun.build({
     entrypoints: [`${web}/index.html`],
     outdir: web,
@@ -110,7 +111,8 @@ if (what !== "dev") {
 }
 // Built here, so a deploy never ships whatever build of the UI library was left on disk.
 await $`bun install --frozen-lockfile && bun build.js`.cwd(`${root}/core/ui`).quiet();
-place(`${root}/core/ui/dist/client`, `${web}/ui/client`);
+if (what === "dev") symlinkSync(`${root}/core/ui/dist/client`, `${web}/ui/client`);
+else cpSync(`${root}/core/ui/dist/client`, `${web}/ui/client`, { recursive: true });
 // The renderer's frame, with the renderer built for it as WebAssembly, and its check page, built with the UI library.
 await $`bun build.js ${web}/renderer`.cwd(`${root}/clients/web/renderer`).quiet();
 // The app's own page, as its window has it, at `/page/`, which the app keeps and loads from its next start if it's

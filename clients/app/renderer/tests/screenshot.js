@@ -116,6 +116,16 @@ async function scenesOf(target, built) {
 /// (`frontendDist`): its stylesheets, which the stand-in client lays its frame out and paints it with.
 const windowFiles = new Map(JSON.parse(readFileSync(join(root, "clients/app/tauri.conf.json"), "utf8")).build.frontendDist.map((file) => [basename(file), join(root, "clients/app", file)]))
 
+/// A window file as a deploy serves it (core/edge/edge.js): its stylesheets minified, by the same bundler (`.3s` for `300ms`).
+const windowFile = async (name) => {
+  const file = windowFiles.get(name)
+  if (!file.endsWith(".css")) return new Response(Bun.file(file))
+  // The font, a file of the window's too, stays a URL the stand-in client answers.
+  const external = { name: "font", setup: (build) => build.onResolve({ filter: /\.woff2$/ }, ({ path }) => ({ path, external: true })) }
+  const [css] = (await Bun.build({ entrypoints: [file], minify: true, plugins: [external] })).outputs
+  return new Response(css)
+}
+
 /// A stand-in client for a page in a frame, as the real window is (its stylesheets, client.css's `body` and `iframe`):
 /// it answers what the page asks from `answers`, as a client would. The frame is the page's own, or `src`, the
 /// renderer's frame that draws it (`web`), which the test starts (`openApp`) once the window alone has been seen, as an
@@ -161,14 +171,14 @@ function server(built, target, used) {
   const pages = new Map()
   const listener = Bun.serve({
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       const url = new URL(request.url)
       if (url.pathname === "/host.html") return new Response(pages.get(url.searchParams.get("scene")), { headers: { "content-type": "text/html" } })
       const path = decodeURIComponent(url.pathname)
       // Each to a frame's page too, whose origin is its own, as the edge serves an app's files, the UI library and the
       // renderer's frame (`file` in core/edge/mcp/mcp.ts, clients/web/_headers).
       const cors = { headers: { "access-control-allow-origin": "*" } }
-      if (path.startsWith("/window/") && windowFiles.has(path.slice("/window/".length))) return new Response(Bun.file(windowFiles.get(path.slice("/window/".length))))
+      if (path.startsWith("/window/") && windowFiles.has(path.slice("/window/".length))) return windowFile(path.slice("/window/".length))
       if (path.startsWith("/renderer/")) return new Response(Bun.file(join(rendererFrame, path.slice("/renderer/".length) || "index.html")), cors)
       const [, app, client, ...rest] = path.split("/")
       if (used.has(app) && client === "client") return new Response(Bun.file(join(used.get(app), rest.join("/"))), cors)
