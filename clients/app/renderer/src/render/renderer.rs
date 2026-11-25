@@ -79,9 +79,6 @@ pub struct Renderer {
     gamma: GammaParams,
     /// Each shadow's tile, drawn the first frame it's in, with what binds it (`tiled`).
     shadow_tiles: std::collections::HashMap<TileKey, (wgpu::Texture, wgpu::BindGroup)>,
-    /// The bind group of the frame's data for its batches' instances, each at its offset, and how much of the data
-    /// from there it binds; made again only as the data's buffer is, or a batch needs more.
-    instances: Option<(wgpu::Buffer, u64, wgpu::BindGroup)>,
     /// The tiles of pictures (`scene::Tile`), each drawn the first frame it's in (`Tiles`).
     tiles: Tiles,
     /// Each picture of a frame drawn before (`picture`), by its raster's id, kept while frames draw it.
@@ -128,10 +125,18 @@ struct Given {
     draws: u32,
 }
 
-/// The frame's batches' instances: the bind group of its data, and each batch's offset in it.
+/// The frame's batches' instances: the buffer of its data, and where each batch's are in it, and how long.
 struct Instances {
-    group: wgpu::BindGroup,
-    offsets: Vec<u32>,
+    buffer: wgpu::Buffer,
+    at: Vec<(u64, u64)>,
+}
+
+impl Instances {
+    /// Batch `at`'s instances, as the vertex data what `pass` draws next reads.
+    fn set(&self, pass: &mut wgpu::RenderPass<'_>, at: usize) {
+        let (offset, size) = self.at[at];
+        pass.set_vertex_buffer(0, self.buffer.slice(offset..offset + size));
+    }
 }
 
 /// What a frame drew: each batch, as a hash of what it is (its kind, texture and instances), and what they were drawn
@@ -362,7 +367,7 @@ impl Renderer {
             targets: vec![target],
             pipelines: Pipelines::shared(&context.device, &context.queue, &context.pipelines, format),
             format,
-            alignment: u64::from(limits.min_storage_buffer_offset_alignment.max(limits.min_uniform_buffer_offset_alignment)),
+            alignment: u64::from(limits.min_uniform_buffer_offset_alignment),
             data: Vec::new(),
             buffer: None,
             belt: wgpu::util::StagingBelt::new(context.device.clone(), 1 << 20),
@@ -372,7 +377,6 @@ impl Renderer {
             shadow_tiles: Default::default(),
             tiles: Default::default(),
             pictures: Default::default(),
-            instances: None,
             atlas_groups: Default::default(),
             draws: Default::default(),
             passes: Default::default(),
@@ -643,7 +647,7 @@ impl Renderer {
         (offset, bytes.len().max(4) as u64)
     }
 
-    /// Adds `items`, the scene's `#[repr(C)]` primitives, for a shader to read as an array of its struct.
+    /// Adds `items`, the scene's `#[repr(C)]` primitives, for a shader to read as its vertex data (`Instance`).
     fn push_instances<T>(&mut self, items: &[T]) -> (u64, u64) {
         // Safety: the scene's primitives are `#[repr(C)]` structs of numbers, in the layout the shader reads.
         let bytes = unsafe { std::slice::from_raw_parts(items.as_ptr().cast::<u8>(), std::mem::size_of_val(items)) };

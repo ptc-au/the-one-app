@@ -12,7 +12,7 @@ impl Painter<'_> {
             border_style: if dashed { BorderStyle::Dashed } else { BorderStyle::Solid },
             bounds: bounds.snap_to(scale),
             content_mask: mask.snap_to(scale),
-            background: Background::from(background.opacity(opacity)),
+            background: background.opacity(opacity),
             border_color: border_color.opacity(opacity),
             corner_radii: Corners {
                 top_left: ScaledPixels(radii.top_left * scale),

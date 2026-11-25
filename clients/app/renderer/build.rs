@@ -157,8 +157,8 @@ fn shaders() {
 
 /// One stage of `pipeline` as HLSL, bound where wgpu-hal binds it: each group's buffers and textures in order, CBVs,
 /// SRVs and UAVs each counting up from register 0 in space 0, a group's samplers by their index in it (space 255)
-/// with an SRV of their indices after its other SRVs, a dynamic storage buffer's offset in root constants at the
-/// group's next CBV, and the special constants (first vertex and instance) at the CBV after the last group's.
+/// with an SRV of their indices after its other SRVs, and the special constants (first vertex and instance) at the
+/// CBV after the last group's.
 fn hlsl(module: &naga::Module, info: &naga::valid::ModuleInfo, pipeline: &bindings::Pipeline, stage: naga::ShaderStage) -> String {
     use naga::back::hlsl;
     let (mut cbv, mut srv) = (0, 0);
@@ -176,7 +176,6 @@ fn hlsl(module: &naga::Module, info: &naga::valid::ModuleInfo, pipeline: &bindin
     };
     for (group, bindings) in pipeline.groups().into_iter().enumerate() {
         let group = group as u32;
-        let mut storage = 0;
         let mut samplers = 0;
         for (binding, kind) in bindings.iter().enumerate() {
             let at = naga::ResourceBinding { group, binding: binding as u32 };
@@ -184,11 +183,6 @@ fn hlsl(module: &naga::Module, info: &naga::valid::ModuleInfo, pipeline: &bindin
                 bindings::Binding::Uniform => {
                     cbv += 1;
                     target(cbv - 1)
-                }
-                bindings::Binding::Storage => {
-                    srv += 1;
-                    storage += 1;
-                    hlsl::BindTarget { dynamic_storage_buffer_offsets_index: Some(storage - 1), ..target(srv - 1) }
                 }
                 bindings::Binding::Texture { .. } => {
                     srv += 1;
@@ -204,10 +198,6 @@ fn hlsl(module: &naga::Module, info: &naga::valid::ModuleInfo, pipeline: &bindin
         if samplers > 0 {
             options.sampler_buffer_binding_map.insert(hlsl::SamplerIndexBufferKey { group }, target(srv));
             srv += 1;
-        }
-        if storage > 0 {
-            options.dynamic_storage_buffer_offsets_targets.insert(group, hlsl::OffsetsBindTarget { space: 0, register: cbv, size: storage });
-            cbv += 1;
         }
     }
     options.special_constants_binding = Some(target(cbv));

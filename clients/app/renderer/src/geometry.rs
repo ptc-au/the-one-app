@@ -512,37 +512,3 @@ impl From<Hsla> for Rgba {
         Rgba { r: r + m, g: g + m, b: b + m, a: color.a }
     }
 }
-
-#[derive(Clone, Copy, Default, Debug, PartialEq)]
-#[repr(C)]
-pub struct LinearColorStop {
-    pub color: Hsla,
-    pub percentage: f32,
-}
-
-/// What fills a quad: here always a solid colour (`tag` 0), in the layout the shaders read for gradients too.
-#[derive(Clone, Copy, Default, Debug, PartialEq)]
-#[repr(C)]
-pub struct Background {
-    pub(crate) tag: u32,
-    pub(crate) color_space: u32,
-    pub(crate) solid: Hsla,
-    pub(crate) gradient_angle_or_pattern_height: f32,
-    pub(crate) colors: [LinearColorStop; 2],
-    pad: u32,
-}
-
-impl From<Hsla> for Background {
-    fn from(color: Hsla) -> Background {
-        Background { solid: color, ..Default::default() }
-    }
-}
-
-impl Background {
-    pub fn opacity(&self, factor: f32) -> Background {
-        Background { solid: self.solid.opacity(factor), ..*self }
-    }
-    pub fn is_transparent(&self) -> bool {
-        self.solid.is_transparent()
-    }
-}

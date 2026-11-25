@@ -9,7 +9,7 @@ use std::{iter::Peekable, slice};
 
 use super::atlas::{AtlasTextureId, AtlasTile};
 use super::bounds_tree::BoundsTree;
-use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, ScaledPixels};
+use crate::geometry::{Bounds, ContentMask, Corners, Edges, Hsla, ScaledPixels};
 
 pub(crate) type DrawOrder = u32;
 
@@ -267,10 +267,7 @@ impl Scene {
             (quad.corner_radii, quad.border_color) = (corners(&quad.corner_radii), faded(quad.border_color));
             let widths = quad.border_widths;
             quad.border_widths = crate::geometry::Edges { top: px(widths.top), right: px(widths.right), bottom: px(widths.bottom), left: px(widths.left) };
-            quad.background.solid = faded(quad.background.solid);
-            for stop in &mut quad.background.colors {
-                stop.color = faded(stop.color);
-            }
+            quad.background = faded(quad.background);
             (quad.order, quad.into())
         }));
         all.extend(other.underlines.iter().map(|underline| {
@@ -433,7 +430,7 @@ impl Scene {
         let opaque: Vec<(DrawOrder, Bounds<ScaledPixels>)> = self
             .quads
             .iter()
-            .filter(|quad| quad.transformation == TransformationMatrix::unit() && quad.background.tag == 0 && quad.background.solid.a >= 1.0)
+            .filter(|quad| quad.transformation == TransformationMatrix::unit() && quad.background.a >= 1.0)
             .map(|quad| {
                 let radii = &quad.corner_radii;
                 let corner = radii.top_left.0.max(radii.top_right.0).max(radii.bottom_left.0).max(radii.bottom_right.0);
@@ -544,7 +541,7 @@ impl Primitive {
             Primitive::Quad(quad) => {
                 let widths = &quad.border_widths;
                 let bordered = quad.border_color.a > 0.0 && [widths.top, widths.right, widths.bottom, widths.left].iter().any(|width| width.0 > 0.0);
-                quad.background.tag == 0 && quad.background.solid.a <= 0.0 && !bordered
+                quad.background.a <= 0.0 && !bordered
             }
             Primitive::Underline(underline) => underline.color.a <= 0.0,
             Primitive::MonochromeSprite(sprite) => sprite.color.a <= 0.0,
@@ -748,6 +745,105 @@ pub(crate) enum PrimitiveBatch<'a> {
     Rasters(&'a [Raster]),
 }
 
+/// What a pipeline's vertex shader reads of each of a batch's instances, which the frame's data holds as the scene does
+/// (`Renderer::push_instances`), one instance a step (`VertexStepMode::Instance`): each attribute a field, at its place
+/// in the struct, read at its `@location` by the struct of the same name in `shaders.wgsl`. Fields it doesn't read, as
+/// the order, are stepped over. Vertex data rather than a storage buffer, as WebGL2 has none.
+pub(crate) trait Instance: Sized {
+    const ATTRIBUTES: &'static [wgpu::VertexAttribute];
+    const LAYOUT: wgpu::VertexBufferLayout<'static> =
+        wgpu::VertexBufferLayout { array_stride: std::mem::size_of::<Self>() as u64, step_mode: wgpu::VertexStepMode::Instance, attributes: Self::ATTRIBUTES };
+}
+
+macro_rules! instance {
+    ($type:ty { $($location:literal: $($field:ident).+ as $format:ident),+ $(,)? }) => {
+        impl Instance for $type {
+            const ATTRIBUTES: &'static [wgpu::VertexAttribute] = &[$(wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::$format,
+                offset: std::mem::offset_of!($type, $($field).+) as u64,
+                shader_location: $location,
+            }),+];
+        }
+    };
+}
+
+instance!(Quad {
+    0: border_style as Uint32,
+    1: bounds as Float32x4,
+    2: content_mask.bounds as Float32x4,
+    3: content_mask.corner_radii as Float32x4,
+    4: background as Float32x4,
+    5: border_color as Float32x4,
+    6: corner_radii as Float32x4,
+    7: border_widths as Float32x4,
+    8: transformation.rotation_scale as Float32x4,
+    9: transformation.translation as Float32x2,
+});
+
+instance!(Shadow {
+    0: blur_radius as Float32,
+    1: bounds as Float32x4,
+    2: corner_radii as Float32x4,
+    3: content_mask.bounds as Float32x4,
+    4: content_mask.corner_radii as Float32x4,
+    5: color as Float32x4,
+    6: transformation.rotation_scale as Float32x4,
+    7: transformation.translation as Float32x2,
+    8: inset as Uint32,
+    9: outer as Float32x4,
+    10: outer_radii as Float32x4,
+});
+
+instance!(Underline {
+    0: bounds as Float32x4,
+    1: content_mask.bounds as Float32x4,
+    2: content_mask.corner_radii as Float32x4,
+    3: color as Float32x4,
+    4: thickness as Float32,
+    5: wavy as Uint32,
+});
+
+instance!(MonochromeSprite {
+    0: bounds as Float32x4,
+    1: content_mask.bounds as Float32x4,
+    2: content_mask.corner_radii as Float32x4,
+    3: color as Float32x4,
+    4: tile.bounds as Sint32x4,
+    5: transformation.rotation_scale as Float32x4,
+    6: transformation.translation as Float32x2,
+});
+
+instance!(PolychromeSprite {
+    0: grayscale as Uint32,
+    1: opacity as Float32,
+    2: bounds as Float32x4,
+    3: content_mask.bounds as Float32x4,
+    4: content_mask.corner_radii as Float32x4,
+    5: corner_radii as Float32x4,
+    6: tile.bounds as Sint32x4,
+    7: transformation.rotation_scale as Float32x4,
+    8: transformation.translation as Float32x2,
+});
+
+instance!(Backdrop {
+    0: opacity as Float32,
+    1: saturation as Float32,
+    2: bounds as Float32x4,
+    3: content_mask.bounds as Float32x4,
+    4: content_mask.corner_radii as Float32x4,
+    5: corner_radii as Float32x4,
+});
+
+instance!(Raster {
+    0: opacity as Float32,
+    1: bounds as Float32x4,
+    2: content_mask.bounds as Float32x4,
+    3: content_mask.corner_radii as Float32x4,
+    4: transformation.rotation_scale as Float32x4,
+    5: transformation.translation as Float32x2,
+    6: slot as Float32x4,
+});
+
 #[derive(Default, Debug, Clone)]
 #[repr(C)]
 pub(crate) struct Quad {
@@ -755,7 +851,7 @@ pub(crate) struct Quad {
     pub border_style: BorderStyle,
     pub bounds: Bounds<ScaledPixels>,
     pub content_mask: ContentMask<ScaledPixels>,
-    pub background: Background,
+    pub background: Hsla,
     pub border_color: Hsla,
     pub corner_radii: Corners<ScaledPixels>,
     pub border_widths: Edges<ScaledPixels>,

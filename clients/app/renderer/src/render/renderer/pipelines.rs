@@ -1,9 +1,10 @@
-use super::super::bindings::{self, Binding, Data, Pipeline};
+use super::super::bindings::{self, Binding, Pipeline};
+use super::super::scene::{Backdrop, Instance, MonochromeSprite, PolychromeSprite, Quad, Raster, Shadow, Underline};
 use super::shadows::TILE_FORMAT;
 use std::sync::Arc;
 
 /// The pipelines a format of target draws with, and the layouts of what they bind: the frame's globals (group 0), a
-/// batch's instances or a blur's parameters (group 1), and the texture a batch samples (group 2).
+/// blur's parameters (group 1), and the texture a batch samples (group 2). A batch's instances are its vertex data.
 pub(crate) struct Pipelines {
     pub(super) layouts: Layouts,
     pub(super) quads: wgpu::RenderPipeline,
@@ -34,7 +35,6 @@ pub(super) struct Layouts {
     pub(super) format: wgpu::TextureFormat,
     pub(super) blend: wgpu::BlendState,
     pub(super) globals: wgpu::BindGroupLayout,
-    pub(super) instances: wgpu::BindGroupLayout,
     pub(super) blur_params: wgpu::BindGroupLayout,
     pub(super) texture: wgpu::BindGroupLayout,
     /// A 64×64 tile of blue noise (`blue-noise.png`, made by Ulichney's void-and-cluster, σ 1.5), which the shaders
@@ -49,7 +49,6 @@ impl Layouts {
             label: None,
             source: wgpu::ShaderSource::Wgsl(include_str!("../shaders.wgsl").into()),
         });
-        // A batch's instances are at an offset of their own in the frame's data, which one bind group of it gives.
         let layout = |bindings: &[Binding]| {
             let entries: Vec<_> = bindings
                 .iter()
@@ -59,7 +58,6 @@ impl Layouts {
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: match *kind {
                         Binding::Uniform => wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-                        Binding::Storage => wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: true, min_binding_size: None },
                         Binding::Texture { filterable } => wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Float { filterable },
                             view_dimension: wgpu::TextureViewDimension::D2,
@@ -72,8 +70,7 @@ impl Layouts {
                 .collect();
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: None, entries: &entries })
         };
-        let (globals, texture) = (layout(bindings::GLOBALS), layout(bindings::TEXTURE));
-        let (instances, blur_params) = (layout(Data::Instances.bindings()), layout(Data::BlurParams.bindings()));
+        let (globals, blur_params, texture) = (layout(bindings::GLOBALS), layout(bindings::BLUR_PARAMS), layout(bindings::TEXTURE));
         // Every colour a shader gives, every picture in the atlas and every target holds is premultiplied by its alpha,
         // so what's resampled, blurred or blended weighs nothing that isn't drawn (`shaders.wgsl`, `Atlas`):
         // https://apoorvaj.io/alpha-compositing-opengl-blending-and-premultiplied-alpha/
@@ -104,7 +101,6 @@ impl Layouts {
             format,
             blend,
             globals,
-            instances,
             blur_params,
             texture,
             noise,
@@ -125,28 +121,25 @@ impl Layouts {
         })
     }
 
-    /// `pipeline`, binding its data as group 1, and where it samples a texture, the texture as group 2.
-    fn pipeline(&self, pipeline: &Pipeline, blend: Option<wgpu::BlendState>) -> wgpu::RenderPipeline {
-        self.pipeline_into(self.format, pipeline, blend)
+    /// `pipeline`, drawing each of a batch's instances, as `instances` lays them out, and binding the globals as group
+    /// 0, a blur's parameters as group 1 and the texture it samples as group 2, where it does.
+    fn pipeline(&self, pipeline: &Pipeline, instances: &[Option<wgpu::VertexBufferLayout<'_>>], blend: Option<wgpu::BlendState>) -> wgpu::RenderPipeline {
+        self.pipeline_into(self.format, pipeline, instances, blend)
     }
 
     /// `pipeline`, drawing into a target of `format`.
-    fn pipeline_into(&self, format: wgpu::TextureFormat, pipeline: &Pipeline, blend: Option<wgpu::BlendState>) -> wgpu::RenderPipeline {
-        let data = match pipeline.data {
-            Data::Instances => &self.instances,
-            Data::BlurParams => &self.blur_params,
-        };
-        let groups = [Some(&self.globals), Some(data), Some(&self.texture)];
+    fn pipeline_into(&self, format: wgpu::TextureFormat, pipeline: &Pipeline, instances: &[Option<wgpu::VertexBufferLayout<'_>>], blend: Option<wgpu::BlendState>) -> wgpu::RenderPipeline {
+        let groups = [Some(&self.globals), pipeline.blurs.then_some(&self.blur_params), pipeline.samples.then_some(&self.texture)];
         let layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &groups[..if pipeline.samples { 3 } else { 2 }],
+            bind_group_layouts: &groups[..groups.iter().rposition(Option::is_some).map_or(0, |last| last + 1)],
             immediate_size: 0,
         });
         let [vertex, fragment] = self.stages(pipeline);
         self.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&layout),
-            vertex: wgpu::VertexState { module: &vertex, entry_point: Some(pipeline.vertex), compilation_options: Default::default(), buffers: &[] },
+            vertex: wgpu::VertexState { module: &vertex, entry_point: Some(pipeline.vertex), compilation_options: Default::default(), buffers: instances },
             primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleStrip, ..Default::default() },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
@@ -215,19 +208,19 @@ impl Pipelines {
         // a pipeline compiled as a frame first needs it made that frame wait, the first to show glass half a second on
         // the Surface while its blur's were compiled.
         let [quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear] = side_by_side([
-            &|| l.pipeline(&bindings::QUADS, blend),
-            &|| l.pipeline(&bindings::SHADOWS, blend),
-            &|| l.pipeline(&bindings::UNDERLINES, blend),
-            &|| l.pipeline(&bindings::MONO_SPRITES, blend),
-            &|| l.pipeline(&bindings::POLY_SPRITES, blend),
-            &|| l.pipeline(&bindings::RASTERS, blend),
-            &|| l.pipeline(&bindings::BACKDROPS, blend),
+            &|| l.pipeline(&bindings::QUADS, &[Some(Quad::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::SHADOWS, &[Some(Shadow::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::UNDERLINES, &[Some(Underline::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::MONO_SPRITES, &[Some(MonochromeSprite::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::POLY_SPRITES, &[Some(PolychromeSprite::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::RASTERS, &[Some(Raster::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::BACKDROPS, &[Some(Backdrop::LAYOUT)], blend),
             // Each pass of a blur replaces what's in its target.
-            &|| l.pipeline(&bindings::BLUR, None),
+            &|| l.pipeline(&bindings::BLUR, &[], None),
             // A tile holds how much of each point the blurred box covers, nothing else, and replaces what's there.
-            &|| l.pipeline_into(TILE_FORMAT, &bindings::SHADOW_COVERAGE, None),
-            &|| l.pipeline(&bindings::SHADOW_TILES, blend),
-            &|| l.pipeline(&bindings::CLEAR, None),
+            &|| l.pipeline_into(TILE_FORMAT, &bindings::SHADOW_COVERAGE, &[Some(Shadow::LAYOUT)], None),
+            &|| l.pipeline(&bindings::SHADOW_TILES, &[Some(Shadow::LAYOUT)], blend),
+            &|| l.pipeline(&bindings::CLEAR, &[], None),
         ]);
         Self { layouts, quads, shadows, underlines, mono_sprites, poly_sprites, rasters, backdrops, blur, coverage, tiles, clear }
     }

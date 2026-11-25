@@ -324,36 +324,16 @@ impl Renderer {
         if self.shadow_tiles.len() + tiles.len() > SHADOW_TILES {
             self.shadow_tiles.retain(|key, _| used.contains(key));
         }
-        // What a batch's instances bind is as much as the largest needs, from its offset, so one bind group serves all.
-        let largest = instances
-            .iter()
-            .chain(tiles.iter().map(|(.., instance)| instance))
-            .chain(rastering.iter().flat_map(|(_, tiles)| tiles.iter().flat_map(|tile| &tile.offsets)))
-            .map(|(_, length)| *length)
-            .max()
-            .unwrap_or(4);
-        let window = self.instances.as_ref().map_or(0, |(_, window, _)| *window).max(largest.next_power_of_two().max(256));
-        self.data.resize(self.data.len() + window as usize, 0);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         self.write_data(&mut encoder);
         let buffer = self.buffer.clone().expect("written above");
-        let binding = |(offset, size): (u64, u64)| wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &buffer, offset, size: wgpu::BufferSize::new(size) });
-        if self.instances.as_ref().is_none_or(|(bound, bound_window, _)| *bound != buffer || *bound_window != window) {
-            let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &self.pipelines.layouts.instances,
-                entries: &[wgpu::BindGroupEntry { binding: 0, resource: binding((0, window)) }],
-            });
-            self.instances = Some((buffer.clone(), window, group));
-        }
-        let group = self.instances.as_ref().expect("made above").2.clone();
 
         // Shadows' tiles and pictures' tiles first, once for every target that draws them.
         for (key, (width, height), globals, instance) in tiles {
-            self.draw_tile(&mut encoder, &buffer, &group, key, (width, height), globals, gamma, instance);
+            self.draw_tile(&mut encoder, &buffer, key, (width, height), globals, gamma, instance);
         }
         for (page, tiles) in rastering {
-            self.draw_sheet(&mut encoder, &buffer, &group, &page.texture.create_view(&wgpu::TextureViewDescriptor::default()), gamma, &tiles);
+            self.draw_sheet(&mut encoder, &buffer, &page.texture.create_view(&wgpu::TextureViewDescriptor::default()), gamma, &tiles);
         }
         self.pictures.retain(|id, _| scene.rasters.iter().any(|raster| raster.raster == *id));
         // Then each target, in runs of batches, one pass each, broken at each backdrop that blurs what's drawn before
@@ -363,7 +343,7 @@ impl Renderer {
             let Some(image) = image else { continue };
             let globals = self.pipelines.layouts.globals(&buffer, planned.globals, gamma);
             let batches: Vec<PrimitiveBatch<'_>> = planned.batches.iter().map(|at| batches[*at]).collect();
-            let instances = Instances { group: group.clone(), offsets: planned.batches.iter().map(|at| instances[*at].0 as u32).collect() };
+            let instances = Instances { buffer: buffer.clone(), at: planned.batches.iter().map(|at| instances[*at]).collect() };
             self.draw_target(&mut encoder, target, image, &globals, &buffer, &batches, &instances, &planned.blurs, planned.drawn, planned.shown, since, planned.origin);
         }
         self.targets = targets;
@@ -519,7 +499,7 @@ impl Renderer {
             self.buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: needed.next_power_of_two().max(0x10000),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }));
         }
@@ -553,7 +533,6 @@ impl Renderer {
         pass.set_bind_group(0, globals, &[]);
         if clears {
             pass.set_pipeline(&self.pipelines.clear);
-            pass.set_bind_group(1, &instances.group, &[0]);
             self.clipped(&mut pass, clip.map(|clip| &clip.rects[..]), &|pass| pass.draw(0..4, 0..1));
         }
         self.draw_in(&mut pass, batches, instances, run, clip);
@@ -576,12 +555,12 @@ impl Renderer {
             let (rects, scene) = (reached.as_ref().map(|(rects, _)| &rects[..]), reached.as_ref().map(|(_, scene)| &scene[..]));
             self.covered(&batch, scene);
             if let PrimitiveBatch::Shadows(shadows) = &batches[at] {
-                self.draw_shadows(pass, shadows, &instances.group, instances.offsets[at], rects);
+                self.draw_shadows(pass, shadows, instances, at, rects);
                 continue;
             }
             if let PrimitiveBatch::Rasters(rasters) = &batches[at] {
                 pass.set_pipeline(&self.pipelines.rasters);
-                pass.set_bind_group(1, &instances.group, &[instances.offsets[at]]);
+                instances.set(pass, at);
                 // A draw for each texture in a row of them, of the images in it.
                 let sheet = |raster: &Raster| self.slot(raster).map(|(sheet, _)| sheet);
                 let mut start = 0;
@@ -605,14 +584,14 @@ impl Renderer {
                 PrimitiveBatch::Backdrops(_) => {
                     let Some((blurred, one)) = blurred else { continue };
                     pass.set_pipeline(&self.pipelines.backdrops);
-                    pass.set_bind_group(1, &instances.group, &[instances.offsets[at]]);
+                    instances.set(pass, at);
                     pass.set_bind_group(2, &self.texture(blurred), &[]);
                     self.clipped(pass, rects, &|pass| pass.draw(0..4, *one as u32..*one as u32 + 1));
                     continue;
                 }
             };
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(1, &instances.group, &[instances.offsets[at]]);
+            instances.set(pass, at);
             if let Some(id) = texture {
                 pass.set_bind_group(2, &self.atlas_group(id), &[]);
             }
@@ -715,7 +694,7 @@ impl Renderer {
     /// Draws `tiles` into their cells of a page (`view`), with the frame's `gamma`: in one pass, each with its cell
     /// the viewport, cleared first and drawn only where it says, as a tile's backdrops draw nothing.
     #[allow(clippy::too_many_arguments)]
-    fn draw_sheet(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, group: &wgpu::BindGroup, view: &wgpu::TextureView, gamma: (u64, u64), tiles: &[Drawing]) {
+    fn draw_sheet(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, view: &wgpu::TextureView, gamma: (u64, u64), tiles: &[Drawing]) {
         let mut pass = self.pass(encoder, view, wgpu::LoadOp::Load, self.stamps.as_ref().and_then(|stamps| stamps.pass(false)));
         for tile in tiles {
             let [x, y] = tile.cell;
@@ -723,10 +702,9 @@ impl Renderer {
             pass.set_viewport(x as f32, y as f32, CELL as f32, CELL as f32, 0.0, 1.0);
             let rects: Vec<Rect> = tile.rects.iter().map(|[left, top, right, bottom]| [x + left, y + top, x + right, y + bottom]).collect();
             pass.set_pipeline(&self.pipelines.clear);
-            pass.set_bind_group(1, group, &[0]);
             self.clipped(&mut pass, Some(&rects), &|pass| pass.draw(0..4, 0..1));
             let batches: Vec<PrimitiveBatch<'_>> = tile.scene.batches().collect();
-            let instances = Instances { group: group.clone(), offsets: tile.offsets.iter().map(|(offset, _)| *offset as u32).collect() };
+            let instances = Instances { buffer: buffer.clone(), at: tile.offsets.clone() };
             let run: Vec<(usize, Option<(wgpu::TextureView, usize)>)> = (0..batches.len()).map(|at| (at, None)).collect();
             let [left, top] = [tile.origin[0] - x as f32, tile.origin[1] - y as f32];
             self.draw_in(&mut pass, &batches, &instances, &run, Some(&Clip::new(rects, [left, top])));

@@ -43,8 +43,8 @@ pub(super) fn tiled(shadow: &Shadow) -> Option<(TileKey, f32, [f32; 4], [f32; 2]
 
 impl Renderer {
     /// Draws a batch of shadows, each from its tile where it has one, else worked out where it's drawn, in runs.
-    pub(super) fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, shadows: &[Shadow], instances: &wgpu::BindGroup, offset: u32, rects: Option<&[super::damage::Rect]>) {
-        pass.set_bind_group(1, instances, &[offset]);
+    pub(super) fn draw_shadows(&self, pass: &mut wgpu::RenderPass<'_>, shadows: &[Shadow], instances: &super::Instances, batch: usize, rects: Option<&[super::damage::Rect]>) {
+        instances.set(pass, batch);
         let mut at = 0;
         while at < shadows.len() {
             match tiled(&shadows[at]).and_then(|(key, ..)| self.shadow_tiles.get(&key)) {
@@ -68,7 +68,7 @@ impl Renderer {
     /// Draws a shadow's tile, `size`, from its box alone (`instance`, with the frame's `globals` and `gamma` of its
     /// own), and keeps it, as `key`'s.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn draw_tile(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, instances: &wgpu::BindGroup, key: TileKey, (width, height): (u32, u32), globals: (u64, u64), gamma: (u64, u64), instance: (u64, u64)) {
+    pub(super) fn draw_tile(&mut self, encoder: &mut wgpu::CommandEncoder, buffer: &wgpu::Buffer, key: TileKey, (width, height): (u32, u32), globals: (u64, u64), gamma: (u64, u64), (offset, size): (u64, u64)) {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -88,7 +88,7 @@ impl Renderer {
             let mut pass = self.pass(encoder, &view, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), None);
             pass.set_pipeline(&self.pipelines.coverage);
             pass.set_bind_group(0, &globals, &[]);
-            pass.set_bind_group(1, instances, &[instance.0 as u32]);
+            pass.set_vertex_buffer(0, buffer.slice(offset..offset + size));
             pass.draw(0..4, 0..1);
             self.drew();
         }

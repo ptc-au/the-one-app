@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use taffy::prelude::{AvailableSpace, NodeId, TaffyTree};
 
 use crate::editing::{self, Clipboard, Field, Ime};
-use crate::geometry::{Background, Bounds, ContentMask, Corners, Edges, Hsla, Pixels, Point, ScaledPixels, Size, point, px};
+use crate::geometry::{Bounds, ContentMask, Corners, Edges, Hsla, Pixels, Point, ScaledPixels, Size, point, px};
 use crate::inspect::{self, Key, Rect, Rects};
 use crate::js::{Posted, Thread};
 use crate::render::atlas::{Atlas, AtlasTile};

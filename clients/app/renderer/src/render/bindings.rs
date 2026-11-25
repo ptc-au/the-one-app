@@ -1,13 +1,11 @@
 //! What each pipeline binds and which shaders it runs, as plain data, which the renderer makes its bind group layouts
 //! and pipelines from, and `build.rs` its Direct3D 12 shaders from, ahead of time: a binding's place in its group is
-//! its `@binding`.
+//! its `@binding`. A batch's instances aren't bound: they're its vertex data (`scene::Instance`).
 
 /// A binding of a group, seen from every stage.
 #[derive(Clone, Copy)]
 pub enum Binding {
     Uniform,
-    /// A read-only storage buffer, bound at an offset of its own (`has_dynamic_offset`).
-    Storage,
     Texture { filterable: bool },
     Sampler,
 }
@@ -17,46 +15,27 @@ pub const GLOBALS: &[Binding] = &[Binding::Uniform, Binding::Uniform, Binding::T
 /// Group 2, where a pipeline samples a texture: the texture and its sampler.
 pub const TEXTURE: &[Binding] = &[Binding::Texture { filterable: true }, Binding::Sampler];
 
-/// Group 1: what a pipeline draws from.
-#[derive(Clone, Copy)]
-pub enum Data {
-    /// A batch's instances, at their offset in the frame's data.
-    Instances,
-    /// A blur pass's parameters.
-    BlurParams,
-}
+/// Group 1, a blur pass's: its parameters.
+pub const BLUR_PARAMS: &[Binding] = &[Binding::Uniform];
 
-impl Data {
-    pub const fn bindings(self) -> &'static [Binding] {
-        match self {
-            Data::Instances => &[Binding::Storage],
-            Data::BlurParams => &[Binding::Uniform],
-        }
-    }
-}
-
-/// A pipeline's shaders, what it draws from, and whether it samples a texture.
+/// A pipeline's shaders, whether it's a blur pass's, which binds its parameters, and whether it samples a texture.
 pub struct Pipeline {
     pub vertex: &'static str,
     pub fragment: &'static str,
-    pub data: Data,
+    pub blurs: bool,
     pub samples: bool,
 }
 
 impl Pipeline {
-    /// Its bind groups, in order, which `build.rs` binds its shaders by.
+    /// Its bind groups, in order, which `build.rs` binds its shaders by: none where it binds nothing.
     #[allow(dead_code)]
-    pub fn groups(&self) -> Vec<&'static [Binding]> {
-        let mut groups = vec![GLOBALS, self.data.bindings()];
-        if self.samples {
-            groups.push(TEXTURE);
-        }
-        groups
+    pub fn groups(&self) -> [&'static [Binding]; 3] {
+        [GLOBALS, if self.blurs { BLUR_PARAMS } else { &[] }, if self.samples { TEXTURE } else { &[] }]
     }
 }
 
 const fn drawing(vertex: &'static str, fragment: &'static str, samples: bool) -> Pipeline {
-    Pipeline { vertex, fragment, data: Data::Instances, samples }
+    Pipeline { vertex, fragment, blurs: false, samples }
 }
 
 pub const QUADS: Pipeline = drawing("vs_quad", "fs_quad", false);
@@ -70,7 +49,7 @@ pub const SHADOW_TILES: Pipeline = drawing("vs_shadow", "fs_shadow_tile", true);
 pub const BACKDROPS: Pipeline = drawing("vs_backdrop", "fs_backdrop", true);
 /// What clears a frame where it's drawn again (`fs_clear`), over the whole target as a blur's passes are.
 pub const CLEAR: Pipeline = drawing("vs_blur", "fs_clear", false);
-pub const BLUR: Pipeline = Pipeline { vertex: "vs_blur", fragment: "fs_blur", data: Data::BlurParams, samples: true };
+pub const BLUR: Pipeline = Pipeline { vertex: "vs_blur", fragment: "fs_blur", blurs: true, samples: true };
 
 /// Every pipeline the renderer draws with, which `build.rs` compiles Windows' shaders for.
 #[allow(dead_code)]
