@@ -1,0 +1,17 @@
+[package]
+name = "raster"
+description = "The images app's NIF, `Raster`: photos and PDF pages made small, cropped and drawn on, for a server's apps."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A NIF has no tests of its own: it's only whole inside the VM that loads it.
+[lib]
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+hayro = "0.9"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+rustler = "0.39"
