@@ -377,11 +377,14 @@ impl Subscription {
                 let _ = tx.send(Some(fresh.as_ref().map(Value::clone).map_err(|error| format!("{error:#}"))));
                 fresh
             }
-            Err(mut waiting) => match waiting.wait_for(Option::is_some).await {
-                Ok(answer) => answer.clone().expect("it waited for one").map_err(anyhow::Error::msg),
-                // Whoever asked first stopped waiting before it was answered: this asks itself.
-                Err(_) => self.client.fresh(method, params).await,
-            },
+            Err(mut waiting) => {
+                let answer = waiting.wait_for(Option::is_some).await.map(|answer| answer.clone().expect("it waited for one"));
+                match answer {
+                    Ok(answer) => answer.map_err(anyhow::Error::msg),
+                    // Whoever asked first stopped waiting before it was answered: this asks itself.
+                    Err(_) => self.client.fresh(method, params).await,
+                }
+            }
         }
     }
 
