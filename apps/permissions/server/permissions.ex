@@ -177,6 +177,8 @@ defmodule Permissions do
       },
       %{
         name: "group",
+        ui: "client/forms.html",
+        runtime_version: 4,
         description: "Makes a group, with you as its owner and its first member",
         inputs: %{
           type: "object",
