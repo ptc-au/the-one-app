@@ -131,6 +131,9 @@ defmodule AppStore do
   end
 
   defp marketplace(call) do
+    # The directory is a website outside the network, asked while the network's own apps are read.
+    directory = Task.async(fn -> directory(call) end)
+
     # Who each is installed for, as its artifact says, read for every app at once.
     deployed =
       Call.deployed(call)
@@ -165,7 +168,7 @@ defmodule AppStore do
     names = MapSet.new(here, & &1.name)
 
     listed =
-      for app <- directory(call), app["icon"] != nil, app["name"] not in names do
+      for app <- Task.await(directory, :infinity), app["icon"] != nil, app["name"] not in names do
         %{
           name: app["name"],
           app: nil,
