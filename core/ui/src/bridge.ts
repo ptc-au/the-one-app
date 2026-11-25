@@ -260,8 +260,10 @@ export const displayMode: typeof Page.displayMode = () => mode()
 /// MCP App does (`ui/request-display-mode`). → how it shows it now: the same where it doesn't offer that, or declined.
 export const requestDisplayMode: typeof Page.requestDisplayMode = async (to) => {
   await greeted
-  if (to !== mode() && offered().includes(to)) setMode(((await ask<{ mode: "inline" | "fullscreen" }>("ui/request-display-mode", { mode: to })).mode))
-  return mode()
+  if (to === mode() || !offered().includes(to)) return mode()
+  const answered = (await ask<{ mode: "inline" | "fullscreen" }>("ui/request-display-mode", { mode: to })).mode
+  setMode(answered)
+  return answered
 }
 /// `reducedMotion()`: whether whoever's looking asked for less motion, as it changes, for what moves by hand.
 export const reducedMotion: typeof Page.reducedMotion = () => still()
