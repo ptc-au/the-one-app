@@ -340,7 +340,7 @@ export async function admits(lists: Lists, key: string, shown: string | null): P
   if (!isKey(key) || owner(list) !== list) return null;
   // A server's own token says it's one of the network's, on the list it names, which is all it says: a new one is on
   // its list before it says whom it chose, the other side of acting for them (`servers/2`).
-  if (by === undefined) return (await lists(list))?.includes(key) ? {} : null;
+  if (by === undefined) return (await lists(list)).list?.includes(key) ? {} : null;
   if (!(until !== undefined && until > Date.now())) return null;
   if (device !== key && !(await signedBy(device, attestation, `one/run/1\n${key}`))) return null;
   if (!(await signedBy(by, signature, `one/token/1\n${device}\n${list}\n${until}`))) return null;
@@ -354,14 +354,11 @@ export async function admits(lists: Lists, key: string, shown: string | null): P
  * has it (`OneCore.Servers.acts_for/1`): each on its list that chose it, as its `servers/<key>/members` says.
  */
 export async function servers(lists: Lists, of: unknown): Promise<string[]> {
-  if (owner(of) !== of) return [];
-  const listed = (await lists(of as string)) ?? [];
-  const chose = await Promise.all(listed.map((key) => lists.members(key)));
-  return listed.filter((_key, at) => chose[at].includes((of as string).slice(0, -1)));
+  return owner(of) === of ? (await lists(of as string)).acting : [];
 }
 
-/** The lists of servers, by their prefixes, and whom each server chose, by its key, as one request reads them. */
-type Lists = ((prefix: string | undefined) => Promise<string[] | null>) & { members: (key: string) => Promise<string[]> };
+/** The lists of servers, by their prefixes, as one request reads them. */
+type Lists = (prefix: string | undefined) => Promise<Listed>;
 
 /** A list of servers as the bucket gave it, `null` where there's none yet, and those on it that chose whoever it's of. */
 interface Listed {
@@ -369,15 +366,12 @@ interface Listed {
   acting: string[];
 }
 
-/** A list of servers as the bucket gave it, and when it was asked for. */
-const kept = new Map<string, { at: number; list: string[] | null }>();
-
 /**
- * Says when a list of servers may have changed, for every copy of the presigner, which each keep what they've read in
- * memory that no copy can reach into. A write to a list is signed for `SIGNED_FOR` seconds, so a list read before that
- * has passed may not be the one that's there then. It's held back from belief until then, and read from the bucket
- * again once it has, so a server taken off a list is refused on its next request, not when `KEPT` ends. A Durable
- * Object is one place that every copy asks, and answers in the order things happened.
+ * Keeps the lists of servers for every copy of the presigner, of which Cloudflare runs dozens, and says when one may
+ * have changed. A write to a list is signed for `SIGNED_FOR` seconds, so a list read before that has passed may not be
+ * the one that's there then. It's held back from belief until then, and read from the bucket again once it has, so a
+ * server taken off a list is refused on its next request, not when `KEPT` ends. A Durable Object is one place that
+ * every copy asks, and answers in the order things happened.
  *
  * A write that only lands if there's no list yet (`write`) can't change one that's there, and a server that starts
  * signs one each time (`OneCore.Servers.joined?/2`), so that holds back only the lists that weren't there.
@@ -447,45 +441,33 @@ export class Changes extends DurableObject<Env> {
 const changes = (env: Env) => env.CHANGES.getByName("lists");
 
 /**
- * Reads the lists of servers for one request: each from the bucket once, however often it's asked for, and from
- * what an earlier request read if that was read since any change to it and less than `KEPT` ago. What's kept is the
- * list, never a request for it: a promise made in one request can't be settled in another that has ended.
+ * Reads the lists of servers for one request: each once, however often it's asked for, and all that are asked for
+ * together in one request to `Changes`, which keeps them for every copy of the presigner.
  */
 export function reader(env: Env): Lists {
-  const read = new Map<string | undefined, Promise<string[] | null>>();
-  let until: ReturnType<Changes["until"]> | undefined;
-  const get = async (prefix: string) => {
-    const [at, held] = [Date.now(), await (until ??= changes(env).until())];
-    const had = kept.get(prefix);
-    if (had && had.at > (had.list ? held.any : Math.max(held.any, held.absent)) && at - had.at < KEPT) return had.list;
-    const found = await list(env, prefix);
-    for (const [old, { at: read }] of kept) if (at - read >= KEPT) kept.delete(old);
-    kept.set(prefix, { at, list: found });
-    return found;
+  const read = new Map<string, Promise<Listed>>();
+  let asking: { prefixes: string[]; listed: Promise<Listed[]> } | undefined;
+  return (prefix) => {
+    if (!prefix) return Promise.resolve({ list: null, acting: [] });
+    if (read.has(prefix)) return read.get(prefix)!;
+    // What's asked for before this request next waits is asked for at once: `allowed` asks for every list it needs so.
+    if (!asking) {
+      const prefixes: string[] = [];
+      asking = { prefixes, listed: Promise.resolve().then(() => ((asking = undefined), changes(env).lists(prefixes))) };
+    }
+    const at = asking.prefixes.push(prefix) - 1;
+    const listed = asking.listed.then((listed) => listed[at]);
+    read.set(prefix, listed);
+    return listed;
   };
-  const lists = (prefix: string | undefined) => read.get(prefix) ?? read.set(prefix, prefix ? get(prefix) : Promise.resolve([])).get(prefix)!;
-  const members = (key: string) => read.get(`servers/${key}/members`) ?? read.set(`servers/${key}/members`, chosen(env, key)).get(`servers/${key}/members`)!;
-  return Object.assign(lists, { members }) as Lists;
 }
 
-/**
- * Whom the server `key` chose to act for, as its own `members` blob says, kept as long as a list is once it's there.
- * Only it writes that, and it changes only when its owner chooses someone else too, which is never a refusal of what
- * was let. One not there yet is read again next time, as a new server writes it as it starts.
- */
+/** Whom the server `key` chose to act for, as its own `members` blob says, none where it has none yet. */
 async function chosen(env: Env, key: string): Promise<string[]> {
-  const had = choices.get(key);
-  if (had && Date.now() - had.at < KEPT) return had.members;
   const got = await bucket(env).fetch(blob(env, `servers/${key}/members`));
   if (!got.ok && got.status !== 404) throw new Error(`The bucket answered ${got.status} for servers/${key}/members`);
-  if (!got.ok) return [];
-  const members: string[] = await got.json();
-  choices.set(key, { at: Date.now(), members });
-  return members;
+  return got.ok ? got.json() : [];
 }
-
-/** Whom each server chose, as the bucket gave it, and when it was asked for. */
-const choices = new Map<string, { at: number; members: string[] }>();
 
 /**
  * What the network's own app `app` keeps as the blob `name` (`OneCore.Artifact`), or null where it keeps none: the
