@@ -126,7 +126,7 @@
       body.remove()
       return size
     }
-    await renderer.open(canvas, devicePixelRatio, base.href, decodeURIComponent(page.hash.slice(1)), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, new URLSearchParams(location.search).has("paused"), {
+    await renderer.open(canvas, devicePixelRatio, base.href, page.hash.slice(1), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, new URLSearchParams(location.search).has("paused"), {
       post: named ? alone(renderer) : (/** @type {object} */ message) => parent.postMessage(message, "*"),
       timer: (/** @type {[() => void, number]} */ [fired, delay]) => browser.setTimeout(fired, delay),
       untimer: (/** @type {number} */ handle) => browser.clearTimeout(handle),
@@ -243,7 +243,7 @@
     // (client.js's `load`), and which a native host tells a page as its host context's `link`: as it opens, and as its
     // client takes it somewhere else in it.
     if (!named) addEventListener("hashchange", () => {
-      const link = decodeURIComponent(new URL(location.hash.slice(1), location.href).hash.slice(1))
+      const link = new URL(location.hash.slice(1), location.href).hash.slice(1)
       renderer.message({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { link } })
     })
     try {
