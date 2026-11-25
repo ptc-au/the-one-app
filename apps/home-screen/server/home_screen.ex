@@ -206,6 +206,8 @@ defmodule HomeScreen do
       },
       %{
         name: "reorder",
+        ui: "client/index.html",
+        runtime_version: 4,
         description: """
         Puts your groups' Home Screens in an order, by the groups (`permissions_groups`), as you move between them:
         yours is always first and everyone's last. A group left out, or one you join later, comes after those given.

@@ -1,7 +1,7 @@
 // The pills: the owner's name, which opens the list of every owner, the page dots with the App Library's glyph (a
 // phone's), and the App Library's button (a computer's).
 import { createEffect, createSignal, For, Show, untrack } from "solid-js"
-import { Avatar, Button, type Element, haptic, Icon, Menu, Pressable, type Pressed, ReorderList, Sheet, Text, type Tip, Tips, View } from "ui"
+import { Avatar, Button, type Element, haptic, Icon, Menu, navigate, Pressable, type Pressed, ReorderList, Sheet, Text, type Tip, Tips, toolInput, toolResult, View } from "ui"
 import { BAR, DOTS } from "./layout.ts"
 import { type Kind } from "./machine.ts"
 import { looks } from "./looks.ts"
@@ -91,13 +91,20 @@ function Dots(props: { owner: Owner; index: number; count: number; size: number 
 
 /// Edit Order's sheet: every owner in the order they're moved between, You first and Everyone last where they stay,
 /// and your groups between, each dragged by its handle, as iOS's lists and macOS's System Settings reorder. Done keeps
-/// the order for you on every device; closed any other way, it's as it was.
-function EditOrder(props: { open: boolean; onClose: () => void }) {
-  // Opened, it's the order they're in now.
+/// the order for you on every device; closed any other way, it's as it was. It's `reorder`'s form, filled in with the
+/// `order` it was given, the groups in it first, as it would put them.
+function EditOrder(props: { open: boolean; given?: string[]; onClose: () => void }) {
+  // Opened, it's the order they're in now, or as it was given.
   const [order, setOrder] = createSignal<Owner[]>([])
   createEffect(
     () => props.open,
-    (open) => void (open && setOrder(untrack(all)!)),
+    (open) => {
+      if (!open) return
+      const now = untrack(all)!
+      const at = (owner: Owner) => (group(owner) && props.given?.includes(owner.subject!) ? props.given.indexOf(owner.subject!) : Infinity)
+      const groups = now.filter(group).sort((one, other) => at(one) - at(other))
+      setOrder(now.map((owner) => (group(owner) ? groups.shift()! : owner)))
+    },
   )
   const done = () => {
     reorder(order().filter(group).map((owner) => owner.subject!))
@@ -119,15 +126,16 @@ function EditOrder(props: { open: boolean; onClose: () => void }) {
 /// owners move. While pages are edited, + and Done are either side of it, and it opens nothing.
 export function OwnerPill(props: { owners: Owner[] }) {
   const shown = () => at().owner
-  // Edit Order's sheet, over Home: its own, as what's open over the page is a layer's, not the machine's, and it takes
-  // every key while it's up.
-  const [ordering, setOrdering] = createSignal(false)
+  // Edit Order's sheet, over Home: `reorder`'s screen, a step Back goes back from, as what's open over the page is a
+  // layer's, not the machine's, and it takes every key while it's up. Under a call that has reordered, it's done.
+  const asked = () => toolInput("home-screen_pages")
+  const ordering = () => asked().name === "home-screen_reorder" && !toolResult()
   return (
     <>
     <Menu.Root
       open={state().matches("listing")}
       onOpenChange={(open) => (open ? home.getSnapshot().matches("nothing") && home.send({ type: "list" }) : home.getSnapshot().matches("listing") && home.send({ type: "dismiss" }))}
-      onSelect={(value) => (value === "order" ? setOrdering(true) : home.send({ type: "pick", owner: Number(value) }))}
+      onSelect={(value) => (value === "order" ? navigate("home-screen_reorder") : home.send({ type: "pick", owner: Number(value) }))}
     >
       <View style={[looks.pill, looks.glass, looks.ownerPill]}>
         <Menu.Trigger variant="ghost" shape="capsule" aria-label={props.owners[shown()]?.name}>
@@ -174,7 +182,7 @@ export function OwnerPill(props: { owners: Owner[] }) {
         </Menu.Content>
       </Menu.Positioner>
     </Menu.Root>
-    <EditOrder open={ordering()} onClose={() => setOrdering(false)} />
+    <EditOrder open={ordering()} given={asked().arguments.order as string[] | undefined} onClose={() => navigate("home-screen_pages")} />
     </>
   )
 }
