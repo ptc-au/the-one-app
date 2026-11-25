@@ -237,9 +237,10 @@ defmodule OneCore.Apps do
   ago, and when it comes back (`reconnected/0`). Nothing else has it look, so someone nobody uses costs nothing.
   """
   def reload(owner, only \\ :all, deployed \\ nil) do
-    # Told only which apps changed, it's their versions that are new, not the servers.
-    if only == :all, do: Servers.reload(owner)
-    OneCore.Apps.Deploy.forget(if(only == :all, do: :all, else: Map.keys(only)))
+    # Told only which apps changed, it's their versions that are new, not the servers. Told nothing of apps, as a
+    # server that started or an install says, what everyone deployed is as it was: each server read it all again for
+    # each of those (25 Nov: a third of a release's reads, 7.7k of 23k on one.thevantonders.com).
+    if only == :all, do: Servers.reload(owner), else: OneCore.Apps.Deploy.forget(Map.keys(only))
     if sync(owner, [], only), do: changed([owner], nil, deployed)
     # An app updated by a server elsewhere may require what isn't installed for them yet.
     if Servers.here?(owner), do: Task.start(fn -> OneCore.Apps.Lifecycle.required(owner) end)
@@ -249,13 +250,14 @@ defmodule OneCore.Apps do
   @doc """
   This server can reach the others again, its network's address or its bucket, after it couldn't, so it may have
   missed being told something, and the edge what it is: it says its status again (`OneCore.Servers.report/0`),
-  invalidates what it cached of servers and hooks, looks at once at who it acts for, and at everyone else it has
+  invalidates what it cached of servers, hooks and what everyone deployed, looks at once at who it acts for, and at everyone else it has
   looked at behind the next request for them (`refresh/0`). Saying its status is how the network's update hears
   it's back, and catches it up if it missed a release. The clients watching it are told the network's update again,
   as an app asks this server for its latest build each time it hears it: one that asked while this server couldn't
   answer asks again, where it waited for a release or a restart.
   """
   def reconnected do
+    OneCore.Apps.Deploy.forget(:all)
     Servers.report()
     Hooks.invalidate()
     Servers.invalidate()

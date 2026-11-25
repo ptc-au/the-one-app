@@ -352,7 +352,8 @@ defmodule OneCore.Apps.Deploy do
   `latest`, as that version described itself (`OneCore.Apps.Store.described/2`): so it's never older than what
   runs. It's three trips to the bucket with a request for each app, and changes only when someone deploys, so
   it's kept: read again behind a request once it's five minutes old, as `OneCore.Apps` looks at what's installed,
-  and for the apps this server deploys or is told have changed, read again alone (`forget/1`).
+  and for the apps this server deploys or is told have changed, read again alone (`forget/1`), and all of it as
+  this server reconnects or renames someone.
   """
   def deployed do
     now = System.monotonic_time(:millisecond)

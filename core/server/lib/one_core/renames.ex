@@ -71,6 +71,7 @@ defmodule OneCore.Renames do
           do: moved.(blob, String.replace_prefix(blob, "network/deployed/#{old}/", "network/deployed/#{new}/"))
 
       OneCore.Server.notify_servers([old, new, "network"])
+      OneCore.Apps.Deploy.forget(:all)
       Servers.invalidate()
       OneCore.Apps.reload(new)
       OneCore.Hooks.invalidate()
