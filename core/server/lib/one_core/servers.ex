@@ -26,12 +26,6 @@ defmodule OneCore.Servers do
   @doc "The keys of the servers on `owner`'s list, the first first."
   def listed(owner), do: cached({:listed, owner}, fn -> read("#{owner}/servers", []) end)
 
-  @doc """
-  The keys of the servers to ask for `whose`, a user, a group or the network, narrowest first: those acting for them,
-  then those acting for the network, which holds everyone, each both ways (`acts_for/1`).
-  """
-  def covering(whose), do: Enum.uniq(own(whose) ++ own(@network))
-
   @doc "The keys of the servers that are up, of every server there is by its own blobs (`ready?/1`)."
   def up, do: Enum.filter(all(), &(ready?(&1) == true))
 

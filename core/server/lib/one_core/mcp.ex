@@ -445,7 +445,7 @@ defmodule OneCore.Mcp do
         end
 
         # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
-        write = Writes.asked(meta(params), from, Process.get(:"$one_request", %{})[:client], subject)
+        write = Writes.asked(meta(params), from, Process.get(:"$one_request", %{})[:client], subject, acting(meta(params), principal))
         outcome = asked(found, name, run, params, principal, caller, write)
         Writes.answered(write, outcome)
         outcome
@@ -530,6 +530,18 @@ defmodule OneCore.Mcp do
 
   defp result(method, _params, _from, _principal, _forwarded),
     do: {:error, -32601, "This server has no method #{method}"}
+
+  # Who acts for a write asked here (`OneCore.Writes.asked/5`), a group's servers for its members too
+  # (`OneCore.Apps.covering/1`): whether this server does for whose it is, and so keeps its key, and, for one asked
+  # again, the servers that could have been asked it first, any of which may have run it.
+  defp acting(%{"idempotencyKey" => _} = meta, {actor, subject}) do
+    owner = User.owner(subject)
+    owners = Enum.reject(Enum.uniq(Enum.map([actor, subject], &User.owner/1)), &is_nil/1)
+    asked = if meta["resent"] == true, do: Enum.uniq(Enum.flat_map(owners, &Apps.covering/1)), else: []
+    %{here: owner != nil and Apps.here?(owner), asked: asked}
+  end
+
+  defp acting(_meta, _principal), do: nil
 
   # A skill is listed here too, for an agent whose client lists resources and not yet skills.
   defp resources("resources/list", _params, who) do

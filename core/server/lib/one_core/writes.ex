@@ -29,7 +29,7 @@ defmodule OneCore.Writes do
   first speaks it too: one from before would have run it without claiming it.
   """
   require Logger
-  alias OneCore.{Bucket, Cache, Iroh, Protocol, Server, Servers, User}
+  alias OneCore.{Bucket, Cache, Iroh, Protocol, Server, Servers}
   alias OneCore.Call.State
 
   # The protocols that keep to idempotency keys (`core/protocol.json`).
@@ -64,12 +64,16 @@ defmodule OneCore.Writes do
   @doc """
   The write a `tools/call` for `subject` is, from what its request says (`meta`), the machine that asked (`from`,
   `nil` for the edge) and the device it was for (`client`, `OneCore.Call.client/1`): `nil` where it says no key.
-  `claim` names this request's claim, which is the one it answers.
+  `claim` names this request's claim, which is the one it answers. `acting` says who acts for it, as the apps that
+  decide who's in a group say, which are above this (`OneCore.Mcp`): whether this server acts for whose it is (`here`),
+  and so keeps its key, and, for one asked again, the servers that could have been asked it first (`asked`).
   """
-  def asked(%{"idempotencyKey" => key} = meta, from, client, subject) do
+  def asked(%{"idempotencyKey" => key} = meta, from, client, subject, acting) do
     %{
       key: key,
       subject: subject,
+      here: acting.here,
+      asked: acting.asked,
       resent: meta["resent"] == true,
       from: from,
       to: if(client["web"] != true, do: client["device"]),
@@ -77,7 +81,7 @@ defmodule OneCore.Writes do
     }
   end
 
-  def asked(_meta, _from, _client, _subject), do: nil
+  def asked(_meta, _from, _client, _subject, _acting), do: nil
 
   @doc """
   Claims the write this process's call is, where its request says a key and its tool `tool` doesn't only read, just
@@ -89,7 +93,7 @@ defmodule OneCore.Writes do
   def claim(tool, name, inputs, {actor, subject}) do
     with {_id, %{write: %{} = write}} <- State.current(),
          false <- tool[:read_only] == true,
-         path when is_binary(path) <- path(subject, write.key) do
+         path when is_binary(path) <- path(write) do
       claimed(write, path, asked(name, inputs), actor, subject)
     else
       {:error, why} -> {:not_run, why}
@@ -102,7 +106,7 @@ defmodule OneCore.Writes do
 
     swept(subject)
 
-    with :ok <- resendable(write, actor, subject),
+    with :ok <- resendable(write),
          :exists <- Bucket.write(path, JSON.encode!(record)) do
       existing(path, write, asked, actor)
     else
@@ -164,16 +168,10 @@ defmodule OneCore.Writes do
   defp done(nil), do: {:not_run, "This was done when it was first asked. Read again what it changed to see it."}
 
   # A write asked again is run only where every server that could have been asked it first keeps to keys.
-  defp resendable(%{resent: false}, _actor, _subject), do: :ok
+  defp resendable(%{resent: false}), do: :ok
 
-  defp resendable(%{resent: true}, actor, subject) do
-    older =
-      [actor, subject]
-      |> Enum.map(&User.owner/1)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.flat_map(&Servers.covering/1)
-      |> Enum.uniq()
-      |> Enum.reject(&keeps?/1)
+  defp resendable(%{resent: true, asked: asked}) do
+    older = Enum.reject(asked, &keeps?/1)
 
     if older == [],
       do: :ok,
@@ -203,7 +201,7 @@ defmodule OneCore.Writes do
   # where there's none.
   defp held(change) do
     with {_id, %{write: %{} = write}} <- State.current(),
-         path when is_binary(path) <- path(write.subject, write.key),
+         path when is_binary(path) <- path(write),
          {:ok, data, tag} <- Bucket.read(path) do
       record = JSON.decode!(data)
 
@@ -229,7 +227,7 @@ defmodule OneCore.Writes do
   def answered(_write, {:ok, %{"resultType" => "task"}}), do: :ok
 
   def answered(write, outcome) do
-    with path when is_binary(path) <- path(write.subject, write.key) do
+    with path when is_binary(path) <- path(write) do
       Task.Supervisor.start_child(OneCore.Asks, fn ->
         claim = write.claim
 
@@ -271,9 +269,7 @@ defmodule OneCore.Writes do
   defp about(key), do: "one/writes/1/answer\n" <> key
 
   # Where a write's key is kept for whoever it's for, on a server that acts for them, or `nil` on one that passes it on.
-  defp path(subject, key) do
-    owner = User.owner(subject)
-
+  defp path(%{subject: subject, key: key, here: here}) do
     cond do
       not is_binary(key) or not (key =~ ~r/^[0-9]{13}-[A-Za-z0-9_-]{16,64}\z/) ->
         {:error, "An idempotency key is <milliseconds since 1970>-<16 to 64 random letters, digits, - or _>"}
@@ -281,7 +277,7 @@ defmodule OneCore.Writes do
       expired?(key) ->
         {:error, "That idempotency key is past its day: a client gives each write a key of its own"}
 
-      owner != nil and Servers.here?(owner) ->
+      here ->
         "#{subject}/writes/#{key}"
 
       true ->
