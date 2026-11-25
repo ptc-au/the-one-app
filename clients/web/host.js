@@ -45,13 +45,15 @@ let key
 /// from that at once while each is asked for again, as stale-while-revalidate has it: where its apps' files are and who
 /// it is (`apps`, `device`, `key`), the files a server listed for each subject (`lists`, by subject, `""` its user's),
 /// the tools (`tools`, by subject, `""` its user's), and what each app was answered that only reads (`reads`, by app and by what it asked). A
-/// browser that's no longer signed in, or signed in as someone else, keeps none of it.
+/// browser that's no longer signed in, or signed in as someone else, keeps none of it. It's a cache: what a build that
+/// kept it otherwise left (tools as one list, or none) is started again, as what isn't there.
 const KEPT = "kept"
 /** @type {{ apps?: string, device?: string, key?: string, lists: Record<string, any>, tools: Record<string, any[]>, reads: Record<string, Record<string, unknown>> }} */
 const kept = (() => {
+  const shaped = (/** @type {unknown} */ part) => typeof part === "object" && part !== null && !Array.isArray(part)
   try {
     const stored = JSON.parse(localStorage.getItem(KEPT) ?? "null")
-    if (stored) return stored
+    if (shaped(stored) && shaped(stored.lists) && shaped(stored.tools) && shaped(stored.reads)) return stored
   } catch {}
   return { lists: {}, tools: {}, reads: {} }
 })()
