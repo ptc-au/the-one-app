@@ -11,10 +11,11 @@ const look = styles({
 /// The rule a username keeps (`OneCore.User.named/1`), as it's said under the field.
 export const RULE = "Lowercase letters, digits, dots and hyphens, starting and ending with a letter or a digit."
 
-/// A sheet to change `who`'s username, `users/<username>`, which calls `onChanged` with who they are once it's done.
-export function Username(props: { who: string; you: boolean; open: boolean; onClose: () => void; onChanged: (who: string) => void }) {
+/// A sheet to change `who`'s username, `users/<username>`, filled in with `username` where one's given, which calls
+/// `onChanged` with who they are once it's done.
+export function Username(props: { who: string; you: boolean; username?: string; open: boolean; onClose: () => void; onChanged: (who: string) => void }) {
   const was = () => props.who.replace("users/", "")
-  const [name, setName] = createSignal(was)
+  const [name, setName] = createSignal(() => props.username ?? was())
   const [error, setError] = createSignal<string>()
   const [working, setWorking] = createSignal(false)
   const save = async () => {

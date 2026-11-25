@@ -93,11 +93,15 @@ async function remove(person: Person, all: All) {
 
 /// What's open, as the section's screen says it (`settings_section`'s own arguments): a group beside the list, `group`,
 /// or a form over it, `form`: `invite`, `name` (whoever's looking, to change theirs), `new-group`, `member` (to add to
-/// the group open) or `username` (of `who`). Each is a step Back goes back from.
+/// the group open) or `username` (of `who`). Each is a step Back goes back from. A form is filled in with what its
+/// tool would be given, where it's said: `name` (the invited's, or the new group's), `called` or `username`.
 interface Open {
   group?: string
   form?: "invite" | "name" | "new-group" | "member" | "username"
   who?: string
+  name?: string
+  called?: string
+  username?: string
 }
 interface Shown {
   inputs: Open
@@ -135,11 +139,11 @@ function Name(props: { open: boolean; onClose: () => void; called?: string }) {
 }
 
 /// Someone new: their name in the network, then the link they join by, to send them.
-function Invite(props: { open: boolean; onClose: () => void }) {
+function Invite(props: { open: boolean; name?: string; onClose: () => void }) {
   const [link, setLink] = createSignal<string>()
   const [error, setError] = createSignal<string>()
   const [working, setWorking] = createSignal(false)
-  const [name, setName] = createSignal("")
+  const [name, setName] = createSignal(() => props.name ?? "")
   const close = () => (props.onClose(), setLink(), setError(), setName(""))
   const make = async () => {
     const who = name().trim().toLowerCase()
@@ -187,8 +191,8 @@ function Invite(props: { open: boolean; onClose: () => void }) {
 }
 
 /// A sheet with one name to type: a new group's.
-function NewGroup(props: { open: boolean; onClose: () => void; me: string }) {
-  const [name, setName] = createSignal("")
+function NewGroup(props: { open: boolean; name?: string; onClose: () => void; me: string }) {
+  const [name, setName] = createSignal(() => props.name ?? "")
   const close = () => (props.onClose(), setName(""))
   const send = async () => {
     if (await change("permissions_group", { name: name().trim() }, props.me)) close()
@@ -341,12 +345,12 @@ function UsersAndGroups(props: { all: All } & Shown) {
           </Section>
         </Screen>
       </Split>
-      <Invite open={form("invite")} onClose={() => props.show()} />
-      <Name open={form("name")} onClose={() => props.show()} called={props.all.joined.find((person) => person.who === props.all.me)?.called} />
+      <Invite open={form("invite")} name={form("invite") ? props.inputs.name : undefined} onClose={() => props.show()} />
+      <Name open={form("name")} onClose={() => props.show()} called={(form("name") && props.inputs.called) || props.all.joined.find((person) => person.who === props.all.me)?.called} />
       <Show when={form("username") ? props.inputs.who : undefined} keyed>
-        {(who) => <Username who={who} you={who === props.all.me} open onClose={() => props.show()} onChanged={() => refresh(all)} />}
+        {(who) => <Username who={who} you={who === props.all.me} username={props.inputs.username} open onClose={() => props.show()} onChanged={() => refresh(all)} />}
       </Show>
-      <NewGroup open={form("new-group")} onClose={() => props.show()} me={props.all.me} />
+      <NewGroup open={form("new-group")} name={form("new-group") ? props.inputs.name : undefined} onClose={() => props.show()} me={props.all.me} />
       <AddMember all={props.all} group={group()} open={form("member")} show={props.show} />
     </>
   )

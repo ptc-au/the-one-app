@@ -74,14 +74,15 @@ function Picture() {
 }
 
 /// What's open, as the section's screen says it (`settings_section`'s own arguments): the form to change their username
-/// over it, `form: "username"`, a step Back goes back from.
+/// over it, `form: "username"`, filled in with `username` where it's given (`sign-in_username`'s), a step Back goes back
+/// from.
 interface Shown {
-  inputs: { form?: "username" }
+  inputs: { form?: "username"; username?: string }
   show: (inputs?: { form: "username" }) => void
 }
 
 /// Their username, which their addresses are under, to change, as GitHub's account settings have it.
-function Handle(props: { open: boolean; show: Shown["show"] }) {
+function Handle(props: { open: boolean; username?: string; show: Shown["show"] }) {
   const name = () => you().who.replace("users/", "")
   return (
     <Section heading="Username">
@@ -92,7 +93,7 @@ function Handle(props: { open: boolean; show: Shown["show"] }) {
           action={<Button variant="secondary" onPress={() => props.show({ form: "username" })}>Change</Button>}
         />
       </List>
-      <Username who={you().who} you open={props.open} onClose={() => props.show()} onChanged={() => refresh(you)} />
+      <Username who={you().who} you username={props.username} open={props.open} onClose={() => props.show()} onChanged={() => refresh(you)} />
     </Section>
   )
 }
@@ -226,7 +227,7 @@ export default function SignInAndSecurity(props: Shown) {
         {(all) => (
           <Screen heading="Sign In & Security" back action={all().passkeys.length ? opening() : undefined}>
             <Picture />
-            <Handle open={props.inputs.form === "username"} show={props.show} />
+            <Handle open={props.inputs.form === "username"} username={props.inputs.username} show={props.show} />
             <Waiting />
             <Show
               when={all().passkeys.length}

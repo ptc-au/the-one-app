@@ -47,6 +47,8 @@ defmodule SignIn do
     [
       %{
         name: "invite",
+        ui: "client/forms.html",
+        runtime_version: 4,
         description: """
         Makes a link someone joins the network by, as the user you name. It ends the one made for them before. Only the
         network's owner invites someone who has joined again, and never an owner
@@ -401,6 +403,8 @@ defmodule SignIn do
       },
       %{
         name: "name",
+        ui: "client/forms.html",
+        runtime_version: 4,
         description: "Changes the name you go by in the network",
         inputs: %{
           type: "object",
@@ -411,6 +415,8 @@ defmodule SignIn do
       },
       %{
         name: "username",
+        ui: "client/forms.html",
+        runtime_version: 4,
         description: """
         Changes your username, which your addresses are under (`users/<username>`, `/git-repos/<username>/notes`), or
         with `who`, someone else's, which only the network's owners do. Everything of theirs moves with it, and their
