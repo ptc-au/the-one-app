@@ -42,9 +42,6 @@ defmodule Board do
   def widgets, do: [%{name: "Board", tool: "widget", sizes: ["2x2", "4x2"]}]
 
   @impl true
-  def jobs, do: [%{tool: "tick_schedules", every: 60}]
-
-  @impl true
   def hooks, do: ["renamed"]
 
   # Someone renamed wrote, reacted to, owns and claimed what they did by their new name.
@@ -520,7 +517,7 @@ defmodule Board do
       },
       %{
         name: "tick_schedules",
-        description: "Internal periodic job that posts due scheduled messages and expires lapsed task leases.",
+        description: "Posts due scheduled messages and expires lapsed task leases. Board's timer calls it when the next lease lapses or schedule is due, and again for the next.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object"}
       },
@@ -1234,6 +1231,7 @@ defmodule Board do
       case result do
         {:ok, claimed} ->
           Call.changed(call)
+          timed(call)
           claimed
 
         {:error, why} ->
@@ -1585,6 +1583,7 @@ defmodule Board do
       case result do
         {:ok, res} ->
           Call.changed(call)
+          timed(call)
           res
 
         {:error, why} ->
@@ -1729,6 +1728,7 @@ defmodule Board do
       posted(call, msg)
     end
 
+    timed(call)
     %{expired_leases: length(expired), sent_schedules: length(sent), failed_schedules: length(failed)}
   end
 
@@ -2057,6 +2057,29 @@ defmodule Board do
       [_deleted] -> {:error, "The thread #{target} was deleted."}
       [] -> with {:ok, channel} <- Store.validate_channel(target), do: {:ok, channel, nil}
     end
+  end
+
+  # Has the database's timer go off when the next lease lapses or schedule is due (`Database.timer/5`), and not before,
+  # so a Board with neither is called by nothing. `tick_schedules` sets it again for the next.
+  defp timed(call) do
+    due =
+      Store.transaction(call, fn db ->
+        [%{"at" => at}] =
+          Store.query(
+            db,
+            """
+            select min(at) as at from (
+              select min(lease_until) as at from tasks where state = 'claimed' and lease_until is not null
+              union all
+              select min(next_run_at) from schedules where failed is null
+            )
+            """
+          )
+
+        at && div(at + 999, 1000)
+      end)
+
+    Call.app(call, "database").timer(call, "tick_schedules", %{}, due)
   end
 
   defp known_target(db, target) do
