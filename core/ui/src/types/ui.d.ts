@@ -483,6 +483,10 @@ export declare function Alert(props: { heading: Element; text?: Element; open?: 
  * the way to do it there instead, `link` as a button and a code. */
 export declare function OwnDevice(props: { what: string; link: string; children: Element }): Element
 
+/** Where a person signs in to an outside service, from the `url` a tool that starts an OAuth sign-in answered: a button that
+ * opens it in their own browser, then "Signed in as …" or what went wrong, by itself as it ends. */
+export declare function ServiceSignIn(props: { url: string }): Element
+
 export declare function Sheet(props: { heading?: Element; open?: boolean; onClose?: () => void; children?: Element }): Element
 
 export declare const PresentationContext: Context<() => Rect | undefined>

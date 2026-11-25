@@ -145,6 +145,9 @@ defmodule GoogleAccount do
       },
       %{
         name: "sign_in",
+        ui: "client/sign-in.html",
+        path: "sign-in",
+        runtime_version: 4,
         description:
           "Starts signing a Google account in, for every Google app you have, or with `account`, signing that one in again, and gives the url to open, where Google signs you in.",
         inputs: %{type: "object", properties: %{account: string.("The account's address, to suggest it to Google")}},

@@ -137,6 +137,18 @@ defmodule Vault.SignIns do
     end
   end
 
+  @doc """
+  How a sign-in is going, for the page that shows it: `started`, or how it ended, with who signed in (`account`) or
+  what went wrong (`problem`). It's its person's, by its `state`, which starts with whose it is.
+  """
+  def status(call, db, state) do
+    case Store.transaction(call, db, &Store.query(&1, "select * from sign_ins where state = ?", [state])) do
+      [%{"ending" => nil} = sign_in] -> %{service: JSON.decode!(sign_in["service"])["name"], status: "started"}
+      [sign_in] -> sign_in |> ending(JSON.decode!(sign_in["ending"])) |> Map.take([:service, :status, :account, :problem])
+      [] -> raise "This sign-in isn't waiting any more. Start it again."
+    end
+  end
+
   # It ends as the service said, written once.
   defp returned(call, db, sign_in, inputs) do
     service = JSON.decode!(sign_in["service"])

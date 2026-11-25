@@ -563,6 +563,26 @@ defmodule Vault do
         outputs: %{type: "object", properties: %{expired: %{type: "integer"}}, required: ["expired"]}
       },
       %{
+        name: "sign_in_state",
+        read_only: true,
+        description: """
+        How a sign-in `sign_in` started is going: the `state` of the link it gave (`/vault/start?state=`). `started`
+        until its person has signed in at the service, then `ok` with the `account` that signed in, `cancelled` if they
+        said no there, or `failed` with the `problem`. The page that shows a sign-in's link reads it.
+        """,
+        inputs: %{type: "object", properties: %{state: %{type: "string", description: "The link's state"}}, required: ["state"]},
+        outputs: %{
+          type: "object",
+          properties: %{
+            service: %{type: "string"},
+            status: %{type: "string", enum: SignIns.states()},
+            account: %{type: "string", description: "Who signed in, where the service says"},
+            problem: %{type: "string", description: "What went wrong, when it failed"}
+          },
+          required: ["service", "status"]
+        }
+      },
+      %{
         name: "security",
         read_only: true,
         no_store: true,
@@ -827,6 +847,8 @@ defmodule Vault do
     apps = inputs["apps"] || [Items.title(call, call.caller)]
     %{url: SignIns.start(call, db, service, call.caller, inputs["item"] || service.name, SignIns.began(call), apps)}
   end
+
+  def call("sign_in_state", %{"state" => state}, call), do: SignIns.status(call, Store.own(call), state)
 
   # From the database, which keeps each item's name while soft delete has it aside.
   def call("names", %{"artifacts" => artifacts}, call) do

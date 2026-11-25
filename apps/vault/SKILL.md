@@ -89,6 +89,7 @@ and never sees a secret, so an untrusted app can use one too. It requires this a
       OneCore.Call.tool(call, "vault", "fetch", request)["body"]
     end
 
+- `sign_in_state` says how a sign-in is going, by the `state` of its link (`started`, `ok` with its `account`, `cancelled`, `failed` with its `problem`): the UI library's `ServiceSignIn` reads it, so a tool that starts one has a page that shows the link and follows it (`ui: "client/sign-in.html"`, its page `<ServiceSignIn url={…} />`).
 - `sign_in` starts an OAuth sign-in and gives the link its person opens in their browser. The service sends
   them back to the network's address, and their tokens become the item named as the service is, or as `item`
   says, for a second account, switched on for the app. All the app says is the service's own: where it
