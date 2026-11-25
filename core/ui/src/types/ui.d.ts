@@ -688,8 +688,8 @@ export interface ToolCall {
  * no arguments, where nothing names one. */
 export declare function toolInput(first: string): ToolCall
 /** `navigate("my-week_week", { start })`: shows another of the app's screens, a step Back goes back from, which a
- * browser's address says (`/my-week/week?start=2026-11-30`). */
-export declare function navigate(name: string, inputs?: Record<string, unknown>): void
+ * browser's address says (`/my-week/week?start=2026-11-30`); `{ replace: true }` in place of the screen it's on. */
+export declare function navigate(name: string, inputs?: Record<string, unknown>, options?: { replace?: boolean }): void
 export declare function component(app: string, name: string): Promise<Record<string, (props: Record<string, unknown>) => Element>>
 export declare function showRecoveryKey(options?: Subject): Promise<boolean>
 export declare function useRecoveryKey(options?: Subject): Promise<boolean>

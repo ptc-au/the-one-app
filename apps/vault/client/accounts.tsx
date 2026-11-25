@@ -139,7 +139,7 @@ interface Open {
 }
 interface Shown {
   inputs: Open
-  show: (inputs?: Open) => void
+  show: (inputs?: Open, options?: { replace?: boolean }) => void
 }
 /** Where a sheet goes back to: the Vault, and what's open beside its list. */
 const base = (props: Shown): Open => ({ owner: props.inputs.owner, item: props.inputs.item, security: props.inputs.security })
@@ -374,7 +374,7 @@ function Drawn(props: { type: ItemType; item: Item } & Shown) {
           subject={whose()}
           sheet={props.inputs.sheet}
           sheeted={(sheet?: string) => props.show({ ...base(props), sheet })}
-          open={(name: string) => props.show({ owner: props.inputs.owner, item: props.type.prefix + name })}
+          open={(name: string) => props.show({ owner: props.inputs.owner, item: props.type.prefix + name }, { replace: true })}
           close={() => props.show({ owner: props.inputs.owner })}
         />
       )}

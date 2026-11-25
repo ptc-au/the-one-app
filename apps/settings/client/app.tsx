@@ -244,7 +244,7 @@ function Drawn(props: { section: Added }) {
     <Errored fallback={(error) => <Screen heading={heading()} back><Problem heading={`Can't show ${heading()}`} text={error() as Error} /></Screen>}>
       <Loading fallback={<Screen heading={heading()} back><Spinner delay /></Screen>}>
         <Show when={drawn()} keyed>
-          {(Drawn) => <Drawn groups={Groups} inputs={sectionInputs()} show={(inputs?: object) => navigate("settings_section", { app: props.section.app, section: props.section.component, ...inputs })} />}
+          {(Drawn) => <Drawn groups={Groups} inputs={sectionInputs()} show={(inputs?: object, options?: { replace?: boolean }) => navigate("settings_section", { app: props.section.app, section: props.section.component, ...inputs }, options)} />}
         </Show>
       </Loading>
     </Errored>

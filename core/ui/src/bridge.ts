@@ -331,10 +331,10 @@ let placed: string | undefined
 /** `place("vault/accounts")`: says where the page is in itself, as its splits have it, which its host hears of as it
  * changes (`notifications/one/place`): a browser's address and history follow it, and its host's link takes it back
  * there (`link`). */
-export const place = (at: string, navigated = false) => {
+export const place = (at: string, navigated = false, replace = false) => {
   if (at === placed) return
   placed = at
-  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at, navigated } }))
+  void greeted.then(() => host?.post({ jsonrpc: "2.0", method: "notifications/one/place", params: { place: at, navigated, replace } }))
 }
 /** Opening something is a step back closes, as the device's back closes what covers the page: a screen pushed over the
  * last, which isn't drawn over the page as a sheet or a menu is (a layer), as the DOM's history step isn't one. */
@@ -481,10 +481,15 @@ export const toolInput: typeof Page.toolInput = (first) => {
 /// `navigate("my-week_week", { start: week().next })`: shows another of the app's screens, by its tool and arguments,
 /// as a link to it would (`toolInput`). It's a step Back goes back from: the device's, and a browser's, whose address
 /// says it (`/my-week/week/2026-11-30`), so it's kept, loaded again and shared as a link. To the screen it last came
-/// from, it's that Back, as a split's detail closing goes back to its list.
-export const navigate: typeof Page.navigate = (name, inputs = {}) => {
+/// from, it's that Back, as a split's detail closing goes back to its list. `{ replace: true }` shows it in place of the
+/// screen it's on, as the DOM's `history.replaceState`: a renamed thing's screen, where the old name's is gone.
+export const navigate: typeof Page.navigate = (name, inputs = {}, { replace = false } = {}) => {
   const [from, to] = [linkOfShown(), name === firstScreen && !Object.values(inputs).some((value) => value !== undefined) ? "" : linkTo(name, inputs)]
   if (from === to) return
+  if (replace) {
+    setShownCall(to)
+    return place(to, true, true)
+  }
   // To the screen it last navigated from is Back to it, as a split's detail closing goes back to its list.
   const last = navigated.at(-1)
   if (last?.from === to) {
