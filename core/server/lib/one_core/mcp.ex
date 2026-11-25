@@ -441,7 +441,7 @@ defmodule OneCore.Mcp do
 
         run = fn ->
           inputs = Map.get(params, "arguments", %{})
-          unkept(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found), found)
+          unkept(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found, principal), found)
         end
 
         # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
@@ -824,11 +824,15 @@ defmodule OneCore.Mcp do
 
   # What an app's tool with a page of its own answered says which page shows it (`_meta.page`, `<app>/<path>`), which
   # the page an assistant shows every app's tool in opens (`router/0`), and which tool it was (`_meta.tool`), which
-  # that page is told as MCP Apps' `toolInfo`, as the screen it shows is that tool and what it was given.
-  defp paged({:ok, %{} = result}, name, %{ui: ui}) when is_binary(ui),
-    do: {:ok, with_meta(result, %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name})}
+  # that page is told as MCP Apps' `toolInfo`, as the screen it shows is that tool and what it was given. A call made
+  # for someone else than its caller, a group whose app it is, says for whom (`_meta.subject`): the page is that
+  # app's, and asks for them too.
+  defp paged({:ok, %{} = result}, name, %{ui: ui}, {actor, subject}) when is_binary(ui) do
+    meta = %{page: "#{hd(String.split(name, "_", parts: 2))}/#{ui}", tool: name}
+    {:ok, with_meta(result, if(subject == actor, do: meta, else: Map.put(meta, :subject, subject)))}
+  end
 
-  defp paged(outcome, _name, _tool), do: outcome
+  defp paged(outcome, _name, _tool, _principal), do: outcome
 
   # What a tool that says `no_store` answered says no device may keep it (`_meta.noStore`), as HTTP's
   # `Cache-Control: no-store` does: what an encrypted item holds.
