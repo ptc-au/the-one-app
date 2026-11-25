@@ -5,7 +5,7 @@
 
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping"
 import * as path from "../app/page/path.js"
-import { voice } from "./voice.js"
+import { setVoiceReporter, voice } from "./voice.js"
 
 /** @import { Commands } from "../app/page/host.js" */
 
@@ -184,6 +184,7 @@ function report(record) {
   if (stored.length < 300) localStorage.setItem(REPORTS, JSON.stringify([...stored, { ...record, attributes, time: Date.now() }]))
   if (connection === "online") sendReports()
 }
+setVoiceReporter(report)
 /// Which browser this is, by its name.
 const browser = () => ["Edge", "Firefox", "Chrome", "Safari"].find((name) => navigator.userAgent.includes(name === "Edge" ? "Edg/" : `${name}/`))
 /// The device's operating system, by the names the app's client reports its own by (Rust's `env::consts::OS`). An

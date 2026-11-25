@@ -11,6 +11,69 @@ const QUIET = 0.008
 /** @type {Map<string, any>} */
 const all = new Map()
 
+/** Telemetry reporter wired from `host.js` (`report`). @type {(record: Record<string, unknown>) => void} */
+let reportVoice = () => {}
+
+/** Wires `host.js`'s Telemetry reporter into voice diagnostics. */
+export function setVoiceReporter(/** @type {(record: Record<string, unknown>) => void} */ fn) {
+  reportVoice = fn
+}
+
+const logVoice = (/** @type {string} */ step, /** @type {any} */ voice, /** @type {unknown} */ err, /** @type {Record<string, unknown>} */ extra = {}) => {
+  const pc = voice?.peer
+  const error = err instanceof Error ? err.message : err ? String(err) : undefined
+  reportVoice({
+    name: "one.client.voice",
+    error: error ?? `${step} (${pc?.connectionState ?? "no-pc"})`,
+    attributes: {
+      "voice.step": step,
+      "voice.connection_state": pc?.connectionState ?? "none",
+      "voice.ice_state": pc?.iceConnectionState ?? "none",
+      "voice.signaling_state": pc?.signalingState ?? "none",
+      "voice.has_mic": !!voice?.track,
+      "voice.remote_tracks": voice?.audios?.size ?? 0,
+      ...extra,
+    },
+  })
+}
+
+const checkStats = async (/** @type {any} */ voice) => {
+  const pc = voice?.peer
+  if (!pc || all.get(voice.key) !== voice) return
+  try {
+    const stats = await pc.getStats()
+    let bytesSent = 0
+    let packetsSent = 0
+    let bytesReceived = 0
+    let packetsReceived = 0
+    for (const s of stats.values()) {
+      if (s.type === "outbound-rtp" && s.kind === "audio") {
+        bytesSent += s.bytesSent ?? 0
+        packetsSent += s.packetsSent ?? 0
+      } else if (s.type === "inbound-rtp" && s.kind === "audio") {
+        bytesReceived += s.bytesReceived ?? 0
+        packetsReceived += s.packetsReceived ?? 0
+      }
+    }
+    if (bytesSent === 0 || bytesReceived === 0 || voice.playError) {
+      logVoice(
+        "stats",
+        voice,
+        `voice media check: sent=${bytesSent}B (${packetsSent}pkts) recv=${bytesReceived}B (${packetsReceived}pkts) remoteTracks=${voice.audios.size} hasMic=${!!voice.track}${voice.playError ? ` playError=${voice.playError}` : ""}`,
+        {
+          "voice.bytes_sent": bytesSent,
+          "voice.packets_sent": packetsSent,
+          "voice.bytes_received": bytesReceived,
+          "voice.packets_received": packetsReceived,
+          "voice.state_flips": voice.flips ?? 0,
+        },
+      )
+    }
+  } catch (err) {
+    logVoice("stats_failed", voice, err)
+  }
+}
+
 /** Its local description once its candidates are gathered, or a relay's came, as an SFU needs to reach it. */
 const gathered = (/** @type {RTCPeerConnection} */ pc) => {
   if (pc.iceGatheringState === "complete") return Promise.resolve()
@@ -63,7 +126,10 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
     el.srcObject = new MediaStream([track])
     document.body.append(el)
     voice.audios.add(el)
-    el.play().catch(() => {})
+    el.play().catch((err) => {
+      voice.playError = err instanceof Error ? err.message : String(err)
+      logVoice("audio_play", voice, err)
+    })
     track.addEventListener("ended", () => {
       voice.audios.delete(el)
       el.remove()
@@ -71,9 +137,19 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
   }
   pc.onconnectionstatechange = () => {
     if (over) return
-    if (pc.connectionState === "connected") tell({ name: "state", state: "connected" })
-    else if (pc.connectionState === "connecting" || pc.connectionState === "disconnected") tell({ name: "state", state: "connecting" })
-    else if (pc.connectionState === "failed" || pc.connectionState === "closed") lost()
+    voice.flips = (voice.flips ?? 0) + 1
+    if (pc.connectionState === "connected") {
+      tell({ name: "state", state: "connected" })
+      if (!voice.statsChecked) {
+        voice.statsChecked = true
+        setTimeout(() => void checkStats(voice), 4000)
+      }
+    } else if (pc.connectionState === "connecting" || pc.connectionState === "disconnected") {
+      tell({ name: "state", state: "connecting" })
+    } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+      logVoice("connection_lost", voice, `connectionState=${pc.connectionState} iceState=${pc.iceConnectionState}`)
+      lost()
+    }
   }
   pc.setLocalDescription()
     .then(() => gathered(pc))
@@ -99,7 +175,8 @@ const answered = async (/** @type {any} */ voice, /** @type {string} */ sdp, /**
     await pc.setLocalDescription()
     await gathered(pc)
     tell({ name: "answer", sdp: pc.localDescription?.sdp })
-  } catch {
+  } catch (err) {
+    logVoice("renegotiate_offer", voice, err)
     voice.over()
   }
 }
@@ -129,7 +206,10 @@ export function voice(op, key, params, tell) {
           listen(one, tell)
         },
         // Refused, by the person or the browser: the page hears it as a call that's lost.
-        () => tell({ name: "state", state: "lost" }),
+        (err) => {
+          logVoice("get_user_media", one, err)
+          tell({ name: "state", state: "lost" })
+        },
       )
     return
   }
@@ -138,7 +218,11 @@ export function voice(op, key, params, tell) {
   if (op === "set") {
     const { name, value } = params
     if (name === "ice" && value) connect(one, value, tell)
-    else if (name === "answer" && value && one.peer?.signalingState === "have-local-offer") one.peer.setRemoteDescription({ type: "answer", sdp: value }).catch(() => one.over())
+    else if (name === "answer" && value && one.peer?.signalingState === "have-local-offer")
+      one.peer.setRemoteDescription({ type: "answer", sdp: value }).catch((/** @type {unknown} */ err) => {
+        logVoice("set_remote_answer", one, err)
+        one.over()
+      })
     else if (name === "offer" && value) {
       // Answered once it has a connection, as an SFU's offer is, and not twice.
       if (one.offer === value) return
