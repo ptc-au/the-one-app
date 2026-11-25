@@ -234,11 +234,15 @@ pub struct Subscription {
     responses: Mutex<HashMap<String, Query>>,
     /// Tells the view that what it was answered has changed.
     changed: Box<dyn Fn() + Send + Sync>,
+    /// What it asked with nothing kept, while a server's answer is awaited, by what was asked: the same asked again
+    /// meanwhile waits for that answer, as TanStack Query shares a query in flight, where each was asked again (on 25
+    /// Nov Settings asked one that took 7 s nine times over as its other answers came in).
+    asking: Mutex<HashMap<String, watch::Receiver<Option<Result<Value, String>>>>>,
 }
 
 impl Subscription {
     pub fn new(client: Arc<Client>, changed: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed) })
+        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), asking: Mutex::default() })
     }
 
     /// Answers what the view asks: the result of `method`. A write resolves as soon as its own answer arrives.
@@ -323,11 +327,7 @@ impl Subscription {
         }
         let (response, revalidate) = match self.client.cached(method, &params) {
             Some(cached) => (cached, true),
-            None => {
-                // Said in the app's log, as a read a window waits on: one a server holds, as it starts, holds the window.
-                eprintln!("{} had nothing kept, so it waits for a server", asked(method, &params));
-                (self.client.fresh(method, &params).await?, false)
-            }
+            None => (self.first(&key, method, &params).await?, false),
         };
         // What no device may keep isn't kept for the view either: it's asked for each time.
         if unkept(&response) {
@@ -353,6 +353,36 @@ impl Subscription {
             tokio::spawn(async move { shown.fetch(key, method, params, 0, None).await });
         }
         Ok(response)
+    }
+
+    /// What a server answers to what had nothing kept, asked once however often it's asked while that's awaited.
+    async fn first(&self, key: &str, method: &str, params: &Value) -> Result<Value> {
+        let asker = {
+            let mut asking = self.asking.lock().expect("no view panics");
+            match asking.get(key).filter(|waiting| waiting.has_changed().is_ok()) {
+                Some(waiting) => Err(waiting.clone()),
+                None => {
+                    let (tx, rx) = watch::channel(None);
+                    asking.insert(key.to_owned(), rx);
+                    Ok(tx)
+                }
+            }
+        };
+        match asker {
+            Ok(tx) => {
+                // Said in the app's log, as a read a window waits on: one a server holds, as it starts, holds the window.
+                eprintln!("{} had nothing kept, so it waits for a server", asked(method, params));
+                let fresh = self.client.fresh(method, params).await;
+                self.asking.lock().expect("no view panics").remove(key);
+                let _ = tx.send(Some(fresh.as_ref().map(Value::clone).map_err(|error| format!("{error:#}"))));
+                fresh
+            }
+            Err(mut waiting) => match waiting.wait_for(Option::is_some).await {
+                Ok(answer) => answer.clone().expect("it waited for one").map_err(anyhow::Error::msg),
+                // Whoever asked first stopped waiting before it was answered: this asks itself.
+                Err(_) => self.client.fresh(method, params).await,
+            },
+        }
     }
 
     async fn fetch(
