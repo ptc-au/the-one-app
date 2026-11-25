@@ -1,7 +1,7 @@
 defmodule OneCore.Tools.Builds do
   @moduledoc "One Core's own tools for the platform's builds: which there are, downloading them, and the network's update, as `OneCore.Tools` calls them, with their definitions in `OneCore.Tools.Definitions`."
   import OneCore.Tools.Helpers
-  alias OneCore.{Apps, Bucket, Builds, Protocol, Release, Server, Servers, User}
+  alias OneCore.{Apps, Bucket, Builds, Cache, Protocol, Release, Server, Servers, User}
   alias OneCore.Apps.{Installed, Store}
 
   @doc "Runs its tool `name` with `inputs`, as `OneCore.Tools.call/5` hands it on."
@@ -35,10 +35,17 @@ defmodule OneCore.Tools.Builds do
     # (`server`) doesn't, so the edge refused its read of them.
     Apps.here?(by) || raise "This server doesn't act for #{by}, so it can't say which of their devices it has seen"
     keys = OneCore.Apps.covering(owner)
-    devices = Bucket.list("#{by}/devices/")
-    # Each blob is a trip across the internet where the bucket is far away, so they're all read at once.
     latest = Task.async(&Builds.latest/0)
-    read = Bucket.read_all(Enum.map(keys, &"servers/#{&1}/build") ++ devices)
+
+    # Each blob is a trip across the internet where the bucket is far away, so they're all read at once. Every client
+    # that shows it asks again as each server of a release comes and goes, so what's read is kept for a few seconds,
+    # and asked for once while it's read: each ask was a request for each server and each device.
+    {devices, read} =
+      Cache.fetch(__MODULE__, {by, keys}, fn ->
+        devices = Bucket.list("#{by}/devices/")
+        {:commit, {devices, Bucket.read_all(Enum.map(keys, &"servers/#{&1}/build") ++ devices)}, expire: 10_000}
+      end)
+
     {server_reads, device_reads} = Enum.split(read, length(keys))
 
     edge = Servers.edge(Enum.map(devices, &Path.basename/1)) || %{}
