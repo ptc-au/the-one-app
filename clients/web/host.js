@@ -404,14 +404,42 @@ function invalidate(view, app) {
   }
 }
 
-/// Asks again for everything `view` was answered, and tells it as each answer changes.
-/** @param {string} view */
-async function refresh(view) {
+/// Asks again for everything `view` was answered, or with `app`, each of that app's tools, and tells it as each answer
+/// changes. One already being asked again, as after this browser's own call or for a server's same news said twice, is
+/// waited for, not asked twice, as the app's client does (`refresh` in `core/client/src/cache.rs`).
+/** @param {string} view @param {string} [app] */
+async function refresh(view, app) {
   await Promise.all(
-    [...(views.get(view)?.values() ?? [])].map((cached) =>
-      cached.fetched < cached.invalidated && cached.fetching ? cached.fetching.done : fetchEntry(view, cached, cached.invalidated),
-    ),
+    [...(views.get(view)?.values() ?? [])]
+      .filter((cached) => !app || (cached.method === "tools/call" && String(cached.params.name).startsWith(`${app}_`)))
+      .map((cached) => cached.fetching?.done ?? fetchEntry(view, cached, cached.invalidated)),
   )
+}
+
+/// What the network's servers say unasked, heard as the app's client hears what it watches (`clients/app/src/session.rs`),
+/// over MCP's stream of it (`GET /mcp`, `core/edge/mcp/mcp.ts`): what something's call changed, as another device's
+/// call or a job did. Opened once signed in; after the browser connects again, what was said meanwhile wasn't heard,
+/// so everything is asked again.
+/** @type {EventSource | undefined} */
+let listening
+function subscribe() {
+  if (listening && listening.readyState !== EventSource.CLOSED) return
+  let cut = false
+  listening = new EventSource("/mcp")
+  listening.addEventListener("error", () => (cut = true))
+  listening.addEventListener("open", () => cut && ((cut = false), heard({})))
+  listening.addEventListener("message", ({ data }) => {
+    const said = JSON.parse(data)
+    if (said.method === "notifications/one/changed") heard(said.params ?? {})
+  })
+}
+/// Has every open app ask again for what the app that changed something answered it, or with no app said, for
+/// everything, the apps listed too, as an install or a deploy changes them.
+/** @param {{ app?: unknown }} changed */
+function heard({ app }) {
+  const which = typeof app === "string" ? app : undefined
+  if (!which) emit("changed", "client")
+  for (const view of views.keys()) refresh(view, which)
 }
 
 /// The runtime version each entrypoint a server last listed needs to be drawn by the renderer, by its subject and
@@ -482,6 +510,7 @@ async function opened() {
   if (session.session.state !== "signedIn") moved({ session: { state: "signedIn" } })
   answered(true)
   listTools().catch(() => {})
+  subscribe()
   // Its person may have turned its notifications on or off in the browser's settings since.
   if (push && push.state !== "homeScreen") {
     if (Notification.permission === "granted") registerPush()

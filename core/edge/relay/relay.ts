@@ -147,6 +147,17 @@ export async function notify(env: Env, message: string): Promise<void> {
 }
 
 /**
+ * A connection down which the relay passes each notification `servers` say to the clients watching them
+ * (`notifications/one/changed`), as one of them says it, for as long as it's open.
+ */
+export async function listen(env: Env, servers: string[]): Promise<WebSocket> {
+  const { webSocket } = await relay(env, (relay) => relay.fetch(`https://relay/listen?servers=${servers.join(",")}`, { headers: { upgrade: "websocket" } }));
+  if (!webSocket) throw new Error("The relay didn't take the connection");
+  webSocket.accept();
+  return webSocket;
+}
+
+/**
  * Whether each of `keys`, servers' and devices', is here (`Presence`), or `null` for one never seen: as the relay says
  * it once one of them is ready, or after `within` milliseconds (0 is now).
  */

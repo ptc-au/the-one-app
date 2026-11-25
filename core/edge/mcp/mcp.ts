@@ -10,7 +10,7 @@
 import { verifiedKey, unsigned, hex, NETWORK } from "../ask.ts";
 import { randomBytes } from "@noble/hashes/utils.js";
 import { reader, servers as acting } from "../presigner/presigner.ts";
-import { forward as relayed, notify } from "../relay/relay.ts";
+import { forward as relayed, listen as listened, notify } from "../relay/relay.ts";
 import rules from "../../server/priv/rules.md";
 
 /** Who a request is from, as the app that signs people in says. */
@@ -55,8 +55,9 @@ export default {
     // that checks one first may GET or HEAD it.
     if (url.pathname.startsWith("/webhooks/")) return webhook(request, env, url, ctx);
     // MCP's streamable HTTP: each message is a POST, answered with JSON, or a stream of its progress and then its
-    // answer. There's no stream to GET.
-    if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
+    // answer, and a GET of `/mcp` is a stream of what the servers say unasked.
+    if (url.pathname === "/mcp" && request.method === "GET") return listen(request, env);
+    if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "GET, POST" } });
     if (url.pathname === "/mcp") return mcp(request, env, ctx);
     if (url.pathname.startsWith("/link/")) return link(request, env, url, ctx);
     return new Response(null, { status: 404 });
@@ -173,6 +174,37 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
   const name = who.who.replace(/^users\//, "");
   const why = `This browser signed in as ${name}, but the network's servers didn't know it as theirs. Sign in again, and if this happens again, tell whoever runs the network.`;
   return Response.json({ jsonrpc: "2.0", id: null, error: { code: NOBODY, message: why } }, { status: 401 });
+}
+
+/**
+ * How often a listening stream says something when its servers don't: Cloudflare ends a response that sends nothing
+ * for 100 seconds.
+ */
+const KEEP = 30_000;
+
+/**
+ * What the servers acting for whoever signed in say unasked, as MCP's streamable HTTP has a GET of its endpoint
+ * stream it: what each tells the clients watching it (`notifications/one/changed`), which a browser hears as the
+ * app's client hears its servers (`clients/web/host.js`). The stream ends as the relay's connection does, and whoever
+ * listens connects again, having missed what was said meanwhile.
+ */
+async function listen(request: Request, env: Env) {
+  if (!request.headers.get("accept")?.includes("text/event-stream")) return new Response(null, { status: 405, headers: { allow: "POST" } });
+  const who = await signedIn(request, env);
+  if ("refused" in who) return who.refused;
+  const lists = reader(env);
+  const servers = [...new Set((await Promise.all([`${who.who}/`, NETWORK].map((of) => acting(lists, of)))).flat())];
+  const relay = await listened(env, servers);
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const stream = writable.getWriter();
+  const encoder = new TextEncoder();
+  const send = (event: string) => stream.write(encoder.encode(event)).catch(() => relay.close(1000, "Its listener left"));
+  const keeping = setInterval(() => send(": still here\n\n"), KEEP);
+  relay.addEventListener("message", ({ data }) => send(`event: message\ndata: ${data}\n\n`));
+  relay.addEventListener("close", () => (clearInterval(keeping), stream.close().catch(() => {})));
+  request.signal.addEventListener("abort", () => (clearInterval(keeping), relay.close(1000, "Its listener left")));
+  send(": listening\n\n");
+  return withCookies(new Response(readable, { headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-accel-buffering": "no" } }), who.cookies);
 }
 
 /** Where the page an assistant shows asks the network itself (`pages`): its apps' address, then `/mcp`. */

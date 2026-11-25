@@ -16,7 +16,9 @@
 // (`Network`, bound as NETWORK).
 //
 // A server holds one more connection here (`/relay/outside`), down which the edge passes it a call that came in at
-// the address over the web, and tells every server what a piece there has to say (`relay.ts`).
+// the address over the web, and tells every server what a piece there has to say (`relay.ts`). Up it, besides its
+// answers, a server says what it tells the clients watching it (`notifications/one/changed`), which the relay passes
+// to each browser listening to that server, as the edge holds one's stream (`listen` in `relay.ts`).
 //
 // And it knows who's here: a device is connected while it's connected here, through any run of its client, and a
 // server while it's connected and answers, and otherwise each was last seen when it last was, which the Durable Object
@@ -96,7 +98,7 @@ interface Joined {
   key: string;
 }
 
-/** What a connection to the Durable Object is: an endpoint's, a server's for outsiders' calls, or one call's. */
+/** What a connection to the Durable Object is: an endpoint's, a server's for outsiders' calls, one call's, or a browser's listening to servers. */
 interface Attachment {
   key?: string;
   device?: string;
@@ -107,6 +109,8 @@ interface Attachment {
   answered?: number;
   call?: string;
   to?: string;
+  /** The servers a browser listens to, by their keys. */
+  listen?: string[];
 }
 
 const utf8 = new TextEncoder();
@@ -229,6 +233,7 @@ export class Relay extends DurableObject<RelayEnv> {
     if (url.pathname === "/endpoint") return await this.endpoint(url.searchParams);
     if (url.pathname === "/outside") return this.server(url.searchParams.get("key")!);
     if (url.pathname === "/notify") return this.notify(await request.text());
+    if (url.pathname === "/listen") return this.listen(url.searchParams.get("servers")?.split(",") ?? []);
     return this.call(url.searchParams.get("to") ?? "");
   }
 
@@ -453,6 +458,14 @@ export class Relay extends DurableObject<RelayEnv> {
     return new Response(null, { status: 101, webSocket: theirs });
   }
 
+  /** The edge listens for a browser to what `servers` tell their clients, each passed on as it's said (`webSocketMessage`). */
+  listen(servers: string[]) {
+    const [theirs, ours] = Object.values(new WebSocketPair());
+    this.ctx.acceptWebSocket(ours, ["listen"]);
+    ours.serializeAttachment({ listen: servers });
+    return new Response(null, { status: 101, webSocket: theirs });
+  }
+
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const attachment: Attachment = ws.deserializeAttachment() ?? {};
     if (attachment.call) {
@@ -461,10 +474,16 @@ export class Relay extends DurableObject<RelayEnv> {
       return server.send(JSON.stringify({ call: attachment.call, message }));
     }
     if (attachment.outside) {
-      const { call, answer } = JSON.parse(message as string);
+      const { call, answer, notify } = JSON.parse(message as string);
       if (call === "heartbeat") {
         ws.serializeAttachment({ ...attachment, answered: Date.now() });
         return this.moved(attachment.outside, true);
+      }
+      if (typeof notify === "string") {
+        for (const listening of this.ctx.getWebSockets("listen")) {
+          if ((listening.deserializeAttachment() as Attachment)?.listen?.includes(attachment.outside) && listening.readyState === WebSocket.OPEN) listening.send(notify);
+        }
+        return;
       }
       open(this.ctx.getWebSockets(`call ${call}`))?.send(answer);
       return;
