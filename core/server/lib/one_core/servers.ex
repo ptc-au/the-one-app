@@ -129,7 +129,7 @@ defmodule OneCore.Servers do
   1970, and of a server its `server_membership` and `server_daemon_status`, as it says them (`report/0`), and from
   those `server_ready` and, where it isn't, `server_ready_reason`: `joining`, `starting`, `draining` or `stopped`.
   `nil` where that isn't known: a network with no address, a relay that says none, or a key never seen. The relay
-  tells servers when one comes or goes (`presence_again/0`), so one that isn't ready is asked nothing, and one that's
+  tells servers when one comes or goes (`presence_again/2`), so one that isn't ready is asked nothing, and one that's
   starting or stopping is waited for only where it's the one to ask (`back/1`).
   """
   def presence(key) do
@@ -165,7 +165,7 @@ defmodule OneCore.Servers do
   Whether this server is behind: another of the network's servers that's ready runs a newer build, as each says
   (`OneCore.Builds.say/1`). One back after days away is, until it's updated, and so is one that hasn't yet taken the
   build a release is taking the network to. What it would build or deploy, another builds against the newer. Each
-  server's build is read again as servers come and go (`presence_again/0`), as one says its build as it starts.
+  server's build is read again as servers come and go (`presence_again/2`), as one says its build as it starts.
   """
   def behind? do
     mine = Builds.count(Builds.build())
@@ -210,16 +210,20 @@ defmodule OneCore.Servers do
 
   @doc """
   What was kept of which servers there are, who's ready, and the build each runs, is read again, once one of the
-  network's servers came or went, and whoever waits for one to be back (`back/1`) looks again. A server that's new
+  network's servers came or went (`moved`) or said what it is, and whoever waits for one to be back (`back/1`) looks
+  again. Only where one `moved` are those that settle what a server may have lost told (`:moved`, as
+  `OneCore.Apps.Lifecycle` is), where a server saying the same of its update every 2 s had each read every app's
+  update again (25 Nov). A server that's new
   came: kept, `all/0` would leave it out, and the network's apps deployed after it came would never reach it.
   """
-  def presence_again do
+  def presence_again(:all, moved) do
     Cache.invalidate(__MODULE__, :all)
 
     for {kept, _key} = what <- Cache.keys(__MODULE__), kept in [:presence, :build],
         do: Cache.invalidate(__MODULE__, what)
 
     Registry.dispatch(OneCore.Waiting, :seen, fn waiting -> for {process, _} <- waiting, do: send(process, :seen) end)
+    if moved, do: Registry.dispatch(OneCore.Waiting, :moved, fn waiting -> for {process, _} <- waiting, do: send(process, :moved) end)
     :ok
   end
 

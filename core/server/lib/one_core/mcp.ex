@@ -227,8 +227,8 @@ defmodule OneCore.Mcp do
     end
   end
 
-  # The relay at the network's address saying one of its servers came or went.
-  defp told("seen", _params), do: Servers.presence_again()
+  # The relay at the network's address saying one of its servers came or went, or said what it is (`moved` false).
+  defp told("seen", params), do: Servers.presence_again(:all, params["moved"] != false)
 
   # Another server, or an app's edge function, saying that what this one kept of some hooks was decided from what has
   # since changed.

@@ -48,7 +48,7 @@ defmodule OneCore.Apps.Lifecycle do
   @impl true
   def init(nil) do
     Process.send_after(self(), :daily, :timer.minutes(5))
-    Registry.register(OneCore.Waiting, :seen, nil)
+    Registry.register(OneCore.Waiting, :moved, nil)
     {:ok, %{settling: nil, again: false}, {:continue, :settle}}
   end
 
@@ -62,8 +62,8 @@ defmodule OneCore.Apps.Lifecycle do
   end
 
   @impl true
-  def handle_info(:seen, %{settling: nil} = state), do: {:noreply, settling(state)}
-  def handle_info(:seen, state), do: {:noreply, %{state | again: true}}
+  def handle_info(:moved, %{settling: nil} = state), do: {:noreply, settling(state)}
+  def handle_info(:moved, state), do: {:noreply, %{state | again: true}}
 
   def handle_info({:DOWN, _ref, :process, settling, _why}, %{settling: settling, again: again} = state) do
     state = %{state | settling: nil, again: false}
