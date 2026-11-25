@@ -18,8 +18,9 @@ defmodule OneCore.Server do
   @doc """
   Starts this server's endpoint. What it can't do itself is handed it, as a web server is handed what answers its
   requests: `handle`, which answers a message (`OneCore.Mcp.handle/3`); `wake`, which has the apps that can wake a
-  device wake it, and says whether one did (`OneCore.Hooks.wake/1`); and `started`, which tells the clients watching
-  it that something changed (`OneCore.Apps.changed/2`), as it starts.
+  device wake it, and says whether one did (`OneCore.Hooks.wake/1`); `covering`, the servers that run an owner's apps
+  (`OneCore.Apps.covering/1`), told of what's new of theirs; and `started`, which tells the clients watching it that
+  something changed (`OneCore.Apps.changed/2`), as it starts.
   """
   def start_link(options), do: GenServer.start_link(__MODULE__, Map.new(options), name: __MODULE__)
 
@@ -259,9 +260,9 @@ defmodule OneCore.Server do
     do: notify(Enum.uniq(Enum.flat_map(owners, &told/1)), owners, what, params)
 
   # The network's apps run on every server, a person's own too, for them (`OneCore.Apps.loads?/1`), and anyone else's on
-  # the servers acting for them, a group's they're in too (`OneCore.Apps.covering/1`).
+  # the servers acting for them, a group's they're in too (`covering`, handed it as it starts).
   defp told("network"), do: Servers.up()
-  defp told(owner), do: OneCore.Apps.covering(owner)
+  defp told(owner), do: :persistent_term.get({__MODULE__, :covering}).(owner)
 
   @doc "Tells `server` to cancel the call it's running for what this server asked it as `request` (`request/3`)."
   def cancel(server, request) do
@@ -372,6 +373,7 @@ defmodule OneCore.Server do
     key = JSON.decode!(address)["id"]
     :persistent_term.put(__MODULE__, {key, {nif, endpoint}})
     :persistent_term.put({__MODULE__, :wake}, options.wake)
+    :persistent_term.put({__MODULE__, :covering}, options.covering)
     {:ok, machine} = :inet.gethostname()
     name = Application.get_env(:one_core, :name) || to_string(machine)
     owner = Application.get_env(:one_core, :owner, "network")
