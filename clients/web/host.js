@@ -51,11 +51,7 @@ const KEPT = "kept"
 const kept = (() => {
   try {
     const stored = JSON.parse(localStorage.getItem(KEPT) ?? "null")
-    if (stored) {
-      if (Array.isArray(stored.tools)) stored.tools = { "": stored.tools }
-      stored.tools ??= {}
-      return stored
-    }
+    if (stored) return stored
   } catch {}
   return { lists: {}, tools: {}, reads: {} }
 })()
