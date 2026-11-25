@@ -30,7 +30,7 @@ interface Who {
 declare global {
   interface Env {
     /** The app that signs people in: who a request is from, or the answer for one from nobody signed in. */
-    WHO?: { who(request: Request): Promise<Who | { refused: Response }> };
+    WHO?: { who(request: Request): Promise<Who | { refused: Response }>; device(origin: string, device: string): Promise<Who | null> };
   }
 }
 
@@ -152,14 +152,18 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
     const body = await request.text();
     const device = await verifiedKey(request, body);
     if (!device) return unsigned(request);
+    // The page an assistant shows, for a device whose own assistant, `one mcp`, asks for it.
+    const asked = routes(body);
+    const page = asked && env.WHO && (await env.WHO.device(new URL(request.url).origin, device));
+    if (asked && page) return router(env, asked, new URL(request.url).origin, page);
     return forward(env, body, { device }, [NETWORK], request.headers, mode(new URL(request.url)), { signal: request.signal, ctx });
   }
   // A browser or an assistant someone let in. One that's since become nobody's signs in, or is let in, again.
   const who = await signedIn(request, env);
   if ("refused" in who) return who.refused;
   const body = await request.text();
-  const routed = !who.session && who.apps && (await router(env, body, new URL(request.url).origin, who));
-  if (routed) return withCookies(routed, who.cookies);
+  const asked = routes(body);
+  if (asked && !who.session && who.apps) return withCookies(await router(env, asked, new URL(request.url).origin, who), who.cookies);
   const answer = await forward(env, body, { device: who.device }, [`${who.who}/`, NETWORK], request.headers, mode(new URL(request.url)), { signal: request.signal, ctx });
   if (!(await nobodys(answer))) return withCookies(answer, who.cookies);
   if (who.challenge) return new Response(null, { status: 401, headers: { "www-authenticate": who.challenge } });
@@ -175,17 +179,9 @@ async function mcp(request: Request, env: Env, ctx: ExecutionContext) {
  * it), read by an assistant that shows MCP Apps: the router (`clients/web/router.js`), which shows the page of the app
  * whose tool was called in the renderer's frame from here, and what a link in it opens, as the web client does. It's
  * written here, as only here is where whoever let the assistant in has their apps' files (`apps`), and it's told the
- * apps listed for them, which a link opens among. Any other request is nothing of its, and goes on.
+ * apps listed for them, which a link opens among. A device's `one mcp` asks for it here too (`mcp`).
  */
-async function router(env: Env, body: string, origin: string, who: Who) {
-  let call: Call;
-  try {
-    call = JSON.parse(body);
-  } catch {
-    return undefined;
-  }
-  const uri = call.params?.uri;
-  if (call.method !== "resources/read" || typeof uri !== "string" || !ROUTER.test(uri)) return undefined;
+async function router(env: Env, call: Call, origin: string, who: Who) {
   const listing = await forward(env, JSON.stringify({ jsonrpc: "2.0", id: 1, method: "resources/list", params: {} }), { device: who.device }, [`${who.who}/`, NETWORK]);
   const listed = listing.status === 200 ? await listing.json<{ result?: { resources: { uri: string; mimeType?: string; _meta?: { category?: string } }[] } }>() : {};
   // Only what a link opens among: the apps' pages.
@@ -201,11 +197,22 @@ body[data-unopened] iframe { display: none; } body[data-unopened]::before { cont
 <script>${script.replace(/<\/script/gi, "<\\/script")}</script>
 `;
   const ui = { csp: { frameDomains: [origin] } };
-  return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui } }] } });
+  return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri: call.params?.uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui } }] } });
 }
 
 /** What names the router's page, whatever its version. */
 const ROUTER = /^ui:\/\/one\/[^/]+\/app\.html$/;
+
+/** The request in `body` if it reads the router's page, which `router` answers, and any other is nothing of its. */
+function routes(body: string) {
+  try {
+    const call: Call = JSON.parse(body);
+    const uri = call.params?.uri;
+    return call.method === "resources/read" && typeof uri === "string" && ROUTER.test(uri) ? call : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** How an agent calls tools at `/mcp`: in code mode with `?code` (`OneCore.Mcp`), and otherwise as MCP's tools. */
 const mode = (url: URL) => (url.searchParams.has("code") ? "code" : undefined);

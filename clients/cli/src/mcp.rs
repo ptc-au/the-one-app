@@ -57,7 +57,10 @@ pub async fn serve(client: Arc<Client>, code: bool) -> Result<()> {
             let message = if request.is_object() { request.to_string() } else { message };
             let progress = !request["params"]["_meta"]["progressToken"].is_null();
             let notified = |line: &[u8]| drop(progress.then(|| lines.send(line.to_vec())));
-            let response = match client.ask_notified(message.as_bytes(), notified).await {
+            // The page an assistant shows an app's tool in is the edge's, as no server has it (`core/edge/mcp/mcp.ts`).
+            let page = request["method"] == "resources/read" && request["params"]["uri"].as_str().is_some_and(|uri| uri.starts_with("ui://one/"));
+            let asked = if page { client.ask_edge(message.as_bytes()).await } else { client.ask_notified(message.as_bytes(), notified).await };
+            let response = match asked {
                 Ok(response) => response,
                 Err(error) => refusal(&message, &error),
             };

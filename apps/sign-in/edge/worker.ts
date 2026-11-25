@@ -191,11 +191,26 @@ export class Who extends WorkerEntrypoint {
     return {
       device,
       who: shown.who,
-      apps: await appsAddress(auth, `${ASSISTANT}${btoa(JSON.stringify(shown)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`),
+      apps: await appsAddress(auth, shownAs(shown)),
       challenge: `Bearer error="invalid_token", resource_metadata="${metadata}"`,
     };
   }
+
+  /**
+   * Where the apps' files are for `device`, one of the network's own that signed what it asked with its key, which the
+   * edge checked: an assistant's address (`who`), for the same page, for `DEVICE_PAGE` ms. Null for a device that
+   * isn't one of its person's.
+   */
+  async device(origin: string, device: string): Promise<Signed | null> {
+    const owner = await env.DB.prepare('select user.name from device join user on user.id = device."userId" where device.id = ?').bind(device).first<{ name: string }>();
+    if (!owner) return null;
+    const shown: Shown = { device, who: who(owner), until: Date.now() + DEVICE_PAGE };
+    return { device, who: shown.who, apps: await appsAddress(await at(origin), shownAs(shown)) };
+  }
 }
+
+/** How long the address of the apps' files that a device's page was given lasts, in ms. */
+const DEVICE_PAGE = 24 * 60 * 60 * 1000;
 
 /** The key a session is signed with into the address of its apps' files: this Worker's secret, as HMAC's. */
 let key: Promise<CryptoKey> | undefined;
@@ -215,6 +230,7 @@ interface Shown {
   who: string;
   until: number;
 }
+const shownAs = (shown: Shown) => `${ASSISTANT}${btoa(JSON.stringify(shown)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
 
 /**
  * The sessions of apps' pages this copy of the Worker found in the database, believed for `BELIEVED` seconds, or

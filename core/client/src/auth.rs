@@ -507,6 +507,17 @@ pub(crate) async fn sessions(client: std::sync::Weak<Client>) {
 }
 
 impl Client {
+    /// Asks its network's edge one MCP request at `/mcp`, signed by this device's key, and gives its answer: what
+    /// only the edge answers, as the page an assistant shows an app's tool in (`core/edge/mcp/mcp.ts`), which none
+    /// of the network's servers has.
+    pub async fn ask_edge(&self, message: &[u8]) -> Result<Vec<u8>> {
+        let address = self.address.as_deref().context("A network on one machine has no edge")?;
+        let body = String::from_utf8(message.to_vec())?;
+        let url = format!("{}/mcp", address.trim_end_matches('/'));
+        let (_, response) = ask_edge(&url, &self.key, "application/json", body).await?;
+        Ok(serde_json::to_vec(&response)?)
+    }
+
     /// Signs this device out, as its person does once they've removed it from their devices: what it kept of
     /// theirs goes now, as it would for someone else signing in on it, and it opens again as a device that isn't in.
     pub async fn sign_out(&self) -> Result<()> {
