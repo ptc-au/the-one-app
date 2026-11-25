@@ -7,6 +7,10 @@
 const SPEAKING = 0.02
 const QUIET = 0.008
 
+/** How long a connection waits for more candidates once it has a relay, and for its first, in ms (`video.js`'s). */
+const GRACE = 300
+const LIMIT = 5000
+
 /** Each voice by its frame and node, as the frame names it (`bridge.js`'s `one/voice`). */
 /** @type {Map<string, any>} */
 const all = new Map()
@@ -37,18 +41,30 @@ const logVoice = (/** @type {string} */ step, /** @type {any} */ voice, /** @typ
   })
 }
 
-/** Its local description once its candidates are all gathered, as an SFU needs to reach it: its gathering's own event says so. */
-const gathered = (/** @type {RTCPeerConnection} */ pc) => {
-  if (pc.iceGatheringState === "complete") return Promise.resolve()
-  return new Promise((done) => {
-    const changed = () => {
-      if (pc.iceGatheringState !== "complete") return
+/**
+ * Its local description once it can reach an SFU, which takes no candidates after the offer: as soon as it has a relay
+ * (a TURN server answered, by whichever of UDP, TCP or TLS got through), and a moment for the others, or all its
+ * candidates, or `LIMIT` at most. Waiting for them all is as long as a blocked UDP port takes to give up, ~40 s.
+ */
+const gathered = (/** @type {RTCPeerConnection} */ pc) =>
+  new Promise((done) => {
+    let grace = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined)
+    const finish = () => {
+      clearTimeout(grace)
+      clearTimeout(limit)
       pc.removeEventListener("icegatheringstatechange", changed)
+      pc.removeEventListener("icecandidate", candidate)
       done(undefined)
     }
+    const changed = () => pc.iceGatheringState === "complete" && finish()
+    const relayed = () => (grace ??= setTimeout(finish, GRACE))
+    const candidate = (/** @type {RTCPeerConnectionIceEvent} */ { candidate }) => candidate?.type === "relay" && relayed()
+    const limit = setTimeout(finish, LIMIT)
     pc.addEventListener("icegatheringstatechange", changed)
+    pc.addEventListener("icecandidate", candidate)
+    if (pc.iceGatheringState === "complete") finish()
+    else if (pc.localDescription?.sdp.includes(" typ relay ")) relayed()
   })
-}
 
 /** Whether the person is speaking, from the microphone's level, as its own audio plays: `onSpeaking`. */
 const listen = (/** @type {any} */ voice, /** @type {(event: Record<string, unknown>) => void} */ tell) => {
