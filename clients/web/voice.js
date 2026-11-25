@@ -108,61 +108,67 @@ const listen = (/** @type {any} */ voice, /** @type {(event: Record<string, unkn
 const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, /** @type {(event: Record<string, unknown>) => void} */ tell) => {
   voice.over()
   if (!globalThis.RTCPeerConnection) return tell({ name: "state", state: "lost" })
-  const pc = (voice.peer = new RTCPeerConnection(ice))
   let over = false
+  let pc = /** @type {RTCPeerConnection | null} */ (null)
   const lost = () => !over && ((over = true), tell({ name: "state", state: "lost" }))
-  voice.over = () => ((over = true), pc.close())
+  voice.over = () => ((over = true), pc?.close())
   tell({ name: "state", state: "connecting" })
-  // One sendonly track for the local microphone; remote tracks arrive on their own transceivers via SFU offers.
-  const transceiver = pc.addTransceiver("audio", { direction: "sendonly" })
-  voice.sender = transceiver.sender
-  if (voice.track) voice.sender.replaceTrack(voice.track).catch(() => {})
-  pc.ontrack = ({ track }) => {
-    if (track.kind !== "audio") return
-    // Each remote track gets its own <audio> element and explicit play() so Chrome starts newly negotiated tracks.
-    const el = document.createElement("audio")
-    Object.assign(el, { autoplay: true, playsInline: true })
-    el.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
-    el.srcObject = new MediaStream([track])
-    document.body.append(el)
-    voice.audios.add(el)
-    el.play().catch((err) => {
-      voice.playError = err instanceof Error ? err.message : String(err)
-      logVoice("audio_play", voice, err)
-    })
-    track.addEventListener("ended", () => {
-      voice.audios.delete(el)
-      el.remove()
-    })
-  }
-  pc.onconnectionstatechange = () => {
+  // Wait for getUserMedia before creating the offer so the SDP carries the real track's msid and SSRC;
+  // Cloudflare Realtime SFU drops RTP packets whose SSRC wasn't declared in the initial tracks/new offer.
+  Promise.resolve(voice.ready).then(() => {
     if (over) return
-    voice.flips = (voice.flips ?? 0) + 1
-    if (pc.connectionState === "connected") {
-      tell({ name: "state", state: "connected" })
-      if (!voice.statsChecked) {
-        voice.statsChecked = true
-        setTimeout(() => void checkStats(voice), 4000)
-      }
-    } else if (pc.connectionState === "connecting" || pc.connectionState === "disconnected") {
-      tell({ name: "state", state: "connecting" })
-    } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-      logVoice("connection_lost", voice, `connectionState=${pc.connectionState} iceState=${pc.iceConnectionState}`)
-      lost()
+    pc = voice.peer = new RTCPeerConnection(ice)
+    const transceiver = voice.track
+      ? pc.addTransceiver(voice.track, { direction: "sendonly", streams: voice.mic ? [voice.mic] : [] })
+      : pc.addTransceiver("audio", { direction: "sendonly" })
+    voice.sender = transceiver.sender
+    pc.ontrack = ({ track }) => {
+      if (track.kind !== "audio") return
+      // Each remote track gets its own <audio> element and explicit play() so Chrome starts newly negotiated tracks.
+      const el = document.createElement("audio")
+      Object.assign(el, { autoplay: true, playsInline: true })
+      el.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
+      el.srcObject = new MediaStream([track])
+      document.body.append(el)
+      voice.audios.add(el)
+      el.play().catch((err) => {
+        voice.playError = err instanceof Error ? err.message : String(err)
+        logVoice("audio_play", voice, err)
+      })
+      track.addEventListener("ended", () => {
+        voice.audios.delete(el)
+        el.remove()
+      })
     }
-  }
-  pc.setLocalDescription()
-    .then(() => gathered(pc))
-    .then(
-      () => {
-        if (over) return
-        tell({ name: "offer", sdp: pc.localDescription?.sdp })
-        // An SFU's offer, which its page set before it had a connection to answer: answered once its own offer's
-        // been sent.
-        if (voice.offer) answered(voice, voice.offer, tell)
-      },
-      lost,
-    )
+    pc.onconnectionstatechange = () => {
+      if (over || !pc) return
+      voice.flips = (voice.flips ?? 0) + 1
+      if (pc.connectionState === "connected") {
+        tell({ name: "state", state: "connected" })
+        if (!voice.statsChecked) {
+          voice.statsChecked = true
+          setTimeout(() => void checkStats(voice), 4000)
+        }
+      } else if (pc.connectionState === "connecting" || pc.connectionState === "disconnected") {
+        tell({ name: "state", state: "connecting" })
+      } else if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        logVoice("connection_lost", voice, `connectionState=${pc.connectionState} iceState=${pc.iceConnectionState}`)
+        lost()
+      }
+    }
+    pc.setLocalDescription()
+      .then(() => gathered(/** @type {RTCPeerConnection} */ (pc)))
+      .then(
+        () => {
+          if (over || !pc) return
+          tell({ name: "offer", sdp: pc.localDescription?.sdp })
+          // An SFU's offer, which its page set before it had a connection to answer: answered once its own offer's
+          // been sent.
+          if (voice.offer) answered(voice, voice.offer, tell)
+        },
+        lost,
+      )
+  })
 }
 
 /** An SFU's offer, which it answers as the polite peer: its own offer is rolled back first, as browsers do. */
@@ -175,6 +181,7 @@ const answered = async (/** @type {any} */ voice, /** @type {string} */ sdp, /**
     await pc.setLocalDescription()
     await gathered(pc)
     tell({ name: "answer", sdp: pc.localDescription?.sdp })
+    setTimeout(() => void checkStats(voice), 4000)
   } catch (err) {
     logVoice("renegotiate_offer", voice, err)
     voice.over()
@@ -190,11 +197,11 @@ export function voice(op, key, params, tell) {
   if (op === "create") {
     if (all.has(key)) return
     /** @type {any} */
-    const one = { key, audios: new Set(), peer: null, sender: null, mic: null, track: null, muted: false, context: null, timer: null, speaking: false, offer: null, over: () => {} }
+    const one = { key, audios: new Set(), peer: null, sender: null, mic: null, track: null, ready: null, muted: false, context: null, timer: null, speaking: false, offer: null, over: () => {} }
     all.set(key, one)
     // The microphone, with the system's own echo cancellation and noise suppression, as a call asks for. Without one,
     // the call is heard and not heard from.
-    navigator.mediaDevices
+    one.ready = navigator.mediaDevices
       ?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       .then(
         (mic) => {
