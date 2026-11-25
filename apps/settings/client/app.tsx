@@ -116,6 +116,11 @@ const sectionInputs = () => {
   const { name, arguments: { app, section, ...inputs } } = toolInput("settings_sections")
   return name === "settings_section" ? inputs : {}
 }
+/// What an app's page says beyond which app it is, for the groups its app adds to it: `settings_app`'s other arguments.
+const appInputs = () => {
+  const { name, arguments: { name: _app, for: _for, ...inputs } } = toolInput("settings_sections")
+  return name === "settings_app" ? inputs : {}
+}
 /// Shows what an id names beside the sidebar, as a step Back goes back from, or the sidebar alone.
 function setOpen(id?: string) {
   if (!id) return navigate("settings_sections")
@@ -255,7 +260,8 @@ function Drawn(props: { section: Added }) {
 /// its app's component, given what the place is about (`device`), or where its app is untrusted, by its page for it
 /// in a frame (`client/<component>.html`, the device after `#`), as tall as the page says it is. An app's own page has
 /// only that app's.
-function Groups(props: { in: Added["in"]; device?: string; kind?: string; server?: string; services?: string[]; app?: string }) {
+/// On an app's page, its groups are told its screen (`inputs`) and go to another (`show`), as a section is.
+function Groups(props: { in: Added["in"]; device?: string; kind?: string; server?: string; services?: string[]; app?: string; inputs?: object; show?: (inputs?: object) => void }) {
   const fits = (one: Added) =>
     props.in === "app" ? one.app === props.app : (!one.kinds || one.kinds.includes(props.kind!)) && (!one.service || !!props.services?.includes(one.app))
   const here = () => added().filter((one) => one.in === props.in && fits(one))
@@ -274,7 +280,7 @@ function Groups(props: { in: Added["in"]; device?: string; kind?: string; server
             when={one().trusted}
             fallback={<Frame src={`${one().app}/client/${one().component}.html${props.device ? `#${props.device}` : ""}`} title={one().title} />}
           >
-            <Group added={one()} device={props.device} server={props.server} />
+            <Group added={one()} device={props.device} server={props.server} inputs={props.inputs} show={props.show} />
           </Show>
         </Section>
       )}
@@ -282,7 +288,7 @@ function Groups(props: { in: Added["in"]; device?: string; kind?: string; server
   )
 }
 
-function Group(props: { added: Added; device?: string; server?: string }) {
+function Group(props: { added: Added; device?: string; server?: string; inputs?: object; show?: (inputs?: object) => void }) {
   // `added` asked again gives a new object for the same section: drawing it again for that returns a new promise, which
   // drops what's drawn for a spinner. Only a different app or component draws it anew.
   const app = createMemo(() => props.added.app)
@@ -292,7 +298,7 @@ function Group(props: { added: Added; device?: string; server?: string }) {
     <Errored fallback={(error) => <Problem heading={`Can't show ${props.added.title}`} text={error() as Error} />}>
       <Loading fallback={<Spinner delay />}>
         <Show when={drawn()} keyed>
-          {(Drawn) => <Drawn device={props.device} server={props.server} />}
+          {(Drawn) => <Drawn device={props.device} server={props.server} inputs={props.inputs} show={props.show} />}
         </Show>
       </Loading>
     </Errored>
@@ -442,7 +448,7 @@ function AppPage(props: { identity: string }) {
           </Section>
         )}
       </For>
-      <Groups in="app" app={app().name} />
+      <Groups in="app" app={app().name} inputs={appInputs()} show={(inputs?: object) => navigate("settings_app", { name: app().name, for: app().for, ...inputs })} />
       <List>
         <Row
           heading="Remove App…"
