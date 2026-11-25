@@ -417,8 +417,8 @@ defmodule OneCore.Mcp do
   # address leads to, and what it answers is the HTTP answer the edge sends whoever asked (`OneCore.Apps.Webhooks`).
   defp result("webhooks/http", %{"request" => request} = params, _from, {_actor, owner}, forwarded) do
     with :ok <- if(forwarded != false or is_map_key(meta(params), "webhook"), do: :ok, else: {:error, :forbidden, "Only a webhook, or a server passing one on, asks for a webhook to be run"}),
-         {:ok, webhook, app, token} <- Webhooks.asked(params, owner),
-         {:ok, request} <- Webhooks.request(request, token) do
+         {:ok, webhook, app, name} <- Webhooks.asked(params, owner),
+         {:ok, request} <- Webhooks.request(request, name) do
       case Calls.webhook(app, webhook, request, {owner, owner}, forwarded) do
         {:ok, answer} -> Webhooks.answered(answer)
         {:error, :not_found, why} -> {:error, -32023, why}
@@ -426,6 +426,7 @@ defmodule OneCore.Mcp do
       end
     else
       {:error, :forbidden, why} -> {:error, -32024, why}
+      {:error, :not_found, why} -> {:error, -32023, why}
       {:error, :invalid, why} -> {:error, -32602, why}
     end
   end

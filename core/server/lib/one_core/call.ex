@@ -140,6 +140,16 @@ defmodule OneCore.Call do
   end
 
   @doc """
+  Makes this call's app a webhook named `name`, for whoever it's installed for, in place of the one of that name
+  before, and gives its address after the network's, `/webhooks/<owner>/<app>/<token>`, to tell a service
+  (`OneCore.App.webhook/2`). Its token is shown only here: the app keeps the address.
+
+      OneCore.Call.webhook(call, "events")
+      #=> "/webhooks/network/google-chat/3q2-…"
+  """
+  def webhook(%__MODULE__{installed: at, app: app}, name), do: OneCore.Apps.Webhooks.create(at, app, name)
+
+  @doc """
   Runs `hook`, one this call's app offers (`offers/0`), for whoever this call runs for, as One Core runs its own:
   the apps installed for them and for the network that hook into `<app>.<hook>` are asked. What it gives is
   the kind's: an observe hook gives `:ok` at once, a mutate hook `{:ok, changes, by}` or `{:refuse, why}`, a

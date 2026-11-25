@@ -363,14 +363,17 @@ defmodule OneCore.App do
   caller:
 
       @impl true
-      def webhook(_call, %{method: "POST", body: body, token: token}) do
+      @impl true
+      def webhook(_call, %{method: "POST", body: body, name: "events"}) do
         {:ok, %{status: 200, headers: [["content-type", "text/plain"]], body: "ok"}}
       end
 
+  - An app makes each of its webhooks with `OneCore.Call.webhook/2`, which gives the address to tell a service, its
+    token made by One Core. An address with a token One Core didn't make is answered 404 before any of the app's code
+    runs. Whoever has the address still has the webhook, so an app checks what it's given as it does what any
+    stranger sends it.
   - What came in is the `method`, the `path` after the token (`""` for none), the `query` without its `?`, the
-    `headers` it sent, each a name and a value, its `body`, and the `token` from the address, which is the secret in
-    it: whoever has the address has the webhook, so an app checks what it's given as it does what any stranger sends
-    it, and keeps a token of its own to tell one sender's from another's.
+    `headers` it sent, each a name and a value, its `body`, and the `name` the app gave the webhook.
   - It's called for whoever the address leads to, a user, a group or the network, with `call.actor` and
     `call.subject` them, and answers `{:ok, %{status: status, headers: headers, body: body}}`: the status to answer
     with, 100 to 599 and 200 unless it says, each header a name and a value, as a list, and the text to send. One whose
