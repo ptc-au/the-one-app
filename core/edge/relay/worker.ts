@@ -69,8 +69,12 @@ const READMITTED = 60_000;
  * aside, which answers no request, answers it too.
  */
 const HEARTBEAT = JSON.stringify({ call: "heartbeat", message: JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/heartbeat" }) });
-/** What a server is told when one of the network's servers comes or goes: to ask who's on again. */
-const SEEN = JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/seen" });
+/**
+ * What a server is told when one of the network's servers comes or goes (`moved`), or says what it is: to ask who's on
+ * again. Only one that came or went may have lost what it ran.
+ */
+const SEEN = JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/seen", params: { moved: true } });
+const SAID = JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/seen", params: { moved: false } });
 /**
  * How long a server that isn't connected is still starting or stopping as it said, in milliseconds: one says it's
  * starting just before it connects, and one stopping to start again, to take an update, is starting again within a
@@ -248,8 +252,10 @@ export class Relay extends DurableObject<RelayEnv> {
    * Gives its presence now.
    */
   async report(key: string, version: string, protocol: Protocol | undefined, status?: ServerStatus, update?: Reported) {
+    const was = status && (await this.ctx.storage.get<ServerStatus>(`presence ${key}`));
     await this.ctx.storage.put({ [`version ${key}`]: version, [`protocol ${key}`]: protocol ?? null, ...(status && { [`presence ${key}`]: status }) });
-    if (status) this.seen();
+    // Starting, stopping, joining or leaving moves it, as coming or going does; saying the same again doesn't.
+    if (status) this.seen(was?.server_membership !== status.server_membership || was?.server_daemon_status !== status.server_daemon_status);
     if (update) await this.updated({ reported: { key, ...update } });
     return (await this.presence([key]))[key];
   }
@@ -302,9 +308,9 @@ export class Relay extends DurableObject<RelayEnv> {
   /** Who's waiting for a server to come or go (`ready`), each woken as one does (`seen`). */
   waiting = new Set<() => void>();
 
-  /** A server came, went or said what it is: every server is told, and whoever waits for one to be ready looks again. */
-  seen() {
-    this.notify(SEEN);
+  /** A server came or went (`moved`) or said what it is: every server is told, and whoever waits for one to be ready looks again. */
+  seen(moved = true) {
+    this.notify(moved ? SEEN : SAID);
     for (const wake of this.waiting) wake();
   }
 
