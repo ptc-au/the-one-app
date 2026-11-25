@@ -32,6 +32,8 @@ account was signed in before this app was installed, sign it in again.
 
 ## Tools
 
+Every tool is for the owners of whoever Google Chat is installed for (the network's owners, for a network): it reads and posts through their Google account and Chat app. An app they installed that requires it, as Board Google Chat Sync does, calls its tools for itself.
+
 - `spaces` lists the spaces you're in, and `messages` recent messages in one, newest first, as you. Their names,
   like `spaces/AAAA` and `spaces/AAAA/messages/BBBB`, are what every other tool takes.
 - `send` posts in a space as the Chat app, in a thread if you give one: only when the person asked you to send.

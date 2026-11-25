@@ -331,8 +331,20 @@ defmodule GoogleChat do
     ]
   end
 
+  # Whose Chat app and Google account these are is the network's owners' to say, so what changes them, posts with them
+  # or reads through them is theirs, and an app they installed that requires this one (a bridge) asks for itself.
+  # `renew_subscriptions` is the clock's.
   @impl true
-  def call("configure", inputs, call) do
+  def call(tool, inputs, %Call{caller: nil} = call) when tool != "renew_subscriptions" do
+    if not Call.owns?(%{call | subject: call.installed}),
+      do: raise(OneCore.Call.Refused, "Only the owners of whoever Google Chat is installed for use it.")
+
+    run(tool, inputs, call)
+  end
+
+  def call(tool, inputs, call), do: run(tool, inputs, call)
+
+  defp run("configure", inputs, call) do
     config = Store.config(call)
     item = inputs["vault_item"] || config["vault_item"] || @item
 
@@ -343,33 +355,33 @@ defmodule GoogleChat do
     configured(Store.config(call), call)
   end
 
-  def call("status", _inputs, call) do
+  defp run("status", _inputs, call) do
     Store.config(call) |> configured(call) |> Map.put(:subscriptions, Store.subscriptions(call))
   end
 
-  def call("spaces", inputs, call) do
+  defp run("spaces", inputs, call) do
     Api.spaces(call, inputs["account"] || Store.config(call)["account"], most(inputs["page_size"]), inputs["page_token"])
   end
 
-  def call("messages", %{"space" => space} = inputs, call) do
+  defp run("messages", %{"space" => space} = inputs, call) do
     Api.messages(call, inputs["account"] || Store.config(call)["account"], space!(space), most(inputs["page_size"]), inputs["page_token"])
   end
 
-  def call("send", %{"space" => space, "text" => text} = inputs, call) do
+  defp run("send", %{"space" => space, "text" => text} = inputs, call) do
     Api.send_message(call, item(call), space!(space), text!(text), thread(inputs["thread"]))
   end
 
-  def call("edit", %{"message" => message, "text" => text}, call) do
+  defp run("edit", %{"message" => message, "text" => text}, call) do
     Api.edit_message(call, item(call), message!(message), text!(text))
   end
 
-  def call("delete", %{"message" => message}, call) do
+  defp run("delete", %{"message" => message}, call) do
     message = message!(message)
     Api.delete_message(call, item(call), message)
     %{name: message, deleted: true}
   end
 
-  def call("react", %{"message" => message} = inputs, call) do
+  defp run("react", %{"message" => message} = inputs, call) do
     account = inputs["account"] || Store.config(call)["account"]
 
     case inputs["reaction"] do
@@ -385,7 +397,7 @@ defmodule GoogleChat do
     end
   end
 
-  def call("watch_space", %{"space" => space}, call) do
+  defp run("watch_space", %{"space" => space}, call) do
     space = space!(space)
     config = Store.config(call)
 
@@ -403,7 +415,7 @@ defmodule GoogleChat do
     watched(subscription)
   end
 
-  def call("unwatch_space", %{"space" => space}, call) do
+  defp run("unwatch_space", %{"space" => space}, call) do
     space = space!(space)
 
     case Store.subscription(call, space) do
@@ -417,7 +429,7 @@ defmodule GoogleChat do
     end
   end
 
-  def call("renew_subscriptions", _inputs, call) do
+  defp run("renew_subscriptions", _inputs, call) do
     now = DateTime.utc_now()
     account = Store.config(call)["account"]
 
@@ -455,7 +467,6 @@ defmodule GoogleChat do
     case JSON.decode(body) do
       {:ok, %{"message" => %{"data" => data} = message}} -> published(call, message, data)
       {:ok, %{"type" => "MESSAGE"} = event} -> chat_event(call, event)
-      {:ok, %{"type" => type}} when type in ["ADDED_TO_SPACE", "REMOVED_FROM_SPACE"] -> answer(200)
       {:ok, %{"type" => _type}} -> answer(200)
       _ -> answer(400)
     end
