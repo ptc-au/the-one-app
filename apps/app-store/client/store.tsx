@@ -1,10 +1,10 @@
 // App Store: every app the network can install, a row of each category. An app's page has Get, which installs it, and
 // a row for each owner, with where its install is for them and what to do about it: managing what's installed is
-// otherwise the App Library's. A link opens it at an app's page (`one:app-store#app=<its artifact>`), as the App
-// Library does for an app with no screen of its own.
-import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch } from "solid-js"
+// otherwise the App Library's. An app's page is a screen of its own, `app-store_app { name }` at /app-store/notes, as
+// GitHub's repos are, which a link, reload and Back open.
+import { createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch } from "solid-js"
 import type { Element } from "solid-js"
-import { Button, call, changed, confirm, Empty, go, Icon, Image, link, List, Menu, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Spinner, styles, Text, toast, tokens, View } from "ui"
+import { Button, call, changed, confirm, Empty, go, Icon, Image, List, Menu, navigate, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -110,25 +110,22 @@ changed(() => (refresh(market), refresh(owners)))
 type Owners = Awaited<ReturnType<typeof owners>>
 type Market = Awaited<ReturnType<typeof market>>
 
-/// Where the app is: every app, a category's every app, an app's page and its See All. Each step in is a step the Back
-/// button and the device's back take out again. An app's page a link opened (`linked`) is where the App Store starts,
-/// so it has no Back, as the Marketplace hasn't: the window's rail and the device's back leave it.
-interface View {
-  category?: string
-  app?: string
-  details?: boolean
-  linked?: boolean
+/// Where the app is, as the screen shown says it (`toolInput`): the Marketplace, an app's page (`app-store_app { name }`) and
+/// its See All (`app-store_details { name }`), each a step in that the Back button and the device's back take out again.
+/// The category chosen is a filter of the Marketplace, which changes it in place.
+const [category, setCategory] = createSignal<string>()
+const screen = () => {
+  const { name, arguments: inputs } = toolInput("app-store_marketplace")
+  return { app: name === "app-store_app" || name === "app-store_details" ? String(inputs.name) : undefined, details: name === "app-store_details" }
 }
-const [view, setView] = createSignal<View>({})
-const to = (next: View) => go(() => setView({ ...next, linked: undefined }))
-/// One step out: See All to the app's page, an app's page to the Marketplace as it was (its category stays chosen: a category is a filter of it, which changes it in place).
-const out = () => go(() => setView((now) => (now.details ? { category: now.category, app: now.app } : now.app ? { category: now.category } : {})), { back: true })
-/// The app a page is of: its artifact, or for one only the directory has, its source and name.
-const key = (listed: Listed) => listed.app ?? `${listed.source}#${listed.name}`
+/// Opens an app's page, or its See All.
+const to = (listed: Listed, details = false) => go(() => navigate(details ? "app-store_details" : "app-store_app", { name: listed.name }))
+/// One step out: See All to the app's page, an app's page to the Marketplace as it was.
+const out = () => go(() => (screen().details ? navigate("app-store_app", { name: screen().app }) : navigate("app-store_marketplace")), { back: true })
 
 /// What an install's app is, where the Marketplace doesn't list it: its name alone.
 const listed = (market: Market, install: Install): Listed =>
-  market.apps.find((listed) => listed.app === install.app) ?? { name: install.name, app: install.app, source: null, title: install.name, icon: null, subtitle: null, about: null, category: null, entrypoints: [], widgets: [], tools: [], trusted: install.trusted, requires: [] }
+  market.apps.find((listed) => listed.name === install.name) ?? { name: install.name, app: install.app, source: null, title: install.name, icon: null, subtitle: null, about: null, category: null, entrypoints: [], widgets: [], tools: [], trusted: install.trusted, requires: [] }
 
 const and = (words: string[]) => new Intl.ListFormat("en", { type: "conjunction" }).format(words)
 
@@ -203,14 +200,14 @@ function CategoryShelf(props: { category: string; apps: Listed[] }) {
       <View style={look.shelfHeading}>
         <Text role="heading" aria-level={2} style={look.heading}>{props.category}</Text>
         <Show when={props.apps.length > 4}>
-          <Pressable role="button" onPress={() => to({ category: props.category })}>
+          <Pressable role="button" onPress={() => setCategory(props.category)}>
             <Text style={look.more}>See All</Text>
           </Pressable>
         </Show>
       </View>
       <Shelf aria-label={props.category} style={look.shelfApps}>
-        <For each={props.apps} keyed={key}>
-          {(listed) => <Tile listed={listed()} onPress={() => to({ category: view().category, app: key(listed()) })} />}
+        <For each={props.apps} keyed={(listed) => listed.name}>
+          {(listed) => <Tile listed={listed()} onPress={() => to(listed())} />}
         </For>
       </Shelf>
     </View>
@@ -221,8 +218,8 @@ function CategoryShelf(props: { category: string; apps: Listed[] }) {
 function Grid(props: { apps: Listed[] }) {
   return (
     <View style={look.grid}>
-      <For each={props.apps} keyed={key}>
-        {(listed) => <Tile fills listed={listed()} onPress={() => to({ category: view().category, app: key(listed()) })} />}
+      <For each={props.apps} keyed={(listed) => listed.name}>
+        {(listed) => <Tile fills listed={listed()} onPress={() => to(listed())} />}
       </For>
     </View>
   )
@@ -235,8 +232,8 @@ function Marketplace(props: { market: Market }) {
     return props.market.apps.filter((listed) => `${listed.title} ${listed.subtitle ?? ""} ${listed.category ?? ""}`.toLowerCase().includes(words))
   }
   const categories = () => props.market.categories.map((category) => ({ category, apps: props.market.apps.filter((listed) => listed.category === category) })).filter(({ apps }) => apps.length)
-  const chosen = () => view().category
-  const choose = (category?: string) => setView({ category })
+  const chosen = category
+  const choose = setCategory
   return (
     <>
       <Search placeholder="Search" aria-label="Search apps" value={query()} onChangeText={setQuery} />
@@ -472,7 +469,7 @@ function Page(props: { market: Market; all: Owners; listed: Listed }) {
       </Show>
       <Show when={props.listed.tools.length}>
         <List>
-          <Row heading="See All" onPress={() => to({ ...view(), app: key(props.listed), details: true })} end={<Icon name="caret-right" along />} />
+          <Row heading="See All" onPress={() => to(props.listed, true)} end={<Icon name="caret-right" along />} />
         </List>
       </Show>
     </View>
@@ -500,8 +497,8 @@ function Details(props: { listed: Listed }) {
 
 function AppStore(props: { market: Market; all: Owners }) {
   // An app the Marketplace doesn't list, as an installed one may not be, still has its page, as a link opens it.
-  const opened = () => props.market.apps.find((listed) => key(listed) === view().app) ?? (view().app ? installed(props.market, props.all, view().app!) : undefined)
-  const covered = () => !!(view().app && opened())
+  const opened = () => props.market.apps.find((listed) => listed.name === screen().app) ?? (screen().app ? installed(props.market, props.all, screen().app!) : undefined)
+  const covered = () => !!(screen().app && opened())
   // The Marketplace stays mounted, hidden, under an app's page, so going back shows it as it was, scroll and all, as
   // a navigation stack keeps the screen before.
   return (
@@ -512,7 +509,7 @@ function AppStore(props: { market: Market; all: Owners }) {
         </Screen>
       </View>
       <Show when={covered()}>
-        <Show when={view().details} fallback={<Screen back={!view().linked} onBack={out} heading={opened()!.title} largeTitle><Page market={props.market} all={props.all} listed={opened()!} /></Screen>}>
+        <Show when={screen().details} fallback={<Screen back onBack={out} heading={opened()!.title} largeTitle><Page market={props.market} all={props.all} listed={opened()!} /></Screen>}>
           <Details listed={opened()!} />
         </Show>
       </Show>
@@ -520,19 +517,14 @@ function AppStore(props: { market: Market; all: Owners }) {
   )
 }
 
-/// An app that's installed as the Marketplace doesn't list it, by its artifact.
-const installed = (market: Market, all: Owners, app: string) => {
-  const install = all.owners.flatMap((owner) => owner.installs).find((one) => one.app === app)
+/// An app that's installed as the Marketplace doesn't list it, by its name.
+const installed = (market: Market, all: Owners, name: string) => {
+  const install = all.owners.flatMap((owner) => owner.installs).find((one) => one.name === name)
   return install && listed(market, install)
 }
 
 /// The App Store.
 export default function Store() {
-  // A link to an app's page, `one:app-store#app=<its artifact>`, as an App Library's app with no screen of its own opens
-  // it: its page, where the App Store starts.
-  createEffect(link, (fragment) => {
-    if (fragment?.startsWith("app=")) setView({ app: decodeURIComponent(fragment.slice(4)), linked: true })
-  })
   return (
     <Errored fallback={(error) => <Screen heading="App Store"><Problem heading="Can't show apps" text={error() as Error} /></Screen>}>
       <Loading fallback={<Screen heading="App Store"><Spinner delay /></Screen>}>

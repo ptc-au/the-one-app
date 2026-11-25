@@ -1661,6 +1661,14 @@
       "Calendar Sync"
     ]
   },
+  "App page, linked to": {
+    "like": "Marketplace",
+    "page": "client/index.html#app&name=notes"
+  },
+  "App See All, linked to": {
+    "like": "Marketplace",
+    "page": "client/index.html#details&name=notes"
+  },
   "Install Failed": {
     "like": "Category",
     "taps": [

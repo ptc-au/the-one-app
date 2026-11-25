@@ -32,10 +32,47 @@ defmodule AppStore do
       required: ["name", "title", "why"]
     }
 
+    only_name = %{
+      type: "object",
+      properties: %{name: %{type: "string", description: "Its name, as `marketplace` lists it: notes"}},
+      required: ["name"]
+    }
+
+    listed = %{
+      type: "object",
+      properties: %{
+        name: %{type: "string", description: "Its own name"},
+        app: %{
+          type: ["string", "null"],
+          description: "Its artifact, or null for one only the directory has"
+        },
+        source: %{type: ["string", "null"], description: "The git repo the directory has it from: owner/repo"},
+        title: %{type: "string"},
+        icon: %{type: ["string", "null"], description: "A data: address"},
+        subtitle: %{type: ["string", "null"]},
+        about: %{type: ["string", "null"]},
+        category: %{type: ["string", "null"]},
+        entrypoints: %{type: "array", description: "Each one's name, icon and App Library category"},
+        widgets: %{type: "array", description: "Each one's name and sizes"},
+        tools: %{type: "array", items: %{type: "string"}, description: "Its tools' names"},
+        trusted: %{type: ["boolean", "null"], description: "Whether it's trusted, or runs in a sandbox"},
+        installed_for: %{
+          type: "array",
+          items: %{type: "string"},
+          description: "Who it's installed for: users, groups and the network"
+        },
+        requires: %{type: "array", items: requirement, description: "The apps it requires, each with why"}
+      },
+      required:
+        ~w(name app source title icon subtitle about category entrypoints widgets tools trusted installed_for requires)
+    }
+
     [
       %{
         name: "marketplace",
         read_only: true,
+        ui: "client/index.html",
+        runtime_version: 4,
         description: """
         Lists every app the network can install, as its Marketplace shows them: each one anyone in the network
         deployed (`app`, its artifact, which `install` takes), once, as its broadest copy, the one installed for the
@@ -51,44 +88,48 @@ defmodule AppStore do
             categories: %{type: "array", items: %{type: "string"}, description: "What an app may be for, in order"},
             apps: %{
               type: "array",
-              items: %{
-                type: "object",
-                properties: %{
-                  name: %{type: "string", description: "Its own name"},
-                  app: %{
-                    type: ["string", "null"],
-                    description: "Its artifact, or null for one only the directory has"
-                  },
-                  source: %{type: ["string", "null"], description: "The git repo the directory has it from: owner/repo"},
-                  title: %{type: "string"},
-                  icon: %{type: ["string", "null"], description: "A data: address"},
-                  subtitle: %{type: ["string", "null"]},
-                  about: %{type: ["string", "null"]},
-                  category: %{type: ["string", "null"]},
-                  entrypoints: %{type: "array", description: "Each one's name, icon and App Library category"},
-                  widgets: %{type: "array", description: "Each one's name and sizes"},
-                  tools: %{type: "array", items: %{type: "string"}, description: "Its tools' names"},
-                  trusted: %{type: ["boolean", "null"], description: "Whether it's trusted, or runs in a sandbox"},
-                  installed_for: %{
-                    type: "array",
-                    items: %{type: "string"},
-                    description: "Who it's installed for: users, groups and the network"
-                  },
-                  requires: %{type: "array", items: requirement, description: "The apps it requires, each with why"}
-                },
-                required:
-                  ~w(name app source title icon subtitle about category entrypoints widgets tools trusted installed_for requires)
-              }
+              items: listed
             }
           },
           required: ["categories", "apps"]
         }
+      },
+      %{
+        name: "app",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{name}",
+        runtime_version: 4,
+        description:
+          "An app's page in the Marketplace, by its name, as `marketplace` lists it: what it is, who it's installed for and what it requires. It's the App Store's screen of it, at /app-store/notes.",
+        inputs: only_name,
+        outputs: %{type: "object", properties: %{app: listed}, required: ["app"]}
+      },
+      %{
+        name: "details",
+        read_only: true,
+        ui: "client/index.html",
+        path: "{name}/details",
+        runtime_version: 4,
+        description:
+          "Everything else an app is made of, as `app` gives it, which its tools and whether it's trusted say: the App Store's See All, at /app-store/notes/details.",
+        inputs: only_name,
+        outputs: %{type: "object", properties: %{app: listed}, required: ["app"]}
       }
     ]
   end
 
   @impl true
-  def call("marketplace", _inputs, call) do
+  def call("marketplace", _inputs, call), do: marketplace(call)
+
+  def call(name, %{"name" => app}, call) when name in ["app", "details"] do
+    case Enum.find(marketplace(call).apps, &(&1.name == app)) do
+      nil -> raise "#{app} isn't in the Marketplace. `marketplace` lists what is."
+      listed -> %{app: listed}
+    end
+  end
+
+  defp marketplace(call) do
     # Who each is installed for, as its artifact says, read for every app at once.
     deployed =
       Call.deployed(call)
