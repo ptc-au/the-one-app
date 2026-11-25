@@ -237,16 +237,18 @@ impl Screen {
         }
     }
 
-    /// The innermost thing in `chain` that can still scroll the way `delta` goes (a scroll along takes the wheel's turn as
-    /// along where it doesn't go down, as a row of pages does), from where it's going: where a wheel's notch eases it
-    /// to, or where it is. → its id, where that is, how far `delta` takes it, how far it can go, and whether it scrolls
-    /// along.
-    pub(super) fn scrolls(&self, chain: &[Id], delta: Point<f32>) -> Option<(Id, f32, f32, f32, bool)> {
+    /// The innermost thing in `chain` that scrolls `along` or down and can still go the way `delta` does, from where it's
+    /// going: where a wheel's notch eases it to, or where it is. A finger or a wheel moves one way at a time, the way it
+    /// moves most (`pan_latched`), as a browser's `touch-action` and UIScrollView's do, so a row that scrolls along doesn't
+    /// take a finger that's going down. → its id, where that is, how far `delta` takes it, how far it can go, and whether
+    /// it scrolls along.
+    pub(super) fn scrolls(&self, chain: &[Id], delta: Point<f32>, along: bool) -> Option<(Id, f32, f32, f32, bool)> {
         chain.iter().copied().find_map(|id| {
-            let (most_y, most_x, along) = self.placed(id)?.scroll?;
+            let (most_y, most_x, its_along) = self.placed(id)?.scroll?;
+            (its_along == along).then_some(())?;
             let now = self.scrolled.get(&id).copied().unwrap_or(point(0.0, 0.0));
             let from = self.coasts.get(&id).and_then(|coast| coast.aim.as_ref()).map_or(if along { now.x } else { now.y }, |aim| aim.to);
-            let (by, most) = if along { (if delta.x != 0.0 { delta.x } else { delta.y }, most_x) } else { (delta.y, most_y) };
+            let (by, most) = if along { (delta.x, most_x) } else { (delta.y, most_y) };
             ((by > 0.0 && from < most) || (by < 0.0 && from > 0.0)).then_some((id, from, by, most, along))
         })
     }
@@ -254,7 +256,7 @@ impl Screen {
     /// A mouse wheel's notch turned at `at`, by `delta` points: what scrolls there eases to where it sends it
     /// (`NOTCH_MS`), from where the notches before were sending it. → what scrolls.
     pub(super) fn wheel_scroll(&mut self, at: Point<f32>, delta: Point<f32>) -> Option<Id> {
-        let (id, from, by, most, along) = self.scrolls(&self.under(at), delta)?;
+        let (id, from, by, most, along) = self.scrolls(&self.under(at), delta, delta.x.abs() > delta.y.abs())?;
         let (to, now) = ((from + by).clamp(0.0, most), self.js.clock().now());
         match self.coasts.get_mut(&id) {
             Some(Coast { aim: Some(aim), .. }) => {

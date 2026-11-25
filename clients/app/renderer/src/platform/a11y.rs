@@ -31,7 +31,8 @@ pub fn act(screen: &mut Screen, request: &ActionRequest) {
         Action::ScrollDown | Action::ScrollUp => {
             if let Some(rect) = screen.rect(node) {
                 let by = rect.height * 0.8 * if request.action == Action::ScrollDown { 1.0 } else { -1.0 };
-                screen.pan(point(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0), point(0.0, by));
+                let (at, by) = (point(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0), point(0.0, by));
+                screen.pan(at, by).or_else(|| screen.turned(by).and_then(|along| screen.pan(at, along)));
             }
         }
         _ => {}

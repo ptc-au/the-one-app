@@ -365,9 +365,15 @@ impl Screen {
         // A mouse wheel's notch eases, as Windows' apps (WinUI) and Chrome smooth-scroll one; a Mac's moves at once, as
         // AppKit's does where nothing smooths it, and so does any where motion is reduced. (Mutant: none eased.)
         if notches.is_some() && !crate::platform::mac_keys() && !self.reduced_motion && !crate::mutants::mutant("notch-jumps") {
-            return self.wheel_scroll(at, delta);
+            return self.wheel_scroll(at, delta).or_else(|| self.turned(delta).and_then(|along| self.wheel_scroll(at, along)));
         }
-        self.pan(at, delta)
+        self.pan(at, delta).or_else(|| self.turned(delta).and_then(|along| self.pan(at, along)))
+    }
+
+    /// A wheel or a screen reader scrolls down, and where nothing does, what scrolls along does, as a row of pages
+    /// takes a wheel's turn, where a finger's, which goes the way it moves, doesn't. → `delta` along, if it only goes down.
+    pub fn turned(&self, delta: Point<f32>) -> Option<Point<f32>> {
+        (delta.x == 0.0 && delta.y != 0.0).then(|| point(delta.y, 0.0))
     }
 
     /// Whether a finger that landed at `at` and has moved `by` (its first move past the slop) pans, as a browser decides
@@ -413,7 +419,9 @@ impl Screen {
                 return Some(frame);
             }
         }
-        let (id, from, by, most, along) = self.scrolls(&chain, delta)?;
+        // It goes on the way it began (`latched`), and otherwise the way it moves most.
+        let along = latched.and_then(|id| self.placed(id)?.scroll).map_or(delta.x.abs() > delta.y.abs(), |(_, _, along)| along);
+        let (id, from, by, most, along) = self.scrolls(&chain, delta, along)?;
         // Moved by hand as a notch eases it, it goes on from where that was going, at once.
         if self.coasts.get(&id).is_some_and(|coast| coast.aim.is_some()) {
             self.coasts.remove(&id);

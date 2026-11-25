@@ -5,6 +5,7 @@ const look = styles({
   card: { padding: tokens.grid[4], borderRadius: tokens.radius.large, backgroundColor: tokens.colour.card, boxShadow: tokens.shadow.lifted, gap: tokens.grid[1] },
   page: { padding: tokens.grid[4], gap: tokens.grid[4] },
   phone: { height: 844 },
+  strip: { flexDirection: "row", height: 80 },
   box: { width: 64, height: 64, borderRadius: tokens.radius.medium, backgroundColor: tokens.colour.blue },
   // About to move: a surface of its own, drawn from its picture.
   lifting: { willChange: ["translateY"] },
@@ -44,6 +45,20 @@ const Cards = () => (
         <View style={[look.card, look.lifting]}>
           <Text>{`Card ${card + 1}`}</Text>
           <ScrollView style={look.inner}>{notes.slice(0, 12).map((note) => <Text>{note}</Text>)}</ScrollView>
+        </View>
+      ))}
+    </View>
+  </ScrollView>
+)
+
+/// A page of rows that scroll along, as the App Store's are.
+const Strips = () => (
+  <ScrollView style={look.phone}>
+    <View style={look.page}>
+      {Array.from({ length: 10 }, (_, row) => (
+        <View>
+          <Text>{`Row ${row + 1}`}</Text>
+          <ScrollView horizontal style={look.strip}>{Array.from({ length: 14 }, (_, at) => <View style={look.box}><Text>{`${row}.${at}`}</Text></View>)}</ScrollView>
         </View>
       ))}
     </View>
@@ -149,6 +164,13 @@ export default {
     // Flung from between two cards, not from a card's list, so the page takes the finger.
     motions: { Flung: { from: { x: 195, y: 285 }, gesture: { fling: [0, -300] } } },
     render: () => <Cards />,
+  },
+  // A finger going up a page from a row that scrolls along, drifting a little left as a finger does, scrolls the page:
+  // the row took the drift and the page stood still (25 Nov, the App Store in a chat app on a phone).
+  "Motion/Rows that scroll along, in a page": {
+    touch: true,
+    motions: { "Swiped up on a row": { from: { x: 195, y: 130 }, gesture: { swipe: [-3, -200], speed: 800 } }, "Swiped along a row": { from: { x: 300, y: 130 }, gesture: { swipe: [-200, 3], speed: 800 } } },
+    render: () => <Strips />,
   },
   // A finger as a phone's screen gives it, which every phone's host takes alike (the renderer's `view::touch`).
   "Motion/Rows under a finger": {
