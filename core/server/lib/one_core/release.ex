@@ -240,12 +240,17 @@ defmodule OneCore.Release do
         :ok
     end
 
-    if update["servers"][Server.key()] == "deploy_edge" and not :persistent_term.get({__MODULE__, :edge}, false) do
-      :persistent_term.put({__MODULE__, :edge}, true)
-      :deploy_edge
-    else
-      :ok
-    end
+    # Checked and kept as one step, as several are told at once: those held while it starts (`answer/3` in
+    # `OneCore.Application`) are let go together, and two deploys in one folder each failed (PTC, 25 Nov).
+    first =
+      update["servers"][Server.key()] == "deploy_edge" and
+        :global.trans({{__MODULE__, :edge}, self()}, fn ->
+          first = not :persistent_term.get({__MODULE__, :edge}, false)
+          :persistent_term.put({__MODULE__, :edge}, true)
+          first
+        end, [node()])
+
+    if first, do: :deploy_edge, else: :ok
   end
 
   @doc """
