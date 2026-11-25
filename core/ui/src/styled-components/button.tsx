@@ -223,6 +223,10 @@ const look = styles({
   badgeSecondary: { backgroundColor: tokens.colour.quinaryLabel, color: tokens.colour.label },
   badgeDestructive: { backgroundColor: tokens.colour.red, color: tokens.colour.onAccent },
   badgeOutline: { backgroundColor: tokens.colour.field, color: tokens.colour.label, boxShadow: tokens.shadow.edge },
+  // A tag that names a kind of thing: the accent's own tint behind words in its deeper shade, as Apple's tags are.
+  toneBlue: { backgroundColor: tokens.colour.blueTint, color: tokens.colour.blue },
+  toneGreen: { backgroundColor: tokens.colour.greenTint, color: tokens.colour.successLabel },
+  toneOrange: { backgroundColor: tokens.colour.orangeTint, color: tokens.colour.warningLabel },
 })
 
 /// `<Icon name="plus" />`: one of the UI library's icons, by Phosphor's name for it, an icon's size (`large`: a symbol's,
@@ -333,18 +337,21 @@ export function Button(props: ButtonProps) {
 /** A `Badge`'s props. */
 export interface BadgeProps {
   variant?: "default" | "secondary" | "destructive" | "outline"
+  tone?: "blue" | "green" | "orange"
   "aria-label"?: string
   children?: JSX.Element
 }
 
 const badges = { default: undefined, secondary: look.badgeSecondary, destructive: look.badgeDestructive, outline: look.badgeOutline }
+const tones = { blue: look.toneBlue, green: look.toneGreen, orange: look.toneOrange }
 
 /// `<Badge variant="destructive" aria-label="3 waiting">3</Badge>`: a short count or word beside what it's about, as
 /// shadcn's Badge. `destructive` is the red count of what waits for someone, as on an iPhone's icons; `default`,
-/// `secondary` and `outline` are for a word that only says what something is.
+/// `secondary` and `outline` are for a word that only says what something is. `tone="blue"` (or `green`, `orange`) is a tag that names a kind of thing, a receipt's `<Badge tone="green">Strategy</Badge>` beside its title,
+/// in the accent's tint, and takes the place of `variant`.
 export function Badge(props: BadgeProps) {
   return (
-    <View aria-label={props["aria-label"]} style={[look.badge, badges[props.variant ?? "default"]]}>
+    <View aria-label={props["aria-label"]} style={[look.badge, props.tone ? tones[props.tone] : badges[props.variant ?? "default"]]}>
       <Text>{props.children}</Text>
     </View>
   )

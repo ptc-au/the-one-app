@@ -1,11 +1,12 @@
 import { createSignal } from "solid-js"
-import { Badge, Button, Icon, plural, type Scenes, Spinner, styles, Text, tokens, View } from "ui"
+import { Badge, Button, Icon, List, plural, Row, type Scenes, Spinner, styles, Text, tokens, View } from "ui"
 
 const look = styles({
   column: { gap: tokens.grid[2], alignItems: "flex-start" },
   moved: (translateX: number) => ({ translateX }),
   wrap: { flexDirection: "row", flexWrap: "wrap", gap: tokens.grid[2] },
   row: { flexDirection: "row", gap: tokens.grid[2], alignItems: "center" },
+  tags: { gap: tokens.grid[2], width: 360 },
 })
 
 /// A button moved from where it's laid out, pressed where it's drawn: a press goes to what's on screen, as GPUI's
@@ -87,6 +88,20 @@ export default {
       <Badge variant="destructive">12</Badge>
       <Badge variant="outline">Beta</Badge>
       <Spinner />
+    </View>
+  ),
+  // A tag that names a kind of thing, in an accent's tint, in a row's heading as the old Claims' receipts have them.
+  "Buttons/Coloured tags": () => (
+    <View style={look.tags}>
+      <View style={look.row}>
+        <Badge tone="blue">MFB/MMR</Badge>
+        <Badge tone="green">Strategy</Badge>
+        <Badge tone="orange">Review</Badge>
+      </View>
+      <List>
+        <Row heading="Bunnings" badge={<Badge tone="blue">MFB/MMR</Badge>} text="Wed, 14 Oct" end={<Text>$42.50</Text>} />
+        <Row heading="Qantas" badge={<><Badge tone="blue">MFB/MMR</Badge><Badge tone="green">Strategy</Badge></>} text="Sat, 10 Oct" end={<Text>$211.00</Text>} />
+      </List>
     </View>
   ),
   "Buttons/Pressed where it's drawn": { render: () => <Moved />, taps: [{ role: "button", name: "Moved" }] },

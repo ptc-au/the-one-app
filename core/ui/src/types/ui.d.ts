@@ -408,7 +408,7 @@ export type Face = { subject: string; name?: string; picture?: string | null }
 export declare function Avatar(props: { subject: string; name?: string; size?: "small" | "medium" | "large"; faces?: Face[] }): Element
 /** Has every avatar ask for its picture again, as it's set or changed in this page. */
 export declare function refreshAvatars(): void
-export declare function Badge(props: { variant?: "default" | "secondary" | "destructive" | "outline"; "aria-label"?: string; children?: Element }): Element
+export declare function Badge(props: { variant?: "default" | "secondary" | "destructive" | "outline"; tone?: "blue" | "green" | "orange"; "aria-label"?: string; children?: Element }): Element
 
 export declare function Empty(props: { action?: Element; children?: Element }): Element
 export declare function Problem(props: { heading: Element; text?: Element | Error; action?: Element; warn?: boolean }): Element
