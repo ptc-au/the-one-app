@@ -1,12 +1,13 @@
 // Accounts, the Vault as Settings draws it: what's waiting for you as banners, your accounts, your passwords and keys,
 // each other kind of item an app keeps here (`vault.types`) under its app, and Security, each item opening over the
-// page. An item shows its details (a secret one as dots, never shown), its websites, and who has access:
+// page. Each is a screen of the section (`settings_section`'s own arguments, `Open`), which a link, Back and a reload
+// open. An item shows its details (a secret one as dots, never shown), its websites, and who has access:
 // your agents and each app, switched here. One of a type with a component is drawn by its own app. Deleting one is
 // soft delete's. Security is everything about the key that keeps it. What's missing before the Vault works shows as
 // one box atop the list, with the one thing that fixes it. A request is an alert, as a system's permission prompt is.
 // It's written as the UI library's skill says, so it runs on a native host as it does on the DOM.
-import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose, untrack } from "solid-js"
-import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, illustration, Image, Input, link, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
+import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose } from "solid-js"
+import { Alert, Button, call, changed, Checkbox, component, confirm, Empty, Field, Frame, illustration, Image, Input, List, open as opening, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
 
 const look = styles({
   fill: { flexGrow: 1, alignSelf: "stretch" },
@@ -121,13 +122,32 @@ interface Security {
   may: { key: string; name?: string }[]
 }
 
-/** The sheet that's open over the page: a field to type, a new item of a type to name, or the kinds a section adds. */
-type Sheet = { kind: "field"; item?: Item; field?: ItemField } | { kind: "create"; type: ItemType } | { kind: "add"; section: string }
+/** What's shown, as the section's screen says it (`settings_section`'s own arguments), each a step Back goes back from:
+ * whose Vault (`owner`, where its person owns more than their own); an item beside the list (`item`, its name), or
+ * Security (`security`); over them a sheet: a field to type (`field`, its name, or nothing for a new one, of `item` or
+ * a new item's first), the kinds a section adds (`add`, the section), a new item of a type to name (`create`, the type),
+ * or what an app's own component for its item shows (`sheet`); or a request asked about (`request`). */
+interface Open {
+  owner?: string
+  item?: string
+  security?: boolean
+  field?: string
+  add?: string
+  create?: string
+  sheet?: string
+  request?: string
+}
+interface Shown {
+  inputs: Open
+  show: (inputs?: Open) => void
+}
+/** Where a sheet goes back to: the Vault, and what's open beside its list. */
+const base = (props: Shown): Open => ({ owner: props.inputs.owner, item: props.inputs.item, security: props.inputs.security })
 
 /** Where you are, as the sidebar picks it: a kind of item, the requests waiting, or Security. */
 type Place = "all" | "passwords" | "accounts" | `section:${string}` | "requests" | "security"
 
-/// Whose Vault this is: a person's, a group's or the network's. Left unchosen, it's whoever the app was opened for.
+/// Whose Vault this is: a person's, a group's or the network's, as the screen says it (`owner`). Left unchosen, it's whoever the app was opened for.
 const [whose, setWhose] = createSignal<string>()
 const ask = <T,>(tool: string, inputs?: object): Promise<T> => call(tool, inputs, { subject: whose() }).then(JSON.parse)
 
@@ -211,20 +231,6 @@ async function act(action: Action, app: string, inputs: Record<string, unknown> 
 /// A type's name as a menu or a heading says it: "Chrome Profile".
 const titled = (name: string) => name.replace(/(^|\s)\S/g, (first) => first.toUpperCase())
 
-/// Whether Security is open over the page.
-const [secure, setSecure] = createSignal(false)
-/// The item open beside the list, by its name; the sheet open over the page; and the request asked about.
-const [open, setOpen] = createSignal<string>()
-const [sheet, setSheet] = createSignal<Sheet>()
-const [asking, setAsking] = createSignal<Request>()
-const shut = () => setSheet()
-
-/// Opens Security over the page.
-function enter() {
-  setOpen()
-  setSecure(true)
-}
-
 const tile = illustration("an item's letter tile, as Apple's Passwords draws one, its colour picked by its name", (hue: number, first: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" style="fill:oklch(0.55 0.13 ${hue})"/><text x="16" y="16" dy="0.35em" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="600" fill="#fff">${first}</text></svg>`)
 
 /// An item's picture at the start of its row: its app's icon, or its first letter on a colour its name picks, as
@@ -260,7 +266,7 @@ async function unlockWithPasskey() {
 }
 
 /// What's missing before the Vault works, atop the list: one box, saying what and the one thing that fixes it.
-function Readiness() {
+function Readiness(props: { secure?: boolean }) {
   return (
     <Choose>
       <Match when={security().readiness === "not_set_up"}>
@@ -281,7 +287,7 @@ function Readiness() {
           text="It adds and uses items. Your passkey lets it hold the key, to show the recovery key."
           action={
             // Security lists the same two, under Trust This Device.
-            <Show when={!secure()}>
+            <Show when={!props.secure}>
               <Show when={own()}>
                 <Button onPress={unlockWithPasskey}>Unlock with Passkey</Button>
               </Show>
@@ -295,12 +301,8 @@ function Readiness() {
 }
 
 /// Which Vault shows, where its person owns more than their own.
-function Whose() {
-  const pick = (owner: string) => {
-    setOpen()
-    setSheet()
-    setWhose(owner)
-  }
+function Whose(props: Shown) {
+  const pick = (owner: string) => props.show({ owner })
   return (
     <Show when={owners().length > 1}>
       <Field label="Owner">
@@ -334,15 +336,10 @@ function Summary(props: { item: Item }) {
   )
 }
 
-/// An item opens beside the list.
-function choose(item: Item) {
-  setOpen(item.name)
-}
-
 /// What's open beside the list: an item of a type with a component, drawn by its trusted app's, one of an untrusted
 /// app's by its page for it (client/<component>.html) in a frame of its own, where it keeps what an app of its own may
 /// do, or else its own.
-function Detail(props: { item: Item }) {
+function Detail(props: { item: Item } & Shown) {
   // The same type while what draws its item is: the list asked again, as it is whenever anything changes, gives new
   // objects, and a new one would draw the item from scratch, losing what's open in it (a live screen's stream).
   const type = createMemo(() => typeOf(props.item), {
@@ -354,11 +351,11 @@ function Detail(props: { item: Item }) {
     return it?.component && !it.trusted ? `${it.app}/client/${it.component}.html#${encodeURIComponent(shown(props.item))}` : undefined
   }
   return (
-    <Show when={drawn()} keyed fallback={<Show when={framed()} keyed fallback={<ItemScreen item={props.item} />}>{(src) => <Frame src={src} subject={whose()} title={shown(props.item)} style={look.fill} />}</Show>}>
+    <Show when={drawn()} keyed fallback={<Show when={framed()} keyed fallback={<ItemScreen item={props.item} inputs={props.inputs} show={props.show} />}>{(src) => <Frame src={src} subject={whose()} title={shown(props.item)} style={look.fill} />}</Show>}>
       {(type) => (
         <Errored fallback={(error) => <Problem heading={`Can't show ${shown(props.item)}`} text={error() as Error} />}>
           <Loading fallback={<Spinner delay />}>
-            <Drawn type={type} item={props.item} />
+            <Drawn type={type} item={props.item} inputs={props.inputs} show={props.show} />
           </Loading>
         </Errored>
       )}
@@ -367,17 +364,26 @@ function Detail(props: { item: Item }) {
 }
 
 /// An item of a type with a component, drawn by its app's own, in this page, with what the Vault's page may do.
-function Drawn(props: { type: ItemType; item: Item }) {
+function Drawn(props: { type: ItemType; item: Item } & Shown) {
   const drawn = createMemo(() => component(props.type.app, props.type.component!).then((module) => module.default))
   return (
     <Show when={drawn()} keyed>
-      {(Drawn) => <Drawn item={shown(props.item)} subject={whose()} open={(name: string) => setOpen(props.type.prefix + name)} close={() => setOpen()} />}
+      {(Drawn) => (
+        <Drawn
+          item={shown(props.item)}
+          subject={whose()}
+          sheet={props.inputs.sheet}
+          sheeted={(sheet?: string) => props.show({ ...base(props), sheet })}
+          open={(name: string) => props.show({ owner: props.inputs.owner, item: props.type.prefix + name })}
+          close={() => props.show({ owner: props.inputs.owner })}
+        />
+      )}
     </Show>
   )
 }
 
 /// One item: its details, its websites, and who has access, each switched here. Then Delete Item.
-function ItemScreen(props: { item: Item }) {
+function ItemScreen(props: { item: Item } & Shown) {
   const item = () => props.item
   // Deleting it is soft delete's, as for anything an app made: it's in Recently Deleted for 30 days.
   // Access that wouldn't switch is said under the list, and the switch stays as it is stored.
@@ -398,7 +404,7 @@ function ItemScreen(props: { item: Item }) {
   }
   const remove = async () => {
     if (!(await confirm({ heading: `Delete ${shown(item())}?`, text: "Whatever uses it stops working. It's in Recently Deleted for 30 days.", action: "Delete", destructive: true }))) return
-    if (await does("soft-delete_delete", { artifact: item().artifact })) setOpen()
+    if (await does("soft-delete_delete", { artifact: item().artifact })) props.show({ owner: props.inputs.owner })
   }
   return (
     <Screen
@@ -423,11 +429,11 @@ function ItemScreen(props: { item: Item }) {
       <Section heading="Details">
         <List>
           <For each={item().fields}>
-            {(field) => <Row heading={label(field.name)} end={<Text style={field.secret && look.note}>{field.secret ? "••••••••" : field.value}</Text>} onPress={() => setSheet({ kind: "field", item: item(), field })} />}
+            {(field) => <Row heading={label(field.name)} end={<Text style={field.secret && look.note}>{field.secret ? "••••••••" : field.value}</Text>} onPress={() => props.show({ ...base(props), field: field.name })} />}
           </For>
           <Show when={item().added}>{(added) => <Row heading="Added by an agent" text={whence(added())} />}</Show>
         </List>
-        <Button variant="secondary" onPress={() => setSheet({ kind: "field", item: item() })}>
+        <Button variant="secondary" onPress={() => props.show({ ...base(props), field: "" })}>
           Add Field
         </Button>
       </Section>
@@ -461,32 +467,40 @@ function ItemScreen(props: { item: Item }) {
   )
 }
 
-/// A field of an item to type: a new item's first, a new one of an item's, or one that's there to change. It stays
-/// open until it's saved, so what's typed isn't lost to a refusal.
-function FieldSheet() {
+/// A field of an item to type: a new item's first, a new one of an item's, or one that's there to change (the screen's
+/// `field`). It stays open until it's saved, so what's typed isn't lost to a refusal.
+function FieldSheet(props: Shown) {
   const at = () => {
-    const open = sheet()
-    return open?.kind === "field" ? open : undefined
+    const { item: named, field: typed } = props.inputs
+    if (typed === undefined) return undefined
+    const item = named === undefined ? undefined : contents().items.find((one) => one.name === named)
+    if (named !== undefined && !item) return undefined
+    const field = typed ? item?.fields.find((one) => one.name === typed) : undefined
+    if (typed && !field) return undefined
+    return { item, field }
   }
+  // Which it is, so what's typed stays as the Vault is asked again.
+  const which = () => (props.inputs.field === undefined ? undefined : JSON.stringify([props.inputs.item, props.inputs.field]))
   const [secret, setSecret] = createSignal(true)
   const [name, setName] = createSignal("")
   const [field, setField] = createSignal("")
   const [value, setValue] = createSignal("")
   const [hosts, setHosts] = createSignal("")
   // Each time it opens, it starts empty, or with the field's value, and a new field starts secret.
-  createEffect(at, (now) => {
+  createEffect(which, (now) => {
     if (!now) return
     setSecret(true)
     setName("")
     setField("")
-    setValue(now.field?.value ?? "")
+    setValue(at()?.field?.value ?? "")
     setHosts("")
   })
   // A field's name is a word of letters, digits and _, as a tool's input names it.
   const named = () => /^[A-Za-z0-9_]+$/.test(field())
   const [busy, setBusy] = createSignal(false)
-  createEffect(at, () => void setBusy(false))
+  createEffect(which, () => void setBusy(false))
   const ready = () => !busy() && !!value() && (!!at()?.item || !!name().trim()) && (!!at()?.field || named())
+  const shut = () => props.show(base(props))
   const save = async () => {
     const { item, field: changing } = at()!
     const called = item?.name ?? name().trim()
@@ -498,7 +512,7 @@ function FieldSheet() {
     setBusy(false)
     if (!saved) return
     shut()
-    if (!item) setOpen(called)
+    if (!item) props.show({ owner: props.inputs.owner, item: called })
   }
   const remove = async () => {
     const { item, field } = at() as { item: Item; field: ItemField }
@@ -545,34 +559,30 @@ function FieldSheet() {
   )
 }
 
-/// Adds an item of a type, as the type says: asked for a name first, where it needs one.
-const create = (type: ItemType) => (type.create!.name ? setSheet({ kind: "create", type }) : act(type.create!, type.app))
+/// Adds an item of a type, as the type says: asked for a name first, where it needs one (the screen's `create`).
+const create = (type: ItemType, props: Shown) => (type.create!.name ? props.show({ owner: props.inputs.owner, create: type.id }) : act(type.create!, type.app))
 
-/// The kinds of item a section's several types add, each adding one.
-function AddSheet() {
-  const section = () => {
-    const open = sheet()
-    return open?.kind === "add" ? open.section : undefined
-  }
+/// The kinds of item a section's several types add (the screen's `add`, the section), each adding one.
+function AddSheet(props: Shown) {
+  const section = () => props.inputs.add
+  const shut = () => props.show(base(props))
   const types = () => contents().types.filter((type) => type.section === section() && type.create && type.trusted)
   return (
     <Sheet heading={section() ? `Add ${titled(section()!.replace(/s$/, ""))}` : ""} open={!!section()} onClose={shut}>
       <List each={types()} keyed={(type) => type.id}>
-        {(type) => <Row start={<Image src={type().icon ?? ""} alt="" style={look.tile} />} heading={titled(type().name)} onPress={() => (shut(), create(type()))} />}
+        {(type) => <Row start={<Image src={type().icon ?? ""} alt="" style={look.tile} />} heading={titled(type().name)} onPress={() => (shut(), create(type(), props))} />}
       </List>
     </Sheet>
   )
 }
 
-/// A new item of a type: its name, which the type's app makes it from (`create`), and then it opens.
-function CreateSheet() {
-  const type = () => {
-    const open = sheet()
-    return open?.kind === "create" ? open.type : undefined
-  }
+/// A new item of a type (the screen's `create`): its name, which the type's app makes it from (`create`), and then it opens.
+function CreateSheet(props: Shown) {
+  const type = () => (props.inputs.create === undefined ? undefined : contents().types.find((one) => one.id === props.inputs.create))
   const [name, setName] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   createEffect(type, (now) => void (now && setName("")))
+  const shut = () => props.show(base(props))
   const make = async () => {
     const made = type()!
     const called = name().trim()
@@ -581,7 +591,7 @@ function CreateSheet() {
     setBusy(false)
     if (done) {
       shut()
-      setOpen(made.prefix + called)
+      props.show({ owner: props.inputs.owner, item: made.prefix + called })
     }
   }
   return (
@@ -604,9 +614,11 @@ const wanted = (request: Request) => (request.fields.some((field) => field.secre
 /// A request, as a system's permission prompt asks: "<who> wants to use a key", why, where it's sent, which item, and
 /// Don't Allow or Allow. Only plain items are offered, as a password manager offers logins: one an app keeps (a Chrome
 /// profile) is that app's. The one named as the request is comes first and is chosen, so Allow is one tap; with none,
-/// New Item is, and its fields are typed here. It's the UI library's `Alert`, since `confirm` asks only a question.
-function RequestAlert() {
-  const request = asking
+/// New Item is, and its fields are typed here. It's the UI library's `Alert`, since `confirm` asks only a question. It's the
+/// screen's `request`.
+function RequestAlert(props: Shown) {
+  const request = () => (props.inputs.request === undefined ? undefined : waiting().find(({ id }) => id === props.inputs.request))
+  const shut = () => props.show(base(props))
   const named = (item: Item) => item.name.toLowerCase() === request()!.title.toLowerCase()
   const fits = () =>
     request()
@@ -636,7 +648,7 @@ function RequestAlert() {
     try {
       await call("vault_answer", { id: request()!.id, ...inputs }, { subject: whose() })
       again()
-      setAsking()
+      shut()
     } catch (error) {
       setProblem((error as Error).message)
     } finally {
@@ -655,7 +667,7 @@ function RequestAlert() {
       heading={request() ? `${asker(request()!)} wants to use ${wanted(request()!)}` : ""}
       text={request() ? `${request()!.why ? `${request()!.why!.trim().replace(/[^.!?]$/, "$&.")} ` : ""}${where()}` : undefined}
       open={!!request()}
-      onClose={() => setAsking()}
+      onClose={shut}
       action={
         <>
           <Button variant="outline" disabled={busy()} onPress={() => answer({ decline: true })}>
@@ -703,7 +715,7 @@ function SecurityScreen() {
   const others = () => security().devices.filter((device) => device.device !== security().device)
   return (
     <Screen heading="Security" back>
-      <Readiness />
+      <Readiness secure />
       <Show when={security().readiness !== "not_set_up"}>
         <Section heading="Trusted Devices">
           <List>
@@ -809,14 +821,14 @@ function UsedBy(props: { item: Item }) {
 }
 
 /// An item's row: its tile, its name, and its line: what's wrong, who uses it, or what its app says.
-function ItemRow(props: { item: Item }) {
+function ItemRow(props: { item: Item } & Shown) {
   return (
     <Row
       start={<Tile item={props.item} />}
       heading={shown(props.item)}
       text={props.item.status ? <Line status={props.item.status} /> : props.item.kind === "password" ? <UsedBy item={props.item} /> : <Summary item={props.item} />}
-      current={props.item.name === open()}
-      onPress={() => choose(props.item)}
+      current={props.item.name === props.inputs.item}
+      onPress={() => props.show({ owner: props.inputs.owner, item: props.item.name })}
       action={fixable(props.item) ? <Fix item={props.item} /> : undefined}
     />
   )
@@ -824,7 +836,7 @@ function ItemRow(props: { item: Item }) {
 
 /// A request waiting for its person, as a banner atop Accounts: who asks for what, why, and Don't Allow or Choose…,
 /// which opens its alert.
-function Banner(props: { request: Request }) {
+function Banner(props: { request: Request } & Shown) {
   const icon = () => contents().apps.find((app) => app.name === props.request.app?.name)?.icon
   return (
     <List>
@@ -835,7 +847,7 @@ function Banner(props: { request: Request }) {
         action={
           <View style={look.inline}>
             <Button variant="ghost" onPress={() => does("vault_answer", { id: props.request.id, decline: true })}>Don't Allow</Button>
-            <Button variant="outline" onPress={() => setAsking(props.request)}>Choose…</Button>
+            <Button variant="outline" onPress={() => props.show({ owner: props.inputs.owner, request: props.request.id })}>Choose…</Button>
           </View>
         }
       />
@@ -845,56 +857,51 @@ function Banner(props: { request: Request }) {
 
 /// Accounts, as Settings draws it, laid out as macOS's Internet Accounts and Passwords are together: the requests
 /// waiting, as banners; your accounts, with Add Account; your passwords and keys, each with the apps that use it; then
-/// each other kind of item an app keeps here, under its app's icon and name; then Security. An item opens over the
-/// page, drawn by its own app where it has a component.
-export default function Accounts() {
+/// each other kind of item an app keeps here, under its app's icon and name; then Security. An item opens beside the
+/// page, drawn by its own app where it has a component. Told its screen (`Open`).
+export default function Accounts(props: Shown) {
+  // Whose Vault shows is the screen's `owner`, which this module's calls read; set as it's drawn, so the first call is whose it is.
+  setWhose(props.inputs.owner)
+  createEffect(() => props.inputs.owner, setWhose)
   return (
     <Errored fallback={(error) => <Screen heading="Vault" back><Problem heading="Can't show the Vault" text={error() as Error} /></Screen>}>
-      <Vault />
+      <Vault inputs={props.inputs} show={props.show} />
     </Errored>
   )
 }
 
-function Vault() {
-  // A link to a request, `one:settings#section&app=vault&section=accounts&request=<id>&owner=<whose Vault>`, as a request's own link leads
-  // to: its alert, once that Vault has listed it.
-  const [linked, setLinked] = createSignal<string>()
-  createEffect(link, (to) => {
-    const id = to && /(?:^|&)request=([^&]*)/.exec(to)?.[1]
-    const owner = to && /(?:^|&)owner=([^&]*)/.exec(to)?.[1]
-    if (owner) setWhose(decodeURIComponent(owner))
-    if (id) setLinked(decodeURIComponent(id))
-  })
+function Vault(props: Shown) {
+  // A request that isn't waiting any more, as a link to one, or a reload, leaves it.
   createEffect(
-    () => linked() && waiting().find(({ id }) => id === linked()),
-    (request) => {
-      if (!untrack(linked)) return
-      setLinked()
-      if (request) setAsking(request)
-      else toast("That request isn't waiting any more.")
+    () => props.inputs.request !== undefined && !waiting().some(({ id }) => id === props.inputs.request),
+    (missing) => {
+      if (!missing) return
+      toast("That request isn't waiting any more.")
+      props.show(base(props))
     },
   )
   const items = (to: Place) => contents().items.filter((item) => placeOf(item) === to)
-  const addAccount = () => (creatable("accounts").length === 1 ? create(creatable("accounts")[0]) : setSheet({ kind: "add", section: "Accounts" }))
+  const addAccount = () => (creatable("accounts").length === 1 ? create(creatable("accounts")[0], props) : props.show({ owner: props.inputs.owner, add: "Accounts" }))
   const typeIn = (section: string) => contents().types.find((type) => type.section === section)
-  const item = () => contents().items.find(({ name }) => name === open())
+  const item = () => contents().items.find(({ name }) => name === props.inputs.item)
+  const secure = () => props.inputs.security === true
   const ready = () => !!security().servers.length
   return (
     <>
       <Split
         open={!!item() || secure()}
-        onClose={() => (setOpen(), setSecure(false))}
+        onClose={() => props.show({ owner: props.inputs.owner })}
         pick="Pick an item to see it."
-        detail={<Show when={item()} fallback={<Show when={secure()}><SecurityScreen /></Show>}>{(item) => <Detail item={item()} />}</Show>}
+        detail={<Show when={item()} fallback={<Show when={secure()}><SecurityScreen /></Show>}>{(item) => <Detail item={item()} inputs={props.inputs} show={props.show} />}</Show>}
       >
         <Screen heading="Vault" back>
-          <Whose />
-          <Readiness />
-          <For each={waiting()} keyed={(request) => request.id}>{(request) => <Banner request={request()} />}</For>
+          <Whose inputs={props.inputs} show={props.show} />
+          <Readiness secure={secure()} />
+          <For each={waiting()} keyed={(request) => request.id}>{(request) => <Banner request={request()} inputs={props.inputs} show={props.show} />}</For>
           <Show when={ready()}>
             <Section>
               <Show when={items("accounts").length}>
-                <List each={items("accounts")} keyed={(item) => item.artifact}>{(item) => <ItemRow item={item()} />}</List>
+                <List each={items("accounts")} keyed={(item) => item.artifact}>{(item) => <ItemRow item={item()} inputs={props.inputs} show={props.show} />}</List>
               </Show>
               <Show when={creatable("accounts").length}>
                 <List>
@@ -904,10 +911,10 @@ function Vault() {
             </Section>
             <Section heading="Passwords and Keys">
               <Show when={items("passwords").length}>
-                <List each={items("passwords")} keyed={(item) => item.artifact}>{(item) => <ItemRow item={item()} />}</List>
+                <List each={items("passwords")} keyed={(item) => item.artifact}>{(item) => <ItemRow item={item()} inputs={props.inputs} show={props.show} />}</List>
               </Show>
               <List>
-                <Row heading="Keep a password or key for your apps and agents." action={<Button variant="secondary" onPress={() => setSheet({ kind: "field" })}>Add</Button>} />
+                <Row heading="Keep a password or key for your apps and agents." action={<Button variant="secondary" onPress={() => props.show({ owner: props.inputs.owner, field: "" })}>Add</Button>} />
               </List>
             </Section>
             <For each={sections()}>
@@ -922,14 +929,14 @@ function Vault() {
                   }
                 >
                   <Show when={items(`section:${section}`).length} fallback={<Empty>None yet.</Empty>}>
-                    <List each={items(`section:${section}`)} keyed={(item) => item.artifact}>{(item) => <ItemRow item={item()} />}</List>
+                    <List each={items(`section:${section}`)} keyed={(item) => item.artifact}>{(item) => <ItemRow item={item()} inputs={props.inputs} show={props.show} />}</List>
                   </Show>
                   <Show when={creatable(`section:${section}`).length}>
                     <List>
                       <Row
                         heading={`Add a ${typeIn(section)!.name} for your apps.`}
                         action={
-                          <Button variant="secondary" onPress={() => (creatable(`section:${section}`).length === 1 ? create(creatable(`section:${section}`)[0]) : setSheet({ kind: "add", section }))}>
+                          <Button variant="secondary" onPress={() => (creatable(`section:${section}`).length === 1 ? create(creatable(`section:${section}`)[0], props) : props.show({ owner: props.inputs.owner, add: section }))}>
                             {`Add ${titled(typeIn(section)!.name)}`}
                           </Button>
                         }
@@ -941,14 +948,14 @@ function Vault() {
             </For>
           </Show>
           <List>
-            <Row heading="Security" end={security().readiness !== "ready" ? <View role="img" aria-label="Needs you" style={look.dot} /> : undefined} current={secure()} onPress={enter} />
+            <Row heading="Security" end={security().readiness !== "ready" ? <View role="img" aria-label="Needs you" style={look.dot} /> : undefined} current={secure()} onPress={() => props.show({ owner: props.inputs.owner, security: true })} />
           </List>
         </Screen>
       </Split>
-      <FieldSheet />
-      <CreateSheet />
-      <AddSheet />
-      <RequestAlert />
+      <FieldSheet inputs={props.inputs} show={props.show} />
+      <CreateSheet inputs={props.inputs} show={props.show} />
+      <AddSheet inputs={props.inputs} show={props.show} />
+      <RequestAlert inputs={props.inputs} show={props.show} />
     </>
   )
 }

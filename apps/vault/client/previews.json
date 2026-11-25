@@ -305,6 +305,20 @@
       "Add"
     ]
   },
+  "Add field": {
+    "like": "Item",
+    "taps": [
+      "GitHub",
+      "Add Field"
+    ]
+  },
+  "Change field": {
+    "like": "Item",
+    "taps": [
+      "GitHub",
+      "Token"
+    ]
+  },
   "Request": {
     "like": "Item",
     "taps": [
@@ -492,6 +506,56 @@
             "section": "Chrome Profiles",
             "component": null,
             "create": null
+          }
+        ]
+      }
+    }
+  },
+  "Rename a Chrome profile": {
+    "like": "Chrome Profiles",
+    "uses": [
+      "chrome-profiles"
+    ],
+    "taps": [
+      "Personal",
+      "Rename…"
+    ],
+    "answers": {
+      "vault_list": {
+        "items": [
+          {
+            "name": "Chrome profile: Personal",
+            "artifact": "chrome-profiles/personal",
+            "kind": "app_item",
+            "type": "chrome-profiles/profile",
+            "status": null,
+            "fields": [],
+            "hosts": [],
+            "access": []
+          }
+        ],
+        "requests": [],
+        "apps": [],
+        "types": [
+          {
+            "id": "chrome-profiles/profile",
+            "app": "chrome-profiles",
+            "title": "Chrome Profiles",
+            "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMCAxMCI+PGNpcmNsZSBjeD0iNSIgY3k9IjUiIHI9IjUiIGZpbGw9IiNlOTEiLz48L3N2Zz4=",
+            "trusted": true,
+            "name": "Chrome profile",
+            "prefix": "Chrome profile: ",
+            "section": "Chrome Profiles",
+            "component": "profile",
+            "create": null
+          }
+        ]
+      },
+      "chrome-profiles_list": {
+        "profiles": [
+          {
+            "profile": "Personal",
+            "saved": 1767225600000
           }
         ]
       }

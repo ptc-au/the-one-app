@@ -16,10 +16,12 @@ interface Profile {
   updating?: { session: string; until: number; state: State; stage?: string; why?: string }
 }
 
-/** What the Vault gives the component: the profile by its name, who it's for, and what to do once it's renamed or gone. */
+/** What the Vault gives the component: the profile by its name, who it's for, the sheet of its own that's open (`sheet`, `rename`; a screen of the Vault, which `sheeted` goes to), and what to do once it's renamed or gone. */
 interface Props {
   item: string
   subject?: string
+  sheet?: string
+  sheeted?: (sheet?: string) => void
   open?: (item: string) => void
   close?: () => void
 }
@@ -143,22 +145,23 @@ function Update(props: { profile: string; subject?: string }) {
 }
 
 /// A new name for the profile.
-function Rename(props: Props & { asking: boolean; done: () => void }) {
+function Rename(props: Props) {
   const [busy, setBusy] = createSignal(false)
   const [typed, setTyped] = createSignal(props.item)
   // Opened again, it starts from the name it has, not from what was typed and left.
-  createEffect(() => props.asking, (now) => void (now && setTyped(props.item)))
+  const asking = () => props.sheet === "rename"
+  createEffect(asking, (now) => void (now && setTyped(props.item)))
   const send = async () => {
     const name = typed().trim()
     if (!name) return
     setBusy(true)
     await call("chrome-profiles_rename", { profile: props.item, name }, { subject: props.subject })
-      .then(() => (props.done(), props.open?.(name)))
+      .then(() => (props.sheeted?.(), props.open?.(name)))
       .catch(toast)
     setBusy(false)
   }
   return (
-    <Sheet heading="Rename Profile" open={props.asking} onClose={props.done}>
+    <Sheet heading="Rename Profile" open={asking()} onClose={() => props.sheeted?.()}>
       <Field label="Name">
         <Input required autoFocus value={typed()} onChangeText={setTyped} onSubmitEditing={send} />
       </Field>
@@ -170,7 +173,6 @@ function Rename(props: Props & { asking: boolean; done: () => void }) {
 /// The profile: updating it.
 export default function ChromeProfile(props: Props) {
   const profile = useProfile(props)
-  const [asking, setAsking] = createSignal(false)
   const remove = async () => {
     const yes = await confirm({ heading: `Delete ${props.item}?`, text: "It's in Recently Deleted for 30 days, then gone, with everything signed in on it.", action: "Delete", destructive: true })
     if (yes) await call("chrome-profiles_remove", { profile: props.item }, { subject: props.subject }).then(() => props.close?.()).catch(toast)
@@ -184,7 +186,7 @@ export default function ChromeProfile(props: Props) {
               <Updating profile={p()} subject={props.subject} />
             </Show>
             <List>
-              <Row heading="Rename…" onPress={() => setAsking(true)} />
+              <Row heading="Rename…" onPress={() => props.sheeted?.("rename")} />
             </List>
             <List>
               <Row heading="Delete Profile…" destructive onPress={remove} />
@@ -192,7 +194,7 @@ export default function ChromeProfile(props: Props) {
           </>
         )}
       </Show>
-      <Rename {...props} asking={asking()} done={() => setAsking(false)} />
+      <Rename {...props} />
     </Screen>
   )
 }
