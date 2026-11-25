@@ -88,6 +88,16 @@
     ],
     "touch": true
   },
+  "Item Open": {
+    "like": "Recently Deleted",
+    "taps": [
+      "groceries"
+    ],
+    "size": [
+      1100,
+      700
+    ]
+  },
   "Nothing Deleted": {
     "answers": {
       "soft-delete_list": {
