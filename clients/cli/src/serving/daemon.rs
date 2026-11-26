@@ -53,6 +53,20 @@ pub(super) async fn serve(client: &Arc<Client>, here: &Here, reports: &Reports) 
             record.go_back("it stopped while checking it");
         }
     })?;
+    // A machine whose disk is its image's again at each start, as the network's fallback server's container
+    // (`core/edge/fallback`), keeps only its record and keys, so the build the record names isn't here: it takes the
+    // core's latest release, as a server joining with no server to ask does, and the network's update takes it on.
+    if record.pair().is_some_and(|pair| !here.build(&pair.build).exists()) {
+        let build = here.take(&released().await?, &record.told(ServerDaemonStatus::Starting), None).await?;
+        record = here.change(|record| {
+            *record = Record {
+                server_membership: record.server_membership,
+                subject: record.subject.clone(),
+                current: Some(Pair { build, program: BUILD.to_owned() }),
+                ..Record::default()
+            }
+        })?;
+    }
     let verifying = record.server_update_status == ServerUpdateStatus::Verifying;
     let mut pair = record.pair().context("The record names no build to run")?;
     // A build is run by the `one` it's paired with, whichever the system started: one put in place for a pair being

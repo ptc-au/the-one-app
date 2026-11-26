@@ -108,7 +108,7 @@ async fn owned(client: &Client, here: &Here, ask: impl Fn(&client::DeviceAuthori
 
 /// The core's latest release for this kind of machine (`RELEASES`), which a server takes where no server gives it its
 /// network's builds.
-async fn released() -> Result<Map<String, Value>> {
+pub(super) async fn released() -> Result<Map<String, Value>> {
     let url = format!("{RELEASES}/{}.json", target());
     Ok(client::web()?.get(&url).send().await?.error_for_status()?.json().await?)
 }
