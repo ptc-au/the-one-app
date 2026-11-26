@@ -28,6 +28,7 @@ const look = styles({
   scroller: { height: 60, width: 200, scale: 1.4, translateX: 30 },
   spins: (turn: number) => ({ rotate: turn, transitionProperty: ["rotate"], transition: tokens.motion.smooth }),
   tilted: { rotate: 20 },
+  fades: (opacity: number) => ({ opacity, transitionProperty: ["opacity"], transition: tokens.motion.quick }),
   flies: (x: number, y: number, scale: number) => ({ translateX: x, translateY: y, scale, transitionProperty: ["translateX", "translateY", "scale"], transition: tokens.motion.smooth }),
 })
 
@@ -100,6 +101,7 @@ const Flying = () => {
       <View style={look.row}><Text style={look.spins(away() ? 90 : 0)}>Spins</Text></View>
       <View style={look.row}><View style={look.spins(away() ? 90 : 0)}><Text>Turns</Text></View></View>
       <View style={look.row}><View style={away() ? look.flies(120, 30, 1.6) : look.flies(0, 0, 1)}><View style={look.tilted}><Text>Tilts</Text></View></View></View>
+      <View style={look.row}><View style={look.fades(away() ? 1 : 0.2)}><View style={away() ? look.flies(120, 30, 1.6) : look.flies(0, 0, 1)}><Text>Grows</Text></View></View></View>
     </View>
   )
 }
@@ -114,13 +116,14 @@ export default {
   },
   "Text/Flying": {
     render: () => <Flying />,
-    size: [390, 700],
+    size: [390, 820],
     motions: {
       "A text flies": { from: { role: "button", name: "Go" }, gesture: { moves: [{ ms: 90 }] }, follow: "Flies", located: true, sharp: true },
       "A text rides a view that flies": { from: { role: "button", name: "Go" }, gesture: { moves: [{ ms: 90 }] }, follow: "Rides", located: true, sharp: true },
       "A text spins": { from: { role: "button", name: "Go" }, gesture: { moves: [{ ms: 90 }] }, follow: "Spins", located: true },
       "A text rides a view that spins": { from: { role: "button", name: "Go" }, gesture: { moves: [{ ms: 90 }] }, follow: "Turns", located: true },
       "A text turned in a view that flies": { from: { role: "button", name: "Go" }, gesture: { moves: [{ ms: 90 }] }, follow: "Tilts", located: true, sharp: true },
+      "A text grows in a view that fades in": { from: { role: "button", name: "Go" }, gesture: { moves: [{ ms: 90 }] }, follow: "Grows", located: true },
     },
   },
   "Text/Type styles": () => (

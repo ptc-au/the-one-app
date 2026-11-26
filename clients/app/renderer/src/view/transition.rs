@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::geometry::{Bounds, Hsla, Point, Rgba, Size};
 use crate::motion::{NEAR, Spring};
-use crate::style::{Computed, Offset};
+use crate::style::{Computed, Look, Offset};
 use crate::tokens::{Radius, Shadow};
 use crate::tree::Id;
 
@@ -121,15 +121,24 @@ const PROPERTIES: [(&str, bool); 16] = [
 ];
 
 fn get(computed: &Computed, property: &str) -> Option<Value> {
-    let look = &computed.look;
-    let offset = |offset: Offset| match offset {
-        Offset::Px(px) => Value::Px(px),
-        Offset::Percent(percent) => Value::Percent(percent),
-    };
     let size = |dimension: taffy::style::Dimension| match dimension.expand() {
         taffy::style::ExpandedDimension::Length(px) => Some(Value::Px(px)),
         taffy::style::ExpandedDimension::Percent(part) => Some(Value::Percent(part)),
         _ => None,
+    };
+    match property {
+        "width" => size(computed.layout.size.width),
+        "height" => size(computed.layout.size.height),
+        "color" => Some(Value::Colour(computed.text.color.map(Rgba::from))),
+        _ => drawn(&computed.look, property),
+    }
+}
+
+/// `property` as `look` has it, where it's one of a look's (not a size or a text's colour).
+fn drawn(look: &Look, property: &str) -> Option<Value> {
+    let offset = |offset: Offset| match offset {
+        Offset::Px(px) => Value::Px(px),
+        Offset::Percent(percent) => Value::Percent(percent),
     };
     let radius = |radius: Radius| match radius {
         Radius::Px(px) => Value::Px(px),
@@ -141,11 +150,8 @@ fn get(computed: &Computed, property: &str) -> Option<Value> {
         "rotate" => Value::Number(look.rotate),
         "translateX" => offset(look.translate.0),
         "translateY" => offset(look.translate.1),
-        "width" => size(computed.layout.size.width)?,
-        "height" => size(computed.layout.size.height)?,
         "backgroundColor" => Value::Colour(look.background.map(Rgba::from)),
         "borderColor" => Value::Colour(Some(Rgba::from(look.border_color))),
-        "color" => Value::Colour(computed.text.color.map(Rgba::from)),
         "borderTopStartRadius" => radius(look.radii.top_left),
         "borderTopEndRadius" => radius(look.radii.top_right),
         "borderBottomEndRadius" => radius(look.radii.bottom_right),
@@ -344,6 +350,8 @@ pub(crate) struct Transitions {
     moving: HashMap<(Id, &'static str), Moving>,
     /// The nodes in the tree as it's drawn: one that isn't yet is entering.
     drawn: HashSet<Id>,
+    /// The nodes whose style names a transition.
+    transitioned: HashSet<Id>,
     /// Each node dragged, while it's held and as it springs back once let go.
     dragged: HashMap<Id, Dragged>,
     /// The nodes let go whose spring has come to rest since the page was last told (`settled`).
@@ -472,17 +480,24 @@ impl Transitions {
     /// way from where it was, or from `entering`'s value for a node just added, to `computed`'s, setting off when it
     /// changed (`since`). `reduced`: the person asked for less motion. `unseen`: the window isn't shown, so it's where
     /// it's going at once, as nobody sees it on its way, and nothing waits for it to get there. `size`: how big it was
-    /// last laid out, which a part of it it's moved by is of.
+    /// last laid out, which a part of it it's moved by is of. `before`: how it was last drawn, which what changes as its
+    /// style first names a transition moves from.
     #[allow(clippy::too_many_arguments)]
-    pub fn apply(&mut self, id: Id, computed: &mut Computed, entering: Option<&Computed>, now: f64, since: f64, reduced: bool, unseen: bool, size: Size<f32>) {
+    pub fn apply(&mut self, id: Id, computed: &mut Computed, entering: Option<&Computed>, before: Option<&Look>, now: f64, since: f64, reduced: bool, unseen: bool, size: Size<f32>) {
         self.drawn.insert(id);
         let dragged = self.drag(id, computed, now, size, reduced);
         let Some(transition) = computed.transition.clone() else {
+            self.transitioned.remove(&id);
             for (property, _) in PROPERTIES {
                 self.kept(id, property, computed);
             }
             return;
         };
+        // A transition named where none was moves what changed with it from how it was drawn, as CSS's before-change
+        // style has it; one whose style named one before and leaves a property out sets it at once (a button let go).
+        let named = self.transitioned.insert(id);
+        // (Mutant: it jumps there, as before.)
+        let before = before.filter(|_| named && !crate::mutants::mutant("named-jumps"));
         for (property, moves) in PROPERTIES {
             let key = (id, property);
             // Where it's dragged, it's where the drag has it.
@@ -509,7 +524,7 @@ impl Transitions {
                     continue;
                 }
                 Some(moving) => moving.state(since),
-                None => match was.or_else(|| get(entering?, property)) {
+                None => match was.or_else(|| get(entering?, property)).or_else(|| drawn(before?, property)) {
                     Some(from) => (from, 0.0),
                     None => continue,
                 },
@@ -740,6 +755,7 @@ impl Transitions {
 
     /// Node `id` is no longer in the tree as it's drawn: put back, it enters again.
     pub fn forget(&mut self, id: Id) {
+        self.transitioned.remove(&id);
         self.dragged.remove(&id);
         self.laid.remove(&id);
         self.flips.remove(&id);

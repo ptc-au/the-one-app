@@ -84,7 +84,8 @@ impl Painter<'_> {
         // What's just been added starts from its `entering` state, to move from.
         let entering = (computed.transition.is_some() && self.transitions.entering(id)).then(|| style::of(node, State { entering: true, ..state }, self.conditions));
         let size = self.layout.kept.get(&id).and_then(|kept| self.layout.taffy.layout(kept.node).ok()).map_or(Size::default(), |laid| Size { width: laid.size.width, height: laid.size.height });
-        self.transitions.apply(id, &mut computed, entering.as_ref(), self.time, self.since, self.conditions.reduced_motion, self.unseen, size);
+        let before = self.layout.kept.get(&id).map(|kept| &self.layout.leaf(kept.node).look).filter(|_| entering.is_none());
+        self.transitions.apply(id, &mut computed, entering.as_ref(), before, self.time, self.since, self.conditions.reduced_motion, self.unseen, size);
         self.transitions.animate(id, &mut computed, self.time, self.conditions);
         let mut layout = computed.layout.clone();
         let mut look = computed.look.clone();

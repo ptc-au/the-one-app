@@ -24,7 +24,10 @@ impl Painter<'_> {
         let surfaced = match self.layers.get(&id) {
             Some(layer) if layer.key != key => Surfaced::Relaid,
             Some(layer) if !carried && (layer.scale != transform.scale || ![transform.offset.x - layer.at.x, transform.offset.y - layer.at.y, laid_out.origin.x - layer.laid_out.x, laid_out.origin.y - layer.laid_out.y].into_iter().all(whole)) => Surfaced::Relaid,
-            Some(layer) if layer.kept => Surfaced::Kept,
+            // A group faded as one is a picture of what's in it as it was drawn: while something in it moves, it's drawn
+            // again each frame, where it kept what moved in it where it was till the fade ended (a folder zooming as it
+            // fades in). (Mutant: it's kept, as before.)
+            Some(layer) if layer.kept && !(layer.grouped && self.moves_in(id) && !crate::mutants::mutant("group-frozen")) => Surfaced::Kept,
             Some(_) => Surfaced::Animating,
             None => Surfaced::Painted,
         };
@@ -63,6 +66,11 @@ impl Painter<'_> {
             None => opacity,
         };
         self.draw_layer(id, by, grown, opacity, mask);
+    }
+
+    /// Whether something in node `id` is moving.
+    fn moves_in(&self, id: Id) -> bool {
+        self.moving.iter().any(|moving| *moving != id && std::iter::successors(self.tree.parent(*moving), |at| self.tree.parent(*at)).any(|at| at == id))
     }
 
     /// Whether another surface fits in the window's: fewer than `SURFACES` so far this frame, whose pictures take less

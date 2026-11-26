@@ -43,6 +43,8 @@ const MUTANTS = {
   "dark-token": { bug: "dark mode not applied to one token (the text's, `label`)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Type styles")], only: "dark" },
   "rounded-clip": { bug: "rounded clip off", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Rounded corners clip")] },
   "text-stretched": { bug: "text drawn from a stretched picture", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
+  "named-jumps": { bug: "what changed as its style first named a transition jumped there, not moving from where it was drawn (an App Library category drawn opened at once, 26 Nov)", plays: [animation("apps/home-screen", "App Library, by a finger, a category of six")] },
+  "group-frozen": { bug: "what moves in a group faded as one held still in its picture till the fade ended (an App Library category zooming as it fades in, 26 Nov)", plays: [animation("clients/app/renderer/tests/gallery", "Text/Flying")] },
   "faded-apart": { bug: "a faded group's things each faded on their own, what's under showing through what's over it (Welcome on Andre's iPhone, 23 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Styling/Faded as one")] },
   "handles-unpainted": { bug: "the handles of words a finger selected counted but never drawn (24 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Selected by a finger")] },
   "title-words-move": { bug: "the words of a screen's title in a Mac's title row moved the window where they're held, so they couldn't be selected (24 Nov)", plays: [checks("clients/app/renderer/tests/gallery", "Text/Selected in a title row")] },
