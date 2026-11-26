@@ -92,18 +92,33 @@ function shelf(width: number) {
   return { gap, across, category, padding, columnGap, rowGap, icon }
 }
 
-/// Where each of a category's `count` apps' icons is in its square, drawn at `square`: its first four in its two
-/// columns and two rows, each in the middle of its column at its row's top, or with more than four, three and the next
-/// four small in the fourth's place, and any after those in that place's middle, too small to see.
-function icons({ category, padding, columnGap, rowGap, icon }: ReturnType<typeof shelf>, square: Rect, count: number): Rect[] {
-  const drawn = square.width / category
-  const at = (x: number, y: number, size: number) => ({ x: square.x + x * drawn, y: square.y + y * drawn, width: size * drawn, height: size * drawn })
+/// Where a category's square has its apps' places, from its top left: each of its two columns and two rows (`place`),
+/// and the small icons in its fourth place (`more` across, each `small`), in the middle of it at `left`, `top`.
+function places4({ category, padding, columnGap, rowGap, icon }: ReturnType<typeof shelf>) {
   const column = (category - 2 * padding.inline - columnGap) / 2
   const row = (category - padding.top - padding.bottom - rowGap) / 2
   const place = (index: number) => [padding.inline + (index % 2) * (column + columnGap), padding.top + Math.floor(index / 2) * (row + rowGap)]
-  // The fourth place's small icons, in two rows of two, in the middle of it.
   const [more, small] = [icon + 14, (icon + 9) / 2]
   const [left, top] = place(3).map((start, along) => start + ((along ? row : column) - more) / 2)
+  return { column, place, more, small, left, top }
+}
+
+/// The square a category's small icons (its fourth place) are drawn in, from where they're drawn, as they're pressed
+/// by the keyboard.
+const squareOfMore = (laid: ReturnType<typeof shelf>, more: Rect): Rect => {
+  const { more: size, left, top } = places4(laid)
+  const drawn = more.width / size
+  return { x: more.x - left * drawn, y: more.y - top * drawn, width: laid.category * drawn, height: laid.category * drawn }
+}
+
+/// Where each of a category's `count` apps' icons is in its square, drawn at `square`: its first four in its two
+/// columns and two rows, each in the middle of its column at its row's top, or with more than four, three and the next
+/// four small in the fourth's place, and any after those in that place's middle, too small to see.
+function icons(laid: ReturnType<typeof shelf>, square: Rect, count: number): Rect[] {
+  const { icon } = laid
+  const drawn = square.width / laid.category
+  const at = (x: number, y: number, size: number) => ({ x: square.x + x * drawn, y: square.y + y * drawn, width: size * drawn, height: size * drawn })
+  const { column, place, more, small, left, top } = places4(laid)
   return Array.from({ length: count }, (_, index) => {
     if (count <= 4 || index < 3) {
       const [x, y] = place(index)
@@ -133,17 +148,23 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
   const inline = () => (props.size ? 0 : room().wide ? room().side : 20)
   const width = () => props.size?.width ?? Math.min(1440, room().width - 2 * inline())
   const laid = createMemo(() => shelf(width()))
-  const opening = (key: () => string, count: () => number) => (event: Located) => {
+  // Opened by what was pressed: its square, its small icons or its name. Its square is where it was as a finger or the
+  // pointer went down on any of them (`ahead`), or by the keyboard, where what has the keyboard is (`square`).
+  const opening = (key: () => string, count: () => number, square?: (pressed: Rect) => Rect) => (event: Located) => {
     if (!state().matches("nothing")) return
-    ahead(key, count)(event)
+    if (square) measure(key, count, square(event.currentTarget.getBoundingClientRect()))
     home.send({ type: "open", category: key() })
   }
-  // Made as a finger or the pointer goes down on it, before it's let go of.
-  const ahead = (key: () => string, count: () => number) => (event: Located) => {
-    if (!state().matches("nothing")) return
-    const square = event.currentTarget.getBoundingClientRect()
+  const measure = (key: () => string, count: () => number, square: Rect) => {
     places[key()] = { ...square, apps: icons(laid(), square, count()), along: along() }
     setMade(key())
+  }
+  // Made as a finger or the pointer goes down on its square, its small icons or its name under it, before it's let go
+  // of: the square is the top of what holds them, as wide as it.
+  const ahead = (key: () => string, count: () => number) => (event: Located) => {
+    if (!state().matches("nothing")) return
+    const { x, y, width } = event.currentTarget.getBoundingClientRect()
+    measure(key, count, { x, y, width, height: width })
   }
   const found = (background: boolean) => findIn(props.owner.library, query(), background)
   const apps = () => sorted(props.owner.library, false)
@@ -167,19 +188,18 @@ export function Library(props: { owner: Owner; size?: { width: number; height: n
           const away = createMemo(() => opened() || flyingHome(key(), "rested"))
           const named = createMemo(() => !opened() && !flyingHome(key(), "landed"))
           return (
-            <View style={[looks.category, looks.wide(laid().category)]}>
+            <View onPointerDown={ahead(key, count)} style={[looks.category, looks.wide(laid().category)]}>
               <Pressable
                 role="group"
                 aria-label={category().category}
-                onPointerDown={ahead(key, count)}
-                onPress={opening(key, count)}
+                onPress={opening(key, count, (square) => square)}
                 style={[looks.folder, looks.folderBox(laid().columnGap, laid().rowGap, laid().category, laid().padding.top, laid().padding.inline, laid().padding.bottom)]}
               >
                 <For each={shown()} keyed={(entrypoint) => entrypoint.entrypoint ?? entrypoint.app}>
                   {(entrypoint) => <LibraryEntrypoint entrypoint={entrypoint()} owner={props.owner} icon={laid().icon} small away={away()} named={named()} />}
                 </For>
                 <Show when={count() > 4}>
-                  <Pressable role="button" aria-label={`All of ${category().category}`} onPress={opening(key, count)} style={[looks.more, looks.square(laid().icon + 14), reducedMotion() && looks.handing, away() && looks.unseen]}>
+                  <Pressable role="button" aria-label={`All of ${category().category}`} onPress={opening(key, count, (more) => squareOfMore(laid(), more))} style={[looks.more, looks.square(laid().icon + 14), reducedMotion() && looks.handing, away() && looks.unseen]}>
                     <For each={category().entrypoints.slice(3, 7)} keyed={(entrypoint) => entrypoint.entrypoint ?? entrypoint.app}>
                       {(entrypoint) => <Image src={src(entrypoint().icon)} alt="" style={[looks.iconImage(corner((laid().icon + 9) / 2)), looks.square((laid().icon + 9) / 2)]} />}
                     </For>
