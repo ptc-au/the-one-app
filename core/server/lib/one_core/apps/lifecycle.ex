@@ -75,7 +75,7 @@ defmodule OneCore.Apps.Lifecycle do
 
     Task.start(fn ->
       for owner <- Servers.here(), do: reconcile(owner)
-      for %{app: artifact} = app <- Deploy.deployed(), takes?(app), installed?(artifact), do: check(artifact)
+      for %{app: artifact} = app <- Deploy.deployed(), takes?(app), in_use?(artifact), do: check(artifact)
     end)
 
     {:noreply, state}
@@ -901,8 +901,8 @@ defmodule OneCore.Apps.Lifecycle do
   def takes?(%{app: artifact, trusted: trusted}), do: Apps.runs?(Store.whose(artifact), trusted)
   def takes?(artifact), do: takes?(%{app: artifact, trusted: Store.trusted?(artifact)})
 
-  defp installed?(artifact),
-    do: Installed.installed_for(artifact) != [] or Apps.app(Store.whose(artifact), Path.basename(artifact)) == artifact
+  defp in_use?(artifact),
+    do: Installed.in_use_for(artifact) != [] or Apps.app(Store.whose(artifact), Path.basename(artifact)) == artifact
 
   # What runs for `owner` changed: it runs here, with what's loaded already, its clients are told what each of their
   # apps runs at now, and their other servers look.
