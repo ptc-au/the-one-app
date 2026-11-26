@@ -189,7 +189,7 @@ impl Extra {
         let menu = Menu::with_items(&[&open, &PredefinedMenuItem::separator(), &quit]).ok()?;
         let built = TrayIconBuilder::new()
             .with_id(format!("menu-bar-extra:{app}"))
-            .with_icon(image(&declared.icon, None)?)
+            .with_icon(image(&declared.icon, None, None)?)
             .with_icon_as_template(cfg!(target_os = "macos"))
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
@@ -271,9 +271,13 @@ impl Extra {
     fn changed(&mut self, change: &Value) {
         if let Some(title) = change.get("title") {
             self.title = title.as_str().filter(|title| !title.is_empty()).map(str::to_owned);
-            // Windows' notification area has no title: its tooltip says it.
+            // Windows' notification area has no title: its tooltip says it all, and a short one is a badge on its icon,
+            // as Teams' and Slack's counts are.
             #[cfg(windows)]
-            let _ = self.icon.set_tooltip(Some(self.title.as_ref().map_or_else(|| self.declared.name.clone(), |title| format!("{}: {title}", self.declared.name))));
+            {
+                let _ = self.icon.set_tooltip(Some(self.title.as_ref().map_or_else(|| self.declared.name.clone(), |title| format!("{}: {title}", self.declared.name))));
+                self.draw();
+            }
             #[cfg(not(windows))]
             self.icon.set_title(self.title.as_deref());
         }
@@ -288,7 +292,7 @@ impl Extra {
 
     /// Draws its icon again: its page's Phosphor icon, or its app's.
     fn draw(&self) {
-        let Some(image) = image(&self.declared.icon, self.symbol.as_deref()) else {
+        let Some(image) = image(&self.declared.icon, self.symbol.as_deref(), self.title.as_deref()) else {
             return eprintln!("{} has no icon named {:?}", self.declared.app(), self.symbol);
         };
         // A Mac's is a template again, which `set_icon` would end.
@@ -301,11 +305,13 @@ impl Extra {
 
 /// An icon for the menu bar, from its app's (a `data:` address of an SVG or a PNG) or Phosphor's `symbol`, by its name,
 /// in one colour: a Mac's is a template, its shape alone, which the menu bar colours as it does its other icons; Windows'
-/// is white on a dark taskbar and black on a light one, and a Linux panel's white, as its panels are dark.
-fn image(icon: &str, symbol: Option<&str>) -> Option<tray_icon::Icon> {
+/// is white on a dark taskbar and black on a light one, with a `title` of up to three characters as a badge over its
+/// corner, and a Linux panel's white, as its panels are dark.
+#[cfg_attr(not(windows), allow(unused_variables))]
+fn image(icon: &str, symbol: Option<&str>, title: Option<&str>) -> Option<tray_icon::Icon> {
     // A Mac's menu bar icon is 18 points, here at 2x; a notification area's is 16 at 100%, here at 200%.
     let side = if cfg!(target_os = "macos") { 36 } else { 32 };
-    let drawn = match symbol {
+    let mut drawn = match symbol {
         Some(symbol) => {
             let at = PHOSPHOR.binary_search_by(|(name, _)| name.cmp(&symbol)).ok()?;
             crate::shortcuts::drawn("image/svg+xml", PHOSPHOR[at].1.as_bytes(), side).ok()?
@@ -315,9 +321,96 @@ fn image(icon: &str, symbol: Option<&str>) -> Option<tray_icon::Icon> {
             crate::shortcuts::drawn(kind, &data_encoding::BASE64.decode(data.as_bytes()).ok()?, side).ok()?
         }
     };
+    // Its one colour, which is the icon's shape alone: its badge, if it has one, has its own.
     let [r, g, b] = if cfg!(target_os = "macos") || light_taskbar() { [0, 0, 0] } else { [255, 255, 255] };
-    let rgba = drawn.pixels().iter().flat_map(|pixel| [r, g, b, pixel.demultiply().alpha()]).collect();
+    for pixel in drawn.pixels_mut() {
+        *pixel = resvg::tiny_skia::ColorU8::from_rgba(r, g, b, pixel.alpha()).premultiply();
+    }
+    #[cfg(windows)]
+    if let Some(title) = title.filter(|title| title.chars().count() <= 3) {
+        badge(&mut drawn, title);
+    }
+    let rgba = drawn.pixels().iter().flat_map(|pixel| {
+        let pixel = pixel.demultiply();
+        [pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()]
+    }).collect();
     tray_icon::Icon::from_rgba(rgba, side, side).ok()
+}
+
+/// `title` over `icon`'s bottom right corner, white on a red pill, as an app's count is over its icon in Windows' taskbar:
+/// the text is drawn by GDI in Segoe UI, as the system's own is, into a mask that its pixels' coverage is read from.
+#[cfg(windows)]
+fn badge(icon: &mut resvg::tiny_skia::Pixmap, title: &str) {
+    use resvg::tiny_skia::{Color, FillRule, Paint, PathBuilder, PixmapPaint, Rect, Transform};
+    let Some(text) = text_mask(title, 16) else { return };
+    let side = icon.width() as f32;
+    let height = 20.0;
+    let width = (text.width() as f32 + 8.0).max(height).min(side);
+    let (left, top) = (side - width, side - height);
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(229, 72, 77, 255));
+    paint.anti_alias = true;
+    let r = height / 2.0;
+    let mut path = PathBuilder::new();
+    if let Some(middle) = Rect::from_xywh(left + r, top, width - 2.0 * r, height) {
+        path.push_rect(middle);
+    }
+    for x in [left + r, side - r] {
+        path.push_circle(x, top + r, r);
+    }
+    if let Some(path) = path.finish() {
+        icon.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+    }
+    let (x, y) = (left + (width - text.width() as f32) / 2.0, top + (height - text.height() as f32) / 2.0);
+    icon.draw_pixmap(x.round() as i32, y.round() as i32, text.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+}
+
+/// `text` in white, `height` pixels tall, as GDI draws it in Segoe UI: its coverage is the white's, drawn on black.
+#[cfg(windows)]
+fn text_mask(text: &str, height: i32) -> Option<resvg::tiny_skia::Pixmap> {
+    use windows::Win32::Foundation::{COLORREF, RECT};
+    use windows::Win32::Graphics::Gdi::*;
+    use windows::core::w;
+    let mut text: Vec<u16> = text.encode_utf16().collect();
+    // SAFETY: the device context, the font and the bitmap are made here, and let go of here; the bits are read while the
+    // bitmap's selected.
+    unsafe {
+        let context = CreateCompatibleDC(None);
+        let font = CreateFontW(-height, 0, 0, 0, FW_SEMIBOLD.0 as i32, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, 0, w!("Segoe UI"));
+        let font_before = SelectObject(context, font.into());
+        let mut size = Default::default();
+        let measured = GetTextExtentPoint32W(context, &text, &mut size).as_bool();
+        let (width, tall) = (size.cx, size.cy);
+        let info = BITMAPINFO { bmiHeader: BITMAPINFOHEADER { biSize: size_of::<BITMAPINFOHEADER>() as u32, biWidth: width, biHeight: -tall, biPlanes: 1, biBitCount: 32, biCompression: BI_RGB.0, ..Default::default() }, ..Default::default() };
+        let mut bits = std::ptr::null_mut();
+        let bitmap = CreateDIBSection(Some(context), &info, DIB_RGB_COLORS, &mut bits, None, 0);
+        let mask = match bitmap {
+            Ok(bitmap) if measured && width > 0 && tall > 0 && !bits.is_null() => {
+                let bitmap_before = SelectObject(context, bitmap.into());
+                SetBkMode(context, TRANSPARENT);
+                SetTextColor(context, COLORREF(0x00FF_FFFF));
+                let mut at = RECT { left: 0, top: 0, right: width, bottom: tall };
+                DrawTextW(context, &mut text, &mut at, DT_LEFT | DT_NOPREFIX | DT_SINGLELINE);
+                let pixels = std::slice::from_raw_parts(bits as *const u32, (width * tall) as usize);
+                let mut mask = resvg::tiny_skia::Pixmap::new(width as u32, tall as u32);
+                if let Some(mask) = mask.as_mut() {
+                    for (out, pixel) in mask.pixels_mut().iter_mut().zip(pixels) {
+                        // White on black: any channel is the coverage, premultiplied white's every channel too.
+                        let coverage = (pixel & 0xFF) as u8;
+                        *out = resvg::tiny_skia::PremultipliedColorU8::from_rgba(coverage, coverage, coverage, coverage).unwrap_or(*out);
+                    }
+                }
+                SelectObject(context, bitmap_before);
+                let _ = DeleteObject(bitmap.into());
+                mask
+            }
+            _ => None,
+        };
+        SelectObject(context, font_before);
+        let _ = DeleteObject(font.into());
+        let _ = DeleteDC(context);
+        mask
+    }
 }
 
 /// Whether Windows' taskbar is light, as Personalization › Colours says for Windows (`SystemUsesLightTheme`).
