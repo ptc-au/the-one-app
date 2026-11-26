@@ -4,10 +4,11 @@
 import { children, createContext, createEffect, createSignal, For, onSettled, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
-import { back as goBack, covers, go, keydown, safeArea, step, titled, touch, viewport } from "#bridge"
+import { back as goBack, covers, go, keydown, reducedMotion, safeArea, step, titled, touch, viewport } from "#bridge"
 import { BarEnd, Button, Icon, type IconName } from "./button.tsx"
 import { messages } from "../words.ts"
 import { createButton } from "../headless-components/button.ts"
+import { createPop } from "../headless-components/split.ts"
 import { ListKeys, ListStyle } from "./list.tsx"
 import { Empty } from "./states.tsx"
 import { Menu } from "./menu.tsx"
@@ -93,13 +94,25 @@ const look = styles({
   bleed: (pull: number, side: number) => ({ marginStart: pull, marginEnd: pull, paddingStart: side, paddingEnd: side }),
   split: { flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0, position: "relative" },
   beside: { flexDirection: "row" },
+  // Pushed over its list, what slides off its side isn't drawn beyond it.
+  clipped: { overflow: "hidden" },
   pane: { minHeight: 0, minWidth: 0, overflow: "hidden", backgroundColor: tokens.colour.background },
-  // Where there's no room for both, one shows at a time, over the other, which keeps its place and where it's
-  // scrolled to: it's hidden, not gone.
-  // The one that comes in fades in over the one that goes, which stays drawn till it has (a push), as a cross-dissolve
-  // does, not under it as both fade (the window's background shows through).
-  over: { position: "absolute", inset: 0, transitionProperty: ["opacity"], transition: tokens.motion.travel },
-  hidden: { opacity: 0, pointerEvents: "none", transitionDelay: 300 },
+  // Where there's no room for both, what's opened is pushed over its list, as UINavigationController pushes: it
+  // slides in from the end as it's made (`entering`) while the list slides a third of the way the other way under it
+  // and dims, and back the same way, drawn going till it's off (`exiting`), as UIKit keeps a popped view till its
+  // transition ends: on one spring the renderer draws, by the points it's across. The list stays drawn under it, as
+  // it was, with its place, where it's scrolled to and its pictures, so it's there whole the moment what's over it goes,
+  // and out of reach (`inert`) till then.
+  over: { position: "absolute", inset: 0 },
+  // With less motion, it fades in over the list and out, which stays where it is.
+  sliding: { transitionProperty: ["translateX", "opacity"], transition: tokens.motion.smooth },
+  slid: (translateX: number) => ({ translateX }),
+  pushed: (translateX: { default: number; entering: number; exiting: number }) => ({ translateX }),
+  fades: { opacity: { default: 1, entering: 0, exiting: 0 } },
+  out: { pointerEvents: "none" },
+  whole: { flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0 },
+  dim: { position: "absolute", inset: 0, backgroundColor: tokens.colour.overlay, opacity: 0, pointerEvents: "none", transitionProperty: ["opacity"], transition: tokens.motion.smooth },
+  dimmed: { opacity: 0.35 },
   // Where there is, the list keeps a readable width and what it opens has the rest.
   list: { flexBasis: "38%", minWidth: tokens.length.columnMin, maxWidth: tokens.length.column, flexShrink: 0, borderEndWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   // A window's sidebar is narrower, as macOS's and Raycast's Settings' are.
@@ -541,7 +554,10 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
   // first.
   onSettled(() => keydown((event) => event.key === "Escape" && props.open && open.at(-1) === close && close()))
 
-  // It starts as it's written, and beside its list it shows at once; pushed over it, it moves.
+  // It starts as it's written, and beside its list it shows at once; pushed over it, it moves, once the page has
+  // first settled (`moved`): a page opened at what it opens doesn't slide it in.
+  const [moved, setMoved] = createSignal(false)
+  onSettled(() => void setMoved(true))
   createEffect(() => !!props.open, (now, was) => {
     if (was === undefined || beside()) setShown(now)
     else go(() => setShown(now), { back: !now })
@@ -557,9 +573,12 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
     return () => (open.splice(open.indexOf(close), 1), done())
   })
 
+  // Pushed over its list, a finger swipes it back.
+  const pop = createPop({ enabled: () => !beside() && touch(), onClose: close })
+
   return (
-    <View style={[look.split, beside() && look.beside]}>
-      <View aria-hidden={!beside() && shown() ? "true" : undefined} style={[look.pane, beside() ? look.list : look.over, beside() && sidebar && look.sidebar, !beside() && shown() && look.hidden]}>
+    <View style={[look.split, beside() ? look.beside : look.clipped]}>
+      <View aria-hidden={!beside() && shown() ? "true" : undefined} inert={!beside() && shown() ? true : undefined} style={[look.pane, beside() ? look.list : [look.over, look.sliding, look.slid(shown() && !reducedMotion() ? -0.3 * room() : 0), shown() && look.out], beside() && sidebar && look.sidebar]}>
         <Room value={() => (beside() ? listWidth() : room())}>
           <Edge value={() => ({ start: edge().start, end: edge().end && !beside() })}>
           <Opened value={() => (props.open ? close : undefined)}>
@@ -575,8 +594,13 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
           </Opened>
           </Edge>
         </Room>
+        <Show when={!beside() && !reducedMotion()}>
+          <View style={[look.dim, shown() && look.dimmed]} />
+        </Show>
       </View>
-      <View aria-hidden={!beside() && !shown() ? "true" : undefined} style={[look.pane, beside() ? look.detail : look.over, !beside() && !shown() && look.hidden]}>
+      <View aria-hidden={!beside() && !shown() ? "true" : undefined} style={beside() ? [look.pane, look.detail] : [look.over, !shown() && look.out]}>
+        <Show when={beside() || props.open}>
+        <View {...pop} style={beside() ? look.whole : [look.pane, look.over, look.sliding, reducedMotion() ? moved() && look.fades : look.pushed({ default: 0, entering: moved() ? room() : 0, exiting: room() })]}>
         <Room value={() => (beside() ? room() - listWidth() - 1 : room())}>
           <Edge value={() => ({ start: edge().start && !beside(), end: edge().end })}>
           <Leave value={close}>
@@ -598,6 +622,8 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
           </Leave>
           </Edge>
         </Room>
+        </View>
+        </Show>
       </View>
       <Show when={windowTips()}>
         {(tips) => (

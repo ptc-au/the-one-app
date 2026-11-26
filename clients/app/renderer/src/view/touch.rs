@@ -207,10 +207,13 @@ impl Screen {
             return Touched::Done;
         }
         // One that lands as the window springs from the edge takes it where it is. What's open over a page (a sheet, a
-        // menu) takes no swipe back, as iOS's modals don't.
+        // menu) takes no swipe back, as iOS's modals don't. Over a screen the page pushed that drags across itself (a
+        // split's, as UINavigationController's interactive pop follows the finger), the finger is that screen's.
         let covered = self.covered();
+        let dragged = || self.under(at).into_iter().any(|id| self.drags(id, point(1.0, 0.0)) == Some(true));
         let swipe = fingers.edge.and_then(|edge| match edge.slid {
             Some(_) => Some(Swipe::Window),
+            None if at.x < EDGE && covered == Some(false) && dragged() => None,
             None if at.x < EDGE && covered != Some(true) => Some(if covered == Some(false) { Swipe::Screen } else { Swipe::Window }),
             None => None,
         });

@@ -393,6 +393,35 @@
     ],
     "touch": true
   },
+  "Settings, on a phone, opening a section": {
+    "like": "Settings, on a phone",
+    "uses": [
+      "sign-in"
+    ],
+    "motions": {
+      "Open a section": {
+        "from": {
+          "role": "button",
+          "name": "AI"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "heading",
+          "name": "AI"
+        },
+        "holds": {
+          "role": "button",
+          "name": "Notifications"
+        }
+      }
+    }
+  },
   "Settings, narrow, scrolled": {
     "like": "Settings, on a phone",
     "size": [
@@ -2677,6 +2706,83 @@
       1100,
       720
     ]
+  },
+  "AI, on a phone": {
+    "like": "AI",
+    "size": [
+      390,
+      844
+    ],
+    "touch": true,
+    "motions": {
+      "Back to the list": {
+        "from": {
+          "role": "button",
+          "name": "Back"
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "heading",
+          "name": "AI",
+          "includeHidden": true
+        },
+        "holds": {
+          "role": "button",
+          "name": "Notifications"
+        }
+      },
+      "Swiped back from its edge": {
+        "from": {
+          "x": 6,
+          "y": 400
+        },
+        "gesture": {
+          "swipe": [
+            240,
+            0
+          ]
+        },
+        "follow": {
+          "role": "heading",
+          "name": "AI",
+          "includeHidden": true
+        },
+        "holds": {
+          "role": "button",
+          "name": "Notifications"
+        },
+        "steady": true
+      },
+      "Swiped a little and let go": {
+        "from": {
+          "x": 6,
+          "y": 400
+        },
+        "gesture": {
+          "moves": [
+            {
+              "dx": 80,
+              "ms": 500
+            },
+            {
+              "ms": 150
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "heading",
+          "name": "AI",
+          "includeHidden": true
+        }
+      }
+    }
   },
   "Sign In & Security": {
     "like": "Settings",
