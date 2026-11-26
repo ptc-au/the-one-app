@@ -494,11 +494,11 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 if !std::mem::replace(&mut opened, true) {
                     let _ = to.send(json!({"id": "opened", "command": "opened", "args": {"view": app, "ms": ms}}));
                 }
-                // A computer's launcher, and a menu bar extra's panel, is drawn put away, and is on screen once it's
-                // summoned (`Shown`), which comes after this on the same frame. Put away, it says so, or its views
-                // counted as on screen until it was first summoned and put away, as after every reload of the Home
-                // Screen (PTC's Mac, 26 Nov).
-                visible(&shown, &to, !(launcher || menu_bar) || Native::phone());
+                // A computer's launcher is drawn put away, and is on screen once it's summoned (`Shown`), which comes
+                // after this on the same frame. Put away, it says so, or its views counted as on screen until it was
+                // first summoned and put away, as after every reload of the Home Screen (PTC's Mac, 26 Nov). A menu
+                // bar extra's panel is never put away: its page keeps its item, so its views keep asking again.
+                visible(&shown, &to, !launcher || Native::phone());
                 // The device hears its person's notifications once their home is on screen, as the web
                 // launcher's page has it (`listen`).
                 if launcher {
@@ -529,6 +529,9 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
             Event::Frames(frames) => frames_reported(&app, &frames),
             // Its person knows how to go home now: the page says so to Home Screen, for every device.
             Event::Tipped => crate::app().shell.emit("tipped", json!(null)),
+            // A menu bar extra's panel put away is still what its item says (a count, a knock), which its page reads
+            // as things change: on PTC's Mac the count in Virtual Office's icon stayed what it was for minutes.
+            Event::PutAway if menu_bar => {}
             Event::PutAway | Event::Hidden(true) => {
                 visible(&shown, &to, false);
                 crate::memory::changed();
