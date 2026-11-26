@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js"
-import { Button, Empty, Problem, type Scenes, Spinner, Status, Stepper, Steps, styles, tokens, View } from "ui"
+import { Button, DropZone, Empty, List, Problem, Row, type Scenes, Spinner, Status, Stepper, Steps, styles, tokens, View } from "ui"
 
 const look = styles({ column: { gap: tokens.grid[4] } })
 
@@ -50,4 +50,30 @@ export default {
   // While its page loads, its app's window shows the app's icon in its middle, as a phone's launch screen does, once it has
   // waited long enough that a quick page shows none (`SPLASH`); a page that has drawn nothing is the whole of it here.
   "States/App icon while its page loads": { render: () => <></>, layout: "fullscreen", launching: true },
+  // Where files from the computer's own are dropped (Claims' receipts): a dashed area that says so, with the picker
+  // under it; while files are dragged over it, tinted, saying what dropping does.
+  "States/Drop zone": { size: [800, 400], touch: false, render: () => <DropZone accept={["image/*", ".pdf"]} multiple label="Drop receipts here" onDrop={() => {}} /> },
+  "States/Drop zone, files over it": {
+    size: [800, 400],
+    touch: false,
+    render: () => <DropZone accept={["image/*", ".pdf"]} multiple label="Drop receipts here" onDrop={() => {}} />,
+    taps: [{ files: "drag", text: "Drop receipts here" }],
+  },
+  // Around a list, it's only the list until files come over it.
+  "States/Drop zone around a list, files over it": {
+    size: [800, 400],
+    touch: false,
+    render: () => (
+      <DropZone accept={["image/*", ".pdf"]} multiple onDrop={() => {}}>
+        <List>
+          <Row heading="Coles" text="Tue, 13 Oct · $8.20" />
+          <Row heading="Pearl Energy" text="Mon, 28 Sept · $30.76" />
+          <Row heading="Main Beach Fish Grotto" text="Sat, 7 Nov · $35.00" />
+        </List>
+      </DropZone>
+    ),
+    taps: [{ files: "drag", text: "Coles" }],
+  },
+  // On a phone nothing is dragged in: its empty state is its Choose Files.
+  "States/Drop zone on a phone": { render: () => <DropZone accept={["image/*", ".pdf"]} multiple label="Drop receipts here" onDrop={() => {}} /> },
 } satisfies Scenes

@@ -43,7 +43,7 @@
 /// root, checks a page, as a deploy does of one whose entrypoint says its `runtime_version` and refuses it with the errors. What a page may use is `core/ui/src/types/ui.d.ts`: one that needs what isn't
 /// there adds it there, with only what every host can draw (`drawing-primitives/renderer.ts`), and core/ui's `bun run typecheck` then says
 /// whether the UI library's components take it.
-export { call, changed, client, copy, memoryWarning, component, connection, covers, direction, displayMode, go, haptic, idle, inChat, keydown, leave, link, menuBarExtra, navigate, open, pickFiles, pinShortcut, play, reducedMotion, requestDisplayMode, safeArea, scanDocuments, share, showRecoveryKey, sizeChanged, toolInput, toolResult, touch, upload, useRecoveryKey, viewport, visible } from "./bridge.ts"
+export { call, canScan, changed, client, copy, memoryWarning, component, connection, covers, direction, displayMode, go, haptic, idle, inChat, keydown, leave, link, menuBarExtra, navigate, open, pickFiles, pinShortcut, play, reducedMotion, requestDisplayMode, safeArea, scanDocuments, share, showRecoveryKey, sizeChanged, toolInput, toolResult, touch, upload, useRecoveryKey, viewport, visible } from "./bridge.ts"
 export { date, plural, seen, since, size } from "./format.ts"
 export { whole } from "./words.ts"
 export { Avatar, type Face, refreshAvatars } from "./styled-components/avatar.tsx"
@@ -66,6 +66,7 @@ export { Stepper } from "./styled-components/stepper.tsx"
 export { Tabs } from "./styled-components/tabs.tsx"
 export { Tips, type Action, type Tip } from "./styled-components/tips.tsx"
 export { Empty, Problem, Status, Steps } from "./styled-components/states.tsx"
+export { DropZone } from "./styled-components/drop-zone.tsx"
 export { Alert, confirm, PresentationContext, Sheet } from "./styled-components/sheet.tsx"
 export { SignIn } from "./styled-components/sign-in.tsx"
 export { ServiceSignIn } from "./styled-components/service-sign-in.tsx"

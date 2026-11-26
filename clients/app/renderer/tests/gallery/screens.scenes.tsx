@@ -1,6 +1,6 @@
 import { Button, Empty, History, Input, List, ListStyle, Menu, Row, type Scenes, Screen, Section, SignIn, Split, styles, Text, View } from "ui"
 
-const look = styles({ window: { height: 720 }, narrow: { height: 475 }, phone: { height: 844 } })
+const look = styles({ window: { height: 720 }, narrow: { height: 475 }, phone: { height: 844 }, pane: { width: 300, height: 475 } })
 
 /// A network's logo, as its edge serves it: a picture of its own.
 const network = (letter: string, fill: string) =>
@@ -44,6 +44,26 @@ const Devices = () => (
         <Row heading="Pixel Tablet" text="Selected" current onPress={() => {}} />
       </List>
     </Section>
+  </Screen>
+)
+
+// A list whose screen has floating actions, as Claims' receipts have: Add, Scan and History, and Complete its main one.
+const Claims = () => (
+  <Screen
+    heading="Claims"
+    floatingActions={{
+      leading: [
+        { icon: "plus", label: "Add Receipt", onPress: () => {} },
+        { icon: "scan", label: "Scan", onPress: () => {}, primary: true },
+        { icon: "clock-counter-clockwise", label: "History", onPress: () => {} },
+      ],
+      trailing: { icon: "list-checks", label: "Complete", onPress: () => {} },
+    }}
+  >
+    <List>
+      <Row heading="Third Wave BBQ" text="$56.91" current onPress={() => {}} />
+      <Row heading="Coles" text="$8.20" onPress={() => {}} />
+    </List>
   </Screen>
 )
 
@@ -203,6 +223,21 @@ export default {
     size: [750, 475],
     render: () => <View style={look.narrow}><Devices /></View>,
     taps: [{ role: "button", name: "More" }],
+  },
+  // A narrow list pane on a computer (Claims' beside its detail), with a screen's floating actions in its bar: the main
+  // one, at the bar's end, stays whole, and the icons that don't fit beside the heading go into More Actions.
+  "Screens/A list pane's actions, narrow": {
+    alone: true,
+    layout: "fullscreen",
+    size: [900, 475],
+    render: () => <View style={look.pane}><Claims /></View>,
+  },
+  "Screens/A list pane's actions, narrow, More Actions open": {
+    alone: true,
+    layout: "fullscreen",
+    size: [900, 475],
+    render: () => <View style={look.pane}><Claims /></View>,
+    taps: [{ role: "button", name: "More Actions" }],
   },
   "Screens/A large title": {
     alone: true,

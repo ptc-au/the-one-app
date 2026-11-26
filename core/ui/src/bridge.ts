@@ -130,8 +130,9 @@ interface Context {
   assistant?: boolean
   /** MCP Apps' own: the tool an assistant shows the page for. */
   toolInfo?: { tool?: { name?: string } }
-  /** MCP Apps' own: whether a finger points at it, and a mouse hovers. */
-  deviceCapabilities?: { touch?: boolean; hover?: boolean }
+  /** MCP Apps' own: whether a finger points at it, and a mouse hovers; and ours, whether it has a document scanner of
+   * the system's own (`canScan`). */
+  deviceCapabilities?: { touch?: boolean; hover?: boolean; scan?: boolean }
   /** Whether its window is on screen, as a computer's launcher put away isn't: the DOM's `visibilityState`. */
   visible?: boolean
   /** How pressed the device is, as the Compute Pressure API's `PressureRecord.state` says it. */
@@ -185,12 +186,14 @@ class PressureObserving {
 // Under a finger from the start where the device is, as its host says before it's greeted, so what's drawn before then
 // (a screen in its loading fallback) is drawn for a finger too.
 const [fingered, setFingered] = createSignal(navigator.maxTouchPoints > 0)
+const [scans, setScans] = createSignal(false)
 // Told again, the same link is news too: Back to where the page was opened is a link to it again (`place`).
 const [opened, setOpened] = createSignal<string | undefined>(undefined, { equals: false })
 function dress(context?: Context) {
   if (context && typeof context.link === "string") (setOpened(context.link), linked(context.link))
   if (typeof context?.toolInfo?.tool?.name === "string") assistantTool = context.toolInfo.tool.name
   if (context?.deviceCapabilities && "touch" in context.deviceCapabilities) setFingered(context.deviceCapabilities.touch === true)
+  if (context?.deviceCapabilities && "scan" in context.deviceCapabilities) setScans(context.deviceCapabilities.scan === true)
   if (context && "titled" in context) setTitled(context.titled === true)
   if (context?.connection) setConnected(context.connection)
   if (context?.safeAreaInsets) setInsets(context.safeAreaInsets)
@@ -264,6 +267,11 @@ export const viewport: typeof Page.viewport = () => size()
 export const direction: typeof Page.direction = () => "ltr"
 /** Whether a finger points at it, as its host says (`deviceCapabilities.touch`): a phone's does, a computer's doesn't. */
 export const touch = () => fingered()
+/// `<Show when={canScan()}><Button onPress={scan}>Scan</Button></Show>`: whether the device has a document scanner of its
+/// own, which finds a page's edges by itself (an iPhone's VisionKit, Android's ML Kit), as its host says: a computer and a
+/// browser have none, where `scanDocuments` only asks for images, so an app leaves Scan out there and offers its files'
+/// way in (`DropZone`, `pickFiles`).
+export const canScan: typeof Page.canScan = () => scans()
 /// `inChat()`: whether the page is drawn in an assistant's chat, where every call it makes is the assistant's, as
 /// its router says. What only its person's own device may do is refused there (`OwnDevice`).
 export const inChat: typeof Page.inChat = () => assistant()
@@ -400,8 +408,8 @@ export const pickFiles: typeof Page.pickFiles = async (options = {}) => {
   return filesOf(await ask<Files>("one/files", { accept: options.accept ?? [], multiple: !!options.multiple }))
 }
 type Files = { files: { name: string; body: string }[] }
-/// A file the device gave, with the type its name says, as a browser's picker gives it.
-const filesOf = ({ files }: Files) =>
+/** A file the device gave, a picker's or a drop's, with the type its name says, as a browser's gives it. */
+export const filesOf = ({ files }: Files) =>
   files.map((file) => new File([Uint8Array.from(atob(file.body), (character) => character.charCodeAt(0))], file.name, { type: TYPES[file.name.split(".").pop()!.toLowerCase()] ?? "" }))
 const TYPES: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", heic: "image/heic", webp: "image/webp", pdf: "application/pdf" }
 /// `const pages = await scanDocuments()`: the device's own document scanner, from a press, as a phone's Notes shows it: it

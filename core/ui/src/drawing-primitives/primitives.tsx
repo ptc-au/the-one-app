@@ -2,7 +2,7 @@
 // which Solid's universal renderer tells the host as mutations (renderer.native.ts). The UI library's components
 // import them as `#primitives`.
 import { createContext, createEffect, createMemo, createRoot, createSignal, getOwner, merge, omit, onCleanup, onSettled, Repeat, runWithOwner, Show, untrack, useContext, type Element } from "solid-js"
-import { tellDrawn } from "../bridge.ts"
+import { filesOf, tellDrawn } from "../bridge.ts"
 import { createElement, detach, insert, insertNode, render as draw, root, spread, type Node } from "./renderer.native.ts"
 import { layer } from "./layer.ts"
 import type { Mutations, Type } from "./renderer.ts"
@@ -21,7 +21,7 @@ const primitive = (type: Exclude<Type, "raw-text">) => (props: object) => {
 
 const view = primitive("box")
 /** A view's `onDrop`, told the files dropped on it, which come as base64, as an upload goes. */
-const dropped = (it: Page.ViewProps) => it.onDrop && ((event: { files: { name: string; body: string }[] }) => it.onDrop!(event.files.map((file) => new File([Uint8Array.from(atob(file.body), (character) => character.charCodeAt(0))], file.name))))
+const dropped = (it: Page.ViewProps) => it.onDrop && ((event: { files: { name: string; body: string }[] }) => it.onDrop!(filesOf(event)))
 
 /// `<Pressable role="button" aria-label="Close" onPress={close}>...</Pressable>`: a view that's pressed, by a pointer,
 /// a finger, or Enter or Space where the keyboard is, as React Native's Pressable, its one way to press (none of the

@@ -118,6 +118,10 @@ type Listens = Semantics & {
 export type ViewProps = Listens & {
   /** Files dropped on it from the system (a Finder's, an Explorer's). */
   onDrop?: (files: File[]) => void
+  /** Files from the system came over it, as they're dragged, where it takes them (`onDrop`), as the DOM's `dragenter`;
+   * and left it, as its `dragleave`, unless they were dropped on it. A host before this one doesn't say. */
+  onDragEnter?: () => void
+  onDragLeave?: () => void
   /** Follows a pointer or a finger dragging it, as Motion's `drag`: along (`"x"`), down (`"y"`) or both (`true`),
    * moved by the host where the input arrives, never by a turn of the page's JS. */
   drag?: "x" | "y" | boolean
@@ -411,6 +415,9 @@ export declare function refreshAvatars(): void
 export declare function Badge(props: { variant?: "default" | "secondary" | "destructive" | "outline"; tone?: "blue" | "green" | "orange"; "aria-label"?: string; children?: Element }): Element
 
 export declare function Empty(props: { action?: Element; children?: Element }): Element
+/** Where files dragged from the computer's own are dropped: tinted, saying "Drop to add", while they're over it, and
+ * `onDrop` told those of `accept`'s kinds. Without `children`, a dashed area with `label` and Choose Files…. */
+export declare function DropZone(props: { onDrop: (files: File[]) => void; accept?: string[]; multiple?: boolean; label?: string; children?: Element }): Element
 export declare function Problem(props: { heading: Element; text?: Element | Error; action?: Element; warn?: boolean }): Element
 export declare function Status(props: { heading: Element; text?: Element; over?: boolean }): Element
 export declare function Steps(props: { steps: Element[]; at: number; text?: Element }): Element
@@ -652,6 +659,8 @@ export type Tap =
   | { x: number; y: number }
   | { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean }
   | { type: string }
+  /** Files from the computer dragged over what's named (`drag`), or dropped there (paths on the machine drawing it). */
+  | { files: "drag" | string[]; role?: string; name?: string; text?: string }
 export type Scenes = Record<string, Scene>
 
 // What an app asks for in passing.
@@ -827,6 +836,9 @@ export declare function displayMode(): "inline" | "fullscreen"
 export declare function requestDisplayMode(mode: "inline" | "fullscreen"): Promise<"inline" | "fullscreen">
 /** Whether a finger points at the window, as it changes: a phone's does, a computer's doesn't. */
 export declare function touch(): boolean
+/** Whether the device has a document scanner of its own (VisionKit's, ML Kit's), which `scanDocuments` shows: a
+ * computer and a browser have none. */
+export declare function canScan(): boolean
 /** Whether whoever's looking asked for less motion, as it changes. */
 export declare function reducedMotion(): boolean
 /** Calls `listener` with each key pressed that isn't something's own: not one a field, a menu or a dialog used first

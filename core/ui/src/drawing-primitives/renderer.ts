@@ -212,8 +212,9 @@ export interface Rect {
  * action key is pressed (a keyboard's Enter, or a phone's Done, Go, Next, Search or Send). A host offers them as
  * accessibility actions too: `click` is AccessKit's `Click`, `input` its `SetValue`, `focus` and `blur` its `Focus`
  * and `Blur`, `scroll` its `ScrollIntoView` and `ScrollDown`. `drop` is files dropped on it from the system (a
- * Finder's, an Explorer's), each its `name` and its bytes as base64 (`body`), under `files`. */
-export type EventName = "click" | "input" | "action" | "focus" | "blur" | "keydown" | "pointerenter" | "pointerleave" | "scroll" | "layout" | "intersection" | "range" | "drop" | Moved | Streamed
+ * Finder's, an Explorer's), each its `name` and its bytes as base64 (`body`), under `files`, and `dragenter` and
+ * `dragleave` those files coming over the innermost that takes them and leaving it, as they're dragged. */
+export type EventName = "click" | "input" | "action" | "focus" | "blur" | "keydown" | "pointerenter" | "pointerleave" | "scroll" | "layout" | "intersection" | "range" | "drop" | "dragenter" | "dragleave" | Moved | Streamed
 
 /** What a `video` tells its page of its stream, and a `voice` of its call: `offer`, `answer`, `state`, `size`,
  * `speaking` and `devices`. */

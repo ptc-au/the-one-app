@@ -10,9 +10,11 @@ import { messages } from "../words.ts"
 import { createButton } from "../headless-components/button.ts"
 import { ListKeys, ListStyle } from "./list.tsx"
 import { Empty } from "./states.tsx"
+import { Menu } from "./menu.tsx"
 import { Tips, type Tip } from "./tips.tsx"
 import { negative, styles, type Styles } from "../styles.ts"
 import { pixels, tokens } from "../tokens.ts"
+import type { Rect } from "../drawing-primitives/renderer.ts"
 
 const look = styles({
   screen: { position: "relative", flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0 },
@@ -42,7 +44,8 @@ const look = styles({
   // A long name, which may be all the screen says of what it's about, takes two lines, as Android's bars do.
   title: { flexGrow: 1, flexShrink: 1, minWidth: 0, paddingBlock: tokens.grid[1], font: tokens.type.headline, lineClamp: 2, textAlign: "start" },
   // On a computer, Raycast's: its title beside Back, 15px, on one line.
-  computerTitle: { font: tokens.type.barTitle, lineClamp: 1 },
+  // It keeps room for a short name beside the actions, which give way to it (`kept`).
+  computerTitle: { font: tokens.type.barTitle, lineClamp: 1, minWidth: tokens.grid[16] },
   // On a computer the bar is the window's title row, its unified toolbar, as macOS's System Settings and Raycast have
   // it: at the window's top, after the window's controls and title where it's at the window's start, and before
   // the controls at its end where it's at its end.
@@ -231,7 +234,8 @@ function FloatingButton(props: { action: FloatingAction; pill?: boolean }) {
 /// are, over what scrolls, always in view: under a finger in a narrow window, a stack of round buttons at the start (the
 /// `primary` one larger, at its bottom) and one pill at the end, clear of the home indicator, with room left at the end of
 /// what scrolls so the last row clears them, and away while a field has the keyboard. Where there's room (a computer's
-/// window, an iPad's wide one) they're in the bar instead: the leading ones before `action`, the trailing one after it.
+/// window, an iPad's wide one) they're in the bar instead: the leading ones before `action`, the trailing one after it,
+/// whole, with the leading ones that don't fit beside the heading in a ⋯ menu (More Actions), as a toolbar's overflow.
 export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; floatingActions?: { leading?: FloatingAction[]; trailing?: FloatingAction }; tips?: Tip[]; back?: boolean; onBack?: () => void; largeTitle?: boolean; readable?: boolean; children?: JSX.Element }) {
   const opened = useContext(Opened)
   const leave = useContext(Leave)
@@ -267,6 +271,26 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
   const buttons = () => action.toArray().filter(Boolean).length + (tips() ? 1 : 0) + (floating() ? 0 : (props.floatingActions?.leading?.length ?? 0) + (props.floatingActions?.trailing ? 1 : 0))
   const inline = () => large && buttons() <= 2
   const [endWidth, setEndWidth] = createSignal(0)
+  // On a computer, how many leading actions fit in the bar beside its heading and its trailing one, which is kept whole:
+  // those that don't are in a ⋯ menu before it, the last first, as a macOS toolbar's overflow is. Each layout where the
+  // actions overflow the row puts one more there, and a row grown by more than a button since tries all of them again.
+  const [kept, setKept] = createSignal(Infinity)
+  let row: Rect | undefined
+  let end: Rect | undefined
+  let narrowedAt = Infinity
+  const leading = () => props.floatingActions?.leading ?? []
+  const inBar = () => leading().slice(0, kept())
+  const inMenu = () => leading().slice(kept())
+  const fit = () => {
+    if (!computer || !row || !end || floating() || !leading().length) return
+    if (end.x + end.width > row.x + row.width - pixels(tokens.length.gutter) + 0.5 && Math.min(kept(), leading().length) > 0) {
+      narrowedAt = row.width
+      setKept(Math.min(kept(), leading().length) - 1)
+    } else if (kept() < leading().length && row.width > narrowedAt + pixels(tokens.length.control)) {
+      narrowedAt = Infinity
+      setKept(Infinity)
+    }
+  }
   const [scrolled, setScrolled] = createSignal(0)
   const [largeHeight, setLargeHeight] = createSignal(LARGE)
   const [barHeight, setBarHeight] = createSignal<number>()
@@ -295,7 +319,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
         <Show when={!computer}>
           <View style={[look.backdrop, look.faded(under())]} />
         </Show>
-        <View style={[look.row, computer && edge().start && look.atStart, computer && edge().end && look.atEnd]}>
+        <View style={[look.row, computer && edge().start && look.atStart, computer && edge().end && look.atEnd]} onLayout={computer ? (event) => ((row = event.currentTarget.getBoundingClientRect()), fit()) : undefined}>
           <Show when={backed() || (computer && history())}>
             <View role="group" style={[look.pill, !(computer && history()) && look.round]}>
               <Pressable
@@ -324,7 +348,11 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
           <Heading level={1} aria-hidden={named() ? undefined : "true"} style={[look.title, computer && look.computerTitle, titleShown() < 1 && look.faded(titleShown())]}>
             {props.heading}
           </Heading>
-          <View style={[look.action, look.taken, look.lift(lift())]} onLayout={(event) => setEndWidth(event.currentTarget.getBoundingClientRect().width)}>
+          <View style={[look.action, look.taken, look.lift(lift())]} onLayout={(event) => {
+            end = event.currentTarget.getBoundingClientRect()
+            setEndWidth(end.width)
+            fit()
+          }}>
             <Show when={!computer && tips()}>
               {(now) => <Tips tips={now()} />}
             </Show>
@@ -332,7 +360,24 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
               <BarEnd value={true}>
                 <View style={look.action}>
                   <Show when={!floating()}>
-                    <For each={props.floatingActions?.leading}>
+                    <Show when={inMenu().length}>
+                      <Menu.Root onSelect={(label) => inMenu().find((one) => one.label === label)?.onPress()}>
+                        <Menu.Trigger aria-label={messages.moreActions} />
+                        <Menu.Positioner>
+                          <Menu.Content>
+                            <For each={inMenu()}>
+                              {(one) => (
+                                <Menu.Item value={one.label} disabled={one.disabled}>
+                                  <Icon name={one.icon} />
+                                  {one.label}
+                                </Menu.Item>
+                              )}
+                            </For>
+                          </Menu.Content>
+                        </Menu.Positioner>
+                      </Menu.Root>
+                    </Show>
+                    <For each={inBar()}>
                       {(one) => (
                         <Button size="icon" variant={one.primary ? "default" : "ghost"} aria-label={one.label} disabled={one.disabled} onPress={one.onPress}>
                           <Icon name={one.icon} />
