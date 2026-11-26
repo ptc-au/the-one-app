@@ -48,7 +48,7 @@ pub fn name(name: &str, key: &str) -> String {
 }
 
 /// Whether the system keeps what it's given running (`install`, `start`): everywhere but a Linux machine that no
-/// systemd booted, as a container's, whose own init (a Fly Machine's, Docker's `--restart`) runs `one serve run` itself
+/// systemd booted, as a container's, whose own init (the network's fallback server's Cloudflare Container, `core/edge/fallback`) runs `one serve run` itself
 /// and starts it again, so there's nothing to register and nothing to start.
 pub fn supervised() -> bool {
     // systemd's own test of whether it booted this machine (`sd_booted`).
