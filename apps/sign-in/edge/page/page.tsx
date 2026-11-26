@@ -121,8 +121,8 @@ type Stage =
   | { stage: "checking" }
   | { stage: "needsSignIn" }
   | { stage: "claiming" }
-  | { stage: "comparing"; name: string; device: string }
-  | { stage: "approved"; name: string; unlocked: boolean }
+  | { stage: "comparing"; name: string; device: string; server: boolean }
+  | { stage: "approved"; name: string; unlocked: boolean; server: boolean }
   | { stage: "denied"; name: string }
   | { stage: "ready"; app: App }
   | { stage: "confirm" }
@@ -229,8 +229,8 @@ async function claim() {
   // Someone else opened this link first, and it's theirs to answer.
   if (!data.client_id) return setStage({ stage: "failed", why: "Someone else is approving this device.", ended: true })
   if (data.status !== "pending") return setStage({ stage: "failed", why: ended.approved, ended: true })
-  // What the device calls itself, which this network's hook adds (`edge/auth.ts`).
-  setStage({ stage: "comparing", name: (data as { name?: string }).name ?? "A device", device: data.client_id })
+  // What the device calls itself, which this network's hook adds (`edge/auth.ts`), and whether it's a server.
+  setStage({ stage: "comparing", name: (data as { name?: string }).name ?? "A device", device: data.client_id, server: data.scope === "server" })
 }
 
 /// The code of the key the passkey answered on this page derives, which a device that allows it shows too.
@@ -515,17 +515,19 @@ async function cancel() {
 }
 
 /// This person's answer to the device whose code they compared. Saying it matches asks for their passkey, if it
-/// wasn't just answered here, so the device holds their key as it comes in when the passkey unlocks it.
+/// wasn't just answered here, so the device holds their key as it comes in when the passkey unlocks it. A server is
+/// approved only with a passkey, and holds no key.
 async function respond(yes: boolean) {
-  const { name, device } = stage() as { name: string; device: string }
+  const { name, device, server } = stage() as { name: string; device: string; server: boolean }
   if (!yes) {
     await ask("/device/deny", { userCode: (flow as { code: string }).code })
     return setStage({ stage: "denied", name })
   }
   // The edge approves only for someone who signed in in the last five minutes (`edge/auth.ts`).
-  if (!(used && Date.now() - used.at < 4 * 60_000) && !(await signedInJustNow())) await (google() && !used ? withGoogle() : withPasskey())
+  const fresh = used && Date.now() - used.at < 4 * 60_000
+  if (server ? !fresh : !fresh && !(await signedInJustNow())) await (google() && !used && !server ? withGoogle() : withPasskey())
   await ask("/device/approve", { userCode: (flow as { code: string }).code })
-  setStage({ stage: "approved", name, unlocked: await handedTo(device, name) })
+  setStage({ stage: "approved", name, server, unlocked: !server && (await handedTo(device, name)) })
 }
 
 /// Lets a device just approved hold its person's key too, where the passkey just answered unlocks it. Whether it does.
@@ -580,10 +582,12 @@ function shows(): Shows {
           return { heading: "Approve a device", status: "Finding the device…" }
         case "comparing":
           return {
-            heading: `Approve ${now.name}?`,
+            heading: now.server ? `Add ${now.name} as a server?` : `Approve ${now.name}?`,
             note: "It should be showing",
             code: shown,
-            warning: "It will act as you. If the code differs, or you didn't ask for this, stop.",
+            warning: now.server
+              ? "It will run the network's apps for everyone, with everything they keep. If the code differs, or you didn't ask for this, stop."
+              : "It will act as you. If the code differs, or you didn't ask for this, stop.",
             button: "It matches",
             onSignIn: () => respond(true),
             stop: "Stop",
@@ -591,6 +595,7 @@ function shows(): Shows {
           }
         // Done, as Google's and GitHub's device pages are: nothing left to answer here.
         case "approved":
+          if (now.server) return { mark: <DoneMark />, heading: `${now.name} is a server now`, done: "It starts in a minute or two. You can close this page." }
           return { mark: <DoneMark />, heading: `${now.name} is signed in`, done: now.unlocked ? "It holds your key too. You can close this page and go back to it." : "You can close this page and go back to it." }
         case "denied":
           return { heading: `${now.name} wasn't approved`, done: "You can close this page." }

@@ -26,7 +26,8 @@
 //
 // A part whose `package.json` says `"who": true` is the one that signs people in: its Worker exports an entrypoint
 // `Who`, which the network's MCP endpoint asks who a request is from (`mcp/mcp.ts`), as every other part may, bound
-// as `WHO`, to answer only whoever's signed in to the network. One part at most says so.
+// as `WHO`, to answer only whoever's signed in to the network. One part at most says so, and it alone is given
+// `SERVERS`, which puts a server on the network's list once the network's owner approved it there.
 //
 // A part whose `package.json` says `"tail": true` is a Tail Worker: the edge and every other part are given it as a
 // tail consumer, so it hears what each did.
@@ -172,7 +173,10 @@ for (const config of new Glob("*/edge/wrangler.jsonc").scanSync(`${root}/apps`))
   ];
   workers.push({ app, binding, part, worker, tail: about.tail === true });
 }
-for (const { app, worker } of workers) if (who && app !== who.app) worker.services.push({ binding: "WHO", service: who.service, entrypoint: who.entrypoint });
+for (const { app, worker } of workers) {
+  if (who && app !== who.app) worker.services.push({ binding: "WHO", service: who.service, entrypoint: who.entrypoint });
+  if (app === who?.app) worker.services.push({ binding: "SERVERS", service: edge.name, entrypoint: "Servers" });
+}
 const tails = workers.filter(({ tail }) => tail).map(({ worker }) => ({ service: worker.name }));
 const tailed = (worker) => (tails.length ? { ...worker, tail_consumers: tails } : worker);
 // The tail parts go first, since the rest name them, and the one that says who a request is from next.

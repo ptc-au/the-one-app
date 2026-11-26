@@ -41,6 +41,8 @@ declare global {
         admits(key: string, token: string | null): Promise<{ until?: number } | null>;
         owner(): Promise<string | null>;
       };
+      /** Puts a server on the network's list, as the network's owner approved (`core/edge/presigner`'s `Servers`). */
+      SERVERS: { add(key: string): Promise<void> };
       RELAY: {
         notify(message: string): Promise<void>;
         forward(servers: string[], message: string): Promise<{ server: string; answer: string } | null>;
@@ -98,6 +100,8 @@ interface DeviceCode {
   name: string;
   /** What `Device` says of the command. */
   command?: string | null;
+  /** `server` for a server's key, which its approval puts on the network's list, rather than making it a device. */
+  scope?: string | null;
 }
 
 /**
@@ -387,6 +391,18 @@ async function signedInJustNow(ctx: Parameters<typeof getAuthoritativeSessionFro
     throw new APIError("FORBIDDEN", { message: "Sign in again to approve this." });
 }
 
+/**
+ * Throws unless this browser's session was made in the last few minutes with a passkey: what's approved only by a
+ * person, never by an assistant that has their browser, as WebAuthn's user verification has it. Gives the session.
+ */
+async function passkeyJustNow(ctx: Parameters<typeof getAuthoritativeSessionFromCtx>[0]) {
+  const session = await getAuthoritativeSessionFromCtx(ctx);
+  const made = session as { session: { passkey?: string | null; createdAt: Date } } | null;
+  if (!session || !made!.session.passkey || Date.now() - new Date(made!.session.createdAt).getTime() >= FRESH * 1000)
+    throw new APIError("FORBIDDEN", { message: "Sign in again with your passkey to approve this." });
+  return session;
+}
+
 /** A device's code as Better Auth looks it up: its letters and digits, in capitals. */
 const plain = (code: unknown) => String(code).replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 
@@ -520,9 +536,19 @@ const devices = () => ({
         }),
       },
       {
-        // Approving a device makes it its person's from then on, so it's asked of a passkey just now.
+        // Approving a device makes it its person's from then on, so it's asked of a passkey just now. A server's
+        // code (`scope` `server`) puts it on the network's list: it runs the network's apps with all it keeps, so
+        // only the network's owner approves it, with a passkey, as One Core's `add_server` is only theirs. That's
+        // done here, before the code is approved, so a server is never told it's in when it isn't.
         matcher: (ctx) => ctx.path === "/device/approve",
-        handler: createAuthMiddleware(signedInJustNow),
+        handler: createAuthMiddleware(async (ctx) => {
+          const code = await ctx.context.adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.body?.userCode) }] });
+          if (code?.scope !== "server") return signedInJustNow(ctx);
+          const { user } = await passkeyJustNow(ctx);
+          if (who(user) !== (await env.NETWORK.owner())) throw new APIError("FORBIDDEN", { message: "Only the network's owner adds a server this way." });
+          if (code.status !== "pending" || code.userId !== user.id || new Date(code.expiresAt).getTime() < Date.now()) return;
+          await env.SERVERS.add(code.clientId);
+        }),
       },
     ],
     after: [
@@ -564,6 +590,7 @@ const devices = () => ({
         handler: createAuthMiddleware(async (ctx) => {
           const { adapter } = ctx.context;
           const code = await adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.body.userCode) }] });
+          if (code!.scope === "server") return;
           const { user } = (await getSessionFromCtx(ctx))!;
           await place(adapter, code!.clientId, "app", code!.name, user, code!.command);
         }),

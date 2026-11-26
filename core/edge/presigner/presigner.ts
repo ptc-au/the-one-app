@@ -161,6 +161,31 @@ export class Network extends WorkerEntrypoint<Env> {
 }
 
 /**
+ * Puts a server on the network's list, for the part of the edge that signs people in alone (`edge.js`): what One
+ * Core's `add_server` does, once the network's owner approved it there with a passkey (`apps/sign-in/edge/auth.ts`),
+ * so a network whose servers are all off takes a new one with none to ask.
+ */
+export class Servers extends WorkerEntrypoint<Env> {
+  /** Adds the server whose key is `key` to the network's list, which a network has from its first server on. */
+  async add(key: string): Promise<void> {
+    if (!isKey(key)) throw new Error("That isn't a server's key");
+    const at = blob(this.env, `${NETWORK}servers`);
+    // Said before it's written, as `sign` says it of a write it signs, so no list read from now on is believed until it lands.
+    await changes(this.env).hold("any");
+    for (;;) {
+      const got = await bucket(this.env).fetch(at);
+      if (got.status === 404) throw new Error("This network has no server yet: its first is made with the secret its edge was deployed with");
+      if (!got.ok) throw new Error(`The bucket answered ${got.status} for ${NETWORK}servers`);
+      const keys: string[] = await got.json();
+      if (keys.includes(key)) return;
+      const wrote = await bucket(this.env).fetch(at, { method: "PUT", body: JSON.stringify([...keys, key]), headers: { "if-match": got.headers.get("etag")! } });
+      if (wrote.ok) return;
+      if (wrote.status !== 412) throw new Error(`The bucket answered ${wrote.status} for ${NETWORK}servers`);
+    }
+  }
+}
+
+/**
  * An app's edge function keeps blobs in its app's own artifact for the network, which is where its
  * app's servers read them, and reaches nothing else in the bucket. Which app is said by the binding it was
  * given (`props`), which only whoever deploys the edge sets.

@@ -11,7 +11,7 @@ import relay from "./relay/relay.ts";
 import web, { browsing, page as clientPage } from "./web/web.ts";
 import { followCore } from "./updater/core.ts";
 
-export { Network, Own, Changes } from "./presigner/presigner.ts";
+export { Network, Own, Servers, Changes } from "./presigner/presigner.ts";
 export { RelayEntrypoint } from "./relay/relay.ts";
 export { NetworkUpdater } from "./updater/updater.ts";
 
