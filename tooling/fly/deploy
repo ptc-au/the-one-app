@@ -30,7 +30,7 @@ if [[ -z ${FLY_API_TOKEN:-} ]]; then
 fi
 export FLY_API_TOKEN
 app=one-${host//./-}
-flyctl apps list --json | jq -e --arg app "$app" 'any(.[]; .Name == $app)' >/dev/null || flyctl apps create "$app"
+flyctl apps list --json | jq -e --arg app "$app" 'any(.[]; .Name == $app)' >/dev/null || flyctl apps create "$app" --org "$(flyctl orgs list --json | jq -r 'keys[0]')"
 size=(--vm-size shared-cpu-1x --vm-memory 1024) build=()
 [[ -z $big ]] || { size=(--vm-size shared-cpu-2x --vm-memory 4096 --volume-initial-size 20) build=(--build-arg CONTAINERS=1); }
 flyctl deploy "$here" --config "$here/fly.toml" --app "$app" --ha=false --remote-only --env "ONE_ADDRESS=https://$host" "${size[@]}" "${build[@]}"
