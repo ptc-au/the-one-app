@@ -115,6 +115,13 @@ impl Voice {
         });
     }
 
+    /// Tells its page the audio devices there are, before it has a call to use them in.
+    pub fn announce(&mut self, wake: Option<Arc<dyn Fn() + Send + Sync>>) {
+        if DEVICES {
+            Out { shared: self.shared.clone(), wake }.tell("devices", list_devices());
+        }
+    }
+
     fn close(&mut self) {
         if let Some(commands) = self.commands.take() {
             let _ = commands.send(Command::Close);

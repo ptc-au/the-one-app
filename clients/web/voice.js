@@ -296,20 +296,24 @@ export function voice(op, key, params, tell) {
     }
     all.set(key, one)
     navigator.mediaDevices?.addEventListener?.("devicechange", one.onDeviceChange)
-    // Defer getUserMedia by one microtask so initial `input`/`output`/`muted` props from the same render batch apply
-    // before the microphone is opened.
-    one.ready = Promise.resolve().then(() => {
-      if (all.get(key) !== one || one.micStarted) return
-      one.micStarted = true
-      return openMic(one, tell)
-    })
+    // The devices are told as it's made, so its page lists them before any call; the microphone is opened once it has
+    // `ice` to connect with (`connect`), deferred by one microtask so initial `input`/`output`/`muted` props from the
+    // same render batch apply before it's opened.
+    void listDevices(one, tell)
     return
   }
   const one = all.get(key)
   if (!one) return
   if (op === "set") {
     const { name, value } = params
-    if (name === "ice" && value) connect(one, value, tell)
+    if (name === "ice" && value) {
+      one.ready ??= Promise.resolve().then(() => {
+        if (all.get(key) !== one || one.micStarted) return
+        one.micStarted = true
+        return openMic(one, tell)
+      })
+      connect(one, value, tell)
+    }
     else if (name === "answer" && value && one.peer?.signalingState === "have-local-offer")
       one.peer.setRemoteDescription({ type: "answer", sdp: value }).catch((/** @type {unknown} */ err) => {
         logVoice("set_remote_answer", one, err)

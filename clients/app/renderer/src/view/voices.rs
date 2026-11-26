@@ -6,7 +6,7 @@ use crate::tree::{Id, Kind, Mutation};
 
 impl Screen {
     /// What a mutation does to a voice: a new `ice` is a new connection, an `answer` is the screen's, an `offer` is an
-    /// SFU's to answer, `muted` is its microphone, and one dropped is closed.
+    /// SFU's to answer, `muted` is its microphone, and one dropped is closed. One made tells its page the devices.
     pub(super) fn voice_mutation(&mut self, mutation: &Mutation) {
         match mutation {
             Mutation::Set { id, name, value }
@@ -31,6 +31,9 @@ impl Screen {
                     _ => {}
                 }
             }
+            // Its devices, told as it's made, so its page lists them before any call: nothing is opened until it has
+            // `ice`.
+            Mutation::Create { id, kind: Kind::Voice, .. } => self.voices.entry(*id).or_default().announce(self.wake.clone()),
             Mutation::Drop { id } => {
                 self.voices.remove(id);
             }
