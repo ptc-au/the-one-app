@@ -14,6 +14,12 @@ defmodule Vault.Handles do
 
       made --one vault run, Remote Shell or Containers--> used
       made --@lasts with no use--------------------------> expired
+
+  It keeps the Vault's rules. A handle to an item is made only where its person switched on Commands for it, which,
+  as every grant, only they do, on their own screen (`Vault.Access.person!/2`): an agent is refused, and never answers
+  a request of its own. One to a browser's is of what the agent's own browser shows it anyway. It's spent only by the
+  person's own device over its own connection, sealed to that device's key, or by a trusted app's code, never over the
+  web; only in the Vault of whoever it was made for, so nobody else's call finds it; and once.
   """
 
   alias Vault.{Access, Items, Store}
