@@ -43,15 +43,16 @@ if (what === "build" && !rest[0]) throw new Error("bun edge.js build <folder>: a
 if (what === "deploy" && !rest[0]) throw new Error("bun edge.js deploy https://<address>: a deploy is to a network, by its address");
 const at = what === "deploy" ? new URL(rest[0]) : null;
 if (at && (at.protocol !== "https:" || at.pathname !== "/")) throw new Error("A network's address is https://<name>, with no path");
-// Each network's edge is in its own Cloudflare account, which only its own token reaches: the 1Password item "The One App
-// edge deploy (<its name>)", or CLOUDFLARE_API_TOKEN.
+// Each network's edge is in its own Cloudflare account, which only its own token reaches: the field `api_token` of the
+// 1Password item "Cloudflare edge deploy" tagged `vault/<its host>`, which `tooling/vault-sync` puts in the network's
+// Vault for Software Update, or CLOUDFLARE_API_TOKEN.
 if (at && !process.env.CLOUDFLARE_API_TOKEN) {
-  const title = `The One App edge deploy (${at.hostname})`;
-  const items = await $`op item list --format json`.quiet().nothrow();
-  if (items.exitCode !== 0) throw new Error(`No Cloudflare token: set CLOUDFLARE_API_TOKEN, or sign in to 1Password (\`op\`) to read "${title}"`);
-  const item = JSON.parse(items.text()).find((/** @type {{title: string}} */ item) => item.title === title);
-  if (!item) throw new Error(`No Cloudflare token for ${at.hostname}: 1Password has no item "${title}", and CLOUDFLARE_API_TOKEN isn't set`);
-  process.env.CLOUDFLARE_API_TOKEN = (await $`op read ${`op://${item.vault.id}/${item.id}/credential`}`.quiet()).text().trim();
+  const about = `the 1Password item "Cloudflare edge deploy" tagged vault/${at.hostname}`;
+  const items = await $`op item list --tags ${`vault/${at.hostname}`} --format json`.quiet().nothrow();
+  if (items.exitCode !== 0) throw new Error(`No Cloudflare token: set CLOUDFLARE_API_TOKEN, or sign in to 1Password (\`op\`) to read ${about}`);
+  const item = JSON.parse(items.text()).find((/** @type {{title: string}} */ item) => item.title === "Cloudflare edge deploy");
+  if (!item) throw new Error(`No Cloudflare token for ${at.hostname}: there's no ${about}, and CLOUDFLARE_API_TOKEN isn't set`);
+  process.env.CLOUDFLARE_API_TOKEN = (await $`op read ${`op://${item.vault.id}/${item.id}/api_token`}`.quiet()).text().trim();
 }
 
 /** The first part of each path a piece of the edge answers (`edge.ts`). The web client's files are the rest. */

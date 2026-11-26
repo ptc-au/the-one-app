@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# 1Password is the source of truth for every secret. Build and signing secrets are read from it where they're used;
+# what a network's apps use at runtime is put into that network's Vault from it by this, one way, 1Password winning.
+# An item tagged `vault/<the network's host>` is the network Vault's item of the same title, and `vault/<host>/groups/
+# <name>` the group's. Each field of it is the Vault field of the same label (letters, digits and _), secret where
+# 1Password conceals it, with the item's websites as the sites its secrets go to. A field's value is piped from
+# 1Password into `one vault set`, which encrypts it on this machine, so it's never printed. The Vault keeps what
+# 1Password doesn't name: an item's other fields, which apps it's switched on for, and every person's own items.
+# Setting a value it has already changes nothing, so it's safe to run any time: run it after changing a secret in 1Password.
+#
+#     tooling/vault-sync [<the network's repo>...]     (each of `tooling/networks` without one)
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+if (($#)); then networks=("$@"); else mapfile -t networks < <("$root/tooling/networks"); fi
+items=$(op item list --format json)
+for network in "${networks[@]}"; do
+  host=$(git -C "$network" show origin/main:app/address) host=${host#https://}
+  ONE_HOME=$("$root/tooling/client-home" "$network") && export ONE_HOME
+  jq -r --arg tag "vault/$host" '.[] | . as $item | .tags[]? | select(. == $tag or startswith($tag + "/"))
+    | [$item.id, $item.vault.id, (ltrimstr($tag) | ltrimstr("/") | if . == "" then "network" else . end)] | @tsv' <<<"$items" |
+    while IFS=$'\t' read -r id vault subject; do
+      item=$(op item get "$id" --vault "$vault" --format json </dev/null)
+      title=$(jq -r .title <<<"$item")
+      mapfile -t hosts < <(jq -r '.urls[]?.href | sub("^[a-z]+://"; "") | sub("/.*"; "")' <<<"$item")
+      # The item's notes are 1Password's own, not a field.
+      while IFS=$'\t' read -r field label secret <&3; do
+        jq -j --arg id "$field" '.fields[] | select(.id == $id) | .value' <<<"$item" |
+          ONE_SUBJECT=$subject one vault set --item "$title" --field "$label" --secret "$secret" \
+            ${hosts[0]:+--hosts "${hosts[@]}"} --value-from /dev/stdin >/dev/null
+        echo "$host $subject: $title $label"
+      done 3< <(jq -r '.fields[] | select(.purpose != "NOTES" and (.value // "") != "") | [.id, .label, .type == "CONCEALED"] | @tsv' <<<"$item")
+    done
+done
