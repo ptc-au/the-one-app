@@ -78,10 +78,10 @@ const white = "oklch(1 0 0)"
 const neutral = { 185: "oklch(0.185 0 0)", 225: "oklch(0.225 0 0)", 260: "oklch(0.26 0 0)", 269: "oklch(0.269 0 0)" } as const
 const zinc = { 224: "oklch(0.224 0.008 285.76)", 919: "oklch(0.919 0.003 286.35)", 962: "oklch(0.962 0.004 286.32)", 977: "oklch(0.977 0.003 286.35)", 991: "oklch(0.991 0.001 286.38)" } as const
 const red = { 510: "oklch(0.51 0.204 25.56)", 745: "oklch(0.745 0.191 23.4)" } as const
-const orange = { 506: "#9a4d00", 600: "oklch(0.60 0.164 57.12)", 782: "oklch(0.782 0.171 67.22)", 820: "#ffb340" } as const
+const orange = { 460: "oklch(0.46 0.13 57.12)", 600: "oklch(0.60 0.164 57.12)", 782: "oklch(0.782 0.171 67.22)", 820: "#ffb340" } as const
 const yellow = { 865: "#ffcc00", 885: "#ffd60a" } as const
-const green = { 479: "#13702f", 600: "oklch(0.6 0.17 149)", 756: "#30d158" } as const
-const blue = { 510: "oklch(0.51 0.199 261.84)", 714: "oklch(0.714 0.139 249.06)" } as const
+const green = { 440: "oklch(0.44 0.13 149)", 600: "oklch(0.6 0.17 149)", 756: "#30d158" } as const
+const blue = { 450: "oklch(0.45 0.199 261.84)", 510: "oklch(0.51 0.199 261.84)", 714: "oklch(0.714 0.139 249.06)" } as const
 const purple = { 615: "#af52de", 656: "#bf5af2" } as const
 const pink = { 650: "#ff2d55", 658: "#ff375f" } as const
 /** One of the palette's OKLCH colours at a part of its opacity. */
@@ -271,10 +271,12 @@ const roles = {
   choiceHover: colour(opacity(black, 3), opacity(white, 5)),
   /** A page dot not shown: at 3:1 against the page, as a control's mark must be. */
   pageDot: colour(opacity(black, 50), opacity(white, 50)),
-  /** Words that warn, and words that say it worked: orange's and green's, deep enough in light to read at WCAG AA's
-   * 4.5:1 on a page's grey, which the accents' aren't. */
-  warningLabel: colour(orange[506], orange[820]),
-  successLabel: colour(green[479], green[756]),
+  /** Words that warn, that say it worked, and that name a kind of thing in blue (a tag's): orange's, green's and blue's,
+   * deep enough in light to read at WCAG AA's 4.5:1 on their own tint over a page's grey, a card and the open row's
+   * grey on a Mac (4.8:1 or more), which the accents' aren't (blue's 3.9:1 there, 26 Nov). */
+  warningLabel: colour(orange[460], orange[820]),
+  successLabel: colour(green[440], green[756]),
+  infoLabel: colour(blue[450], blue[714]),
   ...accents,
   redTint: alpha(accents.red, 12),
   orangeTint: alpha(accents.orange, 12),

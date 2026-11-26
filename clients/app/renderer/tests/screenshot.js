@@ -653,9 +653,9 @@ const LIGHTS_CLEAR = 8
 /// row, after the traffic lights the fake platform's window says it has where current macOS puts them. Neither its
 /// title nor anything of its page in that row (its top bar's words and controls, the `?` at its end) starts before
 /// they end and a gap. A phone's, a panel's (the launcher's) and a component's, drawn in another app's window, have
-/// none. → what's wrong, a line each.
+/// none, and so does a gallery's scene unless it says it's a Mac's app window (`titleRow`). → what's wrong, a line each.
 async function onAMac(drawn, scene, folder, app) {
-  if (app === "gallery" || drawn.missing || scene.touch || panel(scene).length || scene.page.startsWith(COMPONENTS)) return []
+  if ((app === "gallery" && !scene.titleRow) || drawn.missing || scene.touch || panel(scene).length || scene.page.startsWith(COMPONENTS)) return []
   const lines = drawn.requests.split("\n")
   writeFileSync(join(folder, "mac-requests.jsonl"), [...lines, JSON.stringify({ v: 1, id: lines.length + 1, op: "window" })].join("\n"))
   const [at, , , ...rest] = drawn.asked

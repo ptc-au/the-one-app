@@ -296,9 +296,13 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
   const inMenu = () => leading().slice(kept())
   const fit = () => {
     if (!computer || !row || !end || floating() || !leading().length) return
-    if (end.x + end.width > row.x + row.width - pixels(tokens.length.gutter) + 0.5 && Math.min(kept(), leading().length) > 0) {
+    // How far the actions run past the row's end padding: one more goes each layout they do, the ⋯ coming in with the
+    // first, whose own layout is the next turn (it takes the room of the icon it holds, so the actions' width stays).
+    const over = end.x + end.width - (row.x + row.width - pixels(edge().end ? tokens.length.titleBarEnd : tokens.length.gutter))
+    const now = Math.min(kept(), leading().length)
+    if (over > 0.5 && now > 0) {
       narrowedAt = row.width
-      setKept(Math.min(kept(), leading().length) - 1)
+      setKept(now - 1)
     } else if (kept() < leading().length && row.width > narrowedAt + pixels(tokens.length.control)) {
       narrowedAt = Infinity
       setKept(Infinity)
@@ -374,6 +378,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
                 <View style={look.action}>
                   <Show when={!floating()}>
                     <Show when={inMenu().length}>
+                      <View style={look.action} onLayout={fit}>
                       <Menu.Root onSelect={(label) => inMenu().find((one) => one.label === label)?.onPress()}>
                         <Menu.Trigger aria-label={messages.moreActions} />
                         <Menu.Positioner>
@@ -389,6 +394,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
                           </Menu.Content>
                         </Menu.Positioner>
                       </Menu.Root>
+                      </View>
                     </Show>
                     <For each={inBar()}>
                       {(one) => (

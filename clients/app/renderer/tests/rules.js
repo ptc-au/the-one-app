@@ -212,6 +212,17 @@ export function controlsApart(nodes) {
   })
 }
 
+/// A screen's top bar shows each of its controls whole, never cut off by the edge of the pane it's in, as its main
+/// action was in a narrow list pane on a Mac (Claims' Complete, 26 Nov): what doesn't fit goes in its More Actions.
+/// → what's wrong, a line each.
+export function wholeInBar(nodes) {
+  return pages(nodes).flatMap(({ here, above, scrolled }) =>
+    here
+      .filter((node) => node.actions?.includes("click") && node.rect?.width > 0 && node.opacity >= 0.99 && node.seen > 0 && node.seen < 0.99 && !scrolled(node) && above(node).some((up) => up.role === "banner"))
+      .map((node) => `${said(node)} in the top bar is cut off: ${Math.round(node.seen * 100)}% of it (${box(node.rect)}) shows`),
+  )
+}
+
 /// The controls at the ends of a list's rows form a column, as iOS's and Raycast's do: each row's last control, where
 /// it ends the row, ends as far from the row's end as every other's. A row pressed as a whole isn't a control at its
 /// end. → what's wrong, a line each.
@@ -367,5 +378,5 @@ const EXCEPT = {
 /// Every rule, by its name, as screenshot.js says what fails: each a line. The nodes are kept beside the picture
 /// (`native-nodes.json`), so a rule can be tried again on a run's scenes without drawing them.
 export function rules(nodes, file, size, scene) {
-  return Object.entries({ contrast: contrast(nodes, file, size), marks: marks(nodes, file, size), apart: [...wordsApart(nodes), ...controlsApart(nodes)], "row ends": rowEnds(nodes), centred: centred(nodes), unbroken: unbroken(nodes), "room to show it": roomy(nodes), corners: corners(nodes, file, size) }).filter(([rule]) => !EXCEPT[scene]?.[rule] && !EXCEPT[scene.split(" · ")[0]]?.[rule]).flatMap(([rule, lines]) => lines.map((line) => `${rule}: ${line}`))
+  return Object.entries({ contrast: contrast(nodes, file, size), marks: marks(nodes, file, size), apart: [...wordsApart(nodes), ...controlsApart(nodes)], "whole in its bar": wholeInBar(nodes), "row ends": rowEnds(nodes), centred: centred(nodes), unbroken: unbroken(nodes), "room to show it": roomy(nodes), corners: corners(nodes, file, size) }).filter(([rule]) => !EXCEPT[scene]?.[rule] && !EXCEPT[scene.split(" · ")[0]]?.[rule]).flatMap(([rule, lines]) => lines.map((line) => `${rule}: ${line}`))
 }

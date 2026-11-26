@@ -24,8 +24,9 @@
   --choice: light-dark(oklch(0 0 0 / 5%), oklch(1 0 0 / 8%));
   --choice-hover: light-dark(oklch(0 0 0 / 3%), oklch(1 0 0 / 5%));
   --page-dot: light-dark(oklch(0 0 0 / 50%), oklch(1 0 0 / 50%));
-  --warning-label: light-dark(#9a4d00, #ffb340);
-  --success-label: light-dark(#13702f, #30d158);
+  --warning-label: light-dark(oklch(0.46 0.13 57.12), #ffb340);
+  --success-label: light-dark(oklch(0.44 0.13 149), #30d158);
+  --info-label: light-dark(oklch(0.45 0.199 261.84), oklch(0.714 0.139 249.06));
   --red: light-dark(oklch(0.51 0.204 25.56), oklch(0.745 0.191 23.4));
   --orange: light-dark(oklch(0.60 0.164 57.12), oklch(0.782 0.171 67.22));
   --yellow: light-dark(#ffcc00, #ffd60a);

@@ -224,7 +224,7 @@ const look = styles({
   badgeDestructive: { backgroundColor: tokens.colour.red, color: tokens.colour.onAccent },
   badgeOutline: { backgroundColor: tokens.colour.field, color: tokens.colour.label, boxShadow: tokens.shadow.edge },
   // A tag that names a kind of thing: the accent's own tint behind words in its deeper shade, as Apple's tags are.
-  toneBlue: { backgroundColor: tokens.colour.blueTint, color: tokens.colour.blue },
+  toneBlue: { backgroundColor: tokens.colour.blueTint, color: tokens.colour.infoLabel },
   toneGreen: { backgroundColor: tokens.colour.greenTint, color: tokens.colour.successLabel },
   toneOrange: { backgroundColor: tokens.colour.orangeTint, color: tokens.colour.warningLabel },
 })

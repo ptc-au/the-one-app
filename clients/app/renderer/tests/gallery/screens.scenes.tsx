@@ -232,6 +232,14 @@ export default {
     size: [900, 475],
     render: () => <View style={look.pane}><Claims /></View>,
   },
+  // The same, as a Mac's app window draws it: the list pane's bar is the title row, after the traffic lights.
+  "Screens/A list pane's actions, on a Mac": {
+    alone: true,
+    layout: "fullscreen",
+    titleRow: true,
+    size: [1280, 720],
+    render: () => <View style={look.window}><Split detail={<Screen heading="Third Wave BBQ Gold Coast" back><Text>Its page.</Text></Screen>}><Claims /></Split></View>,
+  },
   "Screens/A list pane's actions, narrow, More Actions open": {
     alone: true,
     layout: "fullscreen",

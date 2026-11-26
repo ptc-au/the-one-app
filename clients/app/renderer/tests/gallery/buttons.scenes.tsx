@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js"
-import { Badge, Button, Icon, List, plural, Row, type Scenes, Spinner, styles, Text, tokens, View } from "ui"
+import { Badge, Button, Icon, List, ListStyle, plural, Row, type Scenes, Spinner, styles, Text, tokens, View } from "ui"
 
 const look = styles({
   column: { gap: tokens.grid[2], alignItems: "flex-start" },
@@ -90,8 +90,9 @@ export default {
       <Spinner />
     </View>
   ),
-  // A tag that names a kind of thing, in an accent's tint, in a row's heading as the old Claims' receipts have them.
-  "Buttons/Coloured tags": () => (
+  // A tag that names a kind of thing, in an accent's tint, in a row's heading as the old Claims' receipts have them: on a
+  // row, the open row's grey and a card, each tone's words at 4.5:1.
+  "Buttons/Coloured tags": { size: [800, 600], touch: false, titleRow: true, render: () => (
     <View style={look.tags}>
       <View style={look.row}>
         <Badge tone="blue">MFB/MMR</Badge>
@@ -101,8 +102,14 @@ export default {
       <List>
         <Row heading="Bunnings" badge={<Badge tone="blue">MFB/MMR</Badge>} text="Wed, 14 Oct" end={<Text>$42.50</Text>} />
         <Row heading="Qantas" badge={<><Badge tone="blue">MFB/MMR</Badge><Badge tone="green">Strategy</Badge></>} text="Sat, 10 Oct" end={<Text>$211.00</Text>} />
+        <Row heading="Coles" badge={<><Badge tone="blue">MFB/MMR</Badge><Badge tone="green">Strategy</Badge><Badge tone="orange">Review</Badge></>} text="Open" current onPress={() => {}} />
       </List>
+      <ListStyle value="insetGrouped">
+        <List>
+          <Row heading="On a card" badge={<><Badge tone="blue">MFB/MMR</Badge><Badge tone="green">Strategy</Badge><Badge tone="orange">Review</Badge></>} />
+        </List>
+      </ListStyle>
     </View>
-  ),
+  ) },
   "Buttons/Pressed where it's drawn": { render: () => <Moved />, taps: [{ role: "button", name: "Moved" }] },
 } satisfies Scenes
