@@ -759,7 +759,7 @@ defmodule Database.Lease do
   # Reads what was logged after the last entry it read, as the server it follows, `server`, didn't run a call passed on to
   # it, `why`: `:stopping` where this server is stopping, handed its lease on, and has a call it took before that still
   # to run, which no other server could (`Database.transaction/3`), `:cannot_run` where it answered that it would pass
-  # it on in turn, `:unanswered` where neither this server nor another it asked reached it, and `:alone` where this one
+  # it on in turn, `:unanswered` where neither this server nor another it asked, the relay at the network's address among them, reached it, and `:alone` where this one
   # couldn't and had no other to ask, or `:relayed` where the relay at the network's address still reached it meanwhile (`Database.transaction/3`). If it handed the lease on,
   # this server takes it; if the log names nobody after it, this server takes it, unless it's `:relayed` and that server
   # took it from this one; and otherwise it has learnt who holds it now. Only what was logged after the last entry it

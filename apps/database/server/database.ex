@@ -83,15 +83,21 @@ defmodule Database do
   # knew of it may be from before it came back. So one given up on at once is asked once more first. One that was
   # waited for has had what it was sent sent again by then (`@waited`).
   #
-  # Then the call is passed to the other servers that may hold the database, as SWIM's indirect probe asks other
-  # members to reach one that didn't answer: one that reaches the holder has it run there, and the lease stays where
-  # the others reach it, and one that can't either takes the lease, two servers having failed to reach it, and runs it.
-  # Only where none of them answered, or there's none, does this server take the lease itself, as the log lets it
-  # (`Database.Lease`), unless the relay at the network's address still reaches a holder that took it from this one.
-  # The relay is asked as the holder is, not after it gave up, and its saying the holder doesn't answer ends the wait
-  # for it, of a read or a hook, once `@ping` has passed: a frozen holder's first call waited 10 s, one after the other,
-  # and then the slower of the two. A write isn't given up on then, as the holder may have begun it, and the server
-  # that took the lease then answers what the holder answers it (`OneCore.Writes`).
+  # The relay at the network's address is asked as the holder is, not after it gave up, and its saying the holder
+  # doesn't answer its ping ends the wait for it, of a read or a hook, once `@ping` has passed: a frozen holder's first
+  # call waited 10 s, one after the other, and then the slower of the two. A write isn't given up on then, as the holder
+  # may have begun it, and the server that took the lease then answers what the holder answers it (`OneCore.Writes`).
+  #
+  # Two that failed to reach the holder take the lease from it, as SWIM's indirect probe has other members try a member
+  # that didn't answer. Where the relay doesn't reach it either, that's two, and this server takes the lease. Only
+  # where the relay still reaches it, or can't say, is the call passed to the other servers that may hold the database:
+  # one that reaches the holder has it run there, and the lease stays where the others reach it, and one that can't
+  # either takes the lease and runs it. Only where none of them answered, or there's none, does this server take the
+  # lease itself, as the log lets it (`Database.Lease`), unless the relay still reaches a holder that took it from this
+  # one. Passed to them where the relay didn't reach the holder either, a hook on two servers that couldn't reach it
+  # went back and forth between them, as each checks who may reach what for a call passed to it by asking that same
+  # database (`OneCore.Mcp.Principal`), until both gave up at 10 s and neither had taken the lease (26 Nov, the holder's
+  # machine gone off with its power).
   # A server that isn't up takes no lease, so the call fails here, for whoever asked to ask another, as it does where
   # this server is the one out of reach. Whoever asked is told only that the app couldn't be reached: which server
   # holds what, and how long it waited, is for whoever reads this server's log.
@@ -116,14 +122,15 @@ defmodule Database do
       whose = OneCore.User.owner(OneCore.Artifact.name(call.own))
       # One that answered it would pass the call on in turn is there, and can't run it: the others aren't asked.
       cannot_run = :forwarding_loop in [first, again]
-      others = if server && not passed && not cannot_run, do: OneCore.Apps.servers(whose) -- [server, OneCore.Server.key()], else: []
+      relayed = relay && Task.await(relay, :infinity)
+      others = if relay && not cannot_run && relayed != false, do: OneCore.Apps.servers(whose) -- [server, OneCore.Server.key()], else: []
       if others != [], do: Call.forward(call, others)
 
       why =
         cond do
           cannot_run -> :cannot_run
-          passed -> :unanswered
-          relay && Task.await(relay, :infinity) == true -> :relayed
+          passed or relayed == false -> :unanswered
+          relayed == true -> :relayed
           true -> :alone
         end
 
