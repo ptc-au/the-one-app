@@ -419,7 +419,8 @@ impl Tree {
     }
 
     /// The semantic tree from `id` with what a screen reader doesn't read in it too (`aria-hidden`, inert, not
-    /// displayed, behind a modal), as Playwright's `includeHidden` finds it: what's drawn, whether or not it's read.
+    /// displayed, behind a modal, taken out and drawn going), as Playwright's `includeHidden` finds it: what's drawn,
+    /// whether or not it's read.
     pub fn semantics_including_hidden(&self, id: Id) -> Vec<Value> {
         self.read(id, None, Reading::Hidden)
     }
@@ -449,7 +450,7 @@ impl Tree {
     /// and with what a screen reader doesn't read where the `reading` takes it in.
     fn read(&self, id: Id, held: Option<&[Id]>, reading: Reading) -> Vec<Value> {
         let Some(node) = self.nodes.get(&id) else { return Vec::new() };
-        if self.leaving.contains(&id) || reading.skips(node) {
+        if (self.leaving.contains(&id) && !matches!(reading, Reading::Hidden)) || reading.skips(node) {
             return Vec::new();
         }
         let held = match held {

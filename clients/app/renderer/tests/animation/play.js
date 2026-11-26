@@ -238,7 +238,8 @@ async function play(built, scene, name, motion, hz, folder) {
   // grows out of its square and its apps out of the square's: within a point, or a step of its own motion, which may
   // have taken one before the frame it's first drawn on.
   if (origin) {
-    const { node: opensFrom, why } = single(ran.answers.at(-2), motion.opensFrom)
+    // Its answer is the one before the replay's (`answer`), which a fresh frame follows here.
+    const { node: opensFrom, why } = single(ran.answers.at(ssh ? -2 : -3), motion.opensFrom)
     const from = opensFrom?.rect
     const drawn = frames.flatMap((frame) => (frame.rect ? [frame.rect] : []))
     const apart = (a, b) => Math.max(Math.abs(a.y - b.y), Math.abs(a.x + a.width / 2 - b.x - b.width / 2))
