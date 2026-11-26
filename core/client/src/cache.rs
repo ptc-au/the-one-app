@@ -266,6 +266,9 @@ pub struct Subscription {
     /// How many times the view has been told something changed: a view told reads again what it shows, so what it
     /// didn't read since is no longer shown, and isn't asked again (`refresh`).
     told: AtomicU64,
+    /// When the view was last told something changed: what it reads again just after is what it shows, read again as
+    /// it was told, not as time passed, so it isn't asked again by its age (`FRESH`).
+    told_at: Mutex<Option<Instant>>,
     /// What it asked with nothing kept, while a server's answer is awaited, by what was asked: the same asked again
     /// meanwhile waits for that answer, as TanStack Query shares a query in flight, where each was asked again (on 25
     /// Nov Settings asked one that took 7 s nine times over as its other answers came in).
@@ -274,7 +277,7 @@ pub struct Subscription {
 
 impl Subscription {
     pub fn new(client: Arc<Client>, changed: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), told: AtomicU64::new(0), asking: Mutex::default() })
+        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), told: AtomicU64::new(0), told_at: Mutex::default(), asking: Mutex::default() })
     }
 
     /// Answers what the view asks: the result of `method`. A write resolves as soon as its own answer arrives.
@@ -347,9 +350,15 @@ impl Subscription {
         // What it reads that was forgotten as it raced the view reading it after it was told comes back as it's read
         // again, and what it no longer reads stays forgotten.
         if dropped {
-            self.told.fetch_add(1, Ordering::Relaxed);
-            (self.changed)();
+            self.tell();
         }
+    }
+
+    /// Tells the view that what it was answered changed, so it reads again what it shows.
+    fn tell(&self) {
+        self.told.fetch_add(1, Ordering::Relaxed);
+        *self.told_at.lock().expect("no view panics") = Some(Instant::now());
+        (self.changed)();
     }
 
     /// What the view was last answered, at once, or what was kept, asked again behind it; only what was never
@@ -367,10 +376,14 @@ impl Subscription {
         // What the view was answered is shown again at once, and asked again behind it unless it's being asked or was
         // just answered (`FRESH`): a view outlives its window, so one opened again, or a phone's back from behind
         // another app, would show forever what it was answered before (21 Nov: Sign In & Security reopened without the
-        // passkey just made).
+        // passkey just made), and a widget reads again to show what's new. Read again because one answer changed, what
+        // else it reads hasn't, so it isn't asked again by its age: each answer that changed had the view read
+        // everything again, which asked the server again for all it read, as one Virtual Office answer did the Home
+        // Screen's pages, people, groups and sections (26 Nov).
+        let told = self.told_at.lock().expect("no view panics").is_some_and(|at| at.elapsed() < FRESH);
         if let Some(query) = self.responses.lock().expect("no view panics").get_mut(&key) {
             query.read = self.told.load(Ordering::Relaxed);
-            if query.fetching.is_none() && query.answered.is_none_or(|at| at.elapsed() > FRESH) {
+            if query.fetching.is_none() && !told && query.answered.is_none_or(|at| at.elapsed() > FRESH) {
                 let (tx, rx) = watch::channel(false);
                 query.fetching = Some((query.invalidated, rx));
                 let (shown, key, method, params, generation) = (self.clone(), key.clone(), method.to_owned(), params.clone(), query.invalidated);
@@ -484,8 +497,7 @@ impl Subscription {
             let _ = tx.send(true);
         }
         if notify {
-            self.told.fetch_add(1, Ordering::Relaxed);
-            (self.changed)();
+            self.tell();
         }
     }
 
