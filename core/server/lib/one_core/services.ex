@@ -94,9 +94,14 @@ defmodule OneCore.Services do
   An app has a newer version, or runs for someone else here: its services installed here that it didn't have before
   start. Where it's a copy of an app that's superseded by another (`OneCore.Apps.Lifecycle.supersede/2`), or the
   copy that superseded one, each service of the superseded copy installed here moves to the one that stays, with its
-  folder, as its installs did.
+  folder, as its installs did. Where services aren't running here, as on a server that stepped aside
+  (`OneCore.Servers.Aside`), there's nothing to tell: they start what's installed here as they start again.
   """
   def start(app) do
+    if Process.whereis(__MODULE__), do: started(app), else: :ok
+  end
+
+  defp started(app) do
     moving = call({:supersede, app})
 
     for {{copy, name}, to, instance} <- moving do
