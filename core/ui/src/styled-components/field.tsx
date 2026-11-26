@@ -232,7 +232,9 @@ export type ChoiceProps = ToggleProps
 function Choice(props: ChoiceProps & { role: "checkbox" | "switch"; mark: (on: boolean, wrong: boolean) => JSX.Element }) {
   const toggle = createToggle(props, props.role)
   const room = useContext(Room)
-  const beside = () => !touch() && !!props.label && room() >= BESIDE
+  // In a `Field`, it's that field's control, which has its label beside it already: not a second row of its own.
+  const field = useField()
+  const beside = () => !field && !touch() && !!props.label && room() >= BESIDE
   const switched = () => props.role === "switch"
   const halves = () => beside() && room() >= pixels(tokens.length.readable)
   const words = () => (
