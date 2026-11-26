@@ -462,6 +462,11 @@ impl crate::view::Device for Device {
         apply(&self.0, json!({"haptic": kind}))
     }
 
+    // Google Play services' document scanner (ML Kit's), which the app's build brings (gen/android's build.gradle.kts).
+    fn scans(&self) -> bool {
+        true
+    }
+
     fn scan_documents(&mut self, scanned: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
         let mut waiting = SCANNING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if waiting.is_some() {

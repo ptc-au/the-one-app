@@ -39,6 +39,7 @@ impl Screen {
         answer["result"]["hostContext"]["pressure"] = json!(self.pressure.name());
         answer["result"]["hostContext"]["safeAreaInsets"] = self.safe_area();
         answer["result"]["hostContext"]["visible"] = json!(self.visible);
+        answer["result"]["hostContext"]["deviceCapabilities"]["scan"] = json!(self.device.scans());
         self.told = Some((self.room, self.reduced_motion, self.insets, self.pressure));
     }
 

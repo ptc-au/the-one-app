@@ -139,27 +139,6 @@ fn handle_msg(hwnd: HWND, state: &State, msg: u32, wparam: WPARAM, lparam: LPARA
             }
             Some(0)
         }
-        // Files dropped on it from Explorer, where they were dropped.
-        WM_DROPFILES => {
-            use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, DragQueryPoint, HDROP};
-            let drop = HDROP(wparam.0 as *mut _);
-            let mut point = POINT::default();
-            let files = unsafe {
-                let _ = DragQueryPoint(drop, &mut point);
-                let count = DragQueryFileW(drop, u32::MAX, None);
-                let files: Vec<std::path::PathBuf> = (0..count)
-                    .map(|at| {
-                        let mut name = vec![0u16; DragQueryFileW(drop, at, None) as usize + 1];
-                        let length = DragQueryFileW(drop, at, Some(&mut name)) as usize;
-                        std::path::PathBuf::from(String::from_utf16_lossy(&name[..length]))
-                    })
-                    .collect();
-                DragFinish(drop);
-                files
-            };
-            push(Input::Dropped(at(point.x, point.y), files));
-            Some(0)
-        }
         // Moved or resized by a person, it's kept where it was left.
         WM_EXITSIZEMOVE if !state.panel => {
             keep_frame(hwnd, state);

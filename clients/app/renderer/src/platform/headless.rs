@@ -546,6 +546,21 @@ impl Windows {
         self.display.push_to(id, part, Input::Wheel(at, crate::geometry::point(by.0, by.1), phase, notches));
     }
 
+    /// Files from the system dragged over window `id` at `at`, or gone from it (`None`), as a Finder's drag says it.
+    pub fn files_dragged(&mut self, id: WindowId, at: Option<(f32, f32)>) {
+        let (part, at) = at.map_or((0, None), |(x, y)| {
+            let (part, at) = self.part_at(id, x, y);
+            (part, Some(at))
+        });
+        self.display.push_to(id, part, Input::Dragged(at));
+    }
+
+    /// `files` from the system dropped on window `id` at `at`.
+    pub fn files_dropped(&mut self, id: WindowId, at: (f32, f32), files: Vec<std::path::PathBuf>) {
+        let (part, at) = self.part_at(id, at.0, at.1);
+        self.display.push_to(id, part, Input::Dropped(at, files));
+    }
+
     /// A key on window `id`, as an inspector's `key` request says it.
     pub fn key(&mut self, id: WindowId, request: &crate::inspect::Request) -> anyhow::Result<()> {
         self.display.push(id, Input::Key(crate::inspect::Key::of(request)?));

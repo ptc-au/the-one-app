@@ -455,12 +455,38 @@ impl Screen {
         self.happened.unwrap_or_else(|| self.js.clock().now())
     }
 
-    /// Files dropped on the window at `at` from the system (a Finder's, an Explorer's): what's under it that takes a
-    /// drop, the innermost, is told them (`drop`).
-    pub fn dropped(&mut self, at: Point<f32>, files: &[std::path::PathBuf]) {
-        if let Some(id) = self.under(at).into_iter().find(|id| self.tree.nodes.get(id).is_some_and(|node| node.listens("drop"))) {
-            self.tell(id, "drop", json!({"files": files_told(files)}));
+    /// Files dragged from the system (a Finder's, an Explorer's) are over the window at `at`, or have left it (`None`):
+    /// what's under them that takes a drop, the innermost, is told they came (`dragenter`), and what they left told so
+    /// (`dragleave`), as the DOM tells a drop zone, so it shows it will take them.
+    pub fn files_dragged(&mut self, at: Option<Point<f32>>) {
+        let over = at.and_then(|at| self.dropped_on(at));
+        if over == self.dragged_over {
+            return;
         }
+        if let Some(left) = std::mem::replace(&mut self.dragged_over, over) {
+            self.tell(left, "dragleave", json!({}));
+        }
+        if let Some(over) = over {
+            self.tell(over, "dragenter", json!({}));
+        }
+    }
+
+    /// Files dropped on the window at `at` from the system, each its `name` and its `body` in base64
+    /// (`pump::files_told`): what's under it that takes a drop, the innermost, is told them (`drop`), in place of
+    /// `dragleave`, as the DOM's. What dropped nothing it could read (a link, a file it couldn't) only left.
+    pub fn files_dropped(&mut self, at: Point<f32>, files: Vec<Value>) {
+        if files.is_empty() {
+            return self.files_dragged(None);
+        }
+        self.dragged_over = None;
+        if let Some(id) = self.dropped_on(at) {
+            self.tell(id, "drop", json!({"files": files}));
+        }
+    }
+
+    /// What's under `at` that takes a drop, the innermost.
+    fn dropped_on(&self, at: Point<f32>) -> Option<Id> {
+        self.under(at).into_iter().find(|id| self.tree.nodes.get(id).is_some_and(|node| node.listens("drop")))
     }
 }
 

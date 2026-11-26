@@ -1000,22 +1000,29 @@ impl Display {
         self.windows.borrow().get(&x_window).copied()
     }
 
-    /// A drag from another app over an app's window, as XDND says it: it's told files may be dropped, and dropped,
-    /// what was is asked of it as `text/uri-list` (`SelectionNotify`).
-    fn xdnd(&self, event: &xproto::ClientMessageEvent, data: &[u32; 5]) {
+    /// A drag from another app over an app's window, as XDND says it: it's told files may be dropped, its page where
+    /// they are and as they leave, and dropped, what was is asked of it as `text/uri-list` (`SelectionNotify`).
+    fn xdnd(&self, event: &xproto::ClientMessageEvent, data: &[u32; 5], out: &mut Vec<(Who, Input)>) {
         let (window, source) = (event.window, data[0]);
         if event.type_ == self.atoms.XdndPosition {
             let root = self.xcb.setup().roots[self.screen].root;
             let (x, y) = ((data[2] >> 16) as i16, (data[2] & 0xffff) as i16);
             let Some(inside) = self.xcb.translate_coordinates(root, window, x, y).ok().and_then(|cookie| cookie.reply().ok()) else { return };
-            self.dragging.set(Some((window, source, self.at(inside.dst_x, inside.dst_y))));
+            let at = self.at(inside.dst_x, inside.dst_y);
+            self.dragging.set(Some((window, source, at)));
             self.xdnd_send(source, self.atoms.XdndStatus, [window, 1, 0, 0, self.atoms.XdndActionCopy]);
+            if let Some(id) = self.window(window) {
+                out.push((id, Input::Dragged(Some(at))));
+            }
         } else if event.type_ == self.atoms.XdndDrop {
             let selection = (self.atoms.XdndSelection, self.atoms.TEXT_URI_LIST);
             let _ = self.xcb.convert_selection(window, selection.0, selection.1, selection.0, data[2]);
             let _ = self.xcb.flush();
         } else if event.type_ == self.atoms.XdndLeave {
             self.dragging.set(None);
+            if let Some(id) = self.window(window) {
+                out.push((id, Input::Dragged(None)));
+            }
         }
     }
 
@@ -1048,7 +1055,7 @@ impl Display {
                 {
                     out.push((id, Input::Close));
                 }
-                self.xdnd(&event, &data);
+                self.xdnd(&event, &data, out);
             }
             // What was dropped, as its source gives it: its files' URIs, one a line.
             Event::SelectionNotify(event) if event.selection == self.atoms.XdndSelection => {
@@ -1061,7 +1068,7 @@ impl Display {
                     .filter_map(|line| url::Url::parse(line.trim()).ok()?.to_file_path().ok())
                     .collect();
                 self.xdnd_send(source, self.atoms.XdndFinished, [window, u32::from(!files.is_empty()), self.atoms.XdndActionCopy, 0, 0]);
-                if let Some(id) = self.window(window).filter(|_| !files.is_empty()) {
+                if let Some(id) = self.window(window) {
                     out.push((id, Input::Dropped(at, files)));
                 }
             }

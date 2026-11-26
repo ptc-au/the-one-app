@@ -89,7 +89,8 @@ impl Windows {
             Input::Expose => {}
             // The system went light or dark: so do its own parts of the window, where its Colour Mode says nothing.
             Input::FullScreen(full) => screen.full_screen = full,
-            Input::Dropped(at, files) => screen.dropped(at, &files),
+            Input::Dropped(at, files) => screen.files_dropped(at, crate::view::files_told(&files)),
+            Input::Dragged(at) => screen.files_dragged(at),
             Input::Appearance(appearance) => {
                 screen.appearance = appearance;
                 window.chrome = None;
@@ -185,7 +186,7 @@ impl Input {
     pub(super) fn waits(&self) -> Option<bool> {
         match self {
             Input::Down(..) | Input::Up(..) | Input::Key(_) | Input::Ime(_) | Input::TextInputClient(_) | Input::Picked(..) | Input::Dropped(..) => Some(true),
-            Input::Moved(_) | Input::Predicted(_) | Input::Left => Some(false),
+            Input::Moved(_) | Input::Predicted(_) | Input::Left | Input::Dragged(_) => Some(false),
             _ => None,
         }
     }
@@ -233,6 +234,7 @@ impl Input {
             Input::Down(at, button, shift) => Input::Down(moved(at), button, shift),
             Input::Up(at, button) => Input::Up(moved(at), button),
             Input::Dropped(at, files) => Input::Dropped(moved(at), files),
+            Input::Dragged(at) => Input::Dragged(at.map(moved)),
             Input::Wheel(at, delta, phase, notches) => Input::Wheel(moved(at), delta, phase, notches),
             input => input,
         }
@@ -254,6 +256,10 @@ pub(crate) enum Input {
     /// Files were dropped on it from the system, at a point in it.
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
     Dropped(crate::geometry::Point<f32>, Vec<std::path::PathBuf>),
+    /// Files from the system are dragged over it, at a point in it, or left it (`None`): dropped, ended elsewhere, or
+    /// cancelled.
+    #[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+    Dragged(Option<crate::geometry::Point<f32>>),
     /// It went full screen, or came out of it.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     FullScreen(bool),

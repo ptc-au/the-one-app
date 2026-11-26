@@ -11,7 +11,8 @@
 // page, `client/index.html` unless said, and a link after `#`), `component` (a component its client exports, drawn alone, in
 // place of a page, as another app's page draws it), `uses` (other apps whose components the page draws, as Settings draws its sections: each is built, and served beside the page as `/<app>/client/`), `opens` (on a phone's Home Screen, the app that draws each app it opens, `{ "notes": "git-repos" }`, in a window over it, as the app's own does: built as `uses` are, for motion.js), `taps` (what's done first: pressed by what each is named or
 // says, or `{ role, name }`; a point pressed, `{ x, y }`; a key, `{ key }` as the web names it, with `ctrl`, `shift`, `alt`
-// or `meta` held; or text typed where the keyboard is, `{ type }`), `size` (`[390, 844]`, a phone's, unless said), `wait` (ms the page runs on after its taps, before it's drawn, for a scene whose end is a state a few seconds on, as a live screen's "couldn't show this screen" is: a native host's clock is stepped by it, the web's runs it out, so both draw that state and not one on the way to it), `touch` (a finger points at it, as on a phone: true for any window narrower than COMPACT unless the scene says `false`, as a narrow computer's window is), `errors` (words of the errors it logs, as a page that can't reach its server does: any other the page logs fails the scene), `timeZone` (the IANA name of the device's, `UTC` unless said: a fixture's instants are said in it, as a person in it reads them), `latency` (ms each tool's answer takes to come on the page's clock, as a server's round trip: for checks of what shows meanwhile), and `like` (another scene's name, as Storybook's args are a
+// or `meta` held; text typed where the keyboard is, `{ type }`; or files from the computer dragged over what says `text`
+// or is `{ role, name }`, `{ files: "drag", text }`, or dropped there, `{ files: [paths] }`), `size` (`[390, 844]`, a phone's, unless said), `wait` (ms the page runs on after its taps, before it's drawn, for a scene whose end is a state a few seconds on, as a live screen's "couldn't show this screen" is: a native host's clock is stepped by it, the web's runs it out, so both draw that state and not one on the way to it), `touch` (a finger points at it, as on a phone: true for any window narrower than COMPACT unless the scene says `false`, as a narrow computer's window is), `errors` (words of the errors it logs, as a page that can't reach its server does: any other the page logs fails the scene), `timeZone` (the IANA name of the device's, `UTC` unless said: a fixture's instants are said in it, as a person in it reads them), `latency` (ms each tool's answer takes to come on the page's clock, as a server's round trip: for checks of what shows meanwhile), and `like` (another scene's name, as Storybook's args are a
 // component's: this is that scene, with its own taps, and its answers in place of that one's, tool by tool). An answer `{ "$error": "Couldn't reach it" }` is a tool's
 // refusal, and `{ "$image": "data:image/png;base64,…" }` a picture, as a server answers one (MCP's `image`: a screenshot). A method of the client's (`ui/initialize`, `one/client`) is answered as it's named too. It's 1 January 2026,
 // 00:00 UTC, as a native host's headless renderer has it, so a fixture's times are said from then.
@@ -240,6 +241,16 @@ async function press(frame, name) {
   if (name.type) return page.keyboard.type(name.type)
   const at = await page.locator("#page").boundingBox()
   if (name.x !== undefined) return click(frame, at.x + name.x, at.y + name.y)
+  // Files dragged over what's named, as the browser tells its canvas a drag from the computer's own files.
+  if (name.files) {
+    const box = await (name.role ? frame.getByRole(name.role, { name: name.name, exact: true }) : frame.locator(`#semantics :text-is("${name.text.replaceAll('"', '\\"')}")`)).first().boundingBox({ timeout: 5000 })
+    const [x, y] = [box.x + box.width / 2 - at.x, box.y + box.height / 2 - at.y]
+    return frame.evaluate(([x, y]) => {
+      const files = new DataTransfer()
+      files.items.add(new File(["receipt"], "receipt.png", { type: "image/png" }))
+      document.querySelector("canvas")?.dispatchEvent(new DragEvent("dragover", { dataTransfer: files, clientX: x, clientY: y, bubbles: true, cancelable: true }))
+    }, [x, y])
+  }
   const found = typeof name === "object" ? frame.getByRole(name.role, { name: name.name, exact: true }).first() : frame.locator(`#semantics [aria-label="${name.replaceAll('"', '\\"')}"], #semantics :text-is("${name.replaceAll('"', '\\"')}")`).last()
   let box = await found.boundingBox({ timeout: 5000 }).catch(() => null)
   const out = (/** @type {any} */ box) => box.y < at.y || box.y + box.height > at.y + at.height
@@ -567,7 +578,7 @@ async function native(built, scene, folder, again = false) {
   // With a plain tint for glass (`--glass tinted`), the scene drawn whole runs no blur: its `profile` says what's drawn.
   // Its nodes are read with what's inert (`includeInert`): behind an open menu or sheet a screen reader reads no row or
   // button of the page, but the rules judge what's drawn, as a row's words beside its buttons there.
-  const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query", includeInert: true }, { op: "query", frames: true, includeInert: true }, ...(ssh ? DRAWN : [])]
+  const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : tap.files ? { op: "files", ...tap } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query", includeInert: true }, { op: "query", frames: true, includeInert: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   writeFileSync(join(folder, "requests.jsonl"), requests)
   const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", ...(again ? [] : ["--measure"]), "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.launching ? ["--icon", join(root, "icons/AppIcon@2x.png")] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...panel(scene)]

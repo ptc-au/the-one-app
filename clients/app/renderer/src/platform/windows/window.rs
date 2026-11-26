@@ -9,6 +9,7 @@
 // Copyright 2022 - 2025 Zed Industries, Inc. Licensed under the Apache License, Version 2.0
 // (clients/app/renderer/LICENSE-APACHE); this file is changed from the original.
 
+mod drop_target;
 mod panel;
 mod procedure;
 mod text_input;
@@ -256,6 +257,10 @@ impl Display {
                 let _ = unsafe { PostThreadMessageW(thread, WM_NULL, WPARAM(0), LPARAM(0)) };
             }
         })?;
+        // The thread is OLE's, which drags from Explorer come to (`drop_target`), as a window's thread that takes them is.
+        if let Err(error) = unsafe { windows::Win32::System::Ole::OleInitialize(None) } {
+            log::warn!("files can't be dropped on any window: {error}");
+        }
         // Windows' visual layer runs on a dispatcher queue of the thread's, which its messages pump (`events`).
         let options = DispatcherQueueOptions { dwSize: size_of::<DispatcherQueueOptions>() as u32, threadType: DQTYPE_THREAD_CURRENT, apartmentType: DQTAT_COM_NONE };
         let queue = unsafe { CreateDispatcherQueueController(options) }.context("CreateDispatcherQueueController failed")?;
@@ -337,7 +342,7 @@ impl Display {
         }
         // Files can be dropped on an app's window from Explorer.
         if !panel {
-            unsafe { windows::Win32::UI::Shell::DragAcceptFiles(hwnd, true) };
+            drop_target::register(hwnd);
         }
         // An app's window opens where it was left, as big, and maximized if it was, as Windows' own apps keep their
         // placement.
@@ -402,6 +407,7 @@ impl Display {
             if !window.owner.get().is_invalid() {
                 let _ = windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow(window.owner.get(), true);
             }
+            drop_target::revoke(window.hwnd);
             SetWindowLongPtrW(window.hwnd, GWLP_USERDATA, 0);
             let _ = DestroyWindow(window.hwnd);
         }

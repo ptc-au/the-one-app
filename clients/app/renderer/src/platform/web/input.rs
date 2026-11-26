@@ -96,6 +96,25 @@ pub fn touch(kind: &str, x: f32, y: f32, finger: i32) {
     });
 }
 
+/// Files from the device are dragged over the canvas, at `x`, `y` in CSS pixels, or have left it (`over` false), as
+/// the DOM's `dragover` and `dragleave` say.
+#[wasm_bindgen]
+pub fn dragged(x: f32, y: f32, over: bool) {
+    input(Input::Dragged(over.then(|| point(x, y))));
+}
+
+/// Files from the device were dropped on the canvas at `x`, `y` in CSS pixels, each its `name` and its `body` in
+/// base64, as the frame read them from the DOM's `drop`.
+#[wasm_bindgen]
+pub fn dropped(x: f32, y: f32, files: JsValue) {
+    let Ok(serde_json::Value::Array(files)) = data(&files, &mut Vec::new()) else { return };
+    let _ = Native::get().map(|native| {
+        native.run(move |windows| {
+            windows.with(WINDOW, |screen| screen.files_dropped(point(x, y), files));
+        })
+    });
+}
+
 /// The frame got the keyboard, or lost it.
 #[wasm_bindgen]
 pub fn focused(focused: bool) {

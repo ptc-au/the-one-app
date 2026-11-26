@@ -643,23 +643,30 @@ define_class!(
     struct View;
 
     impl View {
-        // Files dragged from the Finder over an app's window may be dropped on it, as copies (NSDragOperationCopy).
+        // Files dragged from the Finder over an app's window may be dropped on it, as copies (NSDragOperationCopy),
+        // and what they're over is told so, as they move and as they leave.
         #[unsafe(method(draggingEntered:))]
-        fn dragging_entered(&self, _sender: &AnyObject) -> usize {
+        fn dragging_entered(&self, sender: &AnyObject) -> usize {
+            self.ivars().shared.send(Input::Dragged(Some(self.dragged_at(sender))));
             1
         }
 
         #[unsafe(method(draggingUpdated:))]
-        fn dragging_updated(&self, _sender: &AnyObject) -> usize {
+        fn dragging_updated(&self, sender: &AnyObject) -> usize {
+            self.ivars().shared.send(Input::Dragged(Some(self.dragged_at(sender))));
             1
+        }
+
+        #[unsafe(method(draggingExited:))]
+        fn dragging_exited(&self, _sender: Option<&AnyObject>) {
+            self.ivars().shared.send(Input::Dragged(None));
         }
 
         // Dropped, its files' URLs are the page's, where they were dropped.
         #[unsafe(method(performDragOperation:))]
         fn perform_drag_operation(&self, sender: &AnyObject) -> bool {
-            let (location, pasteboard): (NSPoint, *mut AnyObject) = unsafe { (msg_send![sender, draggingLocation], msg_send![sender, draggingPasteboard]) };
-            let point = self.convertPoint_fromView(location, None);
-            let at = Point { x: point.x as f32, y: (self.frame().size.height - point.y) as f32 };
+            let pasteboard: *mut AnyObject = unsafe { msg_send![sender, draggingPasteboard] };
+            let at = self.dragged_at(sender);
             let mut files = Vec::new();
             unsafe {
                 let classes: *mut AnyObject = msg_send![objc2::class!(NSArray), arrayWithObject: objc2::class!(NSURL)];
@@ -896,6 +903,13 @@ define_class!(
 );
 
 impl View {
+    /// Where a drag from another app (`NSDraggingInfo`) is in the view, in points from its top left.
+    fn dragged_at(&self, dragging: &AnyObject) -> Point<f32> {
+        let location: NSPoint = unsafe { msg_send![dragging, draggingLocation] };
+        let point = self.convertPoint_fromView(location, None);
+        Point { x: point.x as f32, y: (self.frame().size.height - point.y) as f32 }
+    }
+
     /// ⌘ and `key`, with Shift if `shift`, as a menu's command is its key.
     fn command(&self, key: &str, shift: bool) {
         self.ivars().shared.send(Input::Key(Key { key: key.to_owned(), code: crate::inspect::code_of(key), shift, alt: false, ctrl: false, meta: true }));

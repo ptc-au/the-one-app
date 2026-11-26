@@ -109,6 +109,8 @@ impl Node {
             "intersection" => "onIntersection",
             "range" => "onRange",
             "drop" => "onDrop",
+            "dragenter" => "onDragEnter",
+            "dragleave" => "onDragLeave",
             "dragstart" => "onDragStart",
             "drag" => "onDrag",
             "dragend" => "onDragEnd",

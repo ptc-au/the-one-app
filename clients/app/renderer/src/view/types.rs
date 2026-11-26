@@ -163,6 +163,12 @@ pub trait Device {
     fn scan_documents(&mut self, _scanned: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
         false
     }
+    /// Whether it has a document scanner of the system's own, which finds a page's edges by itself (VisionKit's, ML
+    /// Kit's), and not only the photo or the picker `scan_documents` falls back to: what its page is told
+    /// (`deviceCapabilities.scan`), so an app offers Scan only where there's one.
+    fn scans(&self) -> bool {
+        false
+    }
 }
 
 impl Device for () {

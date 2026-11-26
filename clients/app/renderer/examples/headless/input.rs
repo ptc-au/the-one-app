@@ -15,7 +15,8 @@ use crate::select::{ask, nth, point_of};
 /// handles drawn (`text_selection`), which only the fake platform knows; the system's appearance switched
 /// (`appearance`), the window resized or hidden (`resize`, `hide`), its last frame beside one drawn afresh (`fresh`)
 /// and the same drawn moved by whole device pixels (`moved`), and what its windows hold (`memory`, `Windows::memory`).
-pub(crate) const INPUT: [&str; 23] = ["moved", "tap", "hover", "down", "up", "key", "scroll", "drag", "replay", "trace", "clock", "wait_for", "away", "put_away", "summon", "hide", "back", "keyboard", "text_selection", "appearance", "resize", "fresh", "memory"];
+/// Files from the system dragged over what it selects or a point (`files`), or dropped there where `files` are paths.
+pub(crate) const INPUT: [&str; 24] = ["moved", "tap", "hover", "files", "down", "up", "key", "scroll", "drag", "replay", "trace", "clock", "wait_for", "away", "put_away", "summon", "hide", "back", "keyboard", "text_selection", "appearance", "resize", "fresh", "memory"];
 
 /// How long a click holds the button down, as a person's does.
 pub(crate) const CLICK_MS: f64 = 80.0;
@@ -46,6 +47,15 @@ pub(crate) fn input(windows: &mut Windows, id: renderer::platform::WindowId, req
             press(windows, id, x, y, Phase::Moved);
             windows.run(0.0);
             Ok(json!({"hovered": {"x": x, "y": y}}))
+        }
+        "files" => {
+            let (x, y) = point_of(windows, id, request)?;
+            match request.inputs.get("files").and_then(Value::as_array) {
+                Some(files) => windows.files_dropped(id, (x, y), files.iter().filter_map(Value::as_str).map(std::path::PathBuf::from).collect()),
+                None => windows.files_dragged(id, Some((x, y))),
+            }
+            windows.run(0.0);
+            Ok(json!({"dragged": {"x": x, "y": y}}))
         }
         "tap" => {
             let (x, y) = point_of(windows, id, request)?;

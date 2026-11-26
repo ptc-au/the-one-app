@@ -248,6 +248,8 @@ pub struct Screen {
     pub moving: bool,
     /// The node a pointer's press went down on, which its moves and its end go to, wherever it goes.
     captured: Option<Id>,
+    /// What files dragged from the system are over, that takes a drop (`Screen::files_dragged`).
+    dragged_over: Option<Id>,
     /// What the press drags, if it's on a node that does.
     drag: Option<drag::Drag>,
     /// A trackpad's fingers dragging what drags (`drag_wheel`): where they'd be as a finger, and once lifted, that the
@@ -429,6 +431,7 @@ impl Screen {
             rail: false,
             moving: false,
             captured: None,
+            dragged_over: None,
             placed: Vec::new(),
             layers: HashMap::new(),
             surfaces: Surfaces::default(),

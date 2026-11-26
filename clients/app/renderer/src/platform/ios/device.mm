@@ -151,6 +151,11 @@ static OneScanner* scanning;
 }
 @end
 
+// Whether VisionKit's document scanner is on this device.
+extern "C" bool device_scans(void) {
+  return [VNDocumentCameraViewController isSupported];
+}
+
 // The document scanner over `view`'s window: VisionKit's where there is one, else the camera's photo, else the photo
 // library's. What it scanned goes to `scanned` as a JSON array of the paths of JPEG files, once it's shown and closed.
 // → whether it showed.

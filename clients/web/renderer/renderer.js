@@ -197,6 +197,28 @@
     canvas.addEventListener("pointerup", (event) => (pointer("up")(event), renderer.flush()))
     canvas.addEventListener("pointerleave", pointer("leave"))
     canvas.addEventListener("pointercancel", pointer("cancel"))
+    // Files dragged from the device over the canvas are the page's, as a native window's are (`dragged`): what's under
+    // them that takes a drop shows it, and takes them dropped, which the browser would otherwise open in the page's place.
+    const files = (/** @type {DragEvent} */ event) => !!event.dataTransfer?.types.includes("Files")
+    canvas.addEventListener("dragover", (event) => {
+      if (!files(event)) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"
+      renderer.dragged(event.offsetX, event.offsetY, true)
+    })
+    canvas.addEventListener("dragleave", (event) => files(event) && renderer.dragged(0, 0, false))
+    canvas.addEventListener("drop", async (event) => {
+      if (!files(event)) return
+      event.preventDefault()
+      const [x, y] = [event.offsetX, event.offsetY]
+      const read = async (/** @type {File} */ file) => {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        let binary = ""
+        for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
+        return { name: file.name, body: btoa(binary) }
+      }
+      renderer.dropped(x, y, await Promise.all([...(event.dataTransfer?.files ?? [])].map(read)))
+    })
     // A wheel's lines and pages, in CSS pixels, as a browser scrolls them. A mouse wheel's notch is told as one, an event
     // each, which eases what it scrolls (`Screen::wheel`): one in lines (Firefox's), or in pixels where the browser
     // gives a notch's legacy 120 (`wheelDelta`, as Chrome and Safari do, marking no notch otherwise), or where it gives

@@ -788,6 +788,7 @@ unsafe extern "C" {
     fn device_pick(view: *mut c_void, x: f64, y: f64, width: f64, height: f64, options: *const c_char, chosen: *const c_char, context: *mut c_void, node: i64, picked: extern "C" fn(*mut c_void, i64, *const c_char)) -> bool;
     fn device_share(view: *mut c_void, text: *const c_char) -> bool;
     fn device_scan(view: *mut c_void, context: *mut c_void, scanned: extern "C" fn(*mut c_void, *const c_char)) -> bool;
+    fn device_scans() -> bool;
     fn device_haptic(kind: *const c_char) -> bool;
     fn device_text_size() -> f64;
     fn device_status_bar(view: *mut c_void, context: *mut c_void, tapped: extern "C" fn(*mut c_void));
@@ -807,6 +808,10 @@ impl crate::view::Device for Device {
 
     fn haptic(&mut self, kind: &str) -> bool {
         unsafe { device_haptic(cstring(kind).as_ptr()) }
+    }
+
+    fn scans(&self) -> bool {
+        unsafe { device_scans() }
     }
 
     fn scan_documents(&mut self, scanned: Box<dyn FnOnce(Vec<std::path::PathBuf>) + Send>) -> bool {
