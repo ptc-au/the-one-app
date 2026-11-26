@@ -583,9 +583,11 @@ defmodule OneCore.Tools.Definitions do
     %{
       name: "apps_check",
       installs: true,
+      task_support: :optional,
       description: """
       Looks now for newer versions of the apps you have, as servers do once a day: a new commit at the git source
-      each was deployed from. A trusted app takes it at once, and an untrusted one offers it as its `update`.
+      each was deployed from. A trusted app takes it at once, and an untrusted one offers it as its `update`, so it
+      runs until every update it found is taken, a few seconds an app.
       """,
       inputs: %{type: "object", properties: %{}},
       outputs: %{
