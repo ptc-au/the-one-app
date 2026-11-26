@@ -39,7 +39,7 @@ declare global {
         unsigned(url: string, headers: Record<string, string>): Promise<Response>;
         servers(of?: string): Promise<string[]>;
         admits(key: string, token: string | null): Promise<{ until?: number } | null>;
-        owner(): Promise<string | null>;
+        owners(): Promise<string[]>;
       };
       /** Puts a server on the network's list, as the network's owner approved (`core/edge/presigner`'s `Servers`). */
       SERVERS: { add(key: string): Promise<void> };
@@ -539,14 +539,14 @@ const devices = () => ({
       {
         // Approving a device makes it its person's from then on, so it's asked of a passkey just now. A server's
         // code (`scope` `server`) puts it on the network's list: it runs the network's apps with all it keeps, so
-        // only the network's owner approves it, with a passkey, as One Core's `add_server` is only theirs. That's
+        // only one of the network's owners approves it, with a passkey, as One Core's `add_server` is only theirs. That's
         // done here, before the code is approved, so a server is never told it's in when it isn't.
         matcher: (ctx) => ctx.path === "/device/approve",
         handler: createAuthMiddleware(async (ctx) => {
           const code = await ctx.context.adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.body?.userCode) }] });
           if (code?.scope !== "server") return signedInJustNow(ctx);
           const { user } = await passkeyJustNow(ctx);
-          if (who(user) !== (await env.NETWORK.owner())) throw new APIError("FORBIDDEN", { message: "Only the network's owner adds a server this way." });
+          if (!(await env.NETWORK.owners()).includes(who(user))) throw new APIError("FORBIDDEN", { message: "Only one of the network's owners adds a server this way." });
           if (code.status !== "pending" || code.userId !== user.id || new Date(code.expiresAt).getTime() < Date.now()) return;
           await env.SERVERS.add(code.clientId);
         }),
