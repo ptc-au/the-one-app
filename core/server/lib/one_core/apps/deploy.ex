@@ -400,8 +400,9 @@ defmodule OneCore.Apps.Deploy do
   # What each of the apps `named` that has a latest version says of it (`deployed/0`).
   defp listings(named) do
     abouts =
-      for {artifact, {:ok, about, _tag}} <- Enum.zip(named, Bucket.read_all(Enum.map(named, &"#{&1}/latest"))),
-          do: {artifact, JSON.decode!(about)}
+      named
+      |> Task.async_stream(&{&1, Store.looked(&1)}, max_concurrency: 16, timeout: :infinity)
+      |> Enum.flat_map(fn {:ok, {artifact, about}} -> if about == %{}, do: [], else: [{artifact, about}] end)
 
     described = Bucket.read_all(for {artifact, about} <- abouts, do: "#{artifact}/described/#{about["code"]}")
 

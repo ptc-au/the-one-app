@@ -177,14 +177,13 @@ defmodule OneCore.Tools.Apps do
   # what runs for each owner asked once for all of theirs, where it was asked three times for each (25 Nov: 1.2 s).
   defp listed(installed) do
     apps = for {_at, _name, record} <- installed, do: record["app"]
-    latest = Bucket.read_all(Enum.map(apps, &(&1 <> "/latest")))
+    latest = Enum.map(Task.async_stream(apps, &Store.looked/1, max_concurrency: 16, timeout: :infinity), fn {:ok, about} -> about end)
     updates = Bucket.read_all(Enum.map(apps, &(&1 <> "/update")))
     owners = installed |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
     running = Map.new(owners, &{&1, Apps.running(&1)})
     versions = Map.new(owners, &{&1, Apps.versions([&1])})
 
-    for {{at, name, record}, latest, update} <- Enum.zip([installed, latest, updates]) do
-      about = with {:ok, json, _tag} <- latest, do: JSON.decode!(json), else: (_ -> %{})
+    for {{at, name, record}, about, update} <- Enum.zip([installed, latest, updates]) do
       update = with {:ok, json, _tag} when json != "" <- update, do: JSON.decode!(json), else: (_ -> nil)
 
       at

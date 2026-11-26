@@ -240,7 +240,13 @@ defmodule OneCore.Apps do
     # Told only which apps changed, it's their versions that are new, not the servers. Told nothing of apps, as a
     # server that started or an install says, what everyone deployed is as it was: each server read it all again for
     # each of those (25 Nov: a third of a release's reads, 7.7k of 23k on one.thevantonders.com).
-    if only == :all, do: Servers.reload(owner), else: OneCore.Apps.Deploy.forget(Map.keys(only))
+    if only == :all do
+      Servers.reload(owner)
+    else
+      Store.forget(Map.keys(only))
+      OneCore.Apps.Deploy.forget(Map.keys(only))
+    end
+
     if sync(owner, [], only), do: changed([owner], nil, deployed)
     # An app updated by a server elsewhere may require what isn't installed for them yet.
     if Servers.here?(owner), do: Task.start(fn -> OneCore.Apps.Lifecycle.required(owner) end)
@@ -258,6 +264,7 @@ defmodule OneCore.Apps do
   """
   def reconnected do
     OneCore.Apps.Deploy.forget(:all)
+    Store.forget(:all)
     Servers.report()
     Hooks.invalidate()
     Servers.invalidate()
@@ -509,7 +516,9 @@ defmodule OneCore.Apps do
            state ->
              try do
                {read, installed} = :timer.tc(fn -> Installed.running(owner) end, :millisecond)
-               {loading, newer} = :timer.tc(fn -> Store.newer(Enum.uniq(Map.values(installed)), state.latest) end, :millisecond)
+               # What an owner before them loaded is there already, as for a sync (`sync_once/3`): it's read once.
+               looking = Enum.uniq(Map.values(installed)) -- Map.keys(state.latest)
+               {loading, newer} = :timer.tc(fn -> Store.newer(looking, state.latest) end, :millisecond)
                {state, _changed, _any} = took_over(state, owner, true, installed, newer)
                LoadedVersion.release(for {_artifact, _number, {:ok, version}} <- newer, do: version)
                Logger.info("#{owner}'s #{map_size(installed)} apps started here: what's installed read in #{read} ms, the apps loaded in #{loading} ms")

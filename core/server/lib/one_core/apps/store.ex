@@ -98,6 +98,24 @@ defmodule OneCore.Apps.Store do
     with {:ok, latest, _tag} <- Bucket.read("#{artifact}/latest"), do: JSON.decode!(latest), else: (_ -> %{})
   end
 
+  # How long `looked/1` keeps what it read: the five-minute look at what's installed (`OneCore.Apps`) reads anew.
+  @looked :timer.minutes(1)
+
+  @doc """
+  What `about/1` gives, for looking at what's new in apps, as a sync does for each owner and the Apps tool for each
+  install: kept for a minute, until a deploy here or a server saying it deployed it (`OneCore.Apps.reload/3`) makes
+  it `forget/1`, and read once however many ask at once (`OneCore.Cache`). Each of an app's owners looked at it, and
+  at a server's start every owner does, where the same blob was read for each (25 Nov: 49 times in the minute a server
+  restarted).
+  """
+  def looked(artifact) do
+    Cache.fetch({__MODULE__, :looked}, artifact, fn -> {:commit, about(artifact), expire: @looked} end)
+  end
+
+  @doc "Has `looked/1` read `artifacts` again, or with `:all` everything."
+  def forget(:all), do: Cache.invalidate({__MODULE__, :looked})
+  def forget(artifacts), do: Enum.each(artifacts, &Cache.invalidate({__MODULE__, :looked}, &1))
+
   @doc """
   Whether the app `artifact` is trusted, as its latest version says (`about/1`): an untrusted one runs in a sandbox
   (`OneCore.Sandbox`), and one not deployed yet is trusted until it says otherwise.
@@ -190,6 +208,7 @@ defmodule OneCore.Apps.Store do
     # Another deploy of this app got there first, or a prune began since this one read `latest`, and whoever asked
     # for this one hasn't seen it. What's pruned is nobody's to wait for.
     if wrote == :ok do
+      forget([artifact])
       Task.Supervisor.start_child(OneCore.Asks, fn -> prune(artifact) end)
       {:ok, number}
     else
@@ -298,7 +317,7 @@ defmodule OneCore.Apps.Store do
 
   # Each is loaded beside the others, and held for the caller before the process that loaded it ends.
   defp newer(artifact, latest, load, caller, told) do
-    with %{"number" => number, "code" => code} = in_bucket <- told || unanswered(artifact, fn -> about(artifact) end),
+    with %{"number" => number, "code" => code} = in_bucket <- told || unanswered(artifact, fn -> looked(artifact) end),
          true <- number > Map.get(latest, artifact, 0),
          version when version != nil <-
            unanswered(artifact, fn -> version(artifact, code, load, trusted?(in_bucket)) end),
