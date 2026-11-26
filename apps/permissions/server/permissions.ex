@@ -322,6 +322,7 @@ defmodule Permissions do
     if OneCore.User.first_owner?(who) do
       transaction(call, fn db ->
         query(db, "insert or ignore into tuples (artifact, relation, who) values ('network', 'owner', ?)", [who])
+        publish_owners(db)
       end)
 
       :ok
@@ -335,6 +336,8 @@ defmodule Permissions do
     transaction(call, fn db ->
       for {table, column} <- [tuples: "artifact", tuples: "who", moved: "old", moved: "new", transfers: "artifact", transfers: "receiver", transfers: "sender"],
           do: query(db, "update or replace #{table} set #{column} = ? || substr(#{column}, length(?) + 1) where #{under(column)}", [new, old, old, old, old])
+
+      publish_owners(db)
     end)
 
     nil
@@ -380,6 +383,7 @@ defmodule Permissions do
     transaction(call, fn db ->
       shares!(db, call, artifact, relation)
       query(db, "insert or ignore into tuples (artifact, relation, who) values (?, ?, ?)", [artifact, relation, who])
+      publish_owners(db)
       %{artifact: artifact, relation: relation, who: who}
     end)
   end
@@ -389,6 +393,7 @@ defmodule Permissions do
       shares!(db, call, artifact, relation)
       keeps_an_owner!(db, artifact, relation, who)
       query(db, "delete from tuples where artifact = ? and relation = ? and who = ?", [artifact, relation, who])
+      publish_owners(db)
       %{artifact: artifact, relation: relation, who: who}
     end)
   end
@@ -453,6 +458,7 @@ defmodule Permissions do
 
     transaction(call, fn db ->
       forgotten = query(db, "delete from tuples where who = ? returning artifact", [who])
+      publish_owners(db)
       %{who: who, tuples: length(forgotten)}
     end)
   end
@@ -748,6 +754,14 @@ defmodule Permissions do
     tuples = "select who as next from tuples where artifact = ? and relation in (?, ?, ?)"
     named = for at <- up, %{"next" => who} <- query(db, tuples, [at | Map.fetch!(@enough, relation)]), do: who
     Enum.sort(Enum.filter(followed(db, @members, named, []), &(user?(&1) or &1 == "everyone")))
+  end
+
+  # The network's owners are kept where the edge reads them (`network/owners`, which `Network.owners` has), as the
+  # network's first owner is: the edge says who may add a server to a network none is on, where this database isn't.
+  # It's written as part of each change to who owns, so it fails with it and never says what isn't so.
+  defp publish_owners(db) do
+    owners = Enum.filter(users_with(db, "network", "owner"), &user?/1)
+    with {:error, why} <- Bucket.update("network/owners", fn _was -> JSON.encode!(owners) end), do: raise("The network's owners weren't kept for the edge: #{why}")
   end
 
   # Raises unless whoever asks may write or remove a tuple with this relation to the artifact: an owner or an
