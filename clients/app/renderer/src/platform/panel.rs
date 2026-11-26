@@ -74,6 +74,7 @@ impl Windows {
             screen.shown(false);
         }
         self.display.put_away(&window.parts[0].native, give_back);
+        (window.on_event)(Event::PutAway);
     }
 
     /// Hides window `id`, or shows it again, as a phone's root window is while the page over it shows an app it
@@ -82,6 +83,9 @@ impl Windows {
     /// three images, 36 MB at 3x, under every app).
     pub fn hide(&mut self, id: WindowId, hidden: bool) {
         let Some(window) = self.windows.get_mut(&id) else { return };
+        if window.hidden != hidden {
+            (window.on_event)(Event::Hidden(hidden));
+        }
         window.hidden = hidden;
         if hidden {
             if let Some(renderer) = window.renderer.as_mut() {

@@ -145,8 +145,10 @@ pub enum Event {
     Shown(std::time::Duration),
     /// Something on it moved and is still now: how smoothly its frames went.
     Frames(Frames),
-    /// A panel put itself away, as something else was clicked or came in front.
+    /// A panel was put away, by itself as something else was clicked or came in front, or by its page.
     PutAway,
+    /// A phone's root window was hidden, or shown again, as the page over it shows an app (`Windows::hide`).
+    Hidden(bool),
     /// A window that isn't a panel lost the keyboard: its person is using something else.
     Unfocused,
     /// Its person asked to quit the app from it: Ctrl-Q on Linux.

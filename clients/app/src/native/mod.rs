@@ -485,8 +485,12 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
             Event::Frames(frames) => frames_reported(&app, &frames),
             // Its person knows how to go home now: the page says so to Home Screen, for every device.
             Event::Tipped => crate::app().shell.emit("tipped", json!(null)),
-            Event::PutAway => {
+            Event::PutAway | Event::Hidden(true) => {
                 let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": false}}));
+                crate::memory::changed();
+            }
+            Event::Hidden(false) => {
+                let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": true}}));
                 crate::memory::changed();
             }
             // Its person is using something else, so a new build waiting for what they typed to be sent looks

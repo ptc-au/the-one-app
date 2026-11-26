@@ -47,11 +47,7 @@ impl Windows {
             if !self.windows.get(&id).is_some_and(|window| window.panel) {
                 return self.close(id);
             }
-            self.put_away(id, true);
-            if let Some(window) = self.windows.get_mut(&id) {
-                (window.on_event)(Event::PutAway);
-            }
-            return;
+            return self.put_away(id, true);
         }
         let background = self.background;
         let Some(window) = self.windows.get_mut(&id) else { return };
@@ -137,9 +133,6 @@ impl Windows {
                 window.left = Some(now());
                 screen.activate(false);
                 self.put_away(id, false);
-                if let Some(window) = self.windows.get_mut(&id) {
-                    (window.on_event)(Event::PutAway);
-                }
                 // Its frame as it was put away is what it shows as it opens again (`WindowOptions::snapshot`).
                 return self.keep_snapshot(id);
             }
