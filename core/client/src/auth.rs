@@ -159,8 +159,26 @@ impl DeviceAuthorization {
     /// Asks the network's authorization server for a code to let the device with `key` in by, under this
     /// machine's name, and the `command` that ran it if a terminal did, which the network lists it by.
     async fn request(server: &AuthorizationServer, key: &SecretKey, command: Option<&str>) -> Result<Self> {
+        Self::requested(server, key, command, None).await
+    }
+
+    /// Asks the network at `address` for a code its owner adds the server whose key is `key` to the network's list
+    /// by, with a passkey at its address, under this machine's name (the scope `server`): what `add_server` does, for a
+    /// network with no server on to ask (`apps/sign-in/edge/auth.ts`). Its owner sees the `link` and `code`, and
+    /// `approved` waits for them.
+    pub async fn server(address: &str, key: &SecretKey) -> Result<Self> {
+        Self::requested(&AuthorizationServer::discovered(address).await?, key, None, Some("server")).await
+    }
+
+    /// Waits for the code's answer, as `wait_for_approval` does with nothing to tell it sooner.
+    pub async fn approved(&self) -> Result<(), NotApproved> {
+        self.wait_for_approval(&tokio::sync::Notify::new()).await
+    }
+
+    async fn requested(server: &AuthorizationServer, key: &SecretKey, command: Option<&str>, scope: Option<&str>) -> Result<Self> {
         let mut ask = vec![("client_id", key.public().to_string()), ("name", name())];
         ask.extend(command.map(|command| ("command", command.to_owned())));
+        ask.extend(scope.map(|scope| ("scope", scope.to_owned())));
         let ask = serde_urlencoded::to_string(ask)?;
         let (given, response) = ask_edge(&server.device_authorization_endpoint, key, FORM, ask).await?;
         let (true, Some(link), Some(code), Some(device_code)) = (

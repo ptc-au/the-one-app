@@ -103,8 +103,10 @@ async fn run(args: Vec<String>) -> Result<ExitCode> {
     };
     let client = Client::open(client::home()?, service, resolvers(), Vec::new()).await?;
     // A server runs whether or not its device is signed in, as a new network's first server's isn't until its owner
-    // has joined: the network knows a server by its own key.
-    if !matches!(words.as_slice(), ["serve", "run", ..]) {
+    // has joined: the network knows a server by its own key. So is one made for whoever `ONE_SUBJECT` names, as a
+    // network whose servers are all off signs no device in, and its owner adds the server at its address (`serving::on`).
+    let server = matches!(words.as_slice(), ["serve", "run", ..]) || (words == ["serve", "on"] && env::var_os("ONE_SUBJECT").is_some());
+    if !server {
         signed_in(&client).await?;
     }
     let code = match words.as_slice() {
@@ -124,7 +126,13 @@ async fn run(args: Vec<String>) -> Result<ExitCode> {
             let result = client.request("tools/call", request).await?;
             printed(text(&result))
         }
-        ["serve", "on"] => printed(serving::on(&client).await?),
+        ["serve", "on"] => printed(
+            serving::on(&client, |asked| {
+                eprintln!("No server put this one on the list. The network's owner adds it at {}, if it shows {}", asked.link, asked.code);
+                Ok(())
+            })
+            .await?,
+        ),
         ["serve", "off"] => printed(serving::off(&client).await?),
         ["serve", "run", ..] => {
             serving::run(client.clone()).await?;

@@ -4,8 +4,10 @@ use super::*;
 
 /// Makes this device a server of whoever it's for: its person, or the group or network `ONE_SUBJECT` names. It's put
 /// on their list, its build downloaded and checked, the system set to run it, and it's started: active once it
-/// answers by its key. One that fails is taken back off, and nothing of it is left.
-pub async fn on(client: &Client) -> Result<String> {
+/// answers by its key. One that fails is taken back off, and nothing of it is left. Where no server puts it on the
+/// list, as in a network whose servers are all off, the network's owner adds it as the network's at its address, with
+/// a passkey, by the link and code `ask` is given to show them (`owned`).
+pub async fn on(client: &Client, ask: impl Fn(&client::DeviceAuthorization) -> Result<()>) -> Result<String> {
     let address = client.address().context("A server is for a network with an address, and this one has none.")?;
     let here = Here::of(&client::home()?);
     fs::create_dir_all(&here.folder)?;
@@ -28,11 +30,12 @@ pub async fn on(client: &Client) -> Result<String> {
         }
         ServerMembership::Inactive | ServerMembership::Joining => {}
     }
-    if let Err(error) = join(client, &here, &key, &who).await {
+    if let Err(error) = join(client, &here, &key, &who, ask).await {
         drop(lock);
         let left = undo_joining(client, &here, &key).await;
         return Err(error.context(format!("This device isn't a server{left}")));
     }
+    let who = whose(client, &here)?;
     Ok(format!("This device is a server for {who} now, and starts whenever it does. Its key: {key}\n{address}"))
 }
 
@@ -51,7 +54,7 @@ pub(super) async fn registered(here: &Here, key: &str, who: &str) -> Result<&'st
     })
 }
 
-pub(super) async fn join(client: &Client, here: &Here, key: &str, who: &str) -> Result<()> {
+pub(super) async fn join(client: &Client, here: &Here, key: &str, who: &str, ask: impl Fn(&client::DeviceAuthorization) -> Result<()>) -> Result<()> {
     let joining = |stage| {
         move |record: &mut Record| {
             record.server_membership = ServerMembership::Joining;
@@ -62,15 +65,19 @@ pub(super) async fn join(client: &Client, here: &Here, key: &str, who: &str) -> 
         joining(ServerMembershipStage::Registering)(record);
         record.subject = Some(who.to_owned());
     })?;
-    listed(client, here, "add_server", key).await?;
+    let owned = match listed(client, here, "add_server", key).await {
+        Ok(_) => false,
+        Err(refused) => owned(client, here, ask).await.map_err(|why| why.context(format!("No server put it on the list ({refused:#})")))?,
+    };
     here.change(joining(ServerMembershipStage::Downloading))?;
     if record.current.is_none() {
-        let builds = download(client, &program()?).await?;
+        // With no server to ask for its builds, it takes the core's latest release, as a network's first server does.
+        let builds = if owned { released().await? } else { download(client, &program()?).await? };
         let build = here.take(&builds, &record.told(ServerDaemonStatus::Starting), None).await?;
         here.change(|record| record.current = Some(Pair { build, program: BUILD.to_owned() }))?;
     }
     here.change(joining(ServerMembershipStage::Installing))?;
-    let server = kept(here, key, &program()?, unit_env(who.to_owned(), None).await?);
+    let server = kept(here, key, &program()?, unit_env(whose(client, here)?, None).await?);
     client::system::install(&server)?;
     here.change(joining(ServerMembershipStage::Starting))?;
     // The system starts `one serve run`, which makes it active once it answers by its key. Where it didn't, its log's
@@ -83,6 +90,26 @@ pub(super) async fn join(client: &Client, here: &Here, key: &str, who: &str) -> 
     }
     ensure!(here.read()?.server_membership == ServerMembership::Active, "It started, and didn't answer by its key");
     Ok(())
+}
+
+/// Has the network's owner put this device's server on the network's list, at the network's address with a passkey,
+/// as `add_server` would for them: a device whose server no server put on a list, as where the network's are all off
+/// (`apps/sign-in/edge/auth.ts`). The server's key asks for the code they approve, which `ask` shows them, and it's the
+/// network's from then on. Gives `true` once they approved it.
+async fn owned(client: &Client, here: &Here, ask: impl Fn(&client::DeviceAuthorization) -> Result<()>) -> Result<bool> {
+    let address = client.address().context("A server is for a network with an address, and this one has none.")?;
+    let asked = client::DeviceAuthorization::server(&address, &client::key(&here.folder.join("home/key"))?).await?;
+    ask(&asked)?;
+    asked.approved().await?;
+    here.change(|record| record.subject = Some("network".to_owned()))?;
+    Ok(true)
+}
+
+/// The core's latest release for this kind of machine (`RELEASES`), which a server takes where no server gives it its
+/// network's builds.
+async fn released() -> Result<Map<String, Value>> {
+    let url = format!("{RELEASES}/{}.json", target());
+    Ok(client::web()?.get(&url).send().await?.error_for_status()?.json().await?)
 }
 
 /// Takes back what joining did, from wherever it got to: the system no longer runs it, it's off its owner's list,
@@ -146,8 +173,7 @@ pub async fn first(address: &str, first: &str, owner: &str) -> Result<String> {
             joining(ServerMembershipStage::Downloading)(record);
             record.subject = Some("network".to_owned());
         })?;
-        let url = format!("{RELEASES}/{}.json", target());
-        let builds: Map<String, Value> = client::web()?.get(&url).send().await?.error_for_status()?.json().await?;
+        let builds = released().await?;
         let build = here.take(&builds, &record.told(ServerDaemonStatus::Starting), None).await?;
         here.change(|record| record.current = Some(Pair { build, program: BUILD.to_owned() }))?;
         here.change(joining(ServerMembershipStage::Installing))?;

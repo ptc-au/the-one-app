@@ -108,7 +108,9 @@ pub(crate) fn login() -> Option<bool> {
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) async fn serve(on: bool) -> Result<String, String> {
     let views = views()?;
-    let done = if on { cli::serving::on(&views.client).await } else { cli::serving::off(&views.client).await };
+    // Where no server puts it on the list, the network's owner adds it at the network's address, in the browser.
+    let ask = |asked: &::client::DeviceAuthorization| app().shell.open_url(&asked.link).map_err(anyhow::Error::msg);
+    let done = if on { cli::serving::on(&views.client, ask).await } else { cli::serving::off(&views.client).await };
     done.map_err(|error| format!("{error:#}"))
 }
 
