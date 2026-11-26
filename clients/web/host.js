@@ -317,6 +317,9 @@ const unkept = (response) => response?._meta?.noStore === true
 async function read(view, method, params) {
   const request = JSON.stringify([method, params])
   const cached = responses(view).get(request)
+  // What a write had asked again is waited for: what was kept from before it would undo what the view just did, as a
+  // switch it turned on showing off again until the refetch came back (26 Nov, Virtual Office's door).
+  if (cached?.fetching && cached.fetched < cached.invalidated) await cached.fetching.done
   if (cached) return cached.response
   // Answered before this browser last closed it: that at once, and asked again, the app told if it's changed.
   if (kept.reads[view] && request in kept.reads[view]) {

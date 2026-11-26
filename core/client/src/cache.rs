@@ -358,6 +358,14 @@ impl Subscription {
     /// answered waits for a server.
     async fn read(self: &Arc<Self>, method: &str, params: Value) -> Result<Value> {
         let key = json!([method, params]).to_string();
+        // What a write had asked again is waited for: what was kept from before it would undo what the view just did,
+        // as a switch it turned on showing off again until the refetch came back (26 Nov, Virtual Office's door).
+        let written = self.responses.lock().expect("no view panics").get(&key).and_then(|query| {
+            query.fetching.as_ref().filter(|_| query.fetched < query.invalidated).map(|(_, rx)| rx.clone())
+        });
+        if let Some(mut written) = written {
+            let _ = written.wait_for(|done| *done).await;
+        }
         // What the view was answered is shown again at once, and asked again behind it unless it's being asked or was
         // just answered (`FRESH`): a view outlives its window, so one opened again, or a phone's back from behind
         // another app, would show forever what it was answered before (21 Nov: Sign In & Security reopened without the
