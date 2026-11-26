@@ -189,7 +189,7 @@ function server(built, target, used) {
   return {
     url: (key) => `http://localhost:${listener.port}/host.html?scene=${encodeURIComponent(key)}`,
     // The renderer's frame, drawing the page at its address here.
-    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}&paused#/${scene.page}${scene.link ? `#${encodeURIComponent(scene.link)}` : ""}`)),
+    hostWeb: (key, scene) => pages.set(key, host(scene.page, scene.link, scene.answers, scene.size, !!scene.touch, scene.safeArea, `/renderer/?runtime=${needed}&paused#/${scene.page}${scene.link ? `#${scene.link}` : ""}`)),
     stop: () => listener.stop(true),
   }
 }
@@ -300,19 +300,22 @@ function opening([r, g, b], frames) {
 
 /// A scene drawn by our renderer on the web, in headless Chromium's WebGPU, as `web.png`, once its first frame is drawn
 /// and what moves as it opens has settled, on the headless renderer's clock, language and time zone, each tap pressed
-/// through its ARIA tree.
-async function web(browser, serve, key, scene, folder) {
+/// through its ARIA tree. `broke` is told the page's first uncaught error or panic, which ends the scene at once.
+async function web(browser, serve, key, scene, folder, broke) {
   const page = await browser.newPage({ viewport: { width: scene.size[0], height: scene.size[1] }, deviceScaleFactor: 2, hasTouch: scene.touch, colorScheme: dark ? "dark" : "light", locale: "en-US", timezoneId: scene.timeZone })
   const problems = []
   // Once its GPU is lost on purpose (below), that it says so isn't a fault.
   let losing = false
-  // What the page logs fails it but for the errors the scene says it logs (`errors`), as the headless renderer's `--errors`.
-  const logged = (text) => {
+  // What the page logs fails it but for the errors the scene says it logs (`errors`), as the headless renderer's `--errors`;
+  // an uncaught error or a panic (a page that hangs after it) fails it at once.
+  const logged = (text, fatal) => {
     if (scene.errors?.some((words) => text.includes(words))) return
     if (losing && text.includes("the GPU was lost")) return
+    if (fatal) broke(text)
     problems.push(failing(text))
   }
-  page.on("pageerror", (error) => logged(String(error)))
+  page.on("pageerror", (error) => logged(String(error), true))
+  page.on("console", (message) => message.type() === "error" && message.text().includes("panicked at") && logged(message.text(), true))
   // Warnings that aren't the page's: a preload Chrome saw unused within a few seconds of the page's load, as long as a
   // busy machine's Chromium takes to start the frame's renderer, which does use it; and with `--webgl2`, Chrome's that
   // the WebGPU it was started without gives no adapter.
@@ -985,7 +988,9 @@ const webDrawn = (serve, key, scene, folder) =>
     const hung = Symbol()
     let timer
     const gone = new Promise((resolve) => (timer = setTimeout(resolve, WEB_HANGS_AFTER_MS, hung)))
-    const result = await Promise.race([web(browser, serve, key, scene, folder), gone]).catch((error) => ({ failed: String(error) }))
+    let broke
+    const broken = new Promise((_, reject) => (broke = reject))
+    const result = await Promise.race([web(browser, serve, key, scene, folder, broke), gone, broken]).catch((error) => ({ failed: String(error) }))
     clearTimeout(timer)
     if (result !== hung && !result.failed) {
       browsers.push(browser)
