@@ -227,7 +227,10 @@ impl DeviceAuthorization {
                 _ if given => return Ok(()),
                 Some("slow_down") => interval += Duration::from_secs(5),
                 Some("access_denied") => return Err(NotApproved::Denied),
-                Some("expired_token") => return Err(NotApproved::Expired),
+                // A code the network has forgotten has ended, as the sign-in page says of one (`unknown`): a code is forgotten once
+                // an ask is answered with how it ended, so asking again, as after an answer that was lost, finds none. A device
+                // that is told so asks whether it's in (`admit`), which says if it was approved, as it does for any end.
+                Some("expired_token" | "invalid_grant") => return Err(NotApproved::Expired),
                 // Still waiting, or an answer that isn't one, which is asked again.
                 _ => {}
             }
