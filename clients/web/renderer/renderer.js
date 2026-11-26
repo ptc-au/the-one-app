@@ -61,13 +61,22 @@
     // are the browser's to connect and play too (video.js), and its voices (voice.js).
     const streams = videos(renderer)
     const calls = voices(client.post)
+    // Each node's parent, as a voice is in the page by being under its root (0), and is ended once it's out of it.
+    /** @type {Map<number, number>} */
+    const parents = new Map()
+    const attached = (/** @type {number} */ id) => {
+      for (let at = /** @type {number | undefined} */ (id); at !== undefined; at = parents.get(at)) if (at === 0) return true
+      return false
+    }
+    let settling = false
+    const settle = () => settling || ((settling = true), queueMicrotask(() => ((settling = false), calls.sync(attached))))
     Object.assign(globalThis, {
       mutations: {
         create: (/** @type {number} */ id, /** @type {string} */ type, /** @type {string} */ value) => (type === "video" && streams.created(id), type === "voice" && calls.created(id), renderer.create(id, type, value)),
         set: (/** @type {number} */ id, /** @type {string} */ name, /** @type {unknown} */ value) => (streams.set(id, name, value), calls.set(id, name, value), renderer.set(id, name, value)),
-        insert: renderer.insert,
-        remove: renderer.remove,
-        drop: (/** @type {number} */ id) => (streams.dropped(id), calls.dropped(id), renderer.drop(id)),
+        insert: (/** @type {number} */ parent, /** @type {number} */ id, /** @type {number | undefined} */ before) => (parents.set(id, parent), settle(), renderer.insert(parent, id, before)),
+        remove: (/** @type {number} */ parent, /** @type {number} */ id) => (parents.delete(id), settle(), renderer.remove(parent, id)),
+        drop: (/** @type {number} */ id) => (parents.delete(id), streams.dropped(id), calls.dropped(id), renderer.drop(id)),
         frame: true,
         list: 2,
         video: true,

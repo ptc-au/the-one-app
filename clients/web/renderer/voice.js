@@ -9,6 +9,8 @@
 export function voices(post) {
   /** @type {Set<number>} */
   const all = new Set()
+  /** Those that have been in the page. @type {Set<number>} */
+  const shown = new Set()
   const tell = (/** @type {object} */ event) => globalThis.ui?.event({ timeStamp: performance.now(), ...event })
   const ask = (/** @type {number} */ id, /** @type {string} */ op, /** @type {object} */ params = {}) =>
     post({ jsonrpc: "2.0", id: `voice:${id}:${op}:${crypto.randomUUID()}`, method: "one/voice", params: { op, id, ...params } })
@@ -24,7 +26,17 @@ export function voices(post) {
       if (name === "ice" || name === "answer" || name === "offer" || name === "muted" || name === "volume" || name === "input" || name === "output") ask(id, "set", { name, value })
     },
     dropped(/** @type {number} */ id) {
+      shown.delete(id)
       if (all.delete(id)) ask(id, "drop")
+    },
+    /** Ends each voice that was in the page and no longer is, as soon as it's out, not once its JS lets go of it
+     * (`dropped`), which a garbage collector decides: its connection went on playing the room until then. One not yet
+     * put in the page stays. */
+    sync(/** @type {(id: number) => boolean} */ attached) {
+      for (const id of [...all]) {
+        if (attached(id)) shown.add(id)
+        else if (shown.has(id)) this.dropped(id)
+      }
     },
     /** What its client says of a voice, which its page hears as the event it is. */
     heard(/** @type {{ id: number } & object} */ { id, ...event }) {
