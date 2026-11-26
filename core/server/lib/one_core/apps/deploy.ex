@@ -125,13 +125,7 @@ defmodule OneCore.Apps.Deploy do
     moved = step("installed", fn -> if install, do: Installed.change(owner, name, {:deployed, artifact, nil}), else: %{} end)
     # The other servers load it while this one takes it over.
     owners = Enum.uniq([owner | Installed.installed_for(artifact)])
-    trace = OpenTelemetry.Ctx.get_current()
-
-    Task.Supervisor.start_child(OneCore.Asks, fn ->
-      OpenTelemetry.Ctx.attach(trace)
-      versions = %{artifact => latest}
-      step("notify", fn -> Server.notify_servers(owners, "reload", %{apps: [artifact], versions: versions, deployed: %{name => began}}) end)
-    end)
+    Server.notify_servers(owners, "reload", %{apps: [artifact], versions: %{artifact => latest}, deployed: %{name => began}})
 
     step("sync", fn -> if install, do: Apps.sync(owner, [{artifact, number, {:ok, version}}], %{artifact => nil}) end)
     # This server's clients are told it moved, and when its deploy began, as the others tell theirs.

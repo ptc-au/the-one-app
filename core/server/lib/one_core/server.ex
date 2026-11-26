@@ -253,11 +253,11 @@ defmodule OneCore.Server do
   @doc """
   Tells the other servers running what's `owners'` that there's something new of theirs in the bucket to `look` for: a
   app's version, a server, a service installed, with `params` saying more: `apps`, which changed, or for `invalidate`,
-  the `hooks` whose results were decided from what has since changed. Each has looked or forgotten, or couldn't be
-  reached or didn't within its deadline (`OneCore.Asks.each/3`), when this returns.
+  the `hooks` whose results were decided from what has since changed. It's said, and this returns, at once: servers
+  go off and stall all the time, and each catches up by itself (`told/2`), so nobody waits for every one to answer.
   """
   def notify_servers(owners, what \\ "reload", params \\ %{}),
-    do: notify(Enum.uniq(Enum.flat_map(owners, &told/1)), owners, what, params)
+    do: announce(fn -> Enum.uniq(Enum.flat_map(owners, &told/1)) end, owners, what, params)
 
   # The network's apps run on every server, a person's own too, for them (`OneCore.Apps.loads?/1`), and anyone else's on
   # the servers acting for them, a group's they're in too (`covering`, handed it as it starts).
@@ -272,20 +272,31 @@ defmodule OneCore.Server do
   end
 
   @doc "Tells `servers`, by their keys, what `notify_servers/3` tells the servers acting for `owners`."
-  def notify(servers, owners, what \\ "reload", params \\ %{}) do
+  def notify(servers, owners, what \\ "reload", params \\ %{}), do: announce(fn -> servers end, owners, what, params)
+
+  # Tells the `servers` it works out, in a process of its own, in this call's trace.
+  defp announce(servers, owners, what, params) do
     params = Map.put(params, :owners, owners)
     notification = JSON.encode!(%{jsonrpc: "2.0", method: "notifications/one/" <> what, params: params})
-    told(servers -- [key()], notification)
+    trace = OpenTelemetry.Ctx.get_current()
+
+    Task.Supervisor.start_child(OneCore.Asks, fn ->
+      OpenTelemetry.Ctx.attach(trace)
+      told(servers.() -- [key()], notification)
+    end)
+
     :ok
   end
 
-  # Tells each of `servers`, and tells again, beside this, each that didn't take it while the relay still says it's
-  # ready: a machine that stalls for longer than it's waited for, frozen or too busy to answer, keeps its relay
-  # connection for up to 20 s of saying nothing (`EVERY` in `one_core_iroh/src/outside.rs`), and would never hear of
-  # it. It's told again once it answers the relay's ping. One that isn't ready hears nothing from here: one that
-  # connects again looks at everything then (`OneCore.Apps.reconnected/0`), and one that starts loads the latest.
-  defp told(servers, notification) do
-    {answers, failed} = OneCore.Asks.each(servers, &ask(&1, notification))
+  # Tells each of `servers`, and tells again, beside this, each that didn't take it within a second while the relay
+  # still says it's ready: a machine that stalls, frozen or too busy to answer, keeps its relay connection for up to
+  # 20 s of saying nothing (`EVERY` in `one_core_iroh/src/outside.rs`), and what it was sent meanwhile comes only once
+  # QUIC sends it again, seconds after it's back. It's told again as soon as it answers the relay's ping, with the
+  # usual deadline, so one that's only slow, as an overloaded laptop, isn't told over and over. Looking twice is
+  # harmless. One that isn't ready hears nothing from here: one that connects again looks at everything then
+  # (`OneCore.Apps.reconnected/0`), and one that starts loads the latest.
+  defp told(servers, notification, deadline \\ 1_000) do
+    {answers, failed} = OneCore.Asks.each(servers, &ask(&1, notification), deadline)
     missed = Map.keys(failed) ++ for({server, answer} <- answers, not match?({:ok, _}, answer), do: server)
     for server <- missed, do: Task.Supervisor.start_child(OneCore.Asks, fn -> told_again(server, notification) end)
   end
@@ -293,7 +304,7 @@ defmodule OneCore.Server do
   defp told_again(server, notification) do
     cond do
       Servers.presence_again(server)["server_ready"] != true -> :ok
-      Servers.answers?(server, 5_000) -> told([server], notification)
+      Servers.answers?(server, 5_000) -> told([server], notification, 8_000)
       true -> told_again(server, notification)
     end
   end
@@ -380,7 +391,7 @@ defmodule OneCore.Server do
     Servers.started(key, address, name, owner)
     # The servers that answer for whom it's for (the network's too) look again at who acts for them: one that cached
     # them before this one said it's theirs, as a group's server's first start, otherwise took it for nobody's.
-    Task.start(fn -> notify_servers([owner]) end)
+    notify_servers([owner])
     # The clients that were watching before it stopped may have missed something meanwhile, a new build of its
     # apps among them, so they're told to ask again.
     options.started.()

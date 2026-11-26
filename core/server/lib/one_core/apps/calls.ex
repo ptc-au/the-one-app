@@ -69,8 +69,7 @@ defmodule OneCore.Apps.Calls do
               result = tool(found, about, principal, Map.values(versions), &invoked(versions, name, {:tool, tool, &1}, call))
               owners = Enum.uniq([at | Apps.chain(subject)])
 
-              if cached != [],
-                do: Task.Supervisor.start_child(OneCore.Asks, fn -> Server.notify_servers(owners, "invalidate", %{hooks: cached}) end)
+              if cached != [], do: Server.notify_servers(owners, "invalidate", %{hooks: cached})
               {:ran, result}
             after
               Hooks.invalidate(cached)
