@@ -495,10 +495,10 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                     let _ = to.send(json!({"id": "opened", "command": "opened", "args": {"view": app, "ms": ms}}));
                 }
                 // A computer's launcher, and a menu bar extra's panel, is drawn put away, and is on screen once it's
-                // summoned (`Shown`).
-                if !(launcher || menu_bar) || Native::phone() {
-                    visible(&shown, &to, true);
-                }
+                // summoned (`Shown`), which comes after this on the same frame. Put away, it says so, or its views
+                // counted as on screen until it was first summoned and put away, as after every reload of the Home
+                // Screen (PTC's Mac, 26 Nov).
+                visible(&shown, &to, !(launcher || menu_bar) || Native::phone());
                 // The device hears its person's notifications once their home is on screen, as the web
                 // launcher's page has it (`listen`).
                 if launcher {
