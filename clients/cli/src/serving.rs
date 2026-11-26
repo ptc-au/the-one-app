@@ -303,6 +303,9 @@ mod system {
 
     /// Where to read what the server says: its unit's journal.
     pub fn log(_here: &Here, key: &str) -> String {
+        if !client::system::supervised() {
+            return "the machine's own log".to_owned();
+        }
         format!("`journalctl --user -u {}`", client::system::name(SERVER, key))
     }
 

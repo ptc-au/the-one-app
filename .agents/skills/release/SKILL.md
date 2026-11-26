@@ -74,6 +74,12 @@ once none of them speaks only it. Devices are otherwise not waited for, since th
 | A phone's app | Every network's iPhone app goes to its own TestFlight with `tooling/release client`, where its native code changed (`tooling/testflight`, from each network's repo, `tooling/networks`), and its testers' phones take it; its page and its apps reach it without one. Only Andre's own devices (the internal group) get each build: a network's people get one at a milestone, `tooling/testflight --milestone <the network's repo>`, which Andre calls. Android's plain APK, `one/android-aarch64`, is built here by `tooling/release client` (`cargo tauri android build --apk`), and each network's own made from it and published by `tooling/installers` (`tooling/android-apk`), which its phones install by themselves (`clients/app/src/updater.rs`) |
 | Docs, `tooling/`, `.agents/` | Nothing |
 
+A network's server can run on a Fly Machine (`tooling/fly/deploy <host> [--containers]`, whose header says what it needs
+of 1Password and Fly). Its image holds no build: the entrypoint puts the network's latest `one-cli` on the machine's
+volume and joins as any server does, so a release reaches it as the network's update does, and the image is deployed again
+only when `tooling/fly/` changes. Where no systemd booted the machine (`client::system::supervised`), the machine's init
+runs `one serve run` and `serve on` only registers and downloads.
+
 Windows' builds, `server/windows-x86_64`, `one/windows-x86_64`, `one-cli/windows-x86_64` and the app's installer,
 `one-setup/windows-x86_64` (NSIS's `makensis`, `apt install nsis`), are made on Linux like the others, and are
 built only for a network with a Windows server or device. The owner's Surface is one, a server of the live network

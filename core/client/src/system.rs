@@ -47,6 +47,17 @@ pub fn name(name: &str, key: &str) -> String {
     }
 }
 
+/// Whether the system keeps what it's given running (`install`, `start`): everywhere but a Linux machine that no
+/// systemd booted, as a container's, whose own init (a Fly Machine's, Docker's `--restart`) runs `one serve run` itself
+/// and starts it again, so there's nothing to register and nothing to start.
+pub fn supervised() -> bool {
+    // systemd's own test of whether it booted this machine (`sd_booted`).
+    #[cfg(target_os = "linux")]
+    return Path::new("/run/systemd/system").is_dir();
+    #[cfg(not(target_os = "linux"))]
+    true
+}
+
 /// Whether `program` is there to start: a person may have put another `one serve on` made there by hand.
 pub fn installed(name: &str, key: &str) -> Result<bool> {
     imp::installed(&self::name(name, key))
@@ -121,10 +132,13 @@ mod imp {
     }
 
     pub fn installed(name: &str) -> Result<bool> {
-        Ok(loaded(name)?.is_some())
+        Ok(!super::supervised() || loaded(name)?.is_some())
     }
 
     pub fn install(program: &Program, name: &str) -> Result<bool> {
+        if !super::supervised() {
+            return Ok(false);
+        }
         let loaded = loaded(name)?;
         let unit = match &loaded {
             Some(unit) => unit.clone(),
@@ -163,6 +177,9 @@ mod imp {
 
     /// One on its person's screen starts with their graphical session, unless this process has a display to give it.
     pub fn start(program: &Program, name: &str, again: bool) -> Result<()> {
+        if !super::supervised() {
+            return Ok(());
+        }
         let session = || command("systemctl").args(["--user", "is-active", "graphical-session.target"]).output();
         if program.desktop && !DISPLAY.iter().any(|name| env::var_os(name).is_some()) && !session()?.status.success() {
             return Ok(());
@@ -172,11 +189,17 @@ mod imp {
     }
 
     pub fn stop(name: &str) -> Result<()> {
+        if !super::supervised() {
+            return Ok(());
+        }
         systemctl(&["stop", name])
     }
 
     /// One in its person's own folder of units goes, and one in a folder of its own goes with it.
     pub fn remove(name: &str) -> Result<()> {
+        if !super::supervised() {
+            return Ok(());
+        }
         let loaded = loaded(name)?;
         systemctl(&["disable", "--now", name])?;
         if let Some(unit) = loaded.filter(|unit| unit.exists()) {

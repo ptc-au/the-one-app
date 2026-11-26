@@ -1,0 +1,24 @@
+# A One App server on a Fly Machine, in Sydney, for `tooling/fly`, which gives the app's name and the network's address.
+# It serves nothing at an address: the server connects out to the network's relay, so the app has no services, which is
+# also why Fly has nothing to stop it for being idle. `always` has Fly start it again whenever it ends, as systemd does.
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ONE_HOME = "/data/home"
+  ONE_PROGRAM = "/data/bin/one"
+  ONE_SUBJECT = "network"
+
+[[mounts]]
+  source = "server"
+  destination = "/data"
+  initial_size = "5gb"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[[restart]]
+  policy = "always"

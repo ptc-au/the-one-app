@@ -88,7 +88,8 @@ pub(super) async fn join(client: &Client, here: &Here, key: &str, who: &str, ask
         ensure!(last.is_empty(), "{error:#}. Its last lines: {}", last.into_iter().rev().collect::<Vec<_>>().join(" | "));
         return Err(error);
     }
-    ensure!(here.read()?.server_membership == ServerMembership::Active, "It started, and didn't answer by its key");
+    // Where nothing starts it (`client::system::supervised`), the machine's init runs `one serve run`, which makes it active.
+    ensure!(!client::system::supervised() || here.read()?.server_membership == ServerMembership::Active, "It started, and didn't answer by its key");
     Ok(())
 }
 
@@ -184,7 +185,8 @@ pub async fn first(address: &str, first: &str, owner: &str) -> Result<String> {
         client::system::install(&server)?;
         here.change(joining(ServerMembershipStage::Starting))?;
         system::start(&here, &server).await?;
-        ensure!(here.read()?.server_membership == ServerMembership::Active, "It started, and didn't answer by its key");
+        // Where nothing starts it (`client::system::supervised`), the machine's init runs `one serve run`, which makes it active.
+        ensure!(!client::system::supervised() || here.read()?.server_membership == ServerMembership::Active, "It started, and didn't answer by its key");
         anyhow::Ok(())
     }
     .await;

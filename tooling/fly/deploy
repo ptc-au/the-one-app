@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Puts a network's server on a Fly Machine in Sydney, or takes it to the files here again, from this machine:
+#
+#     tooling/fly/deploy <the network's host> [--containers]
+#
+# The Fly org's token is read from 1Password, the item "Fly.io deploy token" tagged `fly/<host>` (field `api_token`, an
+# org token: `fly tokens create org`), or FLY_API_TOKEN. The app is `one-<host with its dots as dashes>`, made with its
+# volume the first time. Small is a shared-cpu-1x with 1 GB for the network's own apps, which the image has what it
+# needs for (Git, bubblewrap); --containers is a shared-cpu-2x with 4 GB and a 20 GB volume, with Podman, which Containers
+# and Chrome run on. Changing size is a deploy of the other. The server is the network's own, which joins as any does:
+# the first start shows a code in `fly logs -a <app>` that one of the network's owners approves
+# (`one sign-in approve --code <code>`). After that the network's updates take it to each new build, so this runs only
+# when the files here change.
+set -euo pipefail
+(($# >= 1)) || { echo "tooling/fly/deploy <the network's host> [--containers]" >&2 && exit 1; }
+host=$1 big=
+shift
+for arg in "$@"; do
+  case $arg in
+    --containers) big=yes ;;
+    *) echo "tooling/fly/deploy <the network's host> [--containers]" >&2 && exit 1 ;;
+  esac
+done
+here=$(cd "$(dirname "$0")" && pwd)
+command -v flyctl >/dev/null || exec mise exec -C "$here/../.." -- "$0" "$host" "$@"
+if [[ -z ${FLY_API_TOKEN:-} ]]; then
+  items=$(op item list --tags "fly/$host" --format json)
+  [[ $(jq length <<<"$items") == 1 ]] || { echo "Want one 1Password item tagged fly/$host, \"Fly.io deploy token\", with the field api_token" >&2 && exit 1; }
+  FLY_API_TOKEN=$(op read "op://$(jq -r '.[0].vault.id' <<<"$items")/$(jq -r '.[0].id' <<<"$items")/api_token")
+fi
+export FLY_API_TOKEN
+app=one-${host//./-}
+flyctl apps list --json | jq -e --arg app "$app" 'any(.[]; .Name == $app)' >/dev/null || flyctl apps create "$app"
+size=(--vm-size shared-cpu-1x --vm-memory 1024) build=()
+[[ -z $big ]] || { size=(--vm-size shared-cpu-2x --vm-memory 4096 --volume-initial-size 20) build=(--build-arg CONTAINERS=1); }
+flyctl deploy "$here" --config "$here/fly.toml" --app "$app" --ha=false --remote-only --env "ONE_ADDRESS=https://$host" "${size[@]}" "${build[@]}"
+echo "Its log, with the code it shows to be let in: flyctl logs --app $app"
