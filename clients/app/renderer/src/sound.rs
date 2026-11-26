@@ -18,7 +18,9 @@ pub fn play(file: Vec<u8>) -> anyhow::Result<()> {
         return Ok(());
     }
     std::thread::Builder::new().name("sound".into()).spawn(move || match DeviceSinkBuilder::open_default_sink() {
-        Ok(speakers) => {
+        Ok(mut speakers) => {
+            // It's dropped as its sound ends, which is when a stream is meant to be.
+            speakers.log_on_drop(false);
             let player = Player::connect_new(speakers.mixer());
             player.append(sound);
             player.sleep_until_end();
