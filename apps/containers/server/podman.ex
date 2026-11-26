@@ -348,10 +348,16 @@ defmodule Containers.Podman do
 
   def logs(service, id, tail), do: run(service, ["logs", "--tail", "#{tail}", id], 30)
 
-  @doc "Runs `command` with `sh -c` in the container, in `dir`, for at most `timeout` seconds."
-  def exec(service, id, command, dir, timeout) do
+  @doc """
+  Runs `command` with `sh -c` in the container, in `dir`, for at most `timeout` seconds, with `secrets`, values by
+  the variables they're given in: Podman passes each on from its own environment (`--env NAME`), so none is in a
+  command line, and what it printed has `<concealed>` in place of them.
+  """
+  def exec(service, id, command, dir, timeout, secrets \\ %{}) do
     OneCore.Service.touch(service, id)
-    run(service, ["exec"] ++ if(dir, do: ["--workdir", dir], else: []) ++ [id, "sh", "-c", command], timeout)
+    names = Enum.flat_map(Map.keys(secrets), &["--env", &1])
+    ran = OneCore.Command.run(["podman", "exec"] ++ names ++ if(dir, do: ["--workdir", dir], else: []) ++ [id, "sh", "-c", command], timeout, env: Enum.to_list(secrets))
+    %{ran | stdout: clip(concealed(ran.stdout, secrets), @max_bytes), stderr: clip(concealed(ran.stderr, secrets), @max_bytes)}
   end
 
   @doc "A file of the container, as base64, by `podman cp`, which reads a stopped container's too."
@@ -625,4 +631,12 @@ defmodule Containers.Podman do
   end
 
   defp clip(text, max), do: OneCore.Command.clip(text, max)
+
+  # What it printed with `<concealed>` in place of each secret it was given, as 1Password's `op run` conceals them.
+  defp concealed(text, secrets) do
+    case Enum.reject(Map.values(secrets), &(&1 == "")) do
+      [] -> text
+      values -> String.replace(text, values, "<concealed>")
+    end
+  end
 end

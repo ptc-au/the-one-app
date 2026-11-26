@@ -28,6 +28,12 @@ defmodule RemoteShell do
               description: ~s(the command line, run by sh -c, like "df -h" or "cd src && git status"; it reads no input)
             },
             dir: %{type: "string", description: "the folder to run it in, as an absolute path; default the home folder"},
+            secrets: %{
+              type: "object",
+              additionalProperties: %{type: "string"},
+              description:
+                ~s(variables it's given, each the secret of a handle from vault_handle, by name, like {"AZURE_CLIENT_SECRET": "<handle>"}: the command sees them, you don't, and what it prints of them is <concealed>)
+            },
             timeout: %{
               type: "integer",
               minimum: 1,
@@ -58,7 +64,18 @@ defmodule RemoteShell do
   def call("run", %{"command" => command} = inputs, call) do
     if String.trim(command) == "", do: raise("Give a command")
     run = [command, inputs["dir"], Map.get(inputs, "timeout", 60), call.actor]
+    secrets = Map.get(inputs, "secrets", %{})
+    # Only with secrets is the runner asked with them, so one on a device that hasn't updated yet runs the rest.
+    run = if secrets == %{}, do: run, else: run ++ [redeemed(call, secrets)]
     OneCore.Service.call(call, Runner, :run, run, device(call, inputs["device"]))
+  end
+
+  # Each handle's secret, by the variable it's given in: the Vault hands it to this app's code, once.
+  defp redeemed(call, secrets) do
+    for {name, handle} <- secrets, into: %{} do
+      if not (name =~ ~r/^[A-Za-z_][A-Za-z0-9_]*$/), do: raise("A variable's name is letters, digits and _, like AZURE_CLIENT_SECRET.")
+      {name, OneCore.Call.tool(call, "vault", "redeem", %{"handle" => handle})["value"]}
+    end
   end
 
   # The server that is the device called `name`, or nil for none named: whichever runs Remote Shell then answers.

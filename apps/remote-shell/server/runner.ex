@@ -30,19 +30,30 @@ defmodule RemoteShell.Runner do
   end
 
   @doc """
-  Runs `command` in `dir`, the home folder if `nil`, for at most `timeout` seconds, for `by`. Gives its exit code,
-  -1 if it was stopped, and what it printed.
+  Runs `command` in `dir`, the home folder if `nil`, for at most `timeout` seconds, for `by`, with `secrets`, values by
+  the variables they're given in, which the log never holds and what it printed has `<concealed>` in place of. Gives
+  its exit code, -1 if it was stopped, and what it printed.
   """
-  def run(service, command, dir, timeout, by) do
+  def run(service, command, dir, timeout, by, secrets \\ %{}) do
     dir = dir || System.user_home!()
     if not File.dir?(dir), do: raise("There's no folder #{dir} on this device")
     # Run as its person's own shell runs it, as ssh does, without what tells this server which client and server it
     # is (`ONE_HOME`, `ONE_DEVICE`…): with them, another network's app started here took the One App's home for its
     # own, found that app running there and quit (the PTC App on Andre's Mac, 23 Nov).
     unset = for {"ONE_" <> _ = name, _} <- System.get_env(), do: {name, nil}
-    %{exit: exit, stdout: stdout, stderr: stderr} = OneCore.Command.run(["sh", "-c", command], timeout, cd: dir, env: unset)
+    env = unset ++ Enum.to_list(secrets)
+    %{exit: exit, stdout: stdout, stderr: stderr} = OneCore.Command.run(["sh", "-c", command], timeout, cd: dir, env: env)
+    {stdout, stderr} = {concealed(stdout, secrets), concealed(stderr, secrets)}
     ran = %{time: System.system_time(:millisecond), command: command, dir: dir, exit: exit, by: by}
     File.write!(Path.join(OneCore.Service.folder(service), "ran.jsonl"), JSON.encode!(ran) <> "\n", [:append])
     %{exit: exit, stdout: OneCore.Command.clip(stdout, @max_bytes), stderr: OneCore.Command.clip(stderr, @max_bytes)}
+  end
+
+  # What it printed with `<concealed>` in place of each secret it was given, as 1Password's `op run` conceals them.
+  defp concealed(text, secrets) do
+    case Enum.reject(Map.values(secrets), &(&1 == "")) do
+      [] -> text
+      values -> String.replace(text, values, "<concealed>")
+    end
   end
 end

@@ -251,7 +251,13 @@ defmodule Containers do
           one(%{
             command: %{type: "string", description: ~s(the command line, like "apt-get install -y git"; it reads no input)},
             dir: %{type: "string", description: "the folder to run it in; default the image's"},
-            timeout: %{type: "integer", minimum: 1, maximum: 3600, description: "seconds to wait, 1 to 3600; default 60"}
+            timeout: %{type: "integer", minimum: 1, maximum: 3600, description: "seconds to wait, 1 to 3600; default 60"},
+            secrets: %{
+            type: "object",
+            additionalProperties: %{type: "string"},
+            description:
+              ~s(variables it's given, each the secret of a handle from vault_handle, by name, like {"AZURE_CLIENT_SECRET": "<handle>"}: the command sees them, you don't, and what it prints of them is <concealed>)
+          }
           }, ["command"]),
         outputs: @ran
       },
@@ -545,7 +551,10 @@ defmodule Containers do
 
   def call("exec", inputs, call) do
     if String.trim(inputs["command"]) == "", do: raise("Give a command")
-    on(call, inputs, :exec, [inputs["command"], inputs["dir"], Map.get(inputs, "timeout", 60)])
+    exec = [inputs["command"], inputs["dir"], Map.get(inputs, "timeout", 60)]
+    secrets = Map.get(inputs, "secrets", %{})
+    # Only with secrets is Podman's service asked with them, so one on a machine that hasn't updated yet runs the rest.
+    on(call, inputs, :exec, if(secrets == %{}, do: exec, else: exec ++ [redeemed(call, secrets)]))
   end
 
   def call("read_file", %{"path" => path} = inputs, call) do
@@ -760,6 +769,14 @@ defmodule Containers do
   end
 
   # Runs a function of the service on the container called `inputs["container"]`, where it is.
+  # Each handle's secret, by the variable it's given in: the Vault hands it to this app's code, once.
+  defp redeemed(call, secrets) do
+    for {name, handle} <- secrets, into: %{} do
+      if not (name =~ ~r/^[A-Za-z_][A-Za-z0-9_]*$/), do: raise("A variable's name is letters, digits and _, like AZURE_CLIENT_SECRET.")
+      {name, Call.tool(call, "vault", "redeem", %{"handle" => handle})["value"]}
+    end
+  end
+
   defp on(call, inputs, function, arguments \\ []) do
     c = container!(call, inputs)
     Service.call(call, Podman, function, [c.id | arguments], c.server)
