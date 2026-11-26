@@ -48,8 +48,10 @@ const INACTIVE = 6 * 60 * 60_000;
  * that starts it within a minute.
  */
 const INSTANCE = "standard-1";
+/** The server's `ONE_HOME` in its image (`image/Dockerfile`), named here as what's run in it is given none of its environment. */
+const HOME = "/data/home";
 /** What's kept of a joined server, from its `ONE_HOME`, as a gzipped tar in base64, once its record says it's active. */
-const IDENTITY = `cd "$ONE_HOME" && jq -e '.server_membership == "active"' server/state.json >/dev/null && tar cz key network server/state.json server/home/key | base64 -w0`;
+const IDENTITY = `cd ${HOME} && jq -e '.server_membership == "active"' server/state.json >/dev/null && tar cz key network server/state.json server/home/key | base64 -w0`;
 /** The DER of a PKCS #8 Ed25519 private key, but for its 32-byte seed, which follows. */
 const PKCS8 = hex.decode("302e020100300506032b657004220420");
 
@@ -139,9 +141,9 @@ export class Fallback extends DurableObject<FallbackEnv> {
       return output.exitCode === 0 ? new TextDecoder().decode(output.stdout).trim() : null;
     };
     const identity = await said(IDENTITY);
-    if (!identity) return void console.log(JSON.stringify({ fallback: "joining", said: await said(`tail -n 4 "$ONE_HOME/../joining"`) }));
+    if (!identity) return void console.log(JSON.stringify({ fallback: "joining", said: await said(`tail -n 4 ${HOME}/../joining`) }));
     if (identity === (await storage.get<string>("identity"))) return;
-    const seed = Uint8Array.from(atob((await said(`base64 -w0 "$ONE_HOME/server/home/key"`))!), (c) => c.charCodeAt(0));
+    const seed = Uint8Array.from(atob((await said(`base64 -w0 ${HOME}/server/home/key`))!), (c) => c.charCodeAt(0));
     const key = await crypto.subtle.importKey("pkcs8", new Uint8Array([...PKCS8, ...seed]), "Ed25519", true, ["sign"]);
     const { x } = (await crypto.subtle.exportKey("jwk", key)) as JsonWebKey;
     const mine = hex.encode(Uint8Array.from(atob(x!.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
