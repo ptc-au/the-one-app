@@ -770,6 +770,9 @@ export type Client = {
   /** Whether the launcher's panel is see-through where its page draws nothing, so what it draws floats over the
    * desktop, on the system's glass where it asks for it (`tokens.material.window`). */
   transparent?: boolean
+  /** Whether this is an app's menu bar extra's page, in its panel (`menu_bar_extra/0`): false in its window, and not said
+   * where a device has no menu bar, a phone or a browser. */
+  menuBarExtra?: boolean
   /** Whether it's a Mac (or an iPhone or iPad), whose keys are ⌘ where a PC's are Ctrl. */
   mac?: boolean
   /** An app's build's kind of machine, as builds are named (`macos-aarch64`, `windows-x86_64`, `linux-x86_64`). */

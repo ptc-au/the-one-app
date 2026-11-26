@@ -77,7 +77,7 @@ const black = "oklch(0 0 0)"
 const white = "oklch(1 0 0)"
 const neutral = { 185: "oklch(0.185 0 0)", 225: "oklch(0.225 0 0)", 260: "oklch(0.26 0 0)", 269: "oklch(0.269 0 0)" } as const
 const zinc = { 224: "oklch(0.224 0.008 285.76)", 919: "oklch(0.919 0.003 286.35)", 962: "oklch(0.962 0.004 286.32)", 977: "oklch(0.977 0.003 286.35)", 991: "oklch(0.991 0.001 286.38)" } as const
-const red = { 525: "oklch(0.525 0.204 25.56)", 745: "oklch(0.745 0.191 23.4)" } as const
+const red = { 510: "oklch(0.51 0.204 25.56)", 745: "oklch(0.745 0.191 23.4)" } as const
 const orange = { 506: "#9a4d00", 600: "oklch(0.60 0.164 57.12)", 782: "oklch(0.782 0.171 67.22)", 820: "#ffb340" } as const
 const yellow = { 865: "#ffcc00", 885: "#ffd60a" } as const
 const green = { 479: "#13702f", 600: "oklch(0.6 0.17 149)", 756: "#30d158" } as const
@@ -103,7 +103,7 @@ const colours = {
   muted: colour(zinc[919], neutral[269]),
   /** Grey words, and where the keyboard is: the text at 60%, 70% in light (`secondaryLabel`). */
   mutedForeground: colour(opacity(zinc[224], 70), opacity(white, 60)),
-  destructive: colour(red[525], red[745]),
+  destructive: colour(red[510], red[745]),
   /** Warn: "this needs you", but it can wait. */
   warning: colour(orange[600], orange[782]),
   /** A hairline, a field's edge, and what a pressed row fills with: the text at 10%. */
@@ -213,7 +213,7 @@ const edge: Record<"light" | "dark", Shadow[]> = {
 
 const label = colour(zinc[224], white)
 const accents = {
-  red: colour(red[525], red[745]),
+  red: colour(red[510], red[745]),
   orange: colour(orange[600], orange[782]),
   yellow: colour(yellow[865], yellow[885]),
   green: colour(green[600], green[756]),
@@ -414,8 +414,8 @@ export const tokens = {
     /** A raised thing's edge inside: a half-pixel line, lit along the top. */
     edge: lightDark(edge.light, edge.dark),
     /** A field's edge, and where the keyboard is in it, where what's in it is wrong. */
-    wrongEdge: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: red[525], inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: red[745], inset: true }]),
-    wrongFocus: lightDark([{ x: 0, y: 0, blur: 0, spread: 3, colour: opacity(red[525], 30) }], [{ x: 0, y: 0, blur: 0, spread: 3, colour: opacity(red[745], 30) }]),
+    wrongEdge: lightDark([{ x: 0, y: 0, blur: 0, spread: 1, colour: red[510], inset: true }], [{ x: 0, y: 0, blur: 0, spread: 1, colour: red[745], inset: true }]),
+    wrongFocus: lightDark([{ x: 0, y: 0, blur: 0, spread: 3, colour: opacity(red[510], 30) }], [{ x: 0, y: 0, blur: 0, spread: 3, colour: opacity(red[745], 30) }]),
   }, (key) => `shadow-${key}`),
   material: named({ glass: material(20, 1.6), thin: material(18, 1.2), window: material(30, 1.8, true) }, (key) => `material-${key}`),
   font: named(fonts, (key) => `font-${key}`),
