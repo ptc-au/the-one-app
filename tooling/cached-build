@@ -12,6 +12,8 @@
 # built from a file outside the repo (`core/client` names its build from git's HEAD) isn't kept: it's this worktree's.
 # The least recently used go once they're over 20 GB.
 set -euo pipefail
+# It's written for GNU's coreutils and findutils, which a Mac has from Homebrew (`brew install coreutils findutils`).
+[[ $(uname) != Darwin ]] || PATH=$(brew --prefix)/opt/coreutils/libexec/gnubin:$(brew --prefix)/opt/findutils/libexec/gnubin:$PATH
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 folder=$(realpath --relative-to="$root" "$1")
