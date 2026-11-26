@@ -241,7 +241,7 @@ function answered(now) {
   if (was === connection) return
   if (now && lost) {
     for (const subject of new Set(["", ...tools.keys()])) listTools(subject || undefined).catch(() => {})
-    for (const view of views.keys()) refresh(view)
+    heard({})
   }
   if (!now) unanswered ||= performance.now()
   if (now && unanswered && performance.now() - unanswered > 3000) report({ name: "one.client.unanswered", took: performance.now() - unanswered, error: "No server is answering" })
@@ -269,11 +269,23 @@ for (const [target, event] of /** @type {const} */ ([[window, "online"], [docume
 /// What each open app was answered that only reads, by what it asked: it's answered that at once, as
 /// stale-while-revalidate has it, as the app's client answers a view (`Subscription` in `core/client`). A write has
 /// each tool's answer asked again in the background (`fetching`), and the app is told as one comes back different.
-/** @typedef {{ method: string, params: Record<string, unknown>, response: unknown, invalidated: number, fetched: number, fetching?: { generation: number, done: Promise<boolean> } }} CachedQuery */
+/// Each remembers how many times its app had been told something changed when it last read it (`read`, as `told`
+/// counts): an app told reads again what it shows, so what it didn't read since is no longer shown, and isn't asked
+/// again.
+/** @typedef {{ method: string, params: Record<string, unknown>, response: unknown, invalidated: number, fetched: number, read: number, fetching?: { generation: number, done: Promise<boolean> } }} CachedQuery */
 /** @type {Map<string, Map<string, CachedQuery>>} */
 const views = new Map()
 /** @param {string} view */
 const responses = (view) => /** @type {NonNullable<ReturnType<typeof views.get>>} */ (views.get(view) ?? views.set(view, new Map()).get(view))
+/// How many times each open app has been told something changed, by its view.
+/** @type {Map<string, number>} */
+const toldViews = new Map()
+/// Tells `view` that what it was answered changed, so it reads again what it shows.
+/** @param {string} view */
+function tell(view) {
+  toldViews.set(view, (toldViews.get(view) ?? 0) + 1)
+  emit("changed", view)
+}
 
 /** @param {string} view @param {CachedQuery} entry @param {number} generation @returns {Promise<boolean>} */
 function fetchEntry(view, entry, generation) {
@@ -285,7 +297,7 @@ function fetchEntry(view, entry, generation) {
         responses(view).delete(JSON.stringify([entry.method, entry.params]))
         delete kept.reads[view]?.[JSON.stringify([entry.method, entry.params])]
         keep()
-        emit("changed", view)
+        tell(view)
         return true
       }
       if (generation < entry.invalidated || generation < entry.fetched) return true
@@ -294,7 +306,7 @@ function fetchEntry(view, entry, generation) {
       keep()
       if (JSON.stringify(fresh) !== JSON.stringify(entry.response)) {
         entry.response = fresh
-        emit("changed", view)
+        tell(view)
       }
       return true
     },
@@ -320,17 +332,20 @@ async function read(view, method, params) {
   // What a write had asked again is waited for: what was kept from before it would undo what the view just did, as a
   // switch it turned on showing off again until the refetch came back (26 Nov, Virtual Office's door).
   if (cached?.fetching && cached.fetched < cached.invalidated) await cached.fetching.done
-  if (cached) return cached.response
+  if (cached) {
+    cached.read = toldViews.get(view) ?? 0
+    return cached.response
+  }
   // Answered before this browser last closed it: that at once, and asked again, the app told if it's changed.
   if (kept.reads[view] && request in kept.reads[view]) {
-    const entry = { method, params, response: kept.reads[view][request], invalidated: 0, fetched: 0 }
+    const entry = { method, params, response: kept.reads[view][request], invalidated: 0, fetched: 0, read: toldViews.get(view) ?? 0 }
     responses(view).set(request, entry)
     fetchEntry(view, entry, 0)
     return entry.response
   }
   const response = await mcp(method, params)
   if (unkept(response)) return response
-  if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0 })
+  if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0, read: toldViews.get(view) ?? 0 })
   ;(kept.reads[view] ??= {})[request] = response
   keep()
   return /** @type {CachedQuery} */ (responses(view).get(request)).response
@@ -405,17 +420,47 @@ function invalidate(view) {
   }
 }
 
-/// Asks again for everything `view` was answered, or with `app`, each of that app's tools, and tells it as each answer
-/// changes. One already being asked again, as after this browser's own call or for a server's same news said twice, is
-/// waited for, not asked twice, as the app's client does (`refresh` in `core/client/src/cache.rs`).
-/** @param {string} view @param {string} [app] */
-async function refresh(view, app) {
-  await Promise.all(
-    [...(views.get(view)?.values() ?? [])]
-      .filter((cached) => !app || (cached.method === "tools/call" && String(cached.params.name).startsWith(`${app}_`)))
-      .map((cached) => cached.fetching?.done ?? fetchEntry(view, cached, cached.invalidated)),
-  )
+/// Asks again for what `view` still reads that `changed` says may have changed (`covers`), and tells it as each answer
+/// changes. One already being asked again, as after this browser's own call, is waited for, not asked twice. What it
+/// hasn't read since it was last told something changed is no longer shown, as a screen it went on from, and is
+/// forgotten rather than asked again, as the app's client does (`refresh` in `core/client/src/cache.rs`).
+/** @param {string} view @param {Changed} [changed] */
+async function refresh(view, changed = {}) {
+  const cached = views.get(view)
+  if (!cached) return
+  const told = toldViews.get(view) ?? 0
+  let dropped = false
+  for (const [request, entry] of cached) if (entry.read < told) (cached.delete(request), (dropped = true))
+  await Promise.all([...cached.values()].filter((entry) => covers(changed, entry)).map((entry) => entry.fetching?.done ?? fetchEntry(view, entry, entry.invalidated)))
+  // What it reads that was forgotten as it raced the app reading it after it was told comes back as it's read again.
+  if (dropped) tell(view)
 }
+
+/// What a server says changed (`notifications/one/changed`): one app's call's, its tools' answers (`app`); what only
+/// some of One Core's own tools answer, as a server's build or status (`tools`); or with neither, anything, as an
+/// install or a deploy changes. As `Changed` in `core/client/src/cache.rs`.
+/** @typedef {{ app?: unknown, tools?: unknown }} Changed */
+/** @param {Changed} changed @param {CachedQuery} entry */
+function covers({ app, tools }, { method, params }) {
+  const tool = method === "tools/call" ? String(params.name) : undefined
+  if (typeof app === "string") return !!tool?.startsWith(`${app}_`)
+  if (Array.isArray(tools)) return !!tool && tools.includes(tool)
+  return true
+}
+
+/// The open apps on screen, as the page says (`showing`): only they ask again as a server says something changed, and
+/// each other one a server did asks again as it comes on screen (`missed`). While this page is hidden, none is.
+/** @type {Set<string>} */
+let onScreen = new Set()
+/** @type {Set<string>} */
+const missed = new Set()
+/** @param {string} view */
+const shows = (view) => !document.hidden && onScreen.has(view)
+/// Has each open app that's now on screen ask again, if a server said something changed while it wasn't.
+function caughtUp() {
+  for (const view of missed) if (shows(view)) (missed.delete(view), refresh(view))
+}
+document.addEventListener("visibilitychange", caughtUp)
 
 /// What the network's servers say unasked, heard as the app's client hears what it watches (`clients/app/src/session.rs`),
 /// over MCP's stream of it (`GET /mcp`, `core/edge/mcp/mcp.ts`): what something's call changed, as another device's
@@ -434,13 +479,25 @@ function subscribe() {
     if (said.method === "notifications/one/changed") heard(said.params ?? {})
   })
 }
-/// Has every open app ask again for what the app that changed something answered it, or with no app said, for
-/// everything, the apps listed too, as an install or a deploy changes them.
-/** @param {{ app?: unknown }} changed */
-function heard({ app }) {
-  const which = typeof app === "string" ? app : undefined
-  if (!which) emit("changed", "client")
-  for (const view of views.keys()) refresh(view, which)
+/// Has every open app on screen ask again for what a server says changed, and with anything said, the apps listed
+/// too, as an install or a deploy changes them. Every server tells its clients of a change to what's installed, so the
+/// same comes from each, a few ms apart, and only the first is asked about (`AGAIN`), as the app's client does
+/// (`clients/app/src/session.rs`).
+/** @type {[string, number] | undefined} */
+let lastHeard
+const AGAIN = 2000
+/** @param {Changed} changed */
+function heard(changed) {
+  if (typeof changed.app !== "string") {
+    const said = JSON.stringify(changed)
+    if (lastHeard?.[0] === said && performance.now() - lastHeard[1] < AGAIN) return
+    lastHeard = [said, performance.now()]
+  }
+  if (typeof changed.app !== "string" && !Array.isArray(changed.tools)) emit("changed", "client")
+  for (const view of views.keys()) {
+    if (shows(view)) refresh(view, changed)
+    else missed.add(view)
+  }
 }
 
 /// The runtime version each entrypoint a server last listed needs to be drawn by the renderer, by its subject and
@@ -534,7 +591,7 @@ let push =
 /** @param {import("../app/page/host.js").Push} next */
 function pushed(next) {
   push = next
-  for (const view of views.keys()) emit("changed", view)
+  for (const view of views.keys()) tell(view)
 }
 /// Where it was signed in when it last opened, which it opens as, and whether it's signed in now, asked of its
 /// network's address as the page loads, beside whether this browser has WebGPU, not after.
@@ -663,7 +720,12 @@ const commands = {
     return response
   },
   refresh: ({ view }) => refresh(view),
-  close: ({ view }) => void views.delete(view),
+  close: ({ view }) => void (views.delete(view), toldViews.delete(view), missed.delete(view)),
+  /// The open apps on screen, as the page says (`tellShowing` in clients/app/page/client.js).
+  showing({ views }) {
+    onScreen = new Set(views)
+    caughtUp()
+  },
   // The runtime version its renderer draws, which ships with this page: renderer::RUNTIME_VERSION.
   client: () => ({ device, network: location.origin, push, web: true, runtimeVersion: 8 }),
   /// Turns on its notifications, as its person taps to: the browser asks them first, which it does only for a tap.

@@ -2,7 +2,7 @@
 import { haptic, invoke, openLink, sandbox } from "./host.js"
 import { behind, list, listed, names, trusted } from "./apps.js"
 import { chosen, dress, insets, theme, titleBar, titleRow } from "./chrome.js"
-import { bar, baseKey, depth, go, host, key, located, nested, on, open, opened, own, page, panel, phone, reached, shown, within } from "./client.js"
+import { bar, baseKey, depth, go, host, key, located, nested, on, open, opened, own, page, panel, phone, reached, shown, tellShowing, within } from "./client.js"
 import { gestures } from "./gestures.js"
 import { shortcut } from "./shortcuts.js"
 import { byId, exception } from "./util.js"
@@ -130,7 +130,7 @@ async function respond(view, method, params) {
   // app's page shows one, as it may do anything its person may.
   // A frame of its own that's gone: its page is forgotten.
   if (method === "one/frame" && typeof params.forget === "string") {
-    if (nested.get(params.forget)?.in === view) nested.delete(params.forget)
+    if (nested.get(params.forget)?.in === view) (nested.delete(params.forget), tellShowing())
     return {}
   }
   if (method === "one/frame") {
@@ -141,6 +141,7 @@ async function respond(view, method, params) {
     const place = { key: key(entrypoint, subject), entrypoint, subject, host: host(entrypoint, subject) }
     const frame = crypto.randomUUID()
     nested.set(frame, { ...place, frame: view.frame, in: view })
+    tellShowing()
     const url = new URL(located(place), location.href)
     url.searchParams.set("frame", frame)
     return { url: `${url}${fragment ? `#${fragment}` : ""}`, sandbox, frame }

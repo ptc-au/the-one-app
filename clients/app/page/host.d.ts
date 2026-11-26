@@ -191,6 +191,8 @@ export interface Commands {
   recovery_key(args: { subject: string | undefined }): string
   recover(args: { key: string; subject: string | undefined }): void
   visible(args: { onScreen: boolean }): void
+  /** The views on screen: the app in front and those framed in it, which alone ask again as a server says something changed. */
+  showing(args: { views: string[] }): void
   /** Whether the window holds something its person typed and hasn't sent, which a new build waits for. */
   editing(args: { editing: boolean }): void
   opened(args: { view: string; ms: number }): void

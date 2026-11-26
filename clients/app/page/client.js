@@ -302,7 +302,19 @@ export function layer(at) {
     if (other !== view) page(other, { type: "away" })
   }
   gestures()
+  tellShowing()
   return view
+}
+
+/// Tells the host which views are on screen: the one in front and the apps framed in it, as a widget in the
+/// launcher's. Only those ask again as a server says something changed; the others do as they come back on screen.
+export function tellShowing() {
+  const views = new Set(front ? [front] : [])
+  for (let more = true; more; ) {
+    more = false
+    for (const one of nested.values()) if (views.has(one.in) && !views.has(one)) (views.add(one), (more = true))
+  }
+  invoke("showing", { views: [...views].map((view) => view.key) }).catch(() => {})
 }
 
 
