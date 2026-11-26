@@ -6,7 +6,7 @@
 // soft delete's. Security is everything about the key that keeps it. What's missing before the Vault works shows as
 // one box atop the list, with the one thing that fixes it. A request is an alert, as a system's permission prompt is.
 // It's written as the UI library's skill says, so it runs on a native host as it does on the DOM.
-import { createEffect, createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose } from "solid-js"
+import { createEffect, createMemo, createProjection, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose } from "solid-js"
 import { Alert, Button, call, changed, Checkbox, client, component, confirm, Empty, Field, Frame, illustration, Image, inChat, Input, List, open as opening, OwnDevice, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
 
 const look = styles({
@@ -172,16 +172,17 @@ const again = () => [security, contents].forEach(refresh)
 changed(again)
 
 /// Whose Vaults its person can open here: theirs, each group they own, and the network if they own it.
-const owners = createMemo(async () => {
+const ownersAnswer = createProjection(async (): Promise<{ owners: { value: string; label: string; whose: string }[] }> => {
   const me: string | undefined = (await call("sign-in_people").then((text) => JSON.parse(text).people, () => []))[0]?.who
-  if (!me) return []
+  if (!me) return { owners: [] }
   const [groups, network] = await Promise.all([
     call("permissions_groups", {}, { subject: me }).then((text): { group: string; called: string; owners: string[] }[] => JSON.parse(text).groups, () => []),
     call("permissions_check", { artifact: "network", relation: "owner" }, { subject: me }).then((result): boolean => JSON.parse(result).may, () => false),
   ])
   const theirs = groups.filter((group) => group.owners.includes(me)).map((group) => ({ value: group.group, label: group.called, whose: /s$/i.test(group.called) ? `${group.called}'` : `${group.called}'s` }))
-  return [{ value: me, label: "Yours", whose: "your" }, ...theirs, ...(network ? [{ value: "network", label: "The network's", whose: "the network's" }] : [])]
+  return { owners: [{ value: me, label: "Yours", whose: "your" }, ...theirs, ...(network ? [{ value: "network", label: "The network's", whose: "the network's" }] : [])] }
 })
+const owners = () => ownersAnswer.owners
 /// Whose the Vault is, in a sentence: "your", "The Smiths'", "the network's".
 const whom = () => owners().find((owner) => owner.value === security().owner)?.whose ?? "your"
 

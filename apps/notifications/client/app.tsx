@@ -1,7 +1,7 @@
 // Notifications: what you've been told, newest first. Tapping one marks it read and opens the app it's from. A phone or
 // a browser that isn't woken by them says so first, and why, and a browser turns them on here. Which apps may notify you
 // is in Settings (settings.tsx). Its one screen is `notifications_inbox` (`toolInput`).
-import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { createProjection, Errored, Loading, refresh, Show } from "solid-js"
 import { call, changed, client, confirm, Empty, List, ListStyle, Menu, open, Problem, render, Row, Screen, Section, since, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
 import { type Push, PushState } from "./push.tsx"
 
@@ -27,14 +27,15 @@ interface Received {
   read: boolean
 }
 
-const inbox = createMemo(async () => {
+const inboxAnswer = createProjection(async (): Promise<{ notifications: Received[]; push?: Push; settings: boolean }> => {
   const [{ notifications }, { push, settings }]: [{ notifications: Received[] }, { push?: Push; settings?: boolean }] = await Promise.all([
     call("notifications_inbox", toolInput("notifications_inbox").arguments).then(JSON.parse),
     client(),
   ])
   return { notifications, push, settings: settings === true }
 })
-changed(() => refresh(inbox))
+const inbox = () => inboxAnswer
+changed(() => refresh(inboxAnswer))
 
 /// Does something to the inbox, and says what the server said if it wouldn't.
 async function change(tool: string, input = {}) {
@@ -43,7 +44,7 @@ async function change(tool: string, input = {}) {
   } catch (error) {
     toast(error as Error)
   }
-  refresh(inbox)
+  refresh(inboxAnswer)
 }
 
 function tapped(notification: Received) {
@@ -76,7 +77,7 @@ function Inbox(props: { inbox: Inbox }) {
   return (
     <ListStyle value="insetGrouped">
     <Screen heading="Notifications" action={<Show when={props.inbox.notifications.length}><More /></Show>}>
-      <Show when={props.inbox.push}>{(push) => <PushState push={push()} settings={props.inbox.settings} again={() => refresh(inbox)} />}</Show>
+      <Show when={props.inbox.push}>{(push) => <PushState push={push()} settings={props.inbox.settings} again={() => refresh(inboxAnswer)} />}</Show>
       <Section>
         <Show when={props.inbox.notifications.length} fallback={<Empty>No notifications.</Empty>}>
           <List each={props.inbox.notifications}>

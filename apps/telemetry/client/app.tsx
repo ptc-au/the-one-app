@@ -2,7 +2,7 @@
 // metrics viewer is, cut down. The alerts first, then calls over time, what's failing,
 // what's slowest and what AI cost, over the range picked above them, and last what's kept. An alert opens beside the list, saying when it fired and cleared; a failure opens its trace, as a
 // waterfall; a slow tool opens how long it took over time. What's fine is silent: with nothing failing, there's no Failing.
-import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { call, changed, Empty, Icon, List, navigate, plural, Problem, render, Row, Screen, Section, since, size, Spinner, Split, styles, Tabs, Text, tokens, toolInput, View } from "ui"
 import { sizes } from "./sizes.ts"
 
@@ -121,9 +121,11 @@ const RANGES = [
   ["336", "2 Weeks"],
 ]
 const [hours, setHours] = createSignal("24")
-const overview = createMemo(() => call("telemetry_overview", { hours: Number(hours()) }).then((text): Overview => JSON.parse(text)))
-const alerts = createMemo(() => call("telemetry_alerts", { hours: Number(hours()) }).then((text): Alerts => JSON.parse(text)))
-changed(() => (refresh(overview), refresh(alerts)))
+const overviewAnswer = createProjection(() => call("telemetry_overview", { hours: Number(hours()) }).then((text): Overview => JSON.parse(text)))
+const overview = () => overviewAnswer
+const alertsAnswer = createProjection(() => call("telemetry_alerts", { hours: Number(hours()) }).then((text): Alerts => JSON.parse(text)))
+const alerts = () => alertsAnswer
+changed(() => (refresh(overviewAnswer), refresh(alertsAnswer)))
 
 /// What's open beside the list: an alert, `{ alert }`, a failure's trace, `{ failure }`, or a slow tool or app, `{ slow }`.
 /// An alert and a failure's trace are screens of their own, tools and their arguments (`telemetry_alert { id }` at
@@ -223,7 +225,8 @@ function Calls(props: { steps: Overview["calls"] }) {
 
 /// A trace whole, as a waterfall: each span under the one it's in, where it started and how long it took.
 function Trace(props: { id: string; names: Record<string, string> }) {
-  const trace = createMemo(() => call("telemetry_trace", { id: props.id, hours: 336 }).then((text): { spans: Span[] } => JSON.parse(text)))
+  const traceAnswer = createProjection(() => call("telemetry_trace", { id: props.id, hours: 336 }).then((text): { spans: Span[] } => JSON.parse(text)))
+  const trace = () => traceAnswer
   const total = () => Math.max(...trace().spans.map((s) => s.start + s.took), 0.001)
   // A client's span is no server: the app or the CLI that asked.
   const servers = () => new Set(trace().spans.filter((s) => !s.client).map((s) => s.server)).size

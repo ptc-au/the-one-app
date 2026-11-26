@@ -2,7 +2,7 @@
 // its app's icon and what it is) and how long until it's deleted for good, as iOS's Photos and Files show theirs. A
 // press shows an item beside the list (pushed over it on a phone), where Restore and Delete Now are rows of their own;
 // the same two are in its row's menu, and Delete All is for everything.
-import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { createProjection, Errored, Loading, refresh, Show } from "solid-js"
 import { call, changed, confirm, Empty, Image, List, Menu, Problem, Row, Screen, Spinner, Split, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
@@ -28,10 +28,11 @@ interface Item {
   why: string | null
 }
 
-const items = createMemo(() => call("soft-delete_list").then((text): Item[] => JSON.parse(text).deleted))
+const itemsAnswer = createProjection(() => call("soft-delete_list").then((text): { deleted: Item[] } => JSON.parse(text)))
+const items = () => itemsAnswer.deleted
 /// What the apps that name their own artifacts call them, by artifact, asked from this device: the Vault's are ids, as
 /// its items' names are encrypted, and only a server its person chose reads them.
-const called = createMemo(async () => {
+const calledAnswer = createProjection(async () => {
   const asked = Map.groupBy(items().filter((item) => item.names), (item) => `${item.names}_names ${item.owner}`)
   const answers = await Promise.all(
     [...asked.values()].map((some) =>
@@ -41,9 +42,10 @@ const called = createMemo(async () => {
       ),
     ),
   )
-  return new Map(answers.flat().map((one) => [one.artifact, one]))
+  return { names: new Map(answers.flat().map((one) => [one.artifact, one])) }
 })
-changed(() => refresh(items))
+const called = () => calledAnswer.names
+changed(() => refresh(itemsAnswer))
 
 /// An artifact's name as a person reads it: users/alice/made/git-repos/notes is notes.
 const named = (artifact: string) => artifact.split("/").pop()!
@@ -88,7 +90,7 @@ async function doing(tool: string, inputs: object = {}): Promise<any> {
   } catch (error) {
     toast(error as Error)
   } finally {
-    refresh(items)
+    refresh(itemsAnswer)
   }
 }
 

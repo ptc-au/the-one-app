@@ -1,5 +1,5 @@
 // GitHub Sync's group in its page in Settings: which GitHub repos sync with the network, and when each last did.
-import { createMemo, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createProjection, Errored, For, Loading, refresh, Show } from "solid-js"
 import { call, changed, List, Problem, Row, since, Spinner } from "ui"
 
 /** What `github-sync_repos` answers. */
@@ -10,8 +10,9 @@ interface Synced {
 }
 
 export default function Repos() {
-  const synced = createMemo(async (): Promise<Synced> => JSON.parse(await call("github-sync_repos", {})))
-  changed(() => refresh(synced))
+  const syncedAnswer = createProjection(async (): Promise<Synced> => JSON.parse(await call("github-sync_repos", {})))
+  const synced = () => syncedAnswer
+  changed(() => refresh(syncedAnswer))
   const text = (repo: Synced["repos"][number]) =>
     repo.error ? `Couldn't sync: ${repo.error}` : repo.synced ? `Synced ${since(repo.synced)}` : "Not synced yet"
   return (

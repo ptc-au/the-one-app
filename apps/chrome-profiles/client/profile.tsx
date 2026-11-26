@@ -1,7 +1,7 @@
 // A Chrome profile, as the Vault draws it beside its list (the item type `vault.types` gives): updating it yourself,
 // its browser drawn here, which you click and type on as you would Chrome, then save. `Summary` is its row's line in
 // the Vault's list.
-import { createEffect, createMemo, createSignal, Loading, refresh, Show } from "solid-js"
+import { createEffect, createProjection, createSignal, Loading, refresh, Show } from "solid-js"
 import { Button, call, changed, confirm, Field, Input, List, LiveScreen, Problem, Row, Screen, Section, Sheet, since, Status, Steps, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
@@ -38,8 +38,9 @@ const time = (at: number) => {
 }
 /// The profile, as `chrome-profiles_list` answers it now, asked again whenever something changed.
 function useProfile(props: Props) {
-  const profiles = createMemo(() => call("chrome-profiles_list", {}, { subject: props.subject }).then((text): Profile[] => JSON.parse(text).profiles))
-  changed(() => refresh(profiles))
+  const profilesAnswer = createProjection(() => call("chrome-profiles_list", {}, { subject: props.subject }).then((text): { profiles: Profile[] } => JSON.parse(text)))
+  const profiles = () => profilesAnswer.profiles
+  changed(() => refresh(profilesAnswer))
   return () => profiles().find((p) => p.profile === props.item)
 }
 
@@ -58,8 +59,9 @@ export function Summary(props: Props) {
 /// How far the browsers' image is being built, where a machine is building it, as Containers says it ("Installing
 /// packages: 40%"), asked again as it changes. Nothing while none is: then a browser takes a few seconds.
 function Building(props: { subject?: string }) {
-  const machines = createMemo(() => call("containers_machines", {}, { subject: props.subject }).then((text): { desktop?: string | null }[] => JSON.parse(text).machines))
-  changed(() => refresh(machines))
+  const machinesAnswer = createProjection(() => call("containers_machines", {}, { subject: props.subject }).then((text): { machines: { desktop?: string | null }[] } => JSON.parse(text)))
+  const machines = () => machinesAnswer.machines
+  changed(() => refresh(machinesAnswer))
   return <>{machines().find((m) => m.desktop)?.desktop}</>
 }
 

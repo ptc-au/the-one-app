@@ -5,7 +5,7 @@
 // person says it may. Whoever uses it has their key from then on, so a passkey nobody here allowed never does. Above
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
-import { createEffect, createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { createEffect, createMemo, createProjection, Errored, Loading, refresh, Show } from "solid-js"
 import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Spinner, toast, upload, visible } from "ui"
 import { Remove } from "./mine.tsx"
 import { Username } from "./username.tsx"
@@ -22,9 +22,11 @@ interface Passkey {
   from: string | null
 }
 
-const mine = createMemo(() => call("sign-in_devices").then((text): { passkeys: Passkey[] } => JSON.parse(text)))
+const mineAnswer = createProjection(() => call("sign-in_devices").then((text): { passkeys: Passkey[] } => JSON.parse(text)))
+const mine = () => mineAnswer
 /// Whether this device holds its person's key, which it encrypts to their passkeys.
-const holds = createMemo(() => call("encryption_key").then((text): boolean => JSON.parse(text).slot != null))
+const holdsAnswer = createProjection(() => call("encryption_key").then((text): { slot: string | null } => JSON.parse(text)))
+const holds = () => holdsAnswer.slot != null
 /** What `encryption_key` says of a key: whose it is, a group's or the network's encrypted to the person's own, and the servers that should hold the keys of what it encrypts and don't. */
 interface Held {
   owner: string
@@ -46,7 +48,7 @@ async function choose(upload_: boolean) {
     toast(error as Error)
   }
   refreshAvatars()
-  refresh(you)
+  refresh(youAnswer)
 }
 
 /// Their picture, with how they came to have it, and a way to choose another, which wins over Google's.
@@ -93,28 +95,32 @@ function Handle(props: { open: boolean; username?: string; show: Shown["show"] }
           action={<Button variant="secondary" onPress={() => props.show({ form: "username" })}>Change</Button>}
         />
       </List>
-      <Username who={you().who} you username={props.username} open={props.open} onClose={() => props.show()} onChanged={() => refresh(you)} />
+      <Username who={you().who} you username={props.username} open={props.open} onClose={() => props.show()} onChanged={() => refresh(youAnswer)} />
     </Section>
   )
 }
 
 /// The servers waiting for a key a passkey of this person's hands them: their own, and those of the network and the
 /// groups they own, whose keys are encrypted to theirs. One row each, by whose key it is.
-const waitingFor = createMemo(async () => {
+const waitingForAnswer = createProjection(async () => {
   const me: Held = JSON.parse(await call("encryption_key"))
   const groups: { group: string; owners: string[] }[] = JSON.parse(await call("permissions_groups")).groups
   // A key's `owner` is who it was made for, by the username they had then: the groups they own say who they are now.
   const who: string = JSON.parse(await call("sign-in_people")).people[0].who
   const scopes = ["network", ...groups.filter((group) => group.owners.includes(who)).map((group) => group.group)]
   const theirs = await Promise.all(scopes.map((subject) => call("encryption_key", {}, { subject }).then((text): Held => JSON.parse(text), () => null)))
-  return [me, ...theirs.filter((held): held is Held => !!held?.wrapped)]
-    .map((held) => ({ scope: held.owner === me.owner ? undefined : held.owner, servers: [...new Set((held.access ?? []).flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))] }))
-    .filter((waiting) => waiting.servers.length)
+  return {
+    waiting: [me, ...theirs.filter((held): held is Held => !!held?.wrapped)]
+      .map((held) => ({ scope: held.owner === me.owner ? undefined : held.owner, servers: [...new Set((held.access ?? []).flatMap((artifact) => artifact.missing.map((server) => server.name ?? server.key.slice(0, 8))))] }))
+      .filter((waiting) => waiting.servers.length),
+  }
 })
+const waitingFor = () => waitingForAnswer.waiting
 /// Who they are here, and whose picture they're shown by: the one they set (`own`), Google's, or none.
-const you = createMemo(() => call("sign-in_people").then((text): { who: string; called: string | null; picture: "own" | "google" | null } => JSON.parse(text).people[0]))
+const youAnswer = createProjection(() => call("sign-in_people").then((text): { people: { who: string; called: string | null; picture: "own" | "google" | null }[] } => JSON.parse(text)))
+const you = () => youAnswer.people[0]
 
-const again = () => [mine, holds, waitingFor, you].forEach(refresh)
+const again = () => [mineAnswer, holdsAnswer, waitingForAnswer, youAnswer].forEach(refresh)
 changed(again)
 // A passkey made or used in the browser says its key there, which nothing here hears of: it's looked at again as
 // this screen comes back.
@@ -144,7 +150,7 @@ async function allow(passkey: Passkey) {
   }
   if (!(await confirm(question))) return
   await call("sign-in_encrypt_for_passkeys", { passkey: passkey.id, code: passkey.code }).catch(toast)
-  refresh(mine)
+  refresh(mineAnswer)
 }
 
 /// This device, which lets a passkey its own Add Passkey made unlock the key at once, where it holds it: that link was
@@ -157,7 +163,7 @@ createEffect(
     if (!holding) return
     for (const passkey of list.passkeys.filter((passkey) => waiting(passkey) && passkey.from === device && !allowing.has(passkey.id))) {
       allowing.add(passkey.id)
-      call("sign-in_encrypt_for_passkeys", { passkey: passkey.id, code: passkey.code }).then(() => refresh(mine), toast)
+      call("sign-in_encrypt_for_passkeys", { passkey: passkey.id, code: passkey.code }).then(() => refresh(mineAnswer), toast)
     }
   },
 )
@@ -165,7 +171,7 @@ createEffect(
 async function remove(passkey: Passkey) {
   if (!(await confirm({ heading: `Remove ${passkey.name}?`, text: "You won't be able to sign in with it again, or unlock your key with it.", action: "Remove", destructive: true }))) return
   await call("sign-in_remove_passkey", { passkey: passkey.id }).catch(toast)
-  refresh(mine)
+  refresh(mineAnswer)
 }
 
 /// Opens a link in the device's browser, from a tool that makes it.
@@ -217,7 +223,7 @@ export default function SignInAndSecurity(props: Shown) {
         <Problem
           heading="Can't show your passkeys"
           text={error() as Error}
-          action={<Button onPress={() => (refresh(mine), retry())}>Try Again</Button>}
+          action={<Button onPress={() => (refresh(mineAnswer), retry())}>Try Again</Button>}
         />
       </Screen>
     )}

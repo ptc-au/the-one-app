@@ -1,5 +1,5 @@
 // iPhone Simulator: your simulators on every Mac, and one of them live, to use as an iPhone, start, stop or remove.
-import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { createProjection, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
 import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, navigate, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast, toolInput } from "ui"
 
 /** A simulator, as `iphone-simulator_list` answers it. */
@@ -106,8 +106,9 @@ function Detail(props: { simulator: Simulator }) {
 }
 
 function App() {
-  const simulators = createMemo(() => call("iphone-simulator_list").then((text): Simulator[] => JSON.parse(text).simulators))
-  changed(() => refresh(simulators))
+  const simulatorsAnswer = createProjection(() => call("iphone-simulator_list").then((text): { simulators: Simulator[] } => JSON.parse(text)))
+  const simulators = () => simulatorsAnswer.simulators
+  changed(() => refresh(simulatorsAnswer))
   const opened = () => simulators().find((e) => e.name === open())
   return (
     <Errored fallback={(error, reset) => <Screen heading="iPhone Simulator"><Problem heading="Couldn't list your simulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} /></Screen>}>

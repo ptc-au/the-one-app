@@ -1,5 +1,5 @@
 // Android Emulator: your emulators on every machine, and one of them live, to use as a phone, start, stop or remove.
-import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { createProjection, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
 import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, navigate, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast, toolInput } from "ui"
 
 /** An emulator, as `android-emulator_list` answers it. */
@@ -103,8 +103,9 @@ function Detail(props: { emulator: Emulator }) {
 }
 
 function App() {
-  const emulators = createMemo(() => call("android-emulator_list").then((text): Emulator[] => JSON.parse(text).emulators))
-  changed(() => refresh(emulators))
+  const emulatorsAnswer = createProjection(() => call("android-emulator_list").then((text): { emulators: Emulator[] } => JSON.parse(text)))
+  const emulators = () => emulatorsAnswer.emulators
+  changed(() => refresh(emulatorsAnswer))
   const opened = () => emulators().find((e) => e.name === open())
   return (
     <Errored fallback={(error, reset) => <Screen heading="Android Emulator"><Problem heading="Couldn't list your emulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} /></Screen>}>

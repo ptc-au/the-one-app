@@ -1,6 +1,6 @@
 // Holds Your Key, on a device's page in Settings: whether that device holds its person's key, which it's given only
 // by their passkey, with Unlock with Passkey there. One that holds it is switched off here, as `revoke` does.
-import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { createProjection, Errored, Loading, refresh, Show } from "solid-js"
 import { call, changed, List, Problem, Row, Spinner, Switch, toast } from "ui"
 
 /** A device, as `encryption_key` names it. */
@@ -15,14 +15,15 @@ interface Key {
 }
 
 export default function HoldsYourKey(props: { device: string }) {
-  const key = createMemo(async () => {
+  const keyAnswer = createProjection(async (): Promise<{ holds: boolean }> => {
     const that: Key = JSON.parse(await call("encryption_key", { device: props.device }))
     return { holds: that.devices.some((one) => one.device === props.device) }
   })
-  changed(() => refresh(key))
+  const key = () => keyAnswer
+  changed(() => refresh(keyAnswer))
   const revoke = async () => {
     await call("encryption_revoke", { device: props.device }).catch(toast)
-    refresh(key)
+    refresh(keyAnswer)
   }
   const text = () => (key().holds ? "Opens what's encrypted for you on its own." : "Your passkey lets it hold your key: Unlock with Passkey, in its Vault.")
   return (

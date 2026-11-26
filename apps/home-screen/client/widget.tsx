@@ -1,7 +1,7 @@
 // An app's widget in an assistant's chat, under the call of the tool it's drawn from, as it is on a Home Screen page: at
 // the size the call asked for or the widget's first, with its buttons and switches calling their tools, and asked again
 // as its app says something changed, and as often as its layout says while it's shown. The assistant is told how tall it is.
-import { createEffect, createMemo, Errored, Loading, onSettled, refresh, Show, untrack } from "solid-js"
+import { createEffect, createProjection, Errored, Loading, onSettled, refresh, Show, untrack } from "solid-js"
 import { call, changed, type Layout, render, sizeChanged, styles, toolInput, toolResult, View, visible, Widget } from "ui"
 import { type Size } from "./types.ts"
 
@@ -26,8 +26,9 @@ function Refresh(props: { every?: number; then: () => void }) {
 }
 
 function Shown(props: { tool: string; name: string; size: Size }) {
-  const layout = createMemo(() => call(props.tool, { size: props.size }).then((answer) => JSON.parse(answer) as Layout & { refresh?: number }))
-  const again = () => refresh(layout)
+  const layoutAnswer = createProjection(() => call(props.tool, { size: props.size }).then((answer): Layout & { refresh?: number } => JSON.parse(answer)))
+  const layout = () => layoutAnswer
+  const again = () => refresh(layoutAnswer)
   onSettled(() => changed(again))
   // The assistant's page is told a tool that changes something was called (`changed`), and asks again.
   const act = (name: string | undefined, inputs: Record<string, unknown>) => call(`${props.tool.split("_")[0]}_${name}`, inputs)

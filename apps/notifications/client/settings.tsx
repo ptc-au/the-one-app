@@ -1,6 +1,6 @@
 // Notifications, as Settings draws it: whether this phone or browser is woken by them, and each app that has told you
 // something, which you hear from or not.
-import { createMemo, Errored, Loading, refresh, Show } from "solid-js"
+import { createProjection, Errored, Loading, refresh, Show } from "solid-js"
 import { call, changed, client, Empty, List, Problem, Row, Screen, Section, Spinner, Switch, toast } from "ui"
 import { type Push, PushState } from "./push.tsx"
 
@@ -11,11 +11,12 @@ interface App {
   allowed: boolean
 }
 
-const state = createMemo(async () => {
+const stateAnswer = createProjection(async (): Promise<{ apps: App[]; push?: Push; settings: boolean }> => {
   const [apps, { push, settings }]: [App[], { push?: Push; settings?: boolean }] = await Promise.all([call("notifications_apps").then((text) => JSON.parse(text).apps), client()])
   return { apps, push, settings: settings === true }
 })
-changed(() => refresh(state))
+const state = () => stateAnswer
+changed(() => refresh(stateAnswer))
 
 async function allow(app: string, allow: boolean) {
   try {
@@ -23,7 +24,7 @@ async function allow(app: string, allow: boolean) {
   } catch (error) {
     toast(error as Error)
   }
-  refresh(state)
+  refresh(stateAnswer)
 }
 
 export default function NotificationSettings() {
@@ -31,7 +32,7 @@ export default function NotificationSettings() {
     <Screen heading="Notifications" back>
       <Errored fallback={(error) => <Problem heading="Can't show your notifications" text={error() as Error} />}>
         <Loading fallback={<Spinner delay />}>
-          <Show when={state().push}>{(push) => <PushState push={push()} settings={state().settings} again={() => refresh(state)} />}</Show>
+          <Show when={state().push}>{(push) => <PushState push={push()} settings={state().settings} again={() => refresh(stateAnswer)} />}</Show>
           <Section heading="Allow Notifications">
             <Show when={state().apps.length} fallback={<Empty>No app has told you anything yet.</Empty>}>
               <List each={state().apps} keyed={(app) => app.app}>

@@ -1,7 +1,7 @@
 // Backups: the destinations backups go, each saying when it was last backed up and how big it is, or
 // what's wrong; how often they're made and which are kept. A destination opens beside the list with its backups,
 // Restore, Check and Stop Backing Up Here. Backups are the network's, so every call is for the network.
-import { createMemo, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { createProjection, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
 import { Button, call, changed, confirm, date, Empty, Field, Icon, Input, List, plural, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
@@ -44,8 +44,9 @@ interface All {
 }
 
 const network = { subject: "network" }
-const backups = createMemo(() => call("backups_destinations", {}, network).then((text): All => JSON.parse(text)))
-changed(() => refresh(backups))
+const backupsAnswer = createProjection(() => call("backups_destinations", {}, network).then((text): All => JSON.parse(text)))
+const backups = () => backupsAnswer
+changed(() => refresh(backupsAnswer))
 
 /// When a backup was made: its day (`date`, never broken across lines) and time, "Dec 28, 2025, 2:30 PM".
 const when = (at: number) => `${date(at)}, ${time.format(at)}`
@@ -82,7 +83,7 @@ async function doing<T>(does: () => Promise<T>): Promise<T | true | false> {
     toast(error as Error)
     return false
   } finally {
-    refresh(backups)
+    refresh(backupsAnswer)
   }
 }
 
@@ -270,7 +271,7 @@ function Restore(props: { destination: Destination; from?: string; blobs?: strin
   const [app, setApp] = createSignal<string | undefined>(() => named(props.blobs).app)
   const [file, setFile] = createSignal(() => named(props.blobs).file)
   const [missing, setMissing] = createSignal(false)
-  const choices = createMemo(async () => {
+  const choicesAnswer = createProjection(async (): Promise<{ owners: { value: string; label: string }[]; apps: { value: string; label: string }[] }> => {
     const listed = <T,>(tool: string, key: string) => call(tool).then((text): T[] => JSON.parse(text)[key], (): T[] => [])
     const [people, groups, marketplace] = await Promise.all([
       listed<{ who: string; called?: string; joined?: boolean }>("sign-in_everyone", "people"),
@@ -285,6 +286,7 @@ function Restore(props: { destination: Destination; from?: string; blobs?: strin
     const apps = [...new Map(marketplace.filter((app) => app.app).map((app) => [app.name, app.title])).entries()].map(([value, label]) => ({ value, label }))
     return { owners, apps }
   })
+  const choices = () => choicesAnswer
   const backupsOf = () => props.destination.backups.map((backup) => ({ value: backup.name, label: when(backup.at) }))
   const restore = async () => {
     // What a select has chosen until someone picks another is its first.

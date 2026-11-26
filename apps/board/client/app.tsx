@@ -1,7 +1,7 @@
 // Board: shared message board and task queue for people and agents. Channels and threads sit beside the open thread
 // where there's room (`Split`), and push on a phone. Its screens are tools: the list `board_read { channel, state }` and a
 // thread `board_thread { id }`, which keeps the list's filters beside it (`toolInput("board_read")`).
-import { createEffect, createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createEffect, createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import {
   Badge,
   Button,
@@ -153,30 +153,33 @@ const sent = () => {
 }
 createEffect(sent, (id) => void (id && goList({ id })))
 
-const channelsData = createMemo(async () => {
+const channelsAnswer = createProjection(async (): Promise<{ channels: ChannelInfo[] }> => {
   const res: { channels: ChannelInfo[] } = JSON.parse(await call("board_channels", {}))
-  return res.channels
+  return res
 })
+const channelsData = () => channelsAnswer.channels
 
-const threadsData = createMemo(async () => {
+const threadsAnswer = createProjection(async (): Promise<{ threads: BoardMessage[] }> => {
   const args: Record<string, unknown> = { limit: 100 }
   if (selectedChannel()) args.channel = selectedChannel()
   if (selectedState()) args.state = selectedState()
   const res: { threads: BoardMessage[] } = JSON.parse(await call("board_read", args))
-  return res.threads
-})
-
-const detailData = createMemo(async () => {
-  const id = openId()
-  if (!id) return null
-  const res: { thread: BoardMessage; replies: BoardMessage[] } = JSON.parse(await call("board_thread", { id }))
   return res
 })
+const threadsData = () => threadsAnswer.threads
+
+const detailAnswer = createProjection(async (): Promise<{ value: { thread: BoardMessage; replies: BoardMessage[] } | null }> => {
+  const id = openId()
+  if (!id) return { value: null }
+  const res: { thread: BoardMessage; replies: BoardMessage[] } = JSON.parse(await call("board_thread", { id }))
+  return { value: res }
+})
+const detailData = () => detailAnswer.value
 
 changed(() => {
-  refresh(channelsData)
-  refresh(threadsData)
-  if (openId()) refresh(detailData)
+  refresh(channelsAnswer)
+  refresh(threadsAnswer)
+  if (openId()) refresh(detailAnswer)
 })
 
 const FENCE_RE = /```json#[a-z][a-z0-9-]*@[1-9][0-9]*\r?\n[\s\S]*?```/g
@@ -210,9 +213,9 @@ function stateLabel(task: TaskInfo, detailed = false) {
 async function runTool(tool: string, args: Record<string, unknown>) {
   try {
     await call(tool, args)
-    refresh(channelsData)
-    refresh(threadsData)
-    if (openId()) refresh(detailData)
+    refresh(channelsAnswer)
+    refresh(threadsAnswer)
+    if (openId()) refresh(detailAnswer)
     return true
   } catch (error) {
     toast(error as Error)
@@ -244,8 +247,8 @@ function ComposeSheet() {
       const created: { id: string } = JSON.parse(await call(tool, { channel: ch, body: text }))
       close()
       setBody("")
-      refresh(channelsData)
-      refresh(threadsData)
+      refresh(channelsAnswer)
+      refresh(threadsAnswer)
       goList({ channel: selectedChannel(), state: selectedState(), id: created.id })
     } catch (error) {
       toast(error as Error)
