@@ -260,9 +260,11 @@ body[data-drawn] canvas { opacity: 1; pointer-events: auto; } body[data-drawn] #
 <script type="application/json" id="router">${said}</script>
 <script>${script.replace(/<\/script/gi, "<\\/script")}</script>
 `;
-  // What it loads and asks is at the network's address: the renderer and the app's files, and what the page asks.
+  // What it loads and asks is at the network's address: the renderer and the app's files, and what the page asks; as
+  // MCP Apps say it, and as ChatGPT's Apps SDK does (`openai/widgetCSP`).
   const ui = { csp: { resourceDomains: [origin], connectDomains: [origin] } };
-  return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri: call.params?.uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui } }] } });
+  const openai = { connect_domains: [origin], resource_domains: [origin] };
+  return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri: call.params?.uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui, "openai/widgetCSP": openai } }] } });
 }
 
 /** What names the router's page, whatever its version. */
