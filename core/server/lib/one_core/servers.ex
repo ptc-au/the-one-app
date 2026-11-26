@@ -486,12 +486,13 @@ defmodule OneCore.Servers do
   first.
   """
   def joined?(key, owner) do
-    # A network with no list has no server yet, and whichever writes its list is its first. A bucket that refuses
-    # says this isn't the one to.
-    if owner == @network, do: Bucket.write("#{@network}/servers", JSON.encode!([key]))
-    # A server acts for whoever's list it's on that it chose, both ways, as the presigner has it too: on their list,
-    # it says whom it's for, its own blob, before it reads that it's on it. One it chose before keeps them.
+    # A server acts for whoever's list it's on that it chose, both ways, as the presigner has it too: it says whom it's
+    # for, its own blob, first, which the presigner lets it write whatever list it's on, and then reads that it's on
+    # theirs. One it chose before keeps them.
     Bucket.write("servers/#{key}/members", JSON.encode!([owner]))
+    # A network with no list has no server yet, and whichever writes its list is its first. A server added to it since
+    # acts for the network by now, which the presigner wants before it signs that write, which then doesn't land.
+    if owner == @network, do: Bucket.write("#{@network}/servers", JSON.encode!([key]))
     key in read("#{owner}/servers", [])
   rescue
     Bucket.Refused -> false
