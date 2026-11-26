@@ -6,7 +6,7 @@ use crate::tree::{Id, Kind, Mutation};
 
 impl Screen {
     /// What a mutation does to a voice: a new `ice` is a new connection, an `answer` is the screen's, an `offer` is an
-    /// SFU's to answer, `muted` is its microphone, and one dropped is closed. One made tells its page the devices.
+    /// SFU's to answer, `muted` is its microphone, `volume` its speakers', and one dropped is closed. One made tells its page the devices.
     pub(super) fn voice_mutation(&mut self, mutation: &Mutation) {
         match mutation {
             Mutation::Set { id, name, value }
@@ -26,6 +26,7 @@ impl Screen {
                         }
                     }
                     "muted" => voice.mute(value.as_bool().unwrap_or(false)),
+                    "volume" => voice.volume(value.as_f64().unwrap_or(1.0) as f32),
                     "input" => voice.input(value.as_str().filter(|name| !name.is_empty())),
                     "output" => voice.output(value.as_str().filter(|name| !name.is_empty())),
                     _ => {}

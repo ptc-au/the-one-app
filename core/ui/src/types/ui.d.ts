@@ -246,6 +246,8 @@ export type VoiceProps = {
   offer?: string
   /** The microphone isn't sent. */
   muted?: boolean
+  /** How loud the call plays, from 0 (silent) to 1 (the default), as `HTMLMediaElement.volume`. */
+  volume?: number
   /** The audio input device id (empty or omitted for system default). */
   input?: string
   /** The audio output device id (empty or omitted for system default). */

@@ -52,6 +52,8 @@ enum Command {
     Input(Option<String>),
     /// Switch to another audio output device (or system default when `None`).
     Output(Option<String>),
+    /// How loud the speakers play it, from 0 to 1.
+    Volume(f32),
     Close,
 }
 
@@ -63,7 +65,6 @@ struct Shared {
 }
 
 /// A `voice` node: its connection, the last made, and whether its page has had it.
-#[derive(Default)]
 pub(crate) struct Voice {
     commands: Option<Sender<Command>>,
     shared: Arc<Mutex<Shared>>,
@@ -72,10 +73,27 @@ pub(crate) struct Voice {
     /// Chosen audio input and output device names (system default when `None`).
     input: Option<String>,
     output: Option<String>,
+    /// How loud its speakers play it, from 0 to 1, as `HTMLMediaElement.volume`.
+    volume: f32,
     /// An SFU's offer its page set, which its connection may not have been made for yet.
     offer: Option<String>,
     /// It's been in its page, so it's closed once it's out of it (`Screen::sync_voices`).
     pub shown: bool,
+}
+
+impl Default for Voice {
+    fn default() -> Self {
+        Self {
+            commands: None,
+            shared: Arc::default(),
+            muted: false,
+            input: None,
+            output: None,
+            volume: 1.0,
+            offer: None,
+            shown: false,
+        }
+    }
 }
 
 impl Drop for Voice {
@@ -99,6 +117,7 @@ impl Voice {
         let muted = self.muted;
         let input = self.input.clone();
         let output = self.output.clone();
+        let volume = self.volume;
         let offer = self.offer.clone();
         let ice = ice.clone();
         let _ = std::thread::Builder::new().name("voice".into()).spawn(move || {
@@ -107,7 +126,7 @@ impl Voice {
             if let Some(sdp) = offer {
                 let _ = commands.send(Command::Offer(sdp));
             }
-            match connection(ice, muted, input, output, &commands, &received, &out) {
+            match connection(ice, muted, volume, input, output, &commands, &received, &out) {
                 Ok(why) => eprintln!("A voice's connection ended: {why}"),
                 Err(why) => eprintln!("A voice's connection failed: {why:#}"),
             }
@@ -147,6 +166,16 @@ impl Voice {
     pub fn mute(&mut self, muted: bool) {
         self.muted = muted;
         lock(&self.shared).muted = muted;
+    }
+
+    /// How loud its speakers play it, from 0 to 1.
+    pub fn volume(&mut self, volume: f32) {
+        let volume = volume.clamp(0.0, 1.0);
+        if self.volume == volume {
+            return;
+        }
+        self.volume = volume;
+        self.send(Command::Volume(volume));
     }
 
     /// Its audio input device by name (`None` for the system default).
@@ -205,6 +234,7 @@ impl Out {
 fn connection(
     ice: Value,
     muted: bool,
+    volume: f32,
     input: Option<String>,
     output: Option<String>,
     commands: &Sender<Command>,
@@ -240,7 +270,7 @@ fn connection(
         pt: None,
         sent: 0,
         speaking: false,
-        audio: Audio::open(commands, input.as_deref(), output.as_deref(), out)?,
+        audio: Audio::open(commands, volume, input.as_deref(), output.as_deref(), out)?,
     };
     session.run(commands, received, out)
 }
@@ -310,6 +340,7 @@ impl Session {
                         self.audio.speaker(name.as_deref());
                     }
                 }
+                Ok(Command::Volume(volume)) => self.audio.volume = volume,
                 // What the TURN server sent, which the next turn takes.
                 Ok(Command::Wake) => {}
                 Ok(Command::Close) | Err(RecvTimeoutError::Disconnected) => return Ok("it was closed".into()),
@@ -468,7 +499,7 @@ impl Session {
                 }
             }
             for sample in &mut mixed {
-                *sample = sample.clamp(-1.0, 1.0);
+                *sample = (*sample * self.audio.volume).clamp(-1.0, 1.0);
             }
             match &mut self.audio.speaker_resampler {
                 Some(resampler) => {
@@ -573,6 +604,8 @@ impl Drop for AudioSession {
 /// What the speakers play, and what the microphone hears once it's taken out, at 48 kHz mono: aec3's echo canceller
 /// and Opus, from the microphone's device rate to the call's.
 struct Audio {
+    /// How loud the speakers play the call, from 0 to 1.
+    volume: f32,
     /// Kept for as long as the connection: a stream that's dropped stops.
     _mic: Option<cpal::Stream>,
     _speaker: Option<cpal::Stream>,
@@ -639,11 +672,12 @@ fn list_devices() -> Value {
 impl Audio {
     /// The microphone and the speakers, with aec3 and Opus: the devices where this build and this machine have them,
     /// and none where they don't, as a headless machine's or a server's, so a call still connects and is heard.
-    fn open(commands: &Sender<Command>, input: Option<&str>, output: Option<&str>, out: &Out) -> anyhow::Result<Self> {
+    fn open(commands: &Sender<Command>, volume: f32, input: Option<&str>, output: Option<&str>, out: &Out) -> anyhow::Result<Self> {
         let mut audio = Self {
             _mic: None,
             _speaker: None,
             _session: None,
+            volume,
             playing: Arc::new(Mutex::new(VecDeque::new())),
             played: Arc::new(Mutex::new(VecDeque::new())),
             capture: Vec::new(),

@@ -68,7 +68,7 @@ export type Id = number
  *   connection, the last one closed. Its `offer` is the SDP offer it makes once it has gathered its candidates, and
  *   its page sets its `answer`, the screen's; an `offer` its page sets is an SFU's, which it answers, as `answer`.
  *   It sends `state` as it connects (`connecting`, then `connected`, or `lost`), and `speaking`, whether the person
- *   is speaking, as its microphone's level says. Its `muted` turns the microphone off. A host that doesn't draw it
+ *   is speaking, as its microphone's level says. Its `muted` turns the microphone off, and its `volume`, from 0 to 1, how loud the call plays. A host that doesn't draw it
  *   draws nothing in its place (`Mutations.voice`).
  * - `frame`: another app's page (`src`, `<app>/<page>[#<fragment>]`, for `subject`), drawn in its box as an iframe's
  *   is: its own JS in a sandbox of its own, asking its client as its own app, as tall as it says its content is
@@ -326,6 +326,8 @@ export interface Props {
   offer?: string
   /** `voice`: its microphone is off, so the call hears nothing from it. */
   muted?: boolean
+  /** `voice`: how loud the call plays, from 0 to 1 (1 where it says nothing), as `HTMLMediaElement.volume`. */
+  volume?: number
   /** `video`: looked at only, so nothing done on it is sent. */
   watch?: boolean
   /** `video`: what it shows, its accessible name, as an `image`'s `alt`. */

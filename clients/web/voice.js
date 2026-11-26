@@ -214,6 +214,7 @@ const connect = (/** @type {any} */ voice, /** @type {RTCConfiguration} */ ice, 
       Object.assign(el, { autoplay: true, playsInline: true })
       el.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none"
       el.srcObject = new MediaStream([track])
+      el.volume = voice.volume
       applyOutput(voice, el)
       document.body.append(el)
       voice.audios.add(el)
@@ -267,7 +268,7 @@ const answered = async (/** @type {any} */ voice, /** @type {string} */ sdp, /**
 
 /**
  * One of a page's voices: `create` makes it, taking the microphone; `set` hands it what its page gives it (`ice`,
- * `answer`, `offer`, `muted`); `drop` ends it. What it hears comes back through `tell`, to the page that made it.
+ * `answer`, `offer`, `muted`, `volume`); `drop` ends it. What it hears comes back through `tell`, to the page that made it.
  * @param {string} op @param {string} key @param {any} params @param {(event: Record<string, unknown>) => void} tell
  */
 export function voice(op, key, params, tell) {
@@ -287,6 +288,7 @@ export function voice(op, key, params, tell) {
       input: null,
       output: null,
       muted: false,
+      volume: 1,
       context: null,
       timer: null,
       speaking: false,
@@ -327,6 +329,9 @@ export function voice(op, key, params, tell) {
     } else if (name === "muted") {
       one.muted = !!value
       if (one.track) one.track.enabled = !one.muted
+    } else if (name === "volume") {
+      one.volume = typeof value === "number" ? Math.min(1, Math.max(0, value)) : 1
+      for (const el of one.audios) el.volume = one.volume
     } else if (name === "input") {
       const next = typeof value === "string" && value ? value : null
       if (next === one.input) return
