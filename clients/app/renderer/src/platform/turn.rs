@@ -77,6 +77,19 @@ impl Windows {
     /// Makes what draws again, on a new GPU device, where the one it drew with was lost, as a browser makes a lost
     /// WebGPU device's: the atlas and every window's renderer, each window drawn afresh (`Screen::gpu_lost`).
     pub(super) fn recover(&mut self) {
+        // Nothing draws on the lost device meanwhile: its staging buffers are never mapped again (a lost WebGPU
+        // device refuses `mapAsync`), so a window drawing on while the web's new device was asked for panicked
+        // (frame.rs:524, a spinner on SwiftShader's WebGPU). Each window's renderer goes as the loss is seen.
+        // What a GPU that hung holds is never let go: wgpu waits for it with no limit as a surface goes (wgpu-hal's
+        // Direct3D 12 `unconfigure`), and as its queue does (wgpu-core's `Queue::drop`).
+        let hung = self.context.hung();
+        for window in self.windows.values_mut() {
+            if let Some(renderer) = window.renderer.take()
+                && hung
+            {
+                std::mem::forget(renderer);
+            }
+        }
         #[cfg(not(target_arch = "wasm32"))]
         self.recovered(Context::new());
         // The web's is asked for with a promise, and drawn on once it's come.
@@ -95,15 +108,8 @@ impl Windows {
             Ok(made) => made,
             Err(error) => return log::error!("no GPU to draw with again yet: {error:#}"),
         };
-        // What a GPU that hung holds is never let go: wgpu waits for it with no limit as a surface goes (wgpu-hal's
-        // Direct3D 12 `unconfigure`), and as its queue does (wgpu-core's `Queue::drop`).
         let hung = self.context.hung();
         for window in self.windows.values_mut() {
-            if let Some(renderer) = window.renderer.take()
-                && hung
-            {
-                std::mem::forget(renderer);
-            }
             if !self.background && window.parts.iter().all(|part| part.native.has_surface()) {
                 match draws_on(&context, atlas.clone(), &window.parts) {
                     Ok(renderer) => window.renderer = Some(renderer),

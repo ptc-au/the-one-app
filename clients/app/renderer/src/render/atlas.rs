@@ -117,8 +117,9 @@ impl Atlas {
 
     /// Writes what's been added since the last frame into its textures, in `encoder`'s commands, from `belt`, before
     /// the frame that draws it: `Queue::write_texture` would copy it in commands of the queue's own, a command encoder
-    /// more each frame it's used (`Renderer::write_data`). → how many bytes: the glyphs and pictures the frame uploads.
-    pub(crate) fn upload(&self, encoder: &mut wgpu::CommandEncoder, belt: &mut wgpu::util::StagingBelt) -> u64 {
+    /// more each frame it's used (`Renderer::write_data`). → how many bytes: the glyphs and pictures the frame uploads;
+    /// none where a staging buffer didn't map again, its device lost.
+    pub(crate) fn upload(&self, encoder: &mut wgpu::CommandEncoder, belt: &mut wgpu::util::StagingBelt) -> Option<u64> {
         let mut state = self.0.lock();
         let mut uploaded = 0;
         for upload in std::mem::take(&mut state.uploads) {
@@ -132,7 +133,7 @@ impl Atlas {
             let (Some(size), Some(alignment)) = (wgpu::BufferSize::new(u64::from(padded) * u64::from(height)), wgpu::BufferSize::new(512)) else { continue };
             let slice = belt.allocate(size, alignment);
             {
-                let mut staged = slice.get_mapped_range_mut().expect("a staging belt's slice is mapped till it's finished");
+                let mut staged = slice.get_mapped_range_mut().ok()?;
                 for (at, from) in upload.data.chunks(row as usize).enumerate() {
                     let start = at * padded as usize;
                     staged.slice(start..start + from.len()).copy_from_slice(from);
@@ -150,7 +151,7 @@ impl Atlas {
             );
             uploaded += upload.data.len() as u64;
         }
-        uploaded
+        Some(uploaded)
     }
 
     /// How many times its textures have changed (`AtlasState::made`).

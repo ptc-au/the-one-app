@@ -325,7 +325,11 @@ impl Renderer {
             self.shadow_tiles.retain(|key, _| used.contains(key));
         }
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        self.write_data(&mut encoder);
+        if !self.write_data(&mut encoder) {
+            log::error!("the GPU was lost: a staging buffer didn't map again");
+            self.lost.store(true, std::sync::atomic::Ordering::Relaxed);
+            return Draw::Missed;
+        }
         let buffer = self.buffer.clone().expect("written above");
 
         // Shadows' tiles and pictures' tiles first, once for every target that draws them.
@@ -508,8 +512,10 @@ impl Renderer {
     /// Writes the frame's data into its buffer, grown to hold it, and what's been added to the atlas into its
     /// textures, in the frame's own commands: `Queue::write_buffer` and `Queue::write_texture` copy in commands of the
     /// queue's own, a command encoder more each frame they're used, which a Surface's Intel Direct3D 12 driver makes
-    /// and frees as they go: twice the CPU to draw a frame (p95 10 ms, 6.7 with one).
-    fn write_data(&mut self, encoder: &mut wgpu::CommandEncoder) {
+    /// and frees as they go: twice the CPU to draw a frame (p95 10 ms, 6.7 with one). → whether it could: a lost
+    /// device's staging buffers are never mapped again, which the browser's WebGPU says before it says the device was
+    /// lost (SwiftShader's, a spinner drawing on).
+    fn write_data(&mut self, encoder: &mut wgpu::CommandEncoder) -> bool {
         let needed = (self.data.len() as u64).next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT);
         self.data.resize(needed as usize, 0);
         if self.buffer.as_ref().is_none_or(|buffer| buffer.size() < needed) {
@@ -521,10 +527,17 @@ impl Renderer {
             }));
         }
         let size = wgpu::BufferSize::new(needed).expect("a frame has its gamma");
-        self.belt.write_buffer(encoder, self.buffer.as_ref().expect("made above"), 0, size).copy_from_slice(&self.data);
+        let alignment = wgpu::BufferSize::new(wgpu::COPY_BUFFER_ALIGNMENT).expect("not 0");
+        let slice = self.belt.allocate(size, alignment);
+        let Ok(mut staged) = slice.get_mapped_range_mut() else { return false };
+        staged.copy_from_slice(&self.data);
+        drop(staged);
+        encoder.copy_buffer_to_buffer(slice.buffer(), slice.offset(), self.buffer.as_ref().expect("made above"), 0, needed);
+        let Some(uploaded) = self.atlas.upload(encoder, &mut self.belt) else { return false };
         let mut work = self.work.get();
-        work.uploaded = self.atlas.upload(encoder, &mut self.belt);
+        work.uploaded = uploaded;
         self.work.set(work);
+        true
     }
 
     /// Draws the batches `run` names into `view` in one pass, only where `clip` says where it does; a backdrop as one

@@ -304,9 +304,12 @@ function opening([r, g, b], frames) {
 async function web(browser, serve, key, scene, folder) {
   const page = await browser.newPage({ viewport: { width: scene.size[0], height: scene.size[1] }, deviceScaleFactor: 2, hasTouch: scene.touch, colorScheme: dark ? "dark" : "light", locale: "en-US", timezoneId: scene.timeZone })
   const problems = []
+  // Once its GPU is lost on purpose (below), that it says so isn't a fault.
+  let losing = false
   // What the page logs fails it but for the errors the scene says it logs (`errors`), as the headless renderer's `--errors`.
   const logged = (text) => {
     if (scene.errors?.some((words) => text.includes(words))) return
+    if (losing && text.includes("the GPU was lost")) return
     problems.push(failing(text))
   }
   page.on("pageerror", (error) => logged(String(error)))
@@ -316,6 +319,22 @@ async function web(browser, serve, key, scene, folder) {
   const notThePage = ["preferred by this device", "preloaded using link preload but not used within a few seconds", ...(webgl2 ? ["Failed to create WebGPU Context Provider"] : [])]
   page.on("console", (message) => message.type() === "warning" && !notThePage.some((words) => message.text().includes(words)) && logged(message.text()))
   await page.clock.setFixedTime(new Date(Date.UTC(2026, 0, 1)))
+  // Each GPU device the page is given, to lose (below), and its buffers' mappings, to refuse while `refused` is set.
+  await page.addInitScript(() => {
+    const scope = /** @type {any} */ (globalThis)
+    if (!scope.GPUAdapter) return
+    scope.devices = []
+    const requestDevice = GPUAdapter.prototype.requestDevice
+    GPUAdapter.prototype.requestDevice = async function (...given) {
+      const device = await requestDevice.apply(this, given)
+      scope.devices.push(device)
+      return device
+    }
+    const mapAsync = GPUBuffer.prototype.mapAsync
+    GPUBuffer.prototype.mapAsync = function (...given) {
+      return scope.refused ? Promise.reject(new DOMException("the device was lost", "OperationError")) : mapAsync.apply(this, given)
+    }
+  })
   // The first fetch of each picture file fails on the network, as a loaded or flaky connection's does: a picture is tried
   // again, and drawn when it comes, never left broken for a failure that passed.
   const failed = new Map()
@@ -442,6 +461,28 @@ async function web(browser, serve, key, scene, folder) {
   // And it stood still while they were taken, so what they show is of one time.
   const after = drawn && (await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({})))
   if (paused && after?.time !== paused.time) problems.push(failing(`its page's clock ran on from ${paused.time} to ${after?.time} ms while it was pictured, paused, so its pictures aren't of one time`))
+  // Its GPU lost while it draws on, as a software GPU's is when Chrome's watchdog gives up on a slow frame (a VM, a
+  // remote desktop): the browser refuses its buffers' mappings first, then says the device was lost, after a frame or
+  // two more (SwiftShader's, 26 Nov: a spinner's frame drawn between panicked, frame.rs:524). Its clock stepped meanwhile,
+  // so what moves draws, it draws again on a new device, as the same drawn whole, with no error.
+  if (drawn && !webgl2) {
+    losing = true
+    await frame.evaluate(() => (/** @type {any} */ (globalThis).refused = true))
+    for (let frames = 0; frames < 3; frames++) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ step: 16 })).then(() => page.waitForTimeout(100))
+    await frame.evaluate(() => {
+      const scope = /** @type {any} */ (globalThis)
+      scope.refused = false
+      for (const device of scope.devices.splice(0)) device.destroy()
+    })
+    for (let frames = 0; frames < 3; frames++) await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.clock({ step: 16 })).then(() => page.waitForTimeout(100))
+    await settled()
+    await picture("web-lost.png")
+    await frame.evaluate(() => /** @type {any} */ (globalThis).inspector.whole())
+    await settled()
+    await picture("web-lost-whole.png")
+    const unlike = levels(join(folder, "web-lost-whole.png"), join(folder, "web-lost.png"))
+    if (unlike) problems.push(failing(`drawn again on a new GPU device after its own was lost (web-lost.png), it differs from the same drawn whole in ${unlike.differ} pixels, by up to ${unlike.most} levels`))
+  }
   // What its screen reader reads: each text and name in sight (the native query's), and all of them, as the native tree's
   // are checked for words that aren't a person's.
   const { words, names } = drawn

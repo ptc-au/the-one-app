@@ -19,7 +19,7 @@ pub struct Context {
     pub(crate) pipelines: Compiled,
     /// Its device was lost (its GPU was reset, as a Windows driver's TDR resets it, or went), so nothing drawn with
     /// it draws again: what draws makes everything again, on a new one (`Windows::recover`).
-    lost: Arc<AtomicBool>,
+    pub(crate) lost: Arc<AtomicBool>,
     /// Its GPU hung: a wait for it, or a frame, ran past `HANG` with no word from the system (`Renderer::wait`), as
     /// on a Surface's Intel driver that failed its reset (22 Nov). It's lost too, and what it holds is never let go:
     /// wgpu waits for the GPU with no limit as a surface or its queue goes (`Windows::recovered`).

@@ -107,6 +107,9 @@ pub struct Renderer {
     finished: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// Its context's GPU hung (`Context::hung`), which a wait of its own that ran out says.
     hung: Arc<std::sync::atomic::AtomicBool>,
+    /// Its context's device was lost (`Context::lost`), which a staging buffer that didn't map again says before the
+    /// browser does (`write_data`).
+    lost: Arc<std::sync::atomic::AtomicBool>,
     /// Each frame it gave the GPU that it hasn't said it's done, oldest first (`hung`).
     given: std::collections::VecDeque<Given>,
     /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`), and how
@@ -390,6 +393,7 @@ impl Renderer {
             frames: 0,
             finished: Default::default(),
             hung: context.hung.clone(),
+            lost: context.lost.clone(),
             given: Default::default(),
             #[cfg(feature = "fake")]
             scene: None,
