@@ -293,7 +293,9 @@ export function Checkbox(props: ChoiceProps) {
 
 /// `<Switch label="Reimbursable" value={on()} onValueChange={set} />`: something
 /// that's on or off, and takes effect at once, at the end of what it says, or in a computer's form where its label is beside it, at the
-/// controls' start. A checkbox in every other way.
+/// controls' start. A checkbox in every other way. Each holds what was chosen while what `onValueChange` gives back is
+/// under way, `async (on) => { await call("office_set_door", { on }); refresh(office) }`'s call and what it asks again,
+/// so a read that left before it can't turn it back for a moment; as do a `RadioGroup`, a `Select` and `Tabs`.
 export function Switch(props: ChoiceProps) {
   return (
     <Choice

@@ -1,6 +1,6 @@
 // Who or what is shown by a picture: a person's, as they set it or Google has it, the network's icon, a group's
 // members' faces, and else their initials on a colour of their own. Drawn on the drawing primitives, the same on every host.
-import { createEffect, createSignal, For, Show } from "solid-js"
+import { createEffect, createSignal, For, Show, untrack } from "solid-js"
 import { Image, Text, View } from "#primitives"
 import { call, changed } from "#bridge"
 import { styles } from "../styles.ts"
@@ -60,6 +60,8 @@ const layouts: Record<number, [number, number, number][]> = {
 /** What a picture is kept for, in milliseconds, before the next avatar of its subject asks again: someone changes theirs on another device. */
 const KEPT = 5 * 60 * 1000
 const kept = new Map<string, { at: number; seen: Promise<Seen> }>()
+/** What each subject was last answered, which an avatar of it is drawn with at once, as it mounts again and while it's asked again. */
+const known = new Map<string, Seen>()
 const wanted = new Map<string, (seen: Seen) => void>()
 /** How many pictures one ask is for, as `sign-in_pictures` takes. */
 const MOST = 100
@@ -74,12 +76,17 @@ async function ask() {
     try {
       // `members` is new beside `pictures`: a network whose Sign-In is older answers none, and a group is its initials.
       const { pictures, members = {} }: { pictures: Record<string, string | null>; members?: Record<string, string[]> } = JSON.parse(await call("sign-in_pictures", { subjects: these }))
-      for (const subject of these) resolve.get(subject)!({ picture: pictures[subject] ?? null, faces: members[subject]?.map((member) => ({ subject: member, picture: pictures[member] })) })
+      for (const subject of these) {
+        const answer = { picture: pictures[subject] ?? null, faces: members[subject]?.map((member) => ({ subject: member, picture: pictures[member] })) }
+        // The same as before is the same object, so nothing drawn with it is drawn again.
+        if (JSON.stringify(answer) !== JSON.stringify(known.get(subject))) known.set(subject, answer)
+        resolve.get(subject)!(known.get(subject)!)
+      }
     } catch (error) {
       console.error(`Couldn't ask for the pictures of ${these.join(", ")}: ${(error as Error).message}`)
       for (const subject of these) {
         kept.delete(subject)
-        resolve.get(subject)!({ picture: null })
+        resolve.get(subject)!(known.get(subject) ?? { picture: null })
       }
     }
   }
@@ -118,13 +125,13 @@ function initials(subject: string, name?: string) {
 /// none) on a colour of their own, round for a person, a rounded square for a group. The pictures are asked of Sign-In
 /// as the avatar is drawn, with every other in the same turn, and show as they arrive; `faces`, where they're known
 /// already (a scene's, which calls no tools), are drawn as they are. `size` is `small` (24), `medium` (32, the default)
-/// or `large` (64).
+/// or `large` (64). A subject's picture once had is drawn at once wherever it's drawn again, and kept while it's asked again.
 export function Avatar(props: { subject: string; name?: string; size?: keyof typeof across; faces?: Face[] }) {
-  const [found, setFound] = createSignal<Seen>({ picture: null })
+  const [found, setFound] = createSignal<Seen>(untrack(() => known.get(props.subject)) ?? { picture: null })
   createEffect(
     () => [props.faces ? undefined : props.subject, version()] as const,
-    ([subject]) => {
-      setFound({ picture: null })
+    ([subject], was) => {
+      if (subject !== was?.[0]) setFound((subject && known.get(subject)) || { picture: null })
       if (subject) seen(subject).then((answer) => subject === props.subject && setFound(answer))
     },
   )

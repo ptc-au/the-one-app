@@ -224,8 +224,10 @@ type Content = { type: string; text?: string; uri?: string; data?: string; mimeT
 /// tool answers with is its address, which an `<Image>` takes as its `src`: a `data:` one, or for a large file, one
 /// the client keeps the file at. A tool that refuses throws an `Error` whose `message` is what a person reads of
 /// what it said (`readable`), and whose `cause` is all of it, as an agent reads it. The client keeps the answer of a tool
-/// that only reads, and answers with it at once. A screen that shows what a tool answers reads it in a memo:
-/// `const notes = createMemo(() => call("notes_list").then(JSON.parse))`, under `<Loading>`.
+/// that only reads, and answers with it at once, but after a write waits for it asked again. A screen that shows what a
+/// tool answers reads it in a projection, `const notes = createProjection(() => call("notes_list").then(JSON.parse))`, under
+/// `<Loading>`: asked again (`refresh(notes)`), each record with the same `id` stays the same object, so what's drawn of
+/// it isn't made again, and nothing flashes. A memo's answer is new objects each time, which `lint:app` warns of.
 /// An app opened from a group's Home Screen page is answered for the group, with nothing said. A page that shows more
 /// than one of them says who each call is for: `call("home-screen_pages", {}, { subject: "groups/family" })`, or `network`.
 export const call: typeof Page.call = async (tool, inputs = {}, { subject } = {}) => {

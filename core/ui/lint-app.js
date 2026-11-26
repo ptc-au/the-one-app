@@ -2,7 +2,8 @@
 // alone, as its tsconfig.json says by extending tsconfig.app.json, with TypeScript's own checker. It fails on an element of
 // the DOM's, `document`, `window` or any other Web API, a stylesheet, a prop a native host can't draw, and a `For` as a
 // `List`'s rows, which makes them all at once (`List each` makes those near the window), and a `Row` straight in a `Section`,
-// which has no card (the `List` it's in draws it), and a `Button` of `variant="destructive"`, which only an alert draws. A server runs it
+// which has no card (the `List` it's in draws it), and a `Button` of `variant="destructive"`, which only an alert draws; and it warns of a
+// tool's answer read in a `createMemo`, which a projection keeps the same objects of as it's asked again. A server runs it
 // too, as the UI library it serves holds it (build.js), on the app it deploys, where an entrypoint says its `runtime_version`
 // (`OneCore.Entrypoint.lint/3`). Its errors are TypeScript's, a line each: file, line, column and message, as the folder names it.
 // A raw colour, length, shadow or font in a static style fails it, and a colour written out anywhere in its code, but in
@@ -112,6 +113,19 @@ function dom() {
           const icon = inner.openingElement?.attributes.some((one) => one.type === "JSXAttribute" && one.name.name === "size" && one.value?.value === "icon")
           if (inner.type === "JSXElement" && named(inner) === "Button" && !icon) found.push(`${at(inner)}: error: a \`Button\` in a \`Row\`'s \`end\` squeezes its words: a button goes in \`action\` (\`<Row heading="…" action={<Button>…</Button>} />\`), which a phone puts under them; \`end\` is for an icon, an amount or a switch`)
         })
+      }
+      // `createMemo(() => call("notes_list").then(JSON.parse))`: a memo's answer is new objects each time it's asked again,
+      // so a `For` over its records makes every row again, and a `Show keyed` on one its whole screen, each picture in
+      // them blank while it's fetched again: the app flashes. A projection keeps each record with the same `id` the
+      // same object, so only what changed is drawn again.
+      if (node.type === "CallExpression" && node.callee.name === "createMemo" && node.arguments[0]) {
+        let calls = false
+        let parses = false
+        walk(node.arguments[0], (inner) => {
+          if (inner.type === "CallExpression" && inner.callee.type === "Identifier" && inner.callee.name === "call") calls = true
+          if (inner.type === "MemberExpression" && inner.object.name === "JSON" && inner.property.name === "parse") parses = true
+        })
+        if (calls && parses) noted.push(`${at(node)}: warning: a tool's answer in a \`createMemo\` is new objects each time it's asked again, so what's drawn of it is made again, and flashes: read it in \`createProjection(() => call(…).then(JSON.parse))\`, which keeps each record with the same \`id\` the same object`)
       }
       // `globalThis.document`, `self["window"]`
       const object = unwrapped(node.object)
