@@ -345,10 +345,11 @@ async function allowed(env: Env, by: string, token: string | null, tokens: strin
   const installer = ((operation === "write" || operation === "remove") && INSTALLED.exec(key)?.[1]) || (!reads && DEPLOYED.exec(key)?.[1]);
   // A new network has no server yet, so nobody is on a list. The first is whichever shows the secret this
   // edge was deployed with (`FIRST_SERVER`), which only whoever deployed it knows: it reads what any server reads as
-  // it starts, as who was renamed (`OneCore.User`), and writes the network's list. The secret writes nothing after
-  // that, since the bucket lets only the first write land.
+  // it starts, as who was renamed (`OneCore.User`), and writes the network's list. The secret writes no list after
+  // that, since the bucket lets only the first write land. It says whom it's for first, in its own blob, which
+  // `OneCore.Servers.joined?/2` does before it writes the list.
   const shown = same(claims(token ?? "").first, env.FIRST_SERVER);
-  const first = shown && ((operation === "write" && key === NETWORK + "servers") || (OPEN.test(key) && reads));
+  const first = shown && ((operation === "write" && (key === NETWORK + "servers" || server === by)) || (OPEN.test(key) && reads));
   // Every list that could let it is read at once, each once: one trip to `Changes`.
   // Another server's word counts for whoever the key is under, and for whoever it says deployed or installed an app:
   // so a group's server, which runs its members' apps, deploys them too.
