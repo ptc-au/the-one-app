@@ -98,15 +98,51 @@ const deploy = async (/** @type {string} */ name, /** @type {string} */ file, /*
 // The edge, the relay and the parts are bound to each other, and Cloudflare refuses a binding to a Worker that isn't
 // there yet, so on an account that has no edge yet it's deployed first without its bindings to the others or its address.
 if (!before[edge.name]) await deploy(edge.name, "bare.jsonc");
-for (const { name, kind, tag, d1 } of built.workers) {
+for (const { name, kind, tag, d1, image } of built.workers) {
   if (kind === "edge") await deploy(name, "deployed.jsonc");
   // The relay is deployed only when what it runs changed: a deploy ends every connection it holds.
   else if (kind === "relay" && before[name]?.tag === tag) console.log(`The relay is as deployed (${tag}), so it's left running`);
+  else if (kind === "fallback") await fallback(name, tag, image);
   else await deploy(name, "wrangler.jsonc", "--tag", tag);
   // A part's D1 databases are made what they should be by their migrations, as Wrangler applies them, just after it's
   // deployed, since Wrangler makes a database a part names on its first deploy, and refuses migrations for one that
   // isn't there yet.
   for (const binding of d1) if (await wrangler("d1", "migrations", "apply", binding, "-c", config(name), "--remote")) await back(`${name}'s ${binding} didn't migrate`);
+}
+
+/**
+ * Deploys the network's fallback server (`fallback/worker.ts`) where it changed, with its image, `network-fallback:<image>`,
+ * pushed to the account's registry first where it isn't there yet, and named by its digest, as Cloudflare's
+ * `durable_object` scheduling policy takes an image, so a deploy needs no Docker where it's there. Not where the
+ * account's token can't use Cloudflare Containers, or its image is to be built where there's no Docker or Podman to:
+ * the rest of the edge is deployed all the same, saying so.
+ */
+async function fallback(/** @type {string} */ name, /** @type {string} */ tag, /** @type {string} */ image) {
+  if (before[name]?.tag === tag) return console.log(`The fallback server is as deployed (${tag})`);
+  const account = zone.account.id;
+  const reach = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/containers/applications`, { headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } });
+  if (!reach.ok) return console.log(`The network has no fallback server: its Cloudflare token can't use Containers (${reach.status}), which it's given as "Containers Edit" on the account ${zone.account.name}`);
+  const pushed = async () => {
+    const { username, password } = JSON.parse((await $`${process.execPath} x wrangler containers registries credentials registry.cloudflare.com --pull --json`.cwd(here).quiet()).text());
+    const manifest = await fetch(`https://registry.cloudflare.com/v2/${account}/${name}/manifests/${image}`, {
+      method: "HEAD",
+      headers: { authorization: `Basic ${btoa(`${username}:${password}`)}`, accept: "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.index.v1+json" },
+    });
+    return manifest.ok ? manifest.headers.get("docker-content-digest") : null;
+  };
+  let digest = await pushed();
+  if (!digest) {
+    // Built here and pushed with Wrangler, which builds with `--provenance`, a flag Podman doesn't take.
+    const docker = Bun.which("docker") ?? Bun.which("podman");
+    if (!docker) return console.log(`The fallback server isn't deployed: its image, ${name}:${image}, isn't in the account's registry yet, and there's no Docker or Podman here to build it`);
+    if (await Bun.spawn([docker, "build", "--platform", "linux/amd64", "-t", `${name}:${image}`, config(name, "image")], { cwd: here, stdio: ["inherit", "inherit", "inherit"] }).exited) await back(`${name}'s image didn't build`);
+    if (await wrangler("containers", "push", `${name}:${image}`, "--path-to-docker", docker)) await back(`${name}'s image didn't push`);
+    digest = await pushed();
+  }
+  const shipped = await Bun.file(`${here}/${config(name)}`).json();
+  const containers = shipped.containers.map((/** @type {object} */ container) => ({ ...container, images: { server: { image: `registry.cloudflare.com/${account}/${name}@${digest}` } } }));
+  await Bun.write(`${here}/${config(name, "deployed.jsonc")}`, JSON.stringify({ ...shipped, containers, vars: { ...shipped.vars, ADDRESS: at.origin } }, null, 2));
+  await deploy(name, "deployed.jsonc", "--tag", tag);
 }
 
 // It's checked by what Cloudflare says: a Worker's deployment is all at once, taking all the traffic as it's made, so a

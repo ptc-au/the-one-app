@@ -20,5 +20,9 @@ become the first; it opens nothing after. It deploys the core's apps for the net
 commit, and makes `--owner` its first owner, saying in its log where they join: a link they open to make their
 passkey. Its device signs in as any does once they have.
 
+Where the network's Cloudflare token may use Containers ("Containers Edit" on the account), the deploy also puts the
+network's fallback server there (`fallback/worker.ts`), which starts when none of its servers is on. Its first start
+says, in its log, the link and code one of the network's owners adds it at, once.
+
 The Worker is TypeScript, which wrangler builds without checking. `bun run typecheck` checks it; `bun run types`
 makes its `worker-configuration.d.ts` again after `wrangler.jsonc` changes.

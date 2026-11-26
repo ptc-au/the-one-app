@@ -207,6 +207,19 @@ const relayWorker = (await import(`${here}/relay/wrangler.jsonc`)).default;
 const relayed = tailed({ ...relayWorker, main: relative(built, `${here}/relay/${relayWorker.main}`) });
 await Bun.write(`${built}/relay.jsonc`, JSON.stringify(relayed, null, 2));
 const relayConfig = relative(here, `${built}/relay.jsonc`);
+// The network's fallback server, a Worker of its own (`fallback/worker.ts`) with the image of the Container it starts
+// (`fallback/image/`), only deployed: a local network's servers are its developer's own.
+const fallbackWorker = (await import(`${here}/fallback/wrangler.jsonc`)).default;
+const fallback = tailed({
+  ...fallbackWorker,
+  main: relative(built, `${here}/fallback/${fallbackWorker.main}`),
+  containers: fallbackWorker.containers.map((container) => ({ ...container, images: { server: { dockerfile: relative(built, `${here}/fallback/${container.images.server.dockerfile}`) } } })),
+});
+// It's bundled without its container, whose image a dry run would build too, needing Docker; it's shipped with it.
+const { containers: _, ...bundled } = fallback;
+const exports = Object.fromEntries(Object.entries(fallback.exports).map(([name, { container: __, ...rest }]) => [name, rest]));
+await Bun.write(`${built}/fallback.jsonc`, JSON.stringify({ ...bundled, exports }, null, 2));
+const fallbackConfig = relative(here, `${built}/fallback.jsonc`);
 
 const wrangler = (...args) => Bun.spawn(["bun", "x", "wrangler", ...args], { cwd: here, env: process.env, stdio: ["inherit", "inherit", "inherit"] }).exited;
 // A part's D1 databases are made what they should be by their migrations (`migrations_dir`), as Wrangler applies
@@ -231,6 +244,13 @@ const bundle = async (/** @type {string} */ out, /** @type {string} */ config, /
     if (kind !== "edge") cpSync(resolve(from, worker.assets.directory), `${at}/assets`, { recursive: true });
     shipped.assets = { ...worker.assets, directory: kind === "edge" ? "../../web" : "assets" };
   }
+  // Its containers' image, as its build context, which `deploy.js` pushes to the account's registry and names.
+  if (worker.containers) {
+    const [{ images }] = worker.containers;
+    cpSync(dirname(resolve(from, images.server.dockerfile)), `${at}/image`, { recursive: true });
+    shipped.containers = worker.containers.map((container) => ({ ...container, images: { server: { dockerfile: "image/Dockerfile" } } }));
+    shipped.exports = worker.exports;
+  }
   const d1 = [];
   shipped.d1_databases = worker.d1_databases?.map((database) => {
     if (!database.migrations_dir) return database;
@@ -242,7 +262,8 @@ const bundle = async (/** @type {string} */ out, /** @type {string} */ config, /
   return { at, shipped, d1 };
 };
 // Each Worker, with its config as written here, what it is, and the folder it's built from: the tail parts first, since
-// the rest name them as their tail consumers, then the relay, the other parts and the edge.
+// the rest name them as their tail consumers, then the relay, the other parts and the edge, and the fallback server,
+// which is bound to the edge and the relay, when it's built to be deployed.
 const each = workers.map(({ part, worker, tail }, at) => [partConfigs[at], tail ? worker : tailed(worker), tail ? "tail" : "part", part]);
 const all = [...each.filter(([, , kind]) => kind === "tail"), [relayConfig, relayed, "relay", built], ...each.filter(([, , kind]) => kind === "part"), [edgeConfig, full, "edge", built]];
 // A local network's edge runs its Workers as they're deployed, bundled as it starts, which takes a second or two
@@ -276,7 +297,15 @@ const ship = async (/** @type {string} */ config, /** @type {any} */ worker, /**
   // nothing of it is told (the relay's, which ends every connection it holds, is skipped then).
   const hash = new Bun.CryptoHasher("sha256").update(JSON.stringify(shipped));
   for (const file of [...new Glob("**/*").scanSync(`${at}/bundle`)].sort()) hash.update(file).update(await Bun.file(`${at}/bundle/${file}`).bytes());
-  listed.push({ name: worker.name, kind, tag: hash.digest("hex").slice(0, 24), d1 });
+  // Its image is tagged by what it's built from, so it's built and pushed again only where that changed.
+  let image;
+  if (shipped.containers) {
+    const built = new Bun.CryptoHasher("sha256");
+    for (const file of [...new Glob("**/*").scanSync(`${at}/image`)].sort()) built.update(file).update(await Bun.file(`${at}/image/${file}`).bytes());
+    image = built.digest("hex").slice(0, 24);
+    hash.update(image);
+  }
+  listed.push({ name: worker.name, kind, tag: hash.digest("hex").slice(0, 24), d1, ...(image && { image }) });
   if (kind === "edge") {
     // On an account that has no edge yet it's deployed first without its bindings to the others or its address.
     const bindings = shipped.durable_objects.bindings.filter(({ script_name }) => !script_name);
@@ -284,7 +313,7 @@ const ship = async (/** @type {string} */ config, /** @type {any} */ worker, /**
     await Bun.write(`${at}/bare.jsonc`, JSON.stringify({ ...bare, services: [], durable_objects: { ...shipped.durable_objects, bindings } }, null, 2));
   }
 };
-for (const worker of all) await ship(...worker);
+for (const worker of [...all, [fallbackConfig, fallback, "fallback", built]]) await ship(...worker);
 await Bun.write(`${out}/workers.json`, JSON.stringify({ version, workers: listed }, null, 2));
 if (what === "build") process.exit(0);
 

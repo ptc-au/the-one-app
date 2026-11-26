@@ -1,0 +1,24 @@
+{
+  // The network's fallback server, a Worker of its own (`worker.ts`), with the Container it starts, which `edge.js`
+  // builds and `deploy.js` deploys only when it changed, its image only where the account can run Containers.
+  "name": "network-fallback",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  // Every minute it looks whether the network has a server ready.
+  "triggers": { "crons": ["* * * * *"] },
+  // The server's image, which its Durable Object starts and stops itself (Cloudflare's `durable_object` scheduling
+  // policy, under which a deploy leaves a running container as it is). `deploy.js` gives it as the image it pushed to
+  // the account's registry, so deploying needs no Docker where that's there.
+  "containers": [{ "name": "fallback", "scheduling_policy": "durable_object", "images": { "server": { "dockerfile": "./image/Dockerfile" } } }],
+  "exports": { "Fallback": { "type": "durable-object", "storage": "sqlite", "container": "fallback" } },
+  "durable_objects": {
+    "bindings": [
+      { "name": "FALLBACK", "class_name": "Fallback" },
+      // The relay's, which says who's here.
+      { "name": "RELAY", "class_name": "Relay", "script_name": "network-relay" }
+    ]
+  },
+  // Who the network's servers are, as the edge says.
+  "services": [{ "binding": "NETWORK", "service": "network-edge", "entrypoint": "Network" }]
+}
