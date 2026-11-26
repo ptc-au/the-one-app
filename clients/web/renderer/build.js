@@ -13,7 +13,7 @@ const here = (path) => fileURLToPath(new URL(path, import.meta.url))
 const hash = (bytes) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 16)
 const root = here("../../../")
 mkdirSync(out, { recursive: true })
-for (const file of ["index.html", "renderer.js", "text-input.js", "semantics.js", "video.js", "voice.js", "check.html", "check.js"]) copyFileSync(here(file), `${out}/${file}`)
+for (const file of ["index.html", "renderer.js", "text-input.js", "semantics.js", "video.js", "voice.js", "sound.js", "check.html", "check.js"]) copyFileSync(here(file), `${out}/${file}`)
 // The frame's check page, an app's page built as a server builds one (core/ui/app.js), which check.html hosts.
 await $`bun ${root}/core/ui/dist/build/app.js ${here("check")} ${out}/check`.quiet()
 const compiled = (await $`${root}/tooling/cached-build ${here(".")} --target wasm32-unknown-unknown --profile web`.quiet().text()).trim()
@@ -57,7 +57,7 @@ const hashed = (/** @type {string} */ file, /** @type {string} */ text) => {
 }
 // The modules it imports are fetched from the start too, beside it, as `modulepreload` has a page say.
 let script = readFileSync(`${out}/renderer.js`, "utf8")
-const modules = ["web_renderer.js", "text-input.js", "semantics.js", "video.js", "voice.js"].map((module) => [module, hashed(module, readFileSync(`${out}/${module}`, "utf8"))])
+const modules = ["web_renderer.js", "text-input.js", "semantics.js", "video.js", "voice.js", "sound.js"].map((module) => [module, hashed(module, readFileSync(`${out}/${module}`, "utf8"))])
 for (const [module, name] of modules) script = script.replaceAll(`"./${module}"`, `"./${name}"`)
 const preloads = modules.map(([, name]) => `<link rel="modulepreload" href="${name}" crossorigin>\n  `).join("")
 writeFileSync(`${out}/index.html`, readFileSync(`${out}/index.html`, "utf8").replace('<script src="renderer.js"', `${preloads}<script src="${hashed("renderer.js", script)}"`))

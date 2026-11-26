@@ -723,6 +723,8 @@ export declare function seen(at: string | number | Date): string
 export declare function since(at: string | number | Date, style?: "long" | "narrow"): string
 export declare function size(bytes: number): string
 export declare function haptic(kind: "light" | "medium" | "heavy" | "rigid" | "soft" | "selection" | "success" | "warning" | "error"): void
+/** Plays a short sound, a WAV or an MP3 file of the app's named as an image is, on the device's speakers. */
+export declare function play(src: string): Promise<void>
 export declare function connection(): "connecting" | "online" | "offline" | "reconnecting"
 /** Whether this page is shown, as it changes: not while its person is in another app, as their device's Settings. */
 export declare function visible(): boolean

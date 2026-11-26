@@ -28,6 +28,8 @@ pub(crate) mod view;
 mod video;
 #[cfg(not(target_arch = "wasm32"))]
 mod voice;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod sound;
 
 pub use style::load_styles;
 pub use view::inspected::Reply;

@@ -58,6 +58,8 @@ enum Asked {
     /// A picture its page draws by its address, as it names it.
     Picture(String),
     Message(Value),
+    /// A sound its page plays (`play`), by its JSON-RPC id, once its file has come.
+    Sound(Value),
     Start(tokio::sync::oneshot::Sender<Value>),
 }
 

@@ -127,7 +127,7 @@
       return size
     }
     await renderer.open(canvas, devicePixelRatio, base.href, page.hash.slice(1), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, new URLSearchParams(location.search).has("paused"), {
-      post: named ? alone(renderer) : (/** @type {object} */ message) => parent.postMessage(message, "*"),
+      post: playing(renderer, base, named ? alone(renderer) : (/** @type {object} */ message) => parent.postMessage(message, "*")),
       timer: (/** @type {[() => void, number]} */ [fired, delay]) => browser.setTimeout(fired, delay),
       untimer: (/** @type {number} */ handle) => browser.clearTimeout(handle),
       animationFrame: (/** @type {FrameRequestCallback} */ framed) => browser.requestAnimationFrame(framed),
@@ -578,6 +578,21 @@ function stepping(inspect, page) {
       left -= piece
     } while (left > 0)
     return answer
+  }
+}
+
+/**
+ * What the page asks its client, but its sounds (`play`), which this frame plays itself (sound.js), as a native host's
+ * client plays them: the file named from the page's, answered once it's playing.
+ * @param {any} renderer @param {URL} base the page's @param {(message: any) => void} post its client's
+ */
+function playing(renderer, base, post) {
+  return (/** @type {{ id?: unknown, method?: string, params?: any }} */ message) => {
+    if (message.method !== "one/play") return post(message)
+    const answer = (/** @type {object} */ body) => renderer.message({ jsonrpc: "2.0", id: message.id, ...body })
+    import("./sound.js")
+      .then(({ play }) => play(new URL(message.params.src, base)))
+      .then(() => answer({ result: {} }), (error) => answer({ error: { code: -32000, message: String(error?.message ?? error) } }))
   }
 }
 

@@ -427,6 +427,13 @@ export const share: typeof Page.share = async (text) => (await greeted, (await a
 /// the device has them on; elsewhere it does nothing.
 export const haptic: typeof Page.haptic = (kind) => void greeted.then(() => ask("one/haptic", { kind })).catch(() => {})
 
+/// `await play("knock.wav")`: plays a short sound, a WAV or an MP3 file of the app's, named as an image is by an address
+/// from the page's, on its device's speakers, as the device plays any other: quietly when its volume is low, and not at
+/// all while it's muted. It plays on beside a call (`Voice`) and while the page runs with no window (a menu bar extra's),
+/// and the browser's own autoplay rules hold: a page's first sound waits for its person to have pressed something.
+/// → once it's playing; it throws if the file isn't one or isn't there.
+export const play: typeof Page.play = async (src) => (await greeted, void (await ask("one/play", { src })))
+
 /// `leave()`: tells the client the user is done with the app, as MCP Apps' `request-teardown`: the window goes back to
 /// the Home Screen, as the device's back does from the app's first screen. An app's first screen has no Back for it:
 /// the window's rail and the device's back leave every app.

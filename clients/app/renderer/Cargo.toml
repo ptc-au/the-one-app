@@ -103,6 +103,8 @@ openh264 = "0.9"
 cpal = "0.18"
 opus-rs = "0.1.42"
 aec3 = "0.4"
+# A page's sound (`play`): a short file its app ships, WAV or MP3, on cpal's speakers as rodio plays one.
+rodio = { version = "0.23", default-features = false, features = ["playback", "wav", "mp3"] }
 
 # The web's: a page's canvas, drawn by wgpu on the browser's WebGPU, or its WebGL2 where it has none (a phone app's
 # web view often hasn't), in a Worker with an OffscreenCanvas, called by the page's JS through wasm-bindgen

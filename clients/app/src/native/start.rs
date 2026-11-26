@@ -75,8 +75,8 @@ impl Started {
         let Started { js, to, asked, page, number } = self;
         state.page = number;
         let state = Arc::new(Mutex::new(state));
-        let (respond_to, respond_asked) = (to.clone(), asked.clone());
-        let asked_by_app: renderer::Asked = Box::new(move |message, appearance| respond(message, appearance, &state, &respond_to, &respond_asked));
+        let (respond_to, respond_asked, respond_page) = (to.clone(), asked.clone(), page.clone());
+        let asked_by_app: renderer::Asked = Box::new(move |message, appearance| respond(message, appearance, &state, &respond_to, &respond_asked, &respond_page));
         let mut screen = Screen::new(js?, Some(asked_by_app));
         screen.insets = insets;
         let next_picture = std::cell::Cell::new(0u64);

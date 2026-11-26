@@ -74,6 +74,7 @@ pub(super) fn respond(
     state: &Arc<Mutex<State>>,
     to: &UnboundedSender<Value>,
     asked: &Arc<Mutex<HashMap<String, Asked>>>,
+    page: &Url,
 ) -> Option<Value> {
     let method = message["method"].as_str()?;
     let (launcher, menu_bar) = {
@@ -256,6 +257,17 @@ pub(super) fn respond(
         }
         #[cfg(mobile)]
         "one/menu-bar-extra" => Some(Err(json!({"code": -32000, "message": "A phone has no menu bar"}))),
+        // A sound its page plays (`play`) is a file of its app's, fetched as a picture is, and played when it comes.
+        "one/play" => match page.join(params["src"].as_str().unwrap_or_default()) {
+            Ok(address) => {
+                state.next += 1;
+                let at = format!("m{}.{}", state.page, state.next);
+                asked.lock().expect("nothing panics holding it").insert(at.clone(), Asked::Sound(id));
+                let _ = to.send(json!({"id": at, "file": address.as_str()}));
+                return None;
+            }
+            Err(_) => Some(Err(json!({"code": -32602, "message": "A sound is named by a file of the app"}))),
+        },
         // A shortcut on the device's own home screen is Android's page's to pin: a native window has none yet, which it
         // says, as a device without them does (bridge.js).
         "one/pin-shortcut" => Some(Err(json!({"code": -32000, "message": "This device can't put that app on its home screen"}))),
@@ -558,6 +570,17 @@ pub(super) fn channel(
                 Asked::Picture(src) => {
                     let data = result.ok().and_then(|file| Some(format!("data:{};base64,{}", file["kind"].as_str()?, file["body"].as_str()?)));
                     on(Box::new(move |screen| screen.fetched(&src, data)));
+                }
+                Asked::Sound(id) => {
+                    let played = result
+                        .map_err(|error| error.as_str().map_or_else(|| error.to_string(), str::to_owned))
+                        .and_then(|file| BASE64.decode(file["body"].as_str().unwrap_or_default().as_bytes()).map_err(|error| error.to_string()))
+                        .and_then(|file| renderer::sound::play(file).map_err(|error| format!("{error:#}")));
+                    let answer = match played {
+                        Ok(()) => json!({"jsonrpc": "2.0", "id": id, "result": {}}),
+                        Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": error}}),
+                    };
+                    on(Box::new(move |screen| screen.message(&answer)));
                 }
                 Asked::Message(id) => {
                     let answer = match result {
