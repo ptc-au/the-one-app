@@ -71,6 +71,8 @@ const COMMANDS: &str = "Besides the tools:\n\n\
                            {one} update         takes the latest build: this device's, or on a server the network's Update Now\n\
                            {one} search <words> finds the tools for a task, each with its command\n\
                            {one} run <file>     runs a script that calls tools, as MCP's execute does\n\
+                           {one} vault run --handle <handle> [--env NAME] -- <command>\n\
+                                              runs a command with a handle's secret, on its input or in NAME\n\
                            {one} task <id>      says how a tool called with --task is going; --result waits for its answer\n\
                            {one} mcp [--code]   serves MCP to an agent here: every tool, or code mode's few\n\
                            {one} restore        restores a whole network from a backup, with none running\n\
@@ -131,6 +133,7 @@ async fn run(args: Vec<String>) -> Result<ExitCode> {
         ["update"] => printed(serving::update(&client).await?),
         ["task", id] => tasks::show(&client, id, false).await?,
         ["task", id, "--result"] => tasks::show(&client, id, true).await?,
+        ["vault", "run", ..] => vault_client::run(&client, &args[2..]).await?,
         // An app from a git repo, as `npx skills add` adds a skill; with no repo, the app is the network's own.
         ["install", repo, ..] if !repo.starts_with("--") => install::install(&client, &args[1..]).await?,
         ["install"] if std::path::Path::new("apps.lock").exists() => install::locked(&client).await?,

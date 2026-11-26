@@ -1225,6 +1225,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tokio",
+ "vault_client",
  "windows-sys 0.61.2",
 ]
 
@@ -10900,6 +10901,17 @@ dependencies = [
  "halfbrown",
  "itoa",
  "ryu",
+]
+
+[[package]]
+name = "vault_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "client",
+ "data-encoding",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

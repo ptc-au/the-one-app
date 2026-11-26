@@ -24,6 +24,7 @@ tokio = { workspace = true, features = ["signal"] }
 backups_client = { path = "../../apps/backups/client/native" }
 encryption_client = { path = "../../apps/encryption/client/native" }
 git_repos_client = { path = "../../apps/git-repos/client/native" }
+vault_client = { path = "../../apps/vault/client/native" }
 
 # Who's running this, and their login shell, and how many files the server it runs may open (`serving`).
 [target.'cfg(unix)'.dependencies]
