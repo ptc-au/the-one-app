@@ -330,7 +330,7 @@ pub(crate) async fn talk(stream: impl AsyncRead + AsyncWrite + Send + 'static) {
         }
     }
     if let Some(views) = crate::app().views.get() {
-        views.shown(&label, false);
+        views.gone(&label);
     }
     crate::updater::gone(&label);
 }
@@ -468,7 +468,11 @@ pub(crate) async fn command(label: &str, command: &str, args: Value) -> Result<V
         }
         "retry" => retry().await.map(done),
         "apps" => apps(text("subject")).await,
-        "request" => request(text("view").unwrap_or_default(), text("method").unwrap_or_default(), args["params"].clone()).await,
+        "request" => {
+            let view = text("view").unwrap_or_default();
+            crate::views()?.asked(label, &view);
+            request(view, text("method").unwrap_or_default(), args["params"].clone()).await
+        }
         "refresh" => refresh(text("view").unwrap_or_default()).await.map(done),
         "client" => client(),
         "serve" => serve(args["on"].as_bool() == Some(true)).await.map(Value::from),

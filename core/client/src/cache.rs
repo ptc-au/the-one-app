@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::fs;
@@ -240,6 +241,8 @@ struct Query {
     fetching: Option<(u64, watch::Receiver<bool>)>,
     /// When a server last answered it.
     answered: Option<Instant>,
+    /// How many times the view had been told something changed when it last read it (`Subscription::told`).
+    read: u64,
 }
 
 /// How long a server's answer is taken as fresh when the view asks it again, as TanStack Query's `staleTime`: a view
@@ -260,6 +263,9 @@ pub struct Subscription {
     responses: Mutex<HashMap<String, Query>>,
     /// Tells the view that what it was answered has changed.
     changed: Box<dyn Fn() + Send + Sync>,
+    /// How many times the view has been told something changed: a view told reads again what it shows, so what it
+    /// didn't read since is no longer shown, and isn't asked again (`refresh`).
+    told: AtomicU64,
     /// What it asked with nothing kept, while a server's answer is awaited, by what was asked: the same asked again
     /// meanwhile waits for that answer, as TanStack Query shares a query in flight, where each was asked again (on 25
     /// Nov Settings asked one that took 7 s nine times over as its other answers came in).
@@ -268,7 +274,7 @@ pub struct Subscription {
 
 impl Subscription {
     pub fn new(client: Arc<Client>, changed: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), asking: Mutex::default() })
+        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), told: AtomicU64::new(0), asking: Mutex::default() })
     }
 
     /// Answers what the view asks: the result of `method`. A write resolves as soon as its own answer arrives.
@@ -305,15 +311,22 @@ impl Subscription {
         }
     }
 
-    /// Asks the server again for everything the view was answered, or with `app`, the tools of that app, which is
+    /// Asks the server again for everything the view still reads, or with `app`, the tools of that app, which is
     /// all a server says changed when it's one's call that did (`notifications/one/changed`), and tells the view as
-    /// each answer changes.
+    /// each answer changes. What the view hasn't read since it was last told something changed is no longer shown,
+    /// as a screen it went on from, and is forgotten rather than asked again: read again, what was kept is shown at
+    /// once and asked again behind it.
     pub async fn refresh(&self, app: Option<&str>) {
         let prefix = app.map(|app| format!("{app}_"));
         let mut asks = Vec::new();
         let mut waiting = Vec::new();
+        let dropped;
         {
-            let responses = self.responses.lock().expect("no view panics");
+            let mut responses = self.responses.lock().expect("no view panics");
+            let told = self.told.load(Ordering::Relaxed);
+            let before = responses.len();
+            responses.retain(|_, query| query.read >= told);
+            dropped = before != responses.len();
             for (key, query) in responses.iter() {
                 if !matches_app(&query.method, &query.params, prefix.as_deref()) {
                     continue;
@@ -333,6 +346,12 @@ impl Subscription {
             let _ = rx.wait_for(|done| *done).await;
         });
         tokio::join!(join_all(fetches), join_all(joins));
+        // What it reads that was forgotten as it raced the view reading it after it was told comes back as it's read
+        // again, and what it no longer reads stays forgotten.
+        if dropped {
+            self.told.fetch_add(1, Ordering::Relaxed);
+            (self.changed)();
+        }
     }
 
     /// What the view was last answered, at once, or what was kept, asked again behind it; only what was never
@@ -344,6 +363,7 @@ impl Subscription {
         // another app, would show forever what it was answered before (21 Nov: Sign In & Security reopened without the
         // passkey just made).
         if let Some(query) = self.responses.lock().expect("no view panics").get_mut(&key) {
+            query.read = self.told.load(Ordering::Relaxed);
             if query.fetching.is_none() && query.answered.is_none_or(|at| at.elapsed() > FRESH) {
                 let (tx, rx) = watch::channel(false);
                 query.fetching = Some((query.invalidated, rx));
@@ -373,6 +393,7 @@ impl Subscription {
             fetched: 0,
             fetching: None,
             answered: (!revalidate).then(Instant::now),
+            read: self.told.load(Ordering::Relaxed),
         });
         drop(responses);
         if revalidate {
@@ -457,6 +478,7 @@ impl Subscription {
             let _ = tx.send(true);
         }
         if notify {
+            self.told.fetch_add(1, Ordering::Relaxed);
             (self.changed)();
         }
     }

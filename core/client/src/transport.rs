@@ -438,14 +438,16 @@ pub async fn notify(connection: &iroh::endpoint::Connection, message: &[u8]) -> 
 }
 
 /// Passes on what a server tells this client over `connection`, until the connection ends.
-async fn receive_notifications(connection: iroh::endpoint::Connection, notifications: broadcast::Sender<Value>) {
+async fn receive_notifications(connection: iroh::endpoint::Connection, notifications: broadcast::Sender<(String, Value)>) {
+    let server = connection.remote_id().to_string();
     while let Ok(mut receive) = connection.accept_uni().await {
+        let server = server.clone();
         let notifications = notifications.clone();
         tokio::spawn(async move {
             let Ok(message) = receive.read_to_end(LIMIT).await else { return };
             if let Ok(message) = serde_json::from_slice(&message) {
                 // With nobody listening, as in the CLI, it's dropped.
-                let _ = notifications.send(message);
+                let _ = notifications.send((server, message));
             }
         });
     }

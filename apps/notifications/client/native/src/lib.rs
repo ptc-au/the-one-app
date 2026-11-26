@@ -189,7 +189,7 @@ pub async fn listen(client: Arc<Client>, identifier: &str, tapped: impl Fn(Strin
         // change is never a new notification, as sending one says so itself.
         loop {
             match notifications.recv().await {
-                Ok(message)
+                Ok((_, message))
                     if message["method"] == "notifications/one/changed"
                         && matches!(message["params"]["app"].as_str(), None | Some("notifications")) =>
                 {

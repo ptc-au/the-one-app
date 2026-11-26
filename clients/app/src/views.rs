@@ -24,6 +24,9 @@ pub(crate) struct Views {
     pub(crate) on_screen: Mutex<HashSet<String>>,
     /// Whether a server said something changed while the window wasn't on screen, so its views ask again once it is.
     pub(crate) missed: AtomicBool,
+    /// The views each window has asked for, by its label (`asked`), and the windows that are put away, a computer's
+    /// launcher summoned and gone again (`shown`): a view only windows that are put away ask for isn't on screen.
+    pub(crate) windows: Mutex<Windows>,
     /// Whether this device hears its notifications yet: from when the window first shows its person's home.
     pub(crate) hearing: AtomicBool,
     /// When each app a server said was just deployed began deploying, by its name, in milliseconds since the Unix
@@ -60,6 +63,7 @@ impl Views {
     /// Says whether the window `label` is on screen. A phone's app is suspended while none is, so it hears nothing a
     /// server says then and takes it that something changed (`missed`): on 21 Nov an iPhone's Sign In & Security still
     /// said servers were waiting for a key its passkey had just handed them, in Safari, as the app was away.
+    /// A view a server said something changed for while it wasn't on screen asks again as a window showing it is.
     pub(crate) fn shown(&self, label: &str, on_screen: bool) {
         let mut shown = self.on_screen.lock().expect("no view panics");
         if on_screen {
@@ -70,6 +74,40 @@ impl Views {
                 self.missed.store(true, Ordering::Relaxed);
             }
         }
+        drop(shown);
+        let mut windows = self.windows.lock().expect("no view panics");
+        if on_screen {
+            windows.away.remove(label);
+            let back: Vec<String> = windows.asks.get(label).into_iter().flatten().filter(|view| windows.missed.contains(*view)).cloned().collect();
+            for view in &back {
+                windows.missed.remove(view);
+            }
+            drop(windows);
+            for view in back {
+                spawn(async move {
+                    let Ok(views) = views() else { return };
+                    views.subscription(&view).refresh(None).await
+                });
+            }
+        } else {
+            windows.away.insert(label.to_owned());
+        }
+    }
+
+    /// Keeps that the window `label` shows `view`, as it asks for it.
+    pub(crate) fn asked(&self, label: &str, view: &str) {
+        let mut windows = self.windows.lock().expect("no view panics");
+        if !windows.asks.get(label).is_some_and(|views| views.contains(view)) {
+            windows.asks.entry(label.to_owned()).or_default().insert(view.to_owned());
+        }
+    }
+
+    /// Forgets the window `label`: it's closed.
+    pub(crate) fn gone(&self, label: &str) {
+        self.shown(label, false);
+        let mut windows = self.windows.lock().expect("no view panics");
+        windows.asks.remove(label);
+        windows.away.remove(label);
     }
 
     /// Whether any window is on screen.
@@ -84,11 +122,23 @@ impl Views {
         }
     }
 
-    /// Asks again for what every view was answered, all at once, or only of `app`'s tools.
+    /// Asks again for what every view on screen was answered, all at once, or only of `app`'s tools. A view that isn't
+    /// on screen asks again once it is (`shown`), and while no window is, every view does (`caught_up`).
     pub(crate) async fn refresh(&self, app: Option<&str>) {
-        let shown: Vec<_> = self.subscriptions.lock().expect("no view panics").values().cloned().collect();
+        if !self.on_screen() {
+            self.missed.store(true, Ordering::Relaxed);
+            return;
+        }
+        let views: Vec<_> = self.subscriptions.lock().expect("no view panics").iter().map(|(view, shown)| (view.clone(), shown.clone())).collect();
         let mut asks = tokio::task::JoinSet::new();
-        for shown in shown {
+        for (view, shown) in views {
+            {
+                let mut windows = self.windows.lock().expect("no view panics");
+                if !windows.on_screen(&view) {
+                    windows.missed.insert(view);
+                    continue;
+                }
+            }
             let app = app.map(str::to_owned);
             asks.spawn(async move { shown.refresh(app.as_deref()).await });
         }
@@ -201,6 +251,26 @@ impl Views {
             .collect();
         loaded.retain(|app, _| !outdated.contains(app));
         outdated
+    }
+}
+
+/// Which views each window shows, and which windows are put away (`Views::windows`).
+#[derive(Default)]
+pub(crate) struct Windows {
+    /// The views each window has asked for, by its label.
+    asks: HashMap<String, HashSet<String>>,
+    /// The windows that are put away.
+    away: HashSet<String>,
+    /// The views a server said something changed for while they weren't on screen.
+    missed: HashSet<String>,
+}
+
+impl Windows {
+    /// Whether `view` may be on screen: some window that asked for it isn't put away, or no window it knows of did, as
+    /// the web view's own page asks for every app it frames.
+    fn on_screen(&self, view: &str) -> bool {
+        let mut showing = self.asks.iter().filter(|(_, views)| views.contains(view)).map(|(label, _)| label).peekable();
+        showing.peek().is_none() || showing.any(|label| !self.away.contains(label))
     }
 }
 

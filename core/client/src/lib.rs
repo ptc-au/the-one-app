@@ -400,7 +400,7 @@ pub struct Client {
     /// Its endpoint, its network and whose device it is, which are made again with each new token (`relink`).
     link: std::sync::RwLock<Link>,
     reach: Mutex<Reach>,
-    notifications: broadcast::Sender<Value>,
+    notifications: broadcast::Sender<(String, Value)>,
     /// What every request says of who it's from and for, where the environment says: `ONE_LINK` is a sharing link,
     /// whose holder asks, `ONE_AS` names a user to act as, which only a server of a network being built allows, and
     /// `ONE_SUBJECT` names the group it's for (`groups/family`), or `network`.
@@ -533,8 +533,8 @@ impl Client {
         self.address.clone()
     }
 
-    /// What servers tell this client: each a JSON-RPC notification.
-    pub fn notifications(&self) -> broadcast::Receiver<Value> {
+    /// What servers tell this client: each a JSON-RPC notification, with the key of the server that said it.
+    pub fn notifications(&self) -> broadcast::Receiver<(String, Value)> {
         self.notifications.subscribe()
     }
 

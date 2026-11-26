@@ -1,11 +1,10 @@
 //! Where this device is with its network: opening the client, and following its session and connection.
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-#[cfg(target_os = "android")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ::client::{Client, Connection, State};
 use serde_json::{Value, json};
@@ -13,6 +12,10 @@ use tokio::sync::broadcast;
 use url::Url;
 
 use crate::*;
+
+/// How long the same change said with no app is taken as the one already heard: each of a network's servers says it
+/// (`OneCore.Apps.Lifecycle` tells every one, and each tells its own clients), a few ms apart.
+const AGAIN: Duration = Duration::from_secs(2);
 
 /// Once the device is signed in to its network, which it's told only once its views are open (`follows`).
 #[cfg(not(mobile))]
@@ -82,6 +85,7 @@ pub(crate) async fn opens() {
         started: app.started,
         on_screen: Mutex::new(HashSet::from(["main".to_owned()])),
         missed: AtomicBool::new(false),
+        windows: Mutex::default(),
         hearing: AtomicBool::new(false),
         deploys: Mutex::default(),
     };
@@ -116,12 +120,16 @@ pub(crate) async fn opens() {
         }
     });
 
-    // A server said something changed, so every view on screen asks again, and the window is told which open apps
+    // A server said something changed, so every view on screen asks again (`Views::refresh`), and the window is told which open apps
     // were loaded against a version it says is gone (`stale`). Servers tell this client for as long as it runs, so a
     // notification reaches it with its window hidden. What came while the last was asked about is taken together and
     // asked about once, as a busy network says many things a second and asking again for each would never catch up.
     let mut notifications = client.notifications();
     spawn(async move {
+        // The last change said with no app, and when it was heard: every server tells its clients of a change to what's
+        // installed (`OneCore.Apps.Lifecycle`), so the same comes from each of them, a few ms apart, and only the first
+        // is asked about.
+        let mut last: Option<(Value, Instant)> = None;
         loop {
             let mut heard = Vec::new();
             // What the channel dropped, as the oldest are when it's full, was something that changed as well: it
@@ -141,14 +149,28 @@ pub(crate) async fn opens() {
                 }
             }
             let mut changes = Vec::new();
-            for message in heard {
+            let mut said = Vec::new();
+            for (server, message) in heard {
                 match message["method"].as_str() {
                     Some("notifications/one/update") => {
                         spawn(updater::heard(message["params"].clone()));
                     }
-                    Some("notifications/one/changed") => changes.push(message["params"].clone()),
+                    Some("notifications/one/changed") => {
+                        let changed = message["params"].clone();
+                        let again = changed["app"].is_null() && last.as_ref().is_some_and(|(was, at)| *was == changed && at.elapsed() < AGAIN);
+                        said.push(format!("{} {}{}", &server[..8], changed["app"].as_str().unwrap_or("anything"), if again { " again" } else { "" }));
+                        if !again {
+                            if changed["app"].is_null() {
+                                last = Some((changed.clone(), Instant::now()));
+                            }
+                            changes.push(changed);
+                        }
+                    }
                     _ => {}
                 }
+            }
+            if !said.is_empty() {
+                eprintln!("servers said what changed: {}", said.join(", "));
             }
             if dropped {
                 changes.push(json!({}));
@@ -173,23 +195,18 @@ pub(crate) async fn opens() {
                 eprintln!("a server said {stale:?} were loaded against what's gone");
                 app.shell.emit("stale", json!(stale));
             }
-            if views.on_screen() {
-                eprintln!("a server said something changed");
-                // Every app's tools, if any change said no app's, or else each app's that one did.
-                let apps: Option<HashSet<&str>> = changes.iter().map(|changed| changed["app"].as_str()).collect();
-                match apps {
-                    Some(apps) => {
-                        for app in apps {
-                            views.refresh(Some(app)).await
-                        }
-                    }
-                    None => {
-                        views.client.refresh_listed();
-                        views.refresh(None).await
+            // Every app's tools, if any change said no app's, or else each app's that one did.
+            let apps: Option<HashSet<&str>> = changes.iter().map(|changed| changed["app"].as_str()).collect();
+            match apps {
+                Some(apps) => {
+                    for app in apps {
+                        views.refresh(Some(app)).await
                     }
                 }
-            } else {
-                views.missed.store(true, Ordering::Relaxed)
+                None => {
+                    views.client.refresh_listed();
+                    views.refresh(None).await
+                }
             }
         }
     });
