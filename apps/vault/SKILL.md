@@ -25,7 +25,10 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   secret one without its value, its websites (`hosts`), its `access` (`agents` and the apps switched on for it), its
   `status` and its `artifact`; every request kept, with its `state`; the apps that use the Vault, by name and title;
   and the kinds of item they keep.
-- `request` asks for an item by its `title` and the `fields` it needs, for an `app` or, with none, for you. For an app
+- `request` asks for an item by its `title` and the `fields` it needs, for an `app` or, with none, for you. A field
+  that isn't secret (`secret: false`) may carry a `value` you know, as an account name or an endpoint: the person's
+  sheet shows it filled in and they can change it, so they type only what you don't know. A `value` on a secret field
+  is refused: an agent never handles a secret. For an app
   installed for the network or a group, the item is in that Vault, as the app finds it, one for everyone it serves,
   but for one of a type the app registers (Item types, below, by its name's prefix), which is the person's own, in
   their Vault, made as that type, as ClickUp's key is.

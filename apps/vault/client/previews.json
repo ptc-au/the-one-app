@@ -366,7 +366,53 @@
         "apps": [],
         "types": []
       },
-      "sign-in_encrypt_for_passkeys": {}
+      "sign-in_encrypt_for_passkeys": {},
+      "one/client": {
+        "device": "Laptop",
+        "build": "0.26.0",
+        "theme": null
+      }
+    }
+  },
+  "Request with values": {
+    "like": "Request",
+    "taps": [
+      "Choose…"
+    ],
+    "answers": {
+      "vault_list": {
+        "items": [],
+        "requests": [
+          {
+            "id": "r1",
+            "title": "Artifact Signing",
+            "state": "waiting",
+            "app": null,
+            "by": "Claude on Alex's Laptop",
+            "why": "To sign Windows programs",
+            "hosts": [
+              "login.microsoftonline.com"
+            ],
+            "fields": [
+              {
+                "name": "account",
+                "secret": false,
+                "value": "example-account"
+              },
+              {
+                "name": "endpoint",
+                "secret": false,
+                "value": "https://example.codesigning.azure.net"
+              },
+              {
+                "name": "client_secret"
+              }
+            ]
+          }
+        ],
+        "apps": [],
+        "types": []
+      }
     }
   },
   "Security": {

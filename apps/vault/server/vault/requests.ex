@@ -25,7 +25,7 @@ defmodule Vault.Requests do
   @doc "Asks for an item, for `app` (an artifact) or, with none, for agents. Gives its id."
   def create(call, db, title, fields, hosts, app, by, why) do
     if fields == %{}, do: raise("A request names the fields it needs.")
-    fields = for {name, about} <- fields, do: %{name: Items.field!(name), secret: Map.get(about, "secret", true)}
+    fields = for {name, about} <- fields, do: field(name, about)
     id = Store.random(9)
 
     Store.transaction(call, db, fn d ->
@@ -37,6 +37,18 @@ defmodule Vault.Requests do
     end)
 
     id
+  end
+
+  # A field is secret unless it says it isn't. One that isn't may carry a `value`, shown filled in for its person to change.
+  defp field(name, about) do
+    secret = Map.get(about, "secret", true)
+    value = about["value"]
+
+    cond do
+      value == nil -> %{name: Items.field!(name), secret: secret}
+      secret -> raise "#{name} is a secret, so you can't give its value: an agent never handles one. Leave it out, and its person types it."
+      true -> %{name: Items.field!(name), secret: false, value: to_string(value)}
+    end
   end
 
   @doc "The requests kept, newest last: those waiting, and those that ended in the last month, each with its state."

@@ -91,7 +91,7 @@ interface Request {
   by: string | null
   why: string | null
   hosts: string[]
-  fields: { name: string; secret?: boolean }[]
+  fields: { name: string; secret?: boolean; value?: string }[]
 }
 
 /** An app that uses the Vault: its name, which its tools start with, and its title, which a person reads. */
@@ -656,13 +656,13 @@ function RequestAlert(props: Shown) {
   const [busy, setBusy] = createSignal(false)
   const item = () => chosen() ?? fits()[0]?.name ?? ""
   const options = () => [...fits().map((item) => ({ value: item.name, label: item.name })), { value: "", label: "New Item" }]
-  // Each request asked about starts with nothing chosen or typed.
+  // Each request asked about starts with nothing chosen, and typed only what it came with.
   createEffect(
     () => request()?.id,
     (now) => {
       if (!now) return
       setChosen()
-      setTyped({})
+      setTyped(Object.fromEntries(request()!.fields.flatMap(({ name, value }) => (value === undefined ? [] : [[name, value]]))))
       setProblem()
     },
   )
@@ -710,12 +710,12 @@ function RequestAlert(props: Shown) {
         </Field>
         <Show when={!item()}>
           <For each={request()!.fields}>
-            {(field, at) => (
+            {(field) => (
               <Field label={label(field.name)}>
                 <Input
                   secureTextEntry={field.secret !== false}
                   required
-                  autoFocus={at() === 0}
+                  autoFocus={field === request()!.fields.find(({ value }) => value === undefined)}
                   value={typed()[field.name] ?? ""}
                   onChangeText={(text) => setTyped((all) => ({ ...all, [field.name]: text }))}
                   onSubmitEditing={() => filled() && !busy() && allow()}

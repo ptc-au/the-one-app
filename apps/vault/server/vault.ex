@@ -304,8 +304,9 @@ defmodule Vault do
             title: %{type: "string", description: "The item's name, like GitHub token"},
             fields: %{
               type: "object",
-              description: "The fields it needs, by name: {\"token\": {\"secret\": true}}",
-              additionalProperties: %{type: "object", properties: %{secret: %{type: "boolean"}}}
+              description:
+                "The fields it needs, by name: {\"token\": {\"secret\": true}}. A field that isn't secret may carry a `value` you know, shown filled in for the person to change: {\"account\": {\"secret\": false, \"value\": \"ptcsigning\"}}. A secret one never has a value",
+              additionalProperties: %{type: "object", properties: %{secret: %{type: "boolean"}, value: %{type: "string"}}}
             },
             hosts: hosts,
             app: %{type: "string", description: "The app that will use it. Left out, it's for you, with `fetch`"},
