@@ -282,6 +282,7 @@ defmodule SignIn do
                   kind: %{type: "string", description: "app, assistant or browser"},
                   name: %{type: "string"},
                   command: %{type: ["string", "null"], description: "The command a person types to run the program that was let in, if it's run from a terminal (`ptc`): a CLI, not the app"},
+                  target: %{type: "string", description: "The kind of machine an app that has connected runs on, as `builds` names them (`macos-aarch64`, `windows-x86_64`, `ios-aarch64`)"},
                   added: %{type: "string", description: "When, ISO 8601"},
                   connected: %{type: "boolean", description: "Whether an app is connected now"},
                   last_seen: %{type: "string", description: "When an app that isn't connected was last, or a browser was last used, ISO 8601"}
@@ -939,7 +940,8 @@ defmodule SignIn do
   The device a call came from, as `devices` lists its person's (`kind` app, assistant or browser), or `nil` for one
   that's none of theirs, as a sharing link's holder or a scheduled job. What comes over the web is the device the
   edge proved: an app by its signature, an assistant by its token, and a browser by its session, which the edge names
-  by a hash of it (`edge/auth.ts`).
+  by a hash of it (`edge/auth.ts`). An app has what it said when it last connected too (`name`, `command` and
+  `target`, `Builds.said/2`).
 
       Call.app(call, "sign-in").device(call)
   """
@@ -947,7 +949,11 @@ defmodule SignIn do
     with %{"device" => device} when is_binary(device) <- Call.client(call),
          "users/" <> _ = who <- call.actor do
       %{"devices" => devices} = ask(%{ask: "devices", who: who})
-      Enum.find(devices, &(&1["id"] == device or (&1["kind"] == "browser" and browser(&1["id"]) == device)))
+
+      case Enum.find(devices, &(&1["id"] == device or (&1["kind"] == "browser" and browser(&1["id"]) == device))) do
+        %{"kind" => "app"} = found -> Map.merge(found, Map.get(Builds.said(who, [device]), device, %{}))
+        found -> found
+      end
     else
       _ -> nil
     end

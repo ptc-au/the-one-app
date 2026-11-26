@@ -173,16 +173,16 @@ defmodule OneCore.Builds do
   def seen(_by, _device, _said), do: :ok
 
   @doc """
-  What each of `by`'s `devices` calls itself and the command that ran it, as it said when it last connected
-  (`seen/3`): `%{device => %{"name" => name, "command" => command}}`, with each only where the device said it. It's
-  what its person has called it since, where the name it signed in under isn't, and a device let in before the
-  network asked for a command says it here.
+  What each of `by`'s `devices` calls itself, the command that ran it and the kind of machine it runs on, as it said
+  when it last connected (`seen/3`): `%{device => %{"name" => name, "command" => command, "target" => target}}`, with
+  each only where the device said it. It's what its person has called it since, where the name it signed in under isn't,
+  and a device let in before the network asked for a command says it here.
   """
   def said(by, devices) do
     reads = Bucket.read_all(Enum.map(devices, &"#{by}/devices/#{&1}"))
 
     for {device, {:ok, info, _tag}} <- Enum.zip(devices, reads), into: %{} do
-      said = for {key, value} <- Map.take(JSON.decode!(info), ~w(name command)), is_binary(value) and value != "", into: %{}, do: {key, value}
+      said = for {key, value} <- Map.take(JSON.decode!(info), ~w(name command target)), is_binary(value) and value != "", into: %{}, do: {key, value}
       {device, said}
     end
   end
