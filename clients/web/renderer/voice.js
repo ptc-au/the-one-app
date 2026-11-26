@@ -4,13 +4,14 @@
 
 /**
  * The page's voices: `created`, `set` and `dropped` follow its mutations, and `heard` is what its client says of one.
+ * @param {(message: object) => void} post its client's
  */
-export function voices() {
+export function voices(post) {
   /** @type {Set<number>} */
   const all = new Set()
   const tell = (/** @type {object} */ event) => globalThis.ui?.event({ timeStamp: performance.now(), ...event })
   const ask = (/** @type {number} */ id, /** @type {string} */ op, /** @type {object} */ params = {}) =>
-    parent.postMessage({ jsonrpc: "2.0", id: `voice:${id}:${op}:${crypto.randomUUID()}`, method: "one/voice", params: { op, id, ...params } }, "*")
+    post({ jsonrpc: "2.0", id: `voice:${id}:${op}:${crypto.randomUUID()}`, method: "one/voice", params: { op, id, ...params } })
 
   return {
     created: (/** @type {number} */ id) => {

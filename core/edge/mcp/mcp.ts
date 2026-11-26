@@ -230,8 +230,8 @@ async function pages(request: Request, env: Env, ctx: ExecutionContext) {
 
 /**
  * The page an assistant shows for every app's tool that has one (`ui://one/<version>/app.html`, as `OneCore.Mcp` lists
- * it), read by an assistant that shows MCP Apps: the router (`clients/web/router.js`), which shows the page of the app
- * whose tool was called in the renderer's frame from here, and what a link in it opens, as the web client does. It's
+ * it), read by an assistant that shows MCP Apps: the router (`clients/web/router.js`), which draws the page of the app
+ * whose tool was called with the renderer, loaded from here by its full address, in the assistant's own frame. It's
  * written here, as only here is where whoever let the assistant in has their apps' files (`apps`), and it's told the
  * apps listed for them, which a link opens among. A device's `one mcp` asks for it here too (`mcp`).
  */
@@ -240,19 +240,28 @@ async function router(env: Env, call: Call, origin: string, who: Who) {
   const listed = listing.status === 200 ? await listing.json<{ result?: { resources: { uri: string; mimeType?: string; _meta?: { category?: string } }[] } }>() : {};
   // Only what a link opens among: the apps' pages.
   const resources = (listed.result?.resources ?? []).filter(({ mimeType }) => mimeType === "text/html;profile=mcp-app").map(({ uri, mimeType, _meta }) => ({ uri, mimeType, _meta: { category: _meta?.category } }));
-  const said = JSON.stringify({ origin, apps: who.apps, resources, device: who.device }).replace(/</g, "\\u003c");
+  // The renderer's script, and what it loads fetched from the start, beside it, each by the name of what's in it, as
+  // the web client's frame names them (`clients/web/renderer/build.js`).
+  const loads: string[] = [];
+  let renderer = "";
+  const frame = new HTMLRewriter()
+    .on("link[href]", { element: (link) => void loads.push(`<link rel="${link.getAttribute("rel")}" href="${new URL(link.getAttribute("href") ?? "", `${origin}/renderer/`)}"${link.getAttribute("as") ? ` as="${link.getAttribute("as")}"` : ""} crossorigin>`) })
+    .on("script[src]", { element: (script) => void (renderer = new URL(script.getAttribute("src") ?? "", `${origin}/renderer/`).href) });
+  await frame.transform(await env.ASSETS.fetch(new Request(`${origin}/renderer/`))).text();
+  const said = JSON.stringify({ origin, apps: who.apps, resources, device: who.device, renderer }).replace(/</g, "\\u003c");
   const script = await (await env.ASSETS.fetch(new Request(`${origin}/router.js`))).text();
   const page = `<!doctype html>
 <meta charset="utf-8">
-<meta name="color-scheme" content="light dark">
-<style>html, body { margin: 0; height: 100%; overflow: hidden; } iframe { position: absolute; inset: 0; border: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
-body[data-drawn] iframe { opacity: 1; pointer-events: auto; } body[data-drawn] #note { display: none; } #note { margin: 0; padding: 16px; font: 15px/1.4 system-ui; } #note a { display: block; margin-top: 8px; }</style>
+${loads.join("\n")}
+<style>html, body { margin: 0; height: 100%; overflow: hidden; } canvas { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+body[data-drawn] canvas { opacity: 1; pointer-events: auto; } body[data-drawn] #note { display: none; }
+#note { margin: 0; padding: 16px; color: var(--color-text-primary, CanvasText); font: 15px/1.4 var(--font-sans, system-ui); } #note a { display: block; margin-top: 8px; color: var(--color-text-info, LinkText); }</style>
 <p id="note">Opening…</p>
-<iframe sandbox="allow-scripts allow-forms" allow="clipboard-write"></iframe>
 <script type="application/json" id="router">${said}</script>
 <script>${script.replace(/<\/script/gi, "<\\/script")}</script>
 `;
-  const ui = { csp: { frameDomains: [origin], connectDomains: [origin] } };
+  // What it loads and asks is at the network's address: the renderer and the app's files, and what the page asks.
+  const ui = { csp: { resourceDomains: [origin], connectDomains: [origin] } };
   return Response.json({ jsonrpc: "2.0", id: call.id, result: { contents: [{ uri: call.params?.uri, mimeType: "text/html;profile=mcp-app", text: page, _meta: { ui } }] } });
 }
 

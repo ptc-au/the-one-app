@@ -1,15 +1,17 @@
 // An app's page drawn by the renderer (clients/app/renderer), as a computer's and a phone's windows draw it, in this
 // frame of the web client's: the renderer is WebAssembly on the browser's WebGPU, or its WebGL2 where it has none
 // (`renderer::platform::web`), and the page's JS is this frame's own, which draws through it as a native host's
-// sandbox does (`globalThis.mutations`, the UI library's native build). The frame's address names the page's
-// (`#<its address>`) and the runtime version it needs (`runtime`), as the web client's `address` has it. A classic
-// script, so the import map it writes comes before any module loads.
+// sandbox does (`globalThis.mutations`, the UI library's native build). Its client names the page and the runtime
+// version it needs, and passes what the page and it say to each other (`client`). A classic script, so the import map it
+// writes comes before any module loads; and what it loads is named by its full address, beside this script's, so it
+// draws in any page that loads it, an assistant's chat's too (clients/web/router.js).
 ;(async () => {
   const started = performance.now()
   // A page shown in a browser's tab by itself, as the sign-in and Vault pages are, names itself (`<meta name="page">`),
-  // its own address being the page's; any other is named after the frame's address.
+  // its own address being the page's; any other is named by its client.
   const named = document.querySelector('meta[name="page"]')?.getAttribute("content")
-  const page = new URL(named ?? location.hash.slice(1), location.href)
+  const client = /** @type {{ client?: Client }} */ (globalThis).client ?? framedBy(parent)
+  const page = new URL(named ?? client.page, location.href)
   // A frame's page (the UI library's `Frame`), another app's in one of the page's, which the frame's page draws, as a
   // native host's frame is drawn in its page's window: this is only its JS, as a native host's runs on a thread of its
   // own. Its client knows it by its number (`frame`), as its own app's.
@@ -33,7 +35,7 @@
   const seen = (/** @type {string} */ kind, /** @type {unknown} */ value = true) => {
     if (said.has(kind)) return
     said.add(kind)
-    if (!named) parent.postMessage({ jsonrpc: "2.0", method: "notifications/one/seen", params: { [kind]: value } }, "*")
+    if (!named) client.post({ jsonrpc: "2.0", method: "notifications/one/seen", params: { [kind]: value } })
   }
   /** Where the renderer can't open the page: its client shows that it didn't open, and why. */
   const unopened = (/** @type {unknown} */ why) => {
@@ -53,12 +55,12 @@
     await renderer.default({ module_or_path: await compiled.then((module) => (step("compiled"), module)) })
     step("renderer")
     // A page built with this renderer's own UI library (check/) names none.
-    const needs = Number(new URLSearchParams(location.search).get("runtime"))
+    const needs = client.runtime ?? 0
     if (!(needs <= renderer.runtime_version())) throw new Error(`it needs runtime version ${needs}`)
     // What the page's JS draws through, and asks its client through, as a native host's sandbox has them; its videos
     // are the browser's to connect and play too (video.js), and its voices (voice.js).
     const streams = videos(renderer)
-    const calls = voices()
+    const calls = voices(client.post)
     Object.assign(globalThis, {
       mutations: {
         create: (/** @type {number} */ id, /** @type {string} */ type, /** @type {string} */ value) => (type === "video" && streams.created(id), type === "voice" && calls.created(id), renderer.create(id, type, value)),
@@ -127,7 +129,7 @@
       return size
     }
     await renderer.open(canvas, devicePixelRatio, base.href, page.hash.slice(1), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, new URLSearchParams(location.search).has("paused"), {
-      post: playing(renderer, base, named ? alone(renderer) : (/** @type {object} */ message) => parent.postMessage(message, "*")),
+      post: playing(renderer, base, named ? alone(renderer) : client.post),
       timer: (/** @type {[() => void, number]} */ [fired, delay]) => browser.setTimeout(fired, delay),
       untimer: (/** @type {number} */ handle) => browser.clearTimeout(handle),
       animationFrame: (/** @type {FrameRequestCallback} */ framed) => browser.requestAnimationFrame(framed),
@@ -135,7 +137,7 @@
       textInput: (/** @type {[string, unknown][]} */ calls) => calls.forEach(([method, args]) => typing.call(method, args)),
       semantics: spoken,
       selected: (/** @type {string | null} */ text) => mirror(text),
-      ...frames(renderer, (message) => parent.postMessage(message, "*")),
+      ...frames(renderer, client.post),
       // Its first frame, marked on the frame's own element for whoever measures it.
       drawn: () => {
         document.documentElement.dataset.drawn = String(Math.round(performance.now()))
@@ -154,8 +156,8 @@
     // moved by whole device pixels, saying where it draws glass.
     const inspect = (/** @type {object} */ request) => renderer.inspect(JSON.stringify({ v: 1, id: 0, ...request }))
     Object.assign(globalThis, { inspector: { settle: (/** @type {number} */ deadline) => inspect({ op: "settle", deadline }), query: (/** @type {object} */ selector) => inspect({ op: "query", ...selector }), clock: stepped ? stepping(inspect, browser) : (/** @type {object} */ request) => inspect({ op: "clock", ...request }), whole: () => renderer.whole(), frame: (/** @type {FrameRequestCallback} */ callback) => browser.requestAnimationFrame(callback), moved: (/** @type {number} */ dx, /** @type {number} */ dy) => [...renderer.moved(dx, dy)] } })
-    addEventListener("message", ({ source, data }) => {
-      if (source !== parent || answered(data)) return
+    if (!named) client.heard((data) => {
+      if (answered(data)) return
       // Its client's answer that a voice was made, and nothing to draw.
       if (typeof data?.id === "string" && data.id.startsWith("voice:")) return
       if (data?.method === "notifications/one/voice") return calls.heard(data.params)
@@ -239,13 +241,6 @@
     addEventListener("blur", () => renderer.focused(false))
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", ({ matches }) => renderer.appearance_changed(matches))
     canvas.focus()
-    // The page's place in itself, a link's fragment, which its client names after its address in the frame's
-    // (client.js's `load`), and which a native host tells a page as its host context's `link`: as it opens, and as its
-    // client takes it somewhere else in it.
-    if (!named) addEventListener("hashchange", () => {
-      const link = new URL(location.hash.slice(1), location.href).hash.slice(1)
-      renderer.message({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { link } })
-    })
     try {
       await import(new URL(script, base).href)
       step("module")
@@ -257,6 +252,31 @@
     unopened(error)
   }
 })()
+
+/**
+ * Who a page is drawn for, as the renderer is told it: the page's address and the runtime version it needs, how it says
+ * something to its client (`post`), and how it hears what its client says (`heard`).
+ * @typedef {{ page: string, runtime?: number, post: (message: object) => void, heard: (take: (data: any) => void) => void }} Client
+ */
+
+/**
+ * The client of the web client's frame (`address` in clients/web/host.js): the window around it, by messages, which
+ * names the page by the frame's address (`#<its address>`, then `?runtime=`). The page's place in itself, a link's
+ * fragment, the window names after its address (client.js's `load`), and a native host tells a page as its host
+ * context's `link`: as it opens, and as its client takes it somewhere else in it.
+ * @param {Window} around @returns {Client}
+ */
+function framedBy(around) {
+  return {
+    page: location.hash.slice(1),
+    runtime: Number(new URLSearchParams(location.search).get("runtime")),
+    post: (message) => around.postMessage(message, "*"),
+    heard: (take) => {
+      addEventListener("message", ({ source, data }) => source === around && take(data))
+      addEventListener("hashchange", () => take({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { link: new URL(location.hash.slice(1), location.href).hash.slice(1) } }))
+    },
+  }
+}
 
 /** `url`'s answer, or what it answered instead, as a page loaded from a server that couldn't give it (a 404's "There's
  * nothing at", or no server answering) is that, and not a page. @param {URL} url */
