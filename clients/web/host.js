@@ -391,14 +391,12 @@ async function reads(method, params) {
   return (await known(subjectOf(params))).some((tool) => tool.name === params.name && tool.annotations?.readOnlyHint === true)
 }
 
-/// Asks again, in the background, for each tool `view` was answered, or with `app`, each of that app's, as a write may
-/// have changed what they answer (TanStack Query's `invalidateQueries` by key). An app's files aren't: what changes
-/// them, an install or a deploy, says so.
-/** @param {string} view @param {string} [app] */
-function invalidate(view, app) {
+/// Asks again, in the background, for each tool `view` was answered, as its write may have changed what they answer
+/// (TanStack Query's `invalidateQueries`). An app's files aren't: what changes them, an install or a deploy, says so.
+/** @param {string} view */
+function invalidate(view) {
   for (const cached of views.get(view)?.values() ?? []) {
     if (cached.method !== "tools/call") continue
-    if (app && !String(cached.params.name).startsWith(`${app}_`)) continue
     cached.invalidated += 1
     fetchEntry(view, cached, cached.invalidated)
   }
@@ -656,12 +654,9 @@ const commands = {
     // One Core's own tools (`install`, `apps_update`) may change anything, the tools listed too.
     const core = !name.includes("_") || name.startsWith("apps_")
     if (method === "tools/call" && core) listTools(subjectOf(params)).catch(() => {})
-    // The view that wrote asks again for all it was answered, as the app's client's does (`Subscription::request`).
-    // A server tells every client it's connected to what an app's call changed, that app's tools
-    // (`notifications/one/changed`); a browser isn't connected, so every other open view asks again for the called
-    // app's, or for everything after One Core's own.
-    const app = method === "tools/call" && !core ? name.slice(0, name.indexOf("_")) : undefined
-    for (const open of views.keys()) invalidate(open, open === view ? undefined : app)
+    // The view that wrote asks again for all it was answered, as the app's client's does (`Subscription::request`);
+    // the others hear what it changed from the server, as every client does (`heard`).
+    invalidate(view)
     return response
   },
   refresh: ({ view }) => refresh(view),
