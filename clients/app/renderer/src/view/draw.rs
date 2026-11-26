@@ -24,7 +24,7 @@ impl Screen {
     /// `Cover`).
     pub(crate) fn paint_canvas(&self, room: Size<Pixels>, scale: f32, opacity: f32, scene: &mut Scene) {
         let (_, background) = Text::root(self.conditions());
-        let Some(background) = background else { return };
+        let Some(background) = background.filter(|_| !self.see_through) else { return };
         let top = if self.title.is_some() { self.insets.top } else { 0.0 };
         let canvas = Bounds { origin: point(0.0, top), size: Size { width: room.width.0, height: (room.height.0 - top).max(0.0) } };
         scene.insert_primitive(Quad {
@@ -339,6 +339,7 @@ impl Screen {
         let (body, background) = Text::root(conditions);
         // A panel has no background of its own: what its page draws is over the system's glass, or the host's fill.
         match self.panel {
+            None if self.see_through => {}
             None => painter.quad(window, ContentMask::from(window), background.unwrap_or_default(), Edges::default(), Hsla::default(), Corners::default(), false, 1.0),
             Some(panel) if panel.whole => {
                 if let Some(fill) = painter.fill {

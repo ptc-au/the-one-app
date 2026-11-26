@@ -37,12 +37,13 @@ pub(super) fn clock() -> Clock {
 /// Opens the page at `page` (where what it names by an address is from), at `link` in it, on `canvas`, `scale` device pixels to a CSS
 /// pixel, drawn with the design tokens and styles in `tables` (the UI library's tokens
 /// and styles, and its app's styles), in `theme` (`dark`, `light`, or as the device is), for a finger where `touch`,
+/// over the page that loaded it, whose background shows where its page's would be, where `see_through` (an assistant's chat),
 /// on a clock that's paused at 0 where `paused`, which a test steps (`inspect`'s `clock`), at the text size its person chose where it's a phone's or a tablet's (`text_size`, as their app has it,
 /// `Screen::text_size`), as the frame's JS (`calls`) is told what it says of itself. The page's module is imported
 /// after, and says it ran (`started`).
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
-pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, link: String, tables: Vec<String>, theme: Option<String>, touch: bool, text_size: Option<f32>, paused: bool, calls: JsValue) -> Result<(), JsError> {
+pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, link: String, tables: Vec<String>, theme: Option<String>, touch: bool, text_size: Option<f32>, see_through: bool, paused: bool, calls: JsValue) -> Result<(), JsError> {
     console_log();
     SCALE.set(scale);
     CLOCK.set(Some(if paused { Clock::stopped() } else { Clock::real() }));
@@ -61,6 +62,7 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     // Another app's page, in a frame of its own of the frame's, which its client says where it is (renderer.js).
     screen.make_frame = Some(Box::new(|node, src, subject| drop(call_with("frame", &[JsValue::from(node as f64), src.into(), subject.map_or(JsValue::NULL, JsValue::from)]))));
     screen.touch = touch;
+    screen.see_through = see_through;
     screen.text_size = text_size;
     screen.theme = match theme.as_deref() {
         Some("dark") => Some(Appearance::Dark),

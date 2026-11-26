@@ -234,6 +234,8 @@ pub struct Screen {
     hover_after: Option<f64>,
     /// The pointer is a finger, as a phone's is, which pointer events say (`pointerType`).
     pub touch: bool,
+    /// It's drawn in another's page, an assistant's chat, whose own background shows where its page's would be.
+    pub see_through: bool,
     /// When the device says the input being handled happened, on the page's clock (`happened`).
     happened: Option<f64>,
     /// The finger it follows, as a phone's host hands it each touch (`touch`).
@@ -421,6 +423,7 @@ impl Screen {
             pointer: None,
             hover_after: None,
             touch: false,
+            see_through: false,
             happened: None,
             finger: None,
             rail: false,

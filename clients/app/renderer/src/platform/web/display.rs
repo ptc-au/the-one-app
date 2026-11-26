@@ -211,8 +211,10 @@ impl NativeWindow {
         true
     }
 
+    /// A canvas is see-through, as an element on a web page is: where nothing's drawn (a page drawn in an
+    /// assistant's chat has no background of its own, `Screen::see_through`), the page under it shows, never black.
     pub fn transparent(&self) -> bool {
-        false
+        true
     }
 
     pub fn device_size(&self) -> Size<DevicePixels> {

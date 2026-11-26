@@ -130,6 +130,7 @@ impl Screen {
         page.visible = self.visible;
         page.active = self.active;
         page.touch = self.touch;
+        page.see_through = self.see_through;
         page.rail = self.rail;
         page.hz = self.hz;
         page.shortcut = self.shortcut.take();

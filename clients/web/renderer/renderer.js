@@ -128,7 +128,7 @@
       body.remove()
       return size
     }
-    await renderer.open(canvas, devicePixelRatio, base.href, page.hash.slice(1), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, new URLSearchParams(location.search).has("paused"), {
+    await renderer.open(canvas, devicePixelRatio, base.href, page.hash.slice(1), tables, page.searchParams.get("theme"), finger, finger ? textSize() : undefined, "client" in globalThis, new URLSearchParams(location.search).has("paused"), {
       post: playing(renderer, base, named ? alone(renderer) : client.post),
       timer: (/** @type {[() => void, number]} */ [fired, delay]) => browser.setTimeout(fired, delay),
       untimer: (/** @type {number} */ handle) => browser.clearTimeout(handle),
