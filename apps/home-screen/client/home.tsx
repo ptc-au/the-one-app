@@ -12,7 +12,7 @@
 // Home Screen, or hold it a while longer, or touch and hold a page's empty space. An app held in the App Library is
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
-import { createEffect, createMemo, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
+import { createEffect, createMemo, createProjection, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
 import { Button, call, client, connection, covers, type Element, haptic, keydown, PresentationContext, Problem, render, whole, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
@@ -35,7 +35,7 @@ import { shortcut } from "./shortcut.tsx"
 import { VaultStep, vaultStep } from "./vault.tsx"
 
 /// The once-only tips whoever's looking has seen (`tips`), or nothing where they can't be asked.
-const tips = createMemo(() => json<{ seen: string[] }>("home-screen_tips").then(({ seen }) => seen, () => undefined))
+const tips = createProjection(() => json<{ seen?: string[] }>("home-screen_tips").catch((): { seen?: string[] } => ({})))
 /// The runtime version this device's renderer draws: Welcome's pictures need 6 (CSS's own values and keyframes that
 /// end), which a device on an older build doesn't draw, so it isn't shown there until it's updated; nor is the Vault's.
 const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVersion ?? 0, () => 0))
@@ -44,13 +44,12 @@ const drawn = createMemo(() => client().then(({ runtimeVersion }) => runtimeVers
 const [replaying, setReplaying] = createSignal(false)
 /// Which the Vault's step is, Set Up or Unlock, while either is still to be seen or onboarding's shown again, asked
 /// again as each step goes on: the one before may have made this computer a server that's waiting for its person's key.
-const vaultNeed = createMemo(() => (replaying() || ["vault", "vault-unlock"].some((tip) => tips()?.includes(tip) === false) ? vaultStep() : undefined))
+const vaultNeed = createMemo(() => (replaying() || ["vault", "vault-unlock"].some((tip) => tips.seen?.includes(tip) === false) ? vaultStep() : undefined))
 /// Whether an AI already uses the network as whoever's looking: an assistant let in (Claude, ChatGPT), or `one` run in a
 /// terminal, as a coding agent runs it (`command`), among their devices. Where that can't be asked, it's taken as one
 /// that does, so Connect your AI is never in the way.
-const assisted = createMemo(() =>
-  json<{ devices: { kind: string; command?: string | null }[] }>("sign-in_devices").then(({ devices }) => devices.some((device) => device.kind === "assistant" || !!device.command), () => true),
-)
+const devices = createProjection(() => json<{ devices: { kind: string; command?: string | null }[]; failed?: boolean }>("sign-in_devices").catch(() => ({ devices: [], failed: true })))
+const assisted = () => devices.failed || devices.devices.some((device) => device.kind === "assistant" || !!device.command)
 /// Onboarding's steps, in order, each by the tip that keeps that its person's gone on from it, its name in the progress
 /// over it, the devices it shows on (`here`): Welcome on every one that draws it, Connect your AI after it where no AI
 /// uses the network as them yet, Open from anywhere on a computer's app, whose launcher has a shortcut, Your own server
@@ -72,10 +71,10 @@ type Step = (typeof steps)[number]
 const [continued, setContinued] = createSignal<Record<string, true>>({})
 /// The step shown: the first for this device still to be gone on from, as its tip says, on this device or another, or
 /// shown again, here. Where their tips can't be asked, none is: never in the way of their Home Screen.
-const step = () => (replaying() ? steps.find(({ tip, again }) => again() && !continued()[tip]) : steps.find(({ tip, here }) => here() && tips()?.includes(tip) === false && !continued()[tip]))
+const step = () => (replaying() ? steps.find(({ tip, again }) => again() && !continued()[tip]) : steps.find(({ tip, here }) => here() && tips.seen?.includes(tip) === false && !continued()[tip]))
 /// The steps this device shows, which the progress counts: every one shown again, or each for it still to be seen as
 /// `tips` was asked. One seen on another device before isn't one of them.
-const counted = () => steps.filter(({ tip, here, again }) => (replaying() ? again() : here() && tips()?.includes(tip) === false))
+const counted = () => steps.filter(({ tip, here, again }) => (replaying() ? again() : here() && tips.seen?.includes(tip) === false))
 /// Goes on from a step, showing the next, or the Home Screen, at once and keeping that it's been seen behind it.
 const go = (tip: string) => {
   setContinued((done) => ({ ...done, [tip]: true }))
@@ -83,7 +82,7 @@ const go = (tip: string) => {
   call("home-screen_tip", { name: tip, seen: true }).catch((error) => toast(error as Error))
 }
 /// Whether they've been through onboarding, so the Home Screen's tips offer it again (pills.tsx).
-export const onboarded = () => tips() !== undefined && !step()
+export const onboarded = () => tips.seen !== undefined && !step()
 /// Shows onboarding again from its first step, through every step this device has, done or not.
 export const showOnboarding = () => {
   setContinued({})

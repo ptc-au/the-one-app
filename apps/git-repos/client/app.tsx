@@ -1,7 +1,7 @@
 // Git Repos: the repos someone may read, and each one opening beside them as GitHub shows a repo: its files at a branch
 // with the newest commit and its README, its history, and its pull requests, which whoever pushes merges or
 // closes. A file and a commit open in the repo's place, with Back.
-import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createMemo, createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { marked, type Token, type Tokens } from "marked"
 import { Avatar, Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, navigate, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Spinner, Split, styles, Svg, Tabs, Text, toast, tokens, toolInput, View, viewport } from "ui"
 
@@ -44,7 +44,7 @@ interface Listed {
   description: string | null
   pushed: number
 }
-const repos = createMemo(() => json<{ repos: Listed[] }>("git-repos_list").then(({ repos }) => repos))
+const repos = createProjection(() => json<{ repos: Listed[] }>("git-repos_list"))
 changed(() => refresh(repos))
 
 /// The repo open beside the list, by its name, as the screen shown says it (`git-repos_repo { owner, name }`, at
@@ -52,12 +52,12 @@ changed(() => refresh(repos))
 const open = () => {
   const { name, arguments: inputs } = toolInput("git-repos_list")
   if (name !== "git-repos_repo") return undefined
-  return repos().find((one) => one.owner === inputs.owner && one.name === inputs.name)?.repo ?? `${inputs.owner}/${inputs.name}`
+  return repos.repos.find((one) => one.owner === inputs.owner && one.name === inputs.name)?.repo ?? `${inputs.owner}/${inputs.name}`
 }
 /// Opens a repo by its name (users/alice/made/git-repos/notes), as a step Back goes back from, or the list alone.
 function setOpen(repo?: string) {
   if (!repo) return navigate("git-repos_list")
-  const listed = repos().find((one) => one.repo === repo)
+  const listed = repos.repos.find((one) => one.repo === repo)
   navigate("git-repos_repo", listed ? { owner: listed.owner, name: listed.name } : { owner: repo.split("/")[1], name: repo.split("/").pop() })
 }
 const [at, setAt] = createSignal<At>({ tab: "code", path: "" })
@@ -72,8 +72,9 @@ interface Transfer {
   to: string
   by: string
 }
-const transfers = createMemo(() => json<{ transfers: Transfer[] }>("permissions_transfers").then(({ transfers }) => transfers.filter((one) => one.artifact.includes("/made/git-repos/"))))
-changed(() => refresh(transfers))
+const transfersAnswer = createProjection(() => json<{ transfers: Transfer[] }>("permissions_transfers"))
+const transfers = () => transfersAnswer.transfers.filter((one) => one.artifact.includes("/made/git-repos/"))
+changed(() => refresh(transfersAnswer))
 
 /// Who something is, as its name's last part: users/alice is alice.
 const short = (name: unknown) => String(name ?? "").split("/").pop()!
@@ -156,8 +157,8 @@ const look = styles({
 const NAME = /^[a-z0-9][a-z0-9_-]*$/
 
 function NewRepo() {
-  const groups = createMemo(() => (adding() ? json<{ groups: { group: string; called?: string }[] }>("permissions_groups").then(({ groups }) => groups) : []))
-  const whose = createMemo(() => [{ value: "", label: "You" }, ...groups().map((group) => ({ value: group.group, label: group.called ?? short(group.group) }))])
+  const groups = createProjection(() => (adding() ? json<{ groups: { group: string; called?: string }[] }>("permissions_groups") : Promise.resolve({ groups: [] })))
+  const whose = createMemo(() => [{ value: "", label: "You" }, ...groups.groups.map((group) => ({ value: group.group, label: group.called ?? short(group.group) }))])
   const [forWhom, setFor] = createSignal("")
   const [name, setName] = createSignal("")
   const [sent, setSent] = createSignal(false)
@@ -174,7 +175,7 @@ function NewRepo() {
         <Input required autoFocus autoCapitalize="none" autoCorrect={false} spellCheck={false} value={name()} onChangeText={setName} onSubmitEditing={make} />
       </Field>
       <Loading>
-        <Show when={groups().length}>
+        <Show when={groups.groups.length}>
           <Field label="Owner">
             <Select.Root items={whose()} value={forWhom()} onValueChange={setFor} />
           </Field>
@@ -191,18 +192,18 @@ const mine = async () => (await json<{ people: { who: string }[] }>("sign-in_peo
 /// Moves a repo to a person, a group or the network, as GitHub's Transfer ownership does. Whoever it's moved to accepts it
 /// first, unless the network's owner moves it.
 function MoveRepo() {
-  const choices = createMemo(() => {
+  const choices = createProjection(() => {
     const repo = moving()
-    if (!repo) return []
+    if (!repo) return Promise.resolve({ options: [] })
     return Promise.all([json<{ members: string[] }>("permissions_members", { of: "network" }), json<{ groups: { group: string; called?: string }[] }>("permissions_groups"), mine()]).then(([{ members }, { groups }, me]) => {
       const whose = repo.split("/made/")[0]
       const people = members.filter((who) => who !== me && who !== whose).map((who) => ({ value: who, label: short(who) }))
       const mine = groups.filter((one) => one.group !== whose).map((one) => ({ value: one.group, label: `${one.called ?? short(one.group)} (group)` }))
-      return [...people, ...mine, ...(whose === "network" ? [] : [{ value: "network", label: "Everyone (the network)" }])]
+      return { options: [...people, ...mine, ...(whose === "network" ? [] : [{ value: "network", label: "Everyone (the network)" }])] }
     })
   })
   const [picked, setPicked] = createSignal<string>()
-  const to = () => picked() ?? choices()[0]?.value
+  const to = () => picked() ?? choices.options[0]?.value
   const send = async () => {
     const repo = moving()
     if (!repo || !to()) return
@@ -222,7 +223,7 @@ function MoveRepo() {
     <Sheet heading={`Move ${short(moving())}`} open={!!moving()} onClose={() => setMoving()}>
       <Loading>
         <Field label="Move to" hint="Its history, who else reads it and its old address go with it. Whoever it's moved to accepts it first, unless you own the network.">
-          <Select.Root items={choices()} value={to()} onValueChange={setPicked} />
+          <Select.Root items={choices.options} value={to()} onValueChange={setPicked} />
         </Field>
       </Loading>
       <Button onPress={send}>Move</Button>
@@ -233,7 +234,7 @@ function MoveRepo() {
 /// Moves waiting for someone: to accept or decline, and the ones asked for, to take back.
 function Waiting() {
   const answer = async (tool: "permissions_accept" | "permissions_decline", one: Transfer) => {
-    if (await does(tool, { artifact: one.artifact })) refresh(transfers)
+    if (await does(tool, { artifact: one.artifact })) refresh(transfersAnswer)
   }
   return (
     <Show when={transfers().length}>
@@ -310,14 +311,14 @@ function GitRepos() {
   const yours = (repo: Listed) => repo.whose === me()
   const found = () => {
     const words = query().trim().toLowerCase()
-    return repos().filter((repo) => `${repo.owner}/${repo.name} ${repo.description ?? ""}`.toLowerCase().includes(words))
+    return repos.repos.filter((repo) => `${repo.owner}/${repo.name} ${repo.description ?? ""}`.toLowerCase().includes(words))
   }
   const counts = () => ({ all: found().length, yours: found().filter(yours).length, shared: found().filter((repo) => !yours(repo)).length })
   const shown = () => found().filter((repo) => view() === "all" || (view() === "yours") === yours(repo)).toSorted((a, b) => b.pushed - a.pushed)
   return (
     <Screen heading="Git Repos" action={<Button onPress={() => setAdding(true)}>New</Button>}>
       <Waiting />
-      <Show when={repos().length} fallback={<Empty>No repos yet.</Empty>}>
+      <Show when={repos.repos.length} fallback={<Empty>No repos yet.</Empty>}>
         <View style={look.filters}>
           <Search placeholder="Find a repository…" aria-label="Find a repository" value={query()} onChangeText={setQuery} />
           <Views counts={counts()} />
@@ -360,21 +361,21 @@ interface About {
 }
 
 function Repo(props: { repo: string }) {
-  const about = createMemo(() => json<About>("git-repos_branches", { repo: props.repo }))
-  const branch = () => ref() ?? about().head
-  const clone = async () => (await share(`git clone ${about().clone}`)) === "copied" && toast("Copied the clone command.")
+  const about = createProjection(() => json<About>("git-repos_branches", { repo: props.repo }))
+  const branch = () => ref() ?? about.head
+  const clone = async () => (await share(`git clone ${about.clone}`)) === "copied" && toast("Copied the clone command.")
   const remove = async () => {
     if (!(await confirm({ heading: `Remove ${short(props.repo)}?`, text: "Nobody can read, clone or push to it until you restore it.", action: "Remove", destructive: true }))) return
     if (await does("git-repos_remove", { repo: props.repo })) setOpen()
   }
   return (
     <Screen
-      heading={`${about().owner}/${short(props.repo)}`}
+      heading={`${about.owner}/${short(props.repo)}`}
       back
       action={
         <View style={look.actions}>
           <Button onPress={clone}>Clone</Button>
-          <Show when={about().owns}>
+          <Show when={about.owns}>
             <Menu.Root onSelect={(value) => (value === "move" ? setMoving(props.repo) : value === "remove" && remove())}>
               <Menu.Trigger />
               <Menu.Positioner>
@@ -391,8 +392,8 @@ function Repo(props: { repo: string }) {
       }
     >
       <View style={look.owned}>
-        <Avatar subject={about().whose} name={about().owner} size="small" />
-        <Text style={look.footnote}>{about().pushes ? "You push to it" : "You read it"}</Text>
+        <Avatar subject={about.whose} name={about.owner} size="small" />
+        <Text style={look.footnote}>{about.pushes ? "You push to it" : "You read it"}</Text>
       </View>
       <Tabs.Root value={at().tab} onValueChange={(tab) => setAt({ tab, path: "" })}>
         <Tabs.List>
@@ -403,7 +404,7 @@ function Repo(props: { repo: string }) {
         </Tabs.List>
         <Tabs.Content value="code">
           <Loading fallback={<Spinner delay />}>
-            <Code repo={props.repo} about={about()} branch={branch()} />
+            <Code repo={props.repo} about={about} branch={branch()} />
           </Loading>
         </Tabs.Content>
         <Tabs.Content value="history">
@@ -413,7 +414,7 @@ function Repo(props: { repo: string }) {
         </Tabs.Content>
         <Tabs.Content value="pull_requests">
           <Loading fallback={<Spinner delay />}>
-            <PullRequests repo={props.repo} pushes={about().pushes} />
+            <PullRequests repo={props.repo} pushes={about.pushes} />
           </Loading>
         </Tabs.Content>
       </Tabs.Root>
@@ -484,10 +485,10 @@ interface Tree {
 }
 
 function Code(props: { repo: string; about: About; branch: string }) {
-  const tree = createMemo(() => (at().file ? null : json<Tree>("git-repos_tree", { repo: props.repo, ref: props.branch, path: at().path })))
+  const tree = createProjection((): Promise<{ tree: Tree | null }> => (at().file ? Promise.resolve({ tree: null }) : json<Tree>("git-repos_tree", { repo: props.repo, ref: props.branch, path: at().path }).then((tree) => ({ tree }))))
   return (
     <Show when={!at().file} fallback={<File repo={props.repo} about={props.about} branch={props.branch} path={at().file!} />}>
-      <Show when={!tree()!.empty} fallback={<Empty>Nothing's been pushed yet. Clone it, commit and push.</Empty>}>
+      <Show when={!tree.tree!.empty} fallback={<Empty>Nothing's been pushed yet. Clone it, commit and push.</Empty>}>
         <View style={look.page}>
           <View style={look.bar}>
             <Branch about={props.about} branch={props.branch} />
@@ -496,7 +497,7 @@ function Code(props: { repo: string; about: About; branch: string }) {
             </Show>
           </View>
           <View style={look.card}>
-            <Show when={tree()!.commit}>
+            <Show when={tree.tree!.commit}>
               {(commit) => (
                 <Pressable role="button" onPress={() => to({ tab: "history", commit: commit().sha })} style={[look.head, look.commitHead]}>
                   <Text style={[look.strong, look.oneLine]}>{commit().author}</Text>
@@ -508,7 +509,7 @@ function Code(props: { repo: string; about: About; branch: string }) {
               )}
             </Show>
             <View role="list">
-              <For each={tree()!.entries}>
+              <For each={tree.tree!.entries}>
                 {(entry, index) => (
                   <View role="listitem" style={[index() > 0 && look.between]}>
                     <Pressable
@@ -529,10 +530,10 @@ function Code(props: { repo: string; about: About; branch: string }) {
           </View>
           <Show when={!at().path}>
             <Text style={look.footnote}>
-              {plural(tree()!.commits, "commit")} on {props.branch}
+              {plural(tree.tree!.commits, "commit")} on {props.branch}
             </Text>
           </Show>
-          <Show when={tree()!.readme}>{(readme) => <Readme readme={readme()} />}</Show>
+          <Show when={tree.tree!.readme}>{(readme) => <Readme readme={readme()} />}</Show>
         </View>
       </Show>
     </Show>
@@ -682,8 +683,8 @@ function Span(props: { token: Token }) {
 
 /// A file, its lines numbered.
 function File(props: { repo: string; about: About; branch: string; path: string }) {
-  const file = createMemo(() => json<{ text?: string | null; size: number; binary?: boolean }>("git-repos_file", { repo: props.repo, ref: props.branch, path: props.path }))
-  const lines = () => file().text!.replace(/\n$/, "").split("\n")
+  const file = createProjection(() => json<{ text?: string | null; size: number; binary?: boolean }>("git-repos_file", { repo: props.repo, ref: props.branch, path: props.path }))
+  const lines = () => file.text!.replace(/\n$/, "").split("\n")
   // Back goes to the folder it's in.
   const folder = () => props.path.split("/").slice(0, -1).join("/")
   return (
@@ -697,10 +698,10 @@ function File(props: { repo: string; about: About; branch: string; path: string 
       </View>
       <View style={look.card}>
         <Text style={[look.head, look.footnote]}>
-          {file().text != null ? `${plural(lines().length, "line")} · ` : ""}
-          {size(file().size)}
+          {file.text != null ? `${plural(lines().length, "line")} · ` : ""}
+          {size(file.size)}
         </Text>
-        <Show when={file().text != null} fallback={<Empty>{file().binary ? "It isn't text. Clone the repo to open it." : "It's too large to show. Clone the repo to open it."}</Empty>}>
+        <Show when={file.text != null} fallback={<Empty>{file.binary ? "It isn't text. Clone the repo to open it." : "It's too large to show. Clone the repo to open it."}</Empty>}>
           <Lines lines={lines().map((text, index) => ({ text, number: index + 1 }))} />
         </Show>
       </View>
@@ -734,13 +735,13 @@ function Lines(props: { lines: { text: string; number?: number; added?: boolean;
 
 function History(props: { repo: string; branch: string }) {
   const [pages, setPages] = createSignal(1)
-  const log = createMemo(() => Promise.all(Array.from({ length: pages() }, (_, page) => json<{ commits: Commit[]; more?: boolean }>("git-repos_log", { repo: props.repo, ref: props.branch, page }))))
-  const commits = () => log().flatMap((page) => page.commits)
+  const log = createProjection(() => Promise.all(Array.from({ length: pages() }, (_, page) => json<{ commits: Commit[]; more?: boolean }>("git-repos_log", { repo: props.repo, ref: props.branch, page }))).then((pages) => ({ pages })))
+  const commits = () => log.pages.flatMap((page) => page.commits)
   return (
     <Show when={!at().commit} fallback={<CommitScreen repo={props.repo} sha={at().commit!} />}>
       <Show when={commits().length} fallback={<Empty>No commits yet.</Empty>}>
         <List each={commits()}>{(commit) => <Row heading={commit().subject} text={`${commit().author} · ${since(commit().at)} · ${commit().sha.slice(0, 7)}`} onPress={() => to({ tab: "history", commit: commit().sha })} />}</List>
-        <Show when={log().at(-1)!.more}>
+        <Show when={log.pages.at(-1)!.more}>
           <Button variant="outline" onPress={() => setPages(pages() + 1)}>
             Older
           </Button>
@@ -752,12 +753,12 @@ function History(props: { repo: string; branch: string }) {
 
 /// A commit: its message and what it changed, with each line of the diff coloured as added or removed.
 function CommitScreen(props: { repo: string; sha: string }) {
-  const commit = createMemo(() => json<Commit & { message: string; diff: string }>("git-repos_commit", { repo: props.repo, sha: props.sha }))
+  const commit = createProjection(() => json<Commit & { message: string; diff: string }>("git-repos_commit", { repo: props.repo, sha: props.sha }))
   const line = (text: string) => {
     if (/^(\+\+\+|---|diff |index )/.test(text) || text.startsWith("@@")) return { text, muted: true }
     return { text, added: text[0] === "+", removed: text[0] === "-" }
   }
-  const more = () => commit().message.split("\n").slice(1).join("\n").trim()
+  const more = () => commit.message.split("\n").slice(1).join("\n").trim()
   return (
     <View style={look.page}>
       <View style={look.bar}>
@@ -767,24 +768,24 @@ function CommitScreen(props: { repo: string; sha: string }) {
       </View>
       <View style={look.card}>
         <Text role="heading" aria-level={2} style={[look.strong, look.message, !!more() && look.messageMore]}>
-          {commit().message.split("\n")[0]}
+          {commit.message.split("\n")[0]}
         </Text>
         <Show when={more()}>{(more) => <Plain text={more()} />}</Show>
         <Text style={[look.head, look.footnote, look.foot]}>
-          {commit().author} committed {since(commit().at)} · {commit().sha.slice(0, 7)}
+          {commit.author} committed {since(commit.at)} · {commit.sha.slice(0, 7)}
         </Text>
       </View>
       <View style={look.card}>
-        <Lines lines={commit().diff.replace(/^---\n/, "").split("\n").map(line)} />
+        <Lines lines={commit.diff.replace(/^---\n/, "").split("\n").map(line)} />
       </View>
     </View>
   )
 }
 
 function PullRequests(props: { repo: string; pushes: boolean }) {
-  const pullRequests = createMemo(() => json<{ pull_requests: PullRequest[] }>("git-repos_pull_requests", { repo: props.repo }).then(({ pull_requests }) => pull_requests))
-  const open = () => pullRequests().filter((one) => one.state === "open")
-  const closed = () => pullRequests().filter((one) => one.state !== "open")
+  const pullRequests = createProjection(() => json<{ pull_requests: PullRequest[] }>("git-repos_pull_requests", { repo: props.repo }))
+  const open = () => pullRequests.pull_requests.filter((one) => one.state === "open")
+  const closed = () => pullRequests.pull_requests.filter((one) => one.state !== "open")
   const merge = async (one: PullRequest) => {
     if (!(await confirm({ heading: `Merge ${one.title}?`, text: `${plural(one.commits.length, "commit")} into ${one.into}.`, action: "Merge" }))) return
     if (await does("git-repos_merge", { repo: props.repo, pull_request: one.name })) (toast(`Merged into ${one.into}.`), refresh(pullRequests))
@@ -792,7 +793,7 @@ function PullRequests(props: { repo: string; pushes: boolean }) {
   const close = async (one: PullRequest) => (await confirm({ heading: `Close ${one.title}?`, text: "It stays listed as closed.", action: "Close" })) && (await does("git-repos_close", { repo: props.repo, pull_request: one.name })) && refresh(pullRequests)
   const line = (one: PullRequest) => `${short(one.by)} · into ${one.into} · ${plural(one.commits.length, "commit")} · ${since(one.at)}`
   return (
-    <Show when={pullRequests().length} fallback={<Empty>No pull requests.</Empty>}>
+    <Show when={pullRequests.pull_requests.length} fallback={<Empty>No pull requests.</Empty>}>
       <Show when={open().length}>
         <Section heading="Open">
           <List each={open()}>

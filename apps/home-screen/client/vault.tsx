@@ -5,7 +5,7 @@
 // device asks for the key, then the network's sign-in page, in the device's browser, makes it, lets this device hold
 // it and hands it to every server waiting for it, with one passkey. Coming back, the picture shows it done, the lock
 // shut on the Vault or opened off it, and the button goes on. Later goes on without it: Vault in Settings still asks.
-import { createEffect, createMemo, createSignal, For, isPending, onCleanup, refresh, Show } from "solid-js"
+import { createEffect, createMemo, createProjection, createSignal, For, isPending, onCleanup, refresh, Show } from "solid-js"
 import { Button, call, changed, client, defineVars, type Element, Icon, illustration, Image, open as opening, Path, Pressable, safeArea, ScrollView, styles, Svg, Text, toast, tokens, View, visible } from "ui"
 import { Box, circle, Panel, type Part, rect, Shape, Words } from "./art.tsx"
 import { amazon, google, microsoft, stripe } from "./slides.tsx"
@@ -242,8 +242,8 @@ function Vault(props: { x: number; locked?: boolean; cleared?: boolean }) {
 /// The step, in `width` by `height`. `kind` is which, as `vaultStep` said; `onContinue` goes on, done or Later.
 /// `progress` is where it is among onboarding's steps, over its title where it's narrow.
 export function VaultStep(props: { kind: VaultStepKind; width: number; height: number; onContinue: () => void; progress?: Element }) {
-  const security = createMemo(() => json<Security>("vault_security"))
-  const key = createMemo(() => json<Key>("encryption_key"))
+  const security = createProjection(() => json<Security>("vault_security"))
+  const key = createProjection(() => json<Key>("encryption_key"))
   const again = () => [security, key].forEach(refresh)
   // The sign-in page stores what the passkey opened, which the server says has changed; coming back from the browser
   // shows the page again, which asks once more, where a change wasn't told.
@@ -253,7 +253,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
   // Done once the Vault has its key, set up, or nothing here or on a server waits for it, unlocked, and done it stays.
   const [done, setDone] = createSignal(false)
   createEffect(
-    () => (props.kind === "set-up" ? security().readiness !== "not_set_up" : needs(security(), key()) === undefined),
+    () => (props.kind === "set-up" ? security.readiness !== "not_set_up" : needs(security, key) === undefined),
     (now) => void (now && setDone(true)),
   )
   const [open, setOpen] = createSignal(false)
@@ -289,7 +289,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
   const unlock = async () => {
     setStarting(true)
     try {
-      const { device } = security()
+      const { device } = security
       const [, { link }] = await Promise.all([device ? call("encryption_ask", {}) : undefined, json<{ link: string }>("sign-in_unlock_with_passkey", device ? { device } : {})])
       setAsked(true)
       await opening(link)
@@ -301,7 +301,7 @@ export function VaultStep(props: { kind: VaultStepKind; width: number; height: n
   }
   // Unlocking, as its button says, while it opens the page, and once it's been opened, while what it did is asked
   // again, as it is the moment its person comes back and as the server says it changed, until it's done.
-  const unlocking = () => !done() && (starting() || (asked() && (isPending(security) || isPending(key))))
+  const unlocking = () => !done() && (starting() || (asked() && (isPending(() => security.readiness) || isPending(() => key.access))))
 
   const wide = () => props.width >= 600
 

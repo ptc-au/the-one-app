@@ -2,7 +2,7 @@
 // a row for each owner, with where its install is for them and what to do about it: managing what's installed is
 // otherwise the App Library's. An app's page is a screen of its own, `app-store_app { name }` at /app-store/notes, as
 // GitHub's repos are, which a link, reload and Back open.
-import { createMemo, createSignal, Errored, For, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { createMemo, createProjection, createSignal, Errored, For, Loading, Match, refresh, Show, Switch } from "solid-js"
 import type { Element } from "solid-js"
 import { Button, call, changed, confirm, Empty, go, Icon, Image, List, Menu, navigate, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
 import { sizes } from "./sizes.ts"
@@ -86,7 +86,7 @@ interface Owner {
 
 const json = <T,>(tool: string, inputs?: object, subject?: string): Promise<T> => call(tool, inputs, { subject }).then(JSON.parse)
 
-const market = createMemo(() => json<{ categories: string[]; apps: Listed[] }>("app-store_marketplace"))
+const market = createProjection(() => json<{ categories: string[]; apps: Listed[] }>("app-store_marketplace"))
 
 const owners = createMemo(async () => {
   const [groups, people] = await Promise.all([
@@ -108,7 +108,7 @@ const owners = createMemo(async () => {
 changed(() => (refresh(market), refresh(owners)))
 
 type Owners = Awaited<ReturnType<typeof owners>>
-type Market = Awaited<ReturnType<typeof market>>
+type Market = typeof market
 
 /// Where the app is, as the screen shown says it (`toolInput`): the Marketplace, an app's page (`app-store_app { name }`) and
 /// its See All (`app-store_details { name }`), each a step in that the Back button and the device's back take out again.
@@ -531,7 +531,7 @@ export default function Store() {
   return (
     <Errored fallback={(error) => <Screen heading="App Store"><Problem heading="Can't show apps" text={error() as Error} /></Screen>}>
       <Loading fallback={<Screen heading="App Store"><Spinner delay /></Screen>}>
-        <AppStore market={market()} all={owners()} />
+        <AppStore market={market} all={owners()} />
       </Loading>
     </Errored>
   )

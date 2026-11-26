@@ -3,7 +3,7 @@
 // have, A to Z. What's chosen opens beside it on a computer and is pushed over it on a phone. A section is its app's
 // component (`settings.sections`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
 // Vault draws an item type's. Updates and an app's page are Settings' own.
-import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createMemo, createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
 import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, List, ListStyle, navigate, Problem, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, toolInput, View, viewport } from "ui"
 
 /** What an app adds to Settings, as `settings_sections` answers it. */
@@ -67,16 +67,16 @@ interface Builds {
 
 const json = <T,>(tool: string, inputs?: object, subject?: string): Promise<T> => call(tool, inputs, { subject }).then(JSON.parse)
 
-const added = createMemo(async () => {
+const added = createProjection(async () => {
   const [{ sections }, here] = await Promise.all([json<{ sections: Added[] }>("settings_sections"), client()])
-  return sections.filter((one) => !one.needs || (here as Record<string, unknown>)[one.needs] != null)
+  return { sections: sections.filter((one) => !one.needs || (here as Record<string, unknown>)[one.needs] != null) }
 })
-const apps = createMemo(async () => {
+const apps = createProjection(async () => {
   const [{ apps: listed }, { apps: installed }] = await Promise.all([json<{ apps: App[] }>("settings_apps"), json<{ apps: App[] }>("apps")])
-  return listed.map((app) => ({ ...installed.find((one) => one.name === app.name && one.for === app.for), ...app }))
+  return { apps: listed.map((app) => ({ ...installed.find((one) => one.name === app.name && one.for === app.for), ...app })) }
 })
 /// Whoever's looking, as they named themselves, or nothing where Sign-In can't say.
-const me = createMemo(() => json<{ people: { who: string; called: string | null }[] }>("sign-in_people").then(({ people }) => people[0], () => undefined))
+const me = createProjection(() => json<{ people: { who: string; called: string | null }[] }>("sign-in_people").catch((): { people: { who: string; called: string | null }[] } => ({ people: [] })))
 changed(() => [added, apps, me].forEach(refresh))
 
 /// Where a client reads an icon a tool gave as `ui://<app>/<code>/<path>`: beside this page's own files.
@@ -102,12 +102,12 @@ const open = () => {
   const { name, arguments: inputs } = toolInput("settings_sections")
   if (name === "settings_updates") return "updates"
   if (name === "settings_app") {
-    const app = apps().find((one) => one.name === inputs.name && (inputs.for === undefined || one.for === inputs.for))
+    const app = apps.apps.find((one) => one.name === inputs.name && (inputs.for === undefined || one.for === inputs.for))
     return app ? `app:${app.for}:${app.name}` : undefined
   }
   if (name !== "settings_section") return undefined
   if (inputs.section) return `${inputs.app}/${inputs.section}`
-  const theirs = sidebar(added()).filter((one) => one.app === inputs.app)
+  const theirs = sidebar(added.sections).filter((one) => one.app === inputs.app)
   return (theirs.find((one) => one.group !== "you") ?? theirs[0])?.id
 }
 /// What a section's own screen says beyond which it is: `settings_section`'s other arguments (`device` in
@@ -154,8 +154,8 @@ const tips = [
 function Sidebar(props: { shown?: string }) {
   const [words, setWords] = createSignal("")
   const wanted = (name: string) => name.toLowerCase().includes(words().trim().toLowerCase())
-  const of = (group: Added["group"]) => sidebar(added()).filter((one) => one.group === group && wanted(one.name!))
-  const person = () => sidebar(added()).find((one) => one.group === "you")
+  const of = (group: Added["group"]) => sidebar(added.sections).filter((one) => one.group === group && wanted(one.name!))
+  const person = () => sidebar(added.sections).find((one) => one.group === "you")
   const choose = (id: string) => choosing(id)
   const row = (section: () => Added) => (
     <Row
@@ -169,15 +169,15 @@ function Sidebar(props: { shown?: string }) {
   )
   const own = () => wanted("Updates")
   // What a search found: sections, Updates or apps.
-  const found = () => groups.slice(1).some((group) => of(group).length) || own() || apps().some((app) => wanted(app.title))
+  const found = () => groups.slice(1).some((group) => of(group).length) || own() || apps.apps.some((app) => wanted(app.title))
   return (
     <Screen heading="Settings" tips={tips}>
       <Search placeholder="Search settings…" aria-label="Search Settings" value={words()} onChangeText={setWords} />
       <Show when={person() && !words()}>
         <List>
           <Row
-            start={<Show when={me()}>{(you) => <Avatar subject={you().who} name={you().called ?? undefined} />}</Show>}
-            heading={<Text style={look.personName}>{me()?.called ?? "You"}</Text>}
+            start={<Show when={me.people[0]}>{(you) => <Avatar subject={you().who} name={you().called ?? undefined} />}</Show>}
+            heading={<Text style={look.personName}>{me.people[0]?.called ?? "You"}</Text>}
             text={person()!.name!}
             current={props.shown === person()!.id}
             onPress={() => choose(person()!.id)}
@@ -199,9 +199,9 @@ function Sidebar(props: { shown?: string }) {
       <Show when={words().trim() && !found()}>
         <Empty>{`No Results for "${words().trim()}"`}</Empty>
       </Show>
-      <Show when={apps().filter((app) => wanted(app.title)).length}>
+      <Show when={apps.apps.filter((app) => wanted(app.title)).length}>
         <Section heading="Apps">
-          <List each={apps().filter((app) => wanted(app.title))} keyed={(app) => `${app.for}:${app.name}`}>
+          <List each={apps.apps.filter((app) => wanted(app.title))} keyed={(app) => `${app.for}:${app.name}`}>
             {(app) => (
               <Row
                 start={<Tile icon={app().icon} />}
@@ -223,13 +223,13 @@ function Sidebar(props: { shown?: string }) {
 function Detail(props: { id: string }) {
   // The same section while what draws it is: `added` asked again, as it is whenever anything changes, gives new
   // objects, and a new one would draw the section from scratch, losing what's open in it (a live screen's stream).
-  const section = createMemo(() => added().find((one) => one.id === props.id && one.in === "settings"), {
+  const section = createMemo(() => added.sections.find((one) => one.id === props.id && one.in === "settings"), {
     equals: (a, b) => a?.id === b?.id && a?.app === b?.app && a?.component === b?.component && a?.name === b?.name && a?.title === b?.title,
   })
   // The same page while it's the same app: `apps` asked again gives new objects, and a page keyed on one would be drawn
   // from scratch on every change, flashing it. `AppPage` reads `apps` again itself, so what changed in it still shows.
   const identity = createMemo(() => {
-    const one = apps().find((one) => props.id === `app:${one.for}:${one.name}`)
+    const one = apps.apps.find((one) => props.id === `app:${one.for}:${one.name}`)
     return one && `${one.for}:${one.name}`
   })
   return (
@@ -264,7 +264,7 @@ function Drawn(props: { section: Added }) {
 function Groups(props: { in: Added["in"]; device?: string; kind?: string; server?: string; services?: string[]; app?: string; inputs?: object; show?: (inputs?: object) => void }) {
   const fits = (one: Added) =>
     props.in === "app" ? one.app === props.app : (!one.kinds || one.kinds.includes(props.kind!)) && (!one.service || !!props.services?.includes(one.app))
-  const here = () => added().filter((one) => one.in === props.in && fits(one))
+  const here = () => added.sections.filter((one) => one.in === props.in && fits(one))
   return (
     <For each={here()} keyed={(one) => one.id}>
       {(one) => (
@@ -319,12 +319,12 @@ async function doing(does: () => Promise<unknown>) {
 }
 
 /// The apps with a newer version waiting, as Settings' Updates answers them (`settings_updates`).
-const waiting = createMemo(() => json<{ apps: App[] }>("settings_updates"))
+const waiting = createProjection(() => json<{ apps: App[] }>("settings_updates"))
 changed(() => refresh(waiting))
 
 /// What's waiting to update: this device and each app with a newer version ready. The network's servers' is Software
 /// Update's, at the top of Servers (Devices).
-const updates = createMemo(async () => {
+const updates = createProjection(async () => {
   const [mine, network, here] = await Promise.all([json<Builds>("builds"), json<Builds>("builds", {}, "network").catch(() => undefined), client()])
   const latest = { ...network?.latest, ...mine.latest }
   const target = mine.devices.find((device) => device.device === here.device)?.target
@@ -340,7 +340,7 @@ function Updates() {
     ;[updates, waiting].forEach(refresh)
     setWorking()
   }
-  const ready = () => waiting().apps
+  const ready = () => waiting.apps
   return (
     <Screen heading="Updates" back>
       <Errored fallback={(error) => <Problem heading="Can't show what's waiting to update" text={error() as Error} />}>
@@ -348,8 +348,8 @@ function Updates() {
           <List>
             <Row
               heading="This Device"
-              text={updates().behind ? "Update ready" : "Up to date"}
-              action={<Show when={updates().behind}><Button variant="outline" loading={working() === "here"} onPress={press("here", () => client({ update: true }).then(({ message }) => toast(message)))}>Update</Button></Show>}
+              text={updates.behind ? "Update ready" : "Up to date"}
+              action={<Show when={updates.behind}><Button variant="outline" loading={working() === "here"} onPress={press("here", () => client({ update: true }).then(({ message }) => toast(message)))}>Update</Button></Show>}
             />
           </List>
           <Show when={ready().length}>
@@ -373,25 +373,30 @@ function Updates() {
 }
 
 /// Who an app is installed for, as a person reads it.
-const whose = (owner: string) => (owner === "network" ? "Everyone" : owner === me()?.who ? "You" : owner.split("/").pop()!)
+const whose = (owner: string) => (owner === "network" ? "Everyone" : owner === me.people[0]?.who ? "You" : owner.split("/").pop()!)
 
 /// Whether each app may notify whoever's looking, as Notifications keeps it, or nothing where it isn't installed.
 /// Where services run, for whoever's looking and for the network, whose apps are theirs.
-const serving = createMemo(() => Promise.all([json<Serving>("services"), json<Serving>("services", {}, "network")]).then(([mine, network]) => ({ mine, network }), () => undefined))
+const serving = createProjection(() =>
+  Promise.all([json<Serving>("services"), json<Serving>("services", {}, "network")]).then(
+    ([mine, network]) => ({ mine, network }),
+    (): { mine: Serving; network: Serving } => ({ mine: { names: {}, services: [] }, network: { names: {}, services: [] } }),
+  ),
+)
 changed(() => refresh(serving))
-const notifying = createMemo(() => json<{ apps: { app: string; allowed: boolean }[] }>("notifications_apps").then(({ apps }) => apps, () => undefined))
+const notifying = createProjection(() => json<{ apps: { app: string; allowed: boolean }[] }>("notifications_apps").catch((): { apps: { app: string; allowed: boolean }[] } => ({ apps: [] })))
 
 /// An app's page: who it's for, whether it's trusted, its notifications, its update, what it adds here, and Remove App.
 function AppPage(props: { identity: string }) {
-  const found = () => apps().find((one) => `${one.for}:${one.name}` === props.identity)
+  const found = () => apps.apps.find((one) => `${one.for}:${one.name}` === props.identity)
   // Where the app was just removed, `apps` has lost it a tick before this page closes: what it was until it does.
   let last = found()!
   const app = () => (last = found() ?? last)
   const [working, setWorking] = createSignal<string>()
-  const allowed = () => notifying()?.find((one) => one.app === app().app)
+  const allowed = () => notifying.apps.find((one) => one.app === app().app)
   // Each of the app's services that runs somewhere or can't where it should, with its machines: running, or what each lacks.
   const services = () => {
-    const of = app().for === "network" ? serving()?.network : serving()?.mine
+    const of = app().for === "network" ? serving.network : serving.mine
     return (of?.services ?? [])
       .filter((one) => one.app === app().name && (one.servers.length || Object.keys(one.lacks).length))
       .map((one) => ({
@@ -465,7 +470,7 @@ function Settings() {
   // Beside the sidebar, the first section shows until another is chosen, as Raycast's Settings opens on General.
   const shown = () => {
     const id = open()
-    return id ? id : beside() ? (sidebar(added()).find((one) => one.group !== "you")?.id ?? "updates") : undefined
+    return id ? id : beside() ? (sidebar(added.sections).find((one) => one.group !== "you")?.id ?? "updates") : undefined
   }
   // Back and Forward go through what was open beside the sidebar, as macOS's System Settings' do.
   const [past, setPast] = createSignal<string[]>([])

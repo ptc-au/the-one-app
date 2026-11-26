@@ -1,6 +1,6 @@
 // The Home Screen's apps and widgets as each is drawn wherever it is: a widget, an icon with its name and its red count,
 // and the ⊖ that takes one off.
-import { createEffect, createMemo, createSignal, Errored, Loading, onSettled, refresh, Show, untrack } from "solid-js"
+import { createEffect, createProjection, createSignal, Errored, Loading, onSettled, refresh, Show, untrack } from "solid-js"
 import { Badge, call, changed, Icon, Image, type Laid, type Layout, type Located, Pressable, type Rect, type Styles, Text, View, visible, Widget } from "ui"
 import { type Widget as WidgetItem, src } from "./types.ts"
 import { corner } from "./layout.ts"
@@ -15,7 +15,7 @@ import { json, type Owner, type From, launch } from "./owners.ts"
 /// opens its app.
 export function Card(props: { item: WidgetItem; owner: Owner; still?: boolean }) {
   const tool = () => props.item.widget.replace("/", "_")
-  const layout = createMemo(() => json<Layout & { refresh?: number }>(tool(), { size: props.item.size }, props.owner.subject))
+  const layout = createProjection(() => json<Layout & { refresh?: number }>(tool(), { size: props.item.size }, props.owner.subject))
   const [problem, setProblem] = createSignal<string>()
   const again = () => refresh(layout)
   onSettled(() => changed(again))
@@ -37,8 +37,8 @@ export function Card(props: { item: WidgetItem; owner: Owner; still?: boolean })
     <View style={looks.widgetCell}>
       <Errored fallback={(error) => <Widget name={props.item.name} size={props.item.size} problem={String((error() as Error).message ?? error())} />}>
         <Loading fallback={<Widget name={props.item.name} size={props.item.size} />}>
-          <Widget name={props.item.name} size={props.item.size} layout={layout()} problem={problem()} onCall={props.still ? undefined : act} onOpen={problem() ? retry : props.item.opens ? opens : undefined} />
-          <Refresh every={layout().refresh} then={again} />
+          <Widget name={props.item.name} size={props.item.size} layout={layout} problem={problem()} onCall={props.still ? undefined : act} onOpen={problem() ? retry : props.item.opens ? opens : undefined} />
+          <Refresh every={layout.refresh} then={again} />
         </Loading>
       </Errored>
     </View>

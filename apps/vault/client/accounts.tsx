@@ -161,13 +161,13 @@ const ask = <T,>(tool: string, inputs?: object): Promise<T> => call(tool, inputs
 const [address, setAddress] = createSignal("")
 void client().then(({ network }) => network && setAddress(network))
 
-const security = createMemo(() => ask<Security>("vault_security"))
+const security = createProjection(() => ask<Security>("vault_security"))
 /// The link that opens a request in the Vault it waits in, on a device of its person's, in the One App or the browser: what `vault_request` gives.
-const requestLink = (id: string) => `${address()}/vault/request?id=${encodeURIComponent(id)}&owner=${encodeURIComponent(security().owner)}`
+const requestLink = (id: string) => `${address()}/vault/request?id=${encodeURIComponent(id)}&owner=${encodeURIComponent(security.owner)}`
 /// The link that opens one of this Vault's items on a device of its person's.
-const itemLink = (name: string) => `${address()}/?open=${encodeURIComponent(`settings#section&app=vault&section=accounts&owner=${encodeURIComponent(security().owner)}&item=${encodeURIComponent(name)}`)}`
+const itemLink = (name: string) => `${address()}/?open=${encodeURIComponent(`settings#section&app=vault&section=accounts&owner=${encodeURIComponent(security.owner)}&item=${encodeURIComponent(name)}`)}`
 const nothing = { items: [] as Item[], requests: [] as Request[], apps: [] as App[], types: [] as ItemType[] }
-const contents = createMemo(() => (security().servers.length ? ask<typeof nothing>("vault_list") : nothing))
+const contents = createProjection(async () => (security.servers.length ? await ask<typeof nothing>("vault_list") : nothing))
 const again = () => [security, contents].forEach(refresh)
 changed(again)
 
@@ -184,7 +184,7 @@ const ownersAnswer = createProjection(async (): Promise<{ owners: { value: strin
 })
 const owners = () => ownersAnswer.owners
 /// Whose the Vault is, in a sentence: "your", "The Smiths'", "the network's".
-const whom = () => owners().find((owner) => owner.value === security().owner)?.whose ?? "your"
+const whom = () => owners().find((owner) => owner.value === security.owner)?.whose ?? "your"
 
 /// Whose of the Vaults its person can open has this request waiting, if any: not one they can't open, which isn't theirs to answer.
 async function holding(id: string) {
@@ -221,7 +221,7 @@ const sites = (typed: string) => typed.toLowerCase().split(/[\s,]+/).filter(Bool
 /// Where an item a save from a browser made came from: "On Andre's Mac, from console.cloud.google.com".
 const whence = (added: NonNullable<Item["added"]>) => `${added.by ? `On ${added.by}, from` : "From"} ${added.from}`
 /// An item's type, if it's of one, and its name as a person reads it: "Personal", not "Chrome profile: Personal".
-const typeOf = (item: Item) => contents().types.find((type) => type.id === item.type)
+const typeOf = (item: Item) => contents.types.find((type) => type.id === item.type)
 const shown = (item: Item) => item.name.slice(typeOf(item)?.prefix.length ?? 0)
 /// The place in the sidebar an item is in: a section an app's type names, Accounts for a sign-in, or Passwords & Keys.
 function placeOf(item: Item): Place {
@@ -230,11 +230,11 @@ function placeOf(item: Item): Place {
   return item.kind === "password" ? "passwords" : "accounts"
 }
 /// The requests still waiting for their person.
-const waiting = () => contents().requests.filter((request) => request.state === "waiting")
+const waiting = () => contents.requests.filter((request) => request.state === "waiting")
 /// The sections apps' types are listed under, other than Accounts, which has its own place: "Chrome Profiles".
-const sections = () => [...new Set(contents().types.map((type) => type.section))].filter((section) => section !== "Accounts").sort()
+const sections = () => [...new Set(contents.types.map((type) => type.section))].filter((section) => section !== "Accounts").sort()
 /// The types an app makes one of from here, in a place.
-const creatable = (place: Place) => contents().types.filter((type) => type.create && type.trusted && (place === "accounts" ? type.section === "Accounts" : place === `section:${type.section}`))
+const creatable = (place: Place) => contents.types.filter((type) => type.create && type.trusted && (place === "accounts" ? type.section === "Accounts" : place === `section:${type.section}`))
 /// Does an action an app gave, as its person: a tool of the app's, whose `url`, if it gives one, opens in the
 /// device's browser, or a page of its client's. → whether it did.
 async function act(action: Action, app: string, inputs: Record<string, unknown> = {}) {
@@ -270,9 +270,9 @@ function Tile(props: { item: Item }) {
 }
 
 /// Whether this Vault is kept with its person's own key, which their passkeys unlock: a group's or the network's isn't.
-const own = () => security().owner.startsWith("users/")
+const own = () => security.owner.startsWith("users/")
 /// Whether this device can hold the key: a browser can't, so `vault_security` names no device for it.
-const holder = () => security().device != null
+const holder = () => security.device != null
 
 /// Unlock with Passkey, every step of a Vault's readiness: the network's sign-in page, in the device's browser, makes
 /// its person's key if there's none, lets this device hold it, and hands it to the servers waiting for it, once the
@@ -281,7 +281,7 @@ const holder = () => security().device != null
 async function unlockWithPasskey() {
   try {
     if (own() && holder()) await call("encryption_ask", {})
-    const link = await call("sign-in_unlock_with_passkey", own() ? { device: security().device ?? undefined } : { scope: whose() })
+    const link = await call("sign-in_unlock_with_passkey", own() ? { device: security.device ?? undefined } : { scope: whose() })
     await opening(JSON.parse(link).link)
   } catch (error) {
     toast(error as Error)
@@ -292,10 +292,10 @@ async function unlockWithPasskey() {
 function Readiness(props: { secure?: boolean }) {
   return (
     <Choose>
-      <Match when={security().readiness === "not_set_up"}>
+      <Match when={security.readiness === "not_set_up"}>
         <Problem warn heading={`Set up ${whom()} Vault`} text="Passwords, keys and sign-ins are kept here, encrypted with a key your passkey unlocks." action={<Button onPress={unlockWithPasskey}>Set Up with Passkey</Button>} />
       </Match>
-      <Match when={security().readiness === "no_server"}>
+      <Match when={security.readiness === "no_server"}>
         <Problem
           warn
           heading={`No server can open ${whom()} Vault`}
@@ -303,7 +303,7 @@ function Readiness(props: { secure?: boolean }) {
           action={<Button onPress={unlockWithPasskey}>Use Passkey</Button>}
         />
       </Match>
-      <Match when={security().readiness === "device_lacks_key"}>
+      <Match when={security.readiness === "device_lacks_key"}>
         <Problem
           warn
           heading={`This device doesn't hold ${whom()} key`}
@@ -329,7 +329,7 @@ function Whose(props: Shown) {
   return (
     <Show when={owners().length > 1}>
       <Field label="Owner">
-        <Select.Root items={owners()} value={security().owner} onValueChange={pick} />
+        <Select.Root items={owners()} value={security.owner} onValueChange={pick} />
       </Field>
     </Show>
   )
@@ -479,7 +479,7 @@ function ItemScreen(props: { item: Item } & Shown) {
             text="Handed to a command, which sees it"
             end={<Switch aria-label="Commands" value={has("commands")} onValueChange={(on) => switchAccess("commands", "Commands", on)} />}
           />
-          <For each={contents().apps}>
+          <For each={contents.apps}>
             {(app) => (
               <Row
                 heading={app.title}
@@ -504,7 +504,7 @@ function FieldSheet(props: Shown) {
   const at = () => {
     const { item: named, field: typed } = props.inputs
     if (typed === undefined) return undefined
-    const item = named === undefined ? undefined : contents().items.find((one) => one.name === named)
+    const item = named === undefined ? undefined : contents.items.find((one) => one.name === named)
     const field = typed ? item?.fields.find((one) => one.name === typed) : undefined
     return { item, field }
   }
@@ -534,7 +534,7 @@ function FieldSheet(props: Shown) {
   const save = async () => {
     const { item, field: changing } = at()!
     const called = item?.name ?? name().trim()
-    if (!item && contents().items.some((other) => other.name.toLowerCase() === called.toLowerCase())) return void toast(`There's an item named ${called} already.`)
+    if (!item && contents.items.some((other) => other.name.toLowerCase() === called.toLowerCase())) return void toast(`There's an item named ${called} already.`)
     const inputs: Record<string, unknown> = { item: called, field: changing?.name ?? field(), value: value(), secret: changing ? changing.secret : secret() }
     if (!item) inputs.hosts = sites(hosts())
     setBusy(true)
@@ -596,7 +596,7 @@ const create = (type: ItemType, props: Shown) => (type.create!.name ? props.show
 function AddSheet(props: Shown) {
   const section = () => props.inputs.add
   const shut = () => props.show(base(props))
-  const types = () => contents().types.filter((type) => type.section === section() && type.create && type.trusted)
+  const types = () => contents.types.filter((type) => type.section === section() && type.create && type.trusted)
   return (
     <Sheet heading={section() ? `Add ${titled(section()!.replace(/s$/, ""))}` : ""} open={!!section()} onClose={shut}>
       <List each={types()} keyed={(type) => type.id}>
@@ -608,7 +608,7 @@ function AddSheet(props: Shown) {
 
 /// A new item of a type (the screen's `create`): its name, which the type's app makes it from (`create`), and then it opens.
 function CreateSheet(props: Shown) {
-  const type = () => (props.inputs.create === undefined ? undefined : contents().types.find((one) => one.id === props.inputs.create))
+  const type = () => (props.inputs.create === undefined ? undefined : contents.types.find((one) => one.id === props.inputs.create))
   const [name, setName] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   createEffect(type, (now) => void (now && setName("")))
@@ -652,7 +652,7 @@ function RequestAlert(props: Shown) {
   const named = (item: Item) => item.name.toLowerCase() === request()!.title.toLowerCase()
   const fits = () =>
     request()
-      ? contents()
+      ? contents
           .items.filter((item) => !item.type && request()!.fields.every((wanted) => item.fields.some((field) => field.name === wanted.name)))
           .sort((a, b) => Number(named(b)) - Number(named(a)))
       : []
@@ -743,15 +743,15 @@ function RequestAlert(props: Shown) {
 /// Everything about the key that keeps the Vault, in Apple's words: this device and the other trusted ones, with any
 /// asking to be; the recovery key; and the servers that can open it.
 function SecurityScreen() {
-  const others = () => security().devices.filter((device) => device.device !== security().device)
+  const others = () => security.devices.filter((device) => device.device !== security.device)
   return (
     <Screen heading="Security" back>
       <Readiness secure />
-      <Show when={security().readiness !== "not_set_up"}>
+      <Show when={security.readiness !== "not_set_up"}>
         <Section heading="Trusted Devices">
           <List>
             <Show when={holder()}>
-              <Row heading="This Device" text={security().holds ? "Holds the key" : "Doesn't hold the key"} />
+              <Row heading="This Device" text={security.holds ? "Holds the key" : "Doesn't hold the key"} />
             </Show>
             <For each={others()}>{(device) => <Row heading={device.name} text="Holds the key" />}</For>
           </List>
@@ -759,7 +759,7 @@ function SecurityScreen() {
         {/* A browser can't hold the key, so it's trusted by none of these, nor shows the recovery key. */}
         <Show when={holder()}>
           <Show
-            when={security().holds}
+            when={security.holds}
             fallback={
               <Section heading="Trust This Device">
                 <List>
@@ -780,12 +780,12 @@ function SecurityScreen() {
         </Show>
         <Section heading="Servers">
           <Text style={look.note}>{`The servers that run ${whom()} apps open ${whom()} Vault, once your passkey hands them its key.`}</Text>
-          <List each={security().may}>
+          <List each={security.may}>
             {(server) => (
               <Row
                 heading={server().name ?? "A server"}
-                text={security().servers.includes(server().key) ? `Opens ${whom()} Vault` : "Waiting for its key"}
-                action={security().servers.includes(server().key) ? undefined : <Button variant="secondary" onPress={unlockWithPasskey}>Use Passkey</Button>}
+                text={security.servers.includes(server().key) ? `Opens ${whom()} Vault` : "Waiting for its key"}
+                action={security.servers.includes(server().key) ? undefined : <Button variant="secondary" onPress={unlockWithPasskey}>Use Passkey</Button>}
               />
             )}
           </List>
@@ -834,7 +834,7 @@ const src = (icon: string) => icon.replace(/^ui:\/\/([^/]+)\/([^/]+)\//, "../../
 /// A password's or key's grey line: what it is, and who uses it, each app by its icon and name, or agents. The row draws
 /// it inside a `Text`, so each app's `View` is a run of it and its `gap` does nothing: the spaces are in the words.
 function UsedBy(props: { item: Item }) {
-  const apps = () => props.item.access.filter((who) => who !== "agents" && who !== "commands").map((name) => contents().apps.find((app) => app.name === name) ?? { name, title: name, icon: null })
+  const apps = () => props.item.access.filter((who) => who !== "agents" && who !== "commands").map((name) => contents.apps.find((app) => app.name === name) ?? { name, title: name, icon: null })
   const what = () => props.item.fields.find((field) => field.secret)?.name
   return (
     <View style={look.inline}>
@@ -868,7 +868,7 @@ function ItemRow(props: { item: Item } & Shown) {
 /// A request waiting for its person, as a banner atop Accounts: who asks for what, why, and Don't Allow or Choose…,
 /// which opens its alert.
 function Banner(props: { request: Request } & Shown) {
-  const icon = () => contents().apps.find((app) => app.name === props.request.app?.name)?.icon
+  const icon = () => contents.apps.find((app) => app.name === props.request.app?.name)?.icon
   return (
     <List>
       <Row
@@ -920,12 +920,12 @@ function Vault(props: Shown) {
       })
     },
   )
-  const items = (to: Place) => contents().items.filter((item) => placeOf(item) === to)
+  const items = (to: Place) => contents.items.filter((item) => placeOf(item) === to)
   const addAccount = () => (creatable("accounts").length === 1 ? create(creatable("accounts")[0], props) : props.show({ owner: props.inputs.owner, add: "Accounts" }))
-  const typeIn = (section: string) => contents().types.find((type) => type.section === section)
-  const item = () => contents().items.find(({ name }) => name === props.inputs.item)
+  const typeIn = (section: string) => contents.types.find((type) => type.section === section)
+  const item = () => contents.items.find(({ name }) => name === props.inputs.item)
   const secure = () => props.inputs.security === true
-  const ready = () => !!security().servers.length
+  const ready = () => !!security.servers.length
   return (
     <>
       <Split
@@ -988,7 +988,7 @@ function Vault(props: Shown) {
             </For>
           </Show>
           <List>
-            <Row heading="Security" end={security().readiness !== "ready" ? <View role="img" aria-label="Needs you" style={look.dot} /> : undefined} current={secure()} onPress={() => props.show({ owner: props.inputs.owner, security: true })} />
+            <Row heading="Security" end={security.readiness !== "ready" ? <View role="img" aria-label="Needs you" style={look.dot} /> : undefined} current={secure()} onPress={() => props.show({ owner: props.inputs.owner, security: true })} />
           </List>
         </Screen>
       </Split>
