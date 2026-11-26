@@ -7,7 +7,7 @@
 // a server keeps a copy of, which it copies from here (`whose`), so a call asks nothing here. What a person goes by
 // is a line in this app's own artifact, `people/<name>`: the name they chose as they joined, and their email where
 // how they signed in has one, which a server tells apps of by `people`.
-import { env } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 import { betterAuth, getCurrentAdapter } from "better-auth";
 import { APIError, createAuthEndpoint, createAuthMiddleware, getAuthoritativeSessionFromCtx, getOAuthState, getSessionFromCtx } from "better-auth/api";
 import { jwt, testUtils } from "better-auth/plugins";
@@ -258,8 +258,9 @@ export async function copied() {
  */
 async function gone() {
   await changed();
-  await copied();
-  await env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } }));
+  // After the answer: where no server answers, as when they're all off, the relay waits 30 s for one, which held up
+  // every answer that deletes a session, a device's token among them, past the time the device waits for it.
+  waitUntil(copied().then(() => env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } }))));
 }
 
 /** Deletes the sessions that ended (`UNUSED`), which Better Auth otherwise deletes only as one is used again. The edge calls this every ten minutes. */
