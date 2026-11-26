@@ -1,7 +1,8 @@
 defmodule Vault.Access do
   @moduledoc """
-  Who may use an item: one list per item, `access`, of `"agents"` (its person's agents, with `fetch`) and the
-  artifacts of the apps switched on for it. Its websites are apart from it (`Vault.Items`).
+  Who may use an item: one list per item, `access`, of `"agents"` (its person's agents, with `fetch`), `"commands"`
+  (a command its person's agents run, handed it by a handle, `Vault.Handles`) and the artifacts of the apps switched
+  on for it. Its websites are apart from it (`Vault.Items`).
 
   An app with access to any item reaches its person's Vault as an editor, which a relation tuple says; this module is
   the one place that list changes, so the tuple is shared with an app as it gets access to its first item, and
@@ -13,12 +14,26 @@ defmodule Vault.Access do
   alias OneCore.Apps.Calls
   alias Vault.Store
 
-  @doc "The item, if `by` may use it: its person, an app with access, or agents where its person let them."
+  # Who of its person's own may use an item, beside the apps: their agents, which send its secrets only to its websites
+  # (`fetch`), and the commands their agents run, which see them, so each is switched on apart.
+  @own ~w(agents commands)
+
+  @doc "Who of its person's own may be given access, beside the apps (`@own`)."
+  def own, do: @own
+
+  @doc "The item, if `by` may use it: its person, an app with access, or agents or their commands where its person let them."
   def may!(item, :person), do: item
 
   def may!(item, :agents) do
     if "agents" not in item["access"],
       do: raise("#{item["name"]} isn't one agents may use. Ask its person, with vault_request.")
+
+    item
+  end
+
+  def may!(item, :commands) do
+    if "commands" not in item["access"],
+      do: raise("#{item["name"]} isn't one agents may hand to a command. Its person switches on Commands for it, in the Vault on their device.")
 
     item
   end
@@ -43,17 +58,17 @@ defmodule Vault.Access do
     on_screen || raise "#{what} is its person's to do, in Vault on their device, where an agent's vault_request asks them."
   end
 
-  @doc "Whoever an app is called by its name, as its person picks it: its artifact, or `\"agents\"`."
-  def who!(_call, "agents"), do: "agents"
+  @doc "Whoever an app is called by its name, as its person picks it: its artifact, or one of `@own`."
+  def who!(_call, own) when own in @own, do: own
   def who!(call, app), do: Apps.app(call.subject, app) || Apps.app("network", app) || raise("There's no app named #{app}.")
 
   @doc """
-  Gives `who` (`"agents"` or an app's artifact) access to an item, or with `on` false takes it away, and keeps the
+  Gives `who` (one of `@own`, or an app's artifact) access to an item, or with `on` false takes it away, and keeps the
   app's tuple on the Vault in step. The tuple moves first, so where the permissions app refuses, the item is as it
   was. Gives the item.
   """
   def switch(call, db, item, who, on) do
-    if who != "agents" do
+    if who not in @own do
       if on, do: in_step(call, db, who, true), else: unshare_unless_used(call, db, item, who)
     end
 
@@ -65,7 +80,7 @@ defmodule Vault.Access do
   so, and its tuple on the Vault taken back: where an item is read, as it's found.
   """
   def prune(call, db, item, names) do
-    gone = for who <- item["access"], who != "agents", not is_map_key(names, who), do: who
+    gone = for who <- item["access"], who not in @own, not is_map_key(names, who), do: who
 
     if gone == [] do
       item

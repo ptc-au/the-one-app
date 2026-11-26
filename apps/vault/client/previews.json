@@ -107,6 +107,11 @@
       },
       "permissions_check": {
         "may": false
+      },
+      "one/client": {
+        "device": "Laptop",
+        "build": "0.26.0",
+        "theme": null
       }
     },
     "component": "accounts"
@@ -232,6 +237,7 @@
             ],
             "access": [
               "agents",
+              "commands",
               "backups"
             ]
           }
@@ -514,6 +520,11 @@
       },
       "permissions_check": {
         "may": false
+      },
+      "one/client": {
+        "device": "Laptop",
+        "build": "0.26.0",
+        "theme": null
       }
     },
     "component": "accounts"
@@ -522,6 +533,11 @@
     "answers": {
       "vault_security": {
         "$error": "Couldn't reach the server"
+      },
+      "one/client": {
+        "device": "Laptop",
+        "build": "0.26.0",
+        "theme": null
       }
     },
     "component": "accounts",

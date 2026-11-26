@@ -5,7 +5,8 @@ defmodule Vault do
   with their Vault's keys (`Vault.Store`), so only the servers they chose open it, and deleted, restored and purged by
   soft delete as anything an app made is. Who may use each is one list on it (`Vault.Access`); what's asked of its
   person waits in `Vault.Requests`; a sign-in to an outside service is `Vault.SignIns`; and a secret leaves only inside
-  a web request to one of its item's websites (`Vault.Fetch`), or to the code of an app with access. No tool here
+  a web request to one of its item's websites (`Vault.Fetch`), to the code of an app with access, or to a command
+  its person's agents run, by a handle (`Vault.Handles`), which only the device that runs it opens. No tool here
   answers with a secret, and nothing a tool raises says one (`Vault.Store.quietly/2`).
 
   This module is the app: its tools, which act for its person, or for the app that calls them (its `caller`), and
@@ -22,7 +23,7 @@ defmodule Vault do
   def sensitive, do: true
 
   alias OneCore.{Artifact, Call}
-  alias Vault.{Access, Fetch, Items, Requests, SignIns, Store}
+  alias Vault.{Access, Fetch, Handles, Items, Requests, SignIns, Store}
 
   # How ready someone's Vault is, which `security` says and its screen shows, worked out each time from their key and
   # the servers they chose, never kept. Each state is the first thing missing, in the order they're done:
@@ -145,7 +146,11 @@ defmodule Vault do
                     }
                   },
                   hosts: %{type: "array", items: %{type: "string"}, description: "The sites its secrets are sent to"},
-                  access: %{type: "array", items: %{type: "string"}, description: "Who may use it: agents (with fetch), and the apps switched on for it"},
+                  access: %{
+                    type: "array",
+                    items: %{type: "string"},
+                    description: "Who may use it: agents (with fetch), commands (with a handle), and the apps switched on for it"
+                  },
                   sign_in: %{type: "boolean", description: "Whether a sign-in made it"},
                   added: %{
                     type: ["object", "null"],
@@ -178,6 +183,25 @@ defmodule Vault do
                 required: ["id", "title", "state", "fields", "hosts", "app", "by", "why"]
               }
             },
+            handles: %{
+              type: "array",
+              description: "What's been handed to commands in the last month, newest first, never a value",
+              items: %{
+                type: "object",
+                properties: %{
+                  handle: %{type: "string"},
+                  item: %{type: ["string", "null"], description: "The item it was of, with its `field`"},
+                  field: %{type: ["string", "null"]},
+                  site: %{type: ["string", "null"], description: "Or the site a browser showed it on"},
+                  by: %{type: ["string", "null"], description: "The device of the agent that made it"},
+                  at: %{type: "integer", description: "When it was made, in seconds since 1970"},
+                  state: %{type: "string", enum: ~w(made used expired)},
+                  used: %{type: ["integer", "null"], description: "When it was used"},
+                  where: %{type: ["string", "null"], description: "Where: the device, or the app that ran the command"}
+                },
+                required: ~w(handle item field site by at state used where)
+              }
+            },
             apps: %{
               type: "array",
               description: "The apps that use the Vault: `name`, which its tools start with, `title`, as a person reads it, and `icon`",
@@ -208,7 +232,7 @@ defmodule Vault do
               }
             }
           },
-          required: ["items", "requests", "apps", "types"]
+          required: ["items", "requests", "handles", "apps", "types"]
         }
       },
       %{
@@ -240,7 +264,8 @@ defmodule Vault do
         description: """
         Saves a secret from a browser of yours (Chrome's or Chrome Profiles' `session`) into the Vault without you
         seeing it, as a password manager's Save does: what elements on the page hold, or what's in a file the browser
-        downloaded, the whole of it or a value in its JSON. Into a new item, or one a save from a browser made. The
+        downloaded, the whole of it or a value in its JSON. Into a new item, or one a save from a browser made, in the
+        Vault of whoever the call is for: yours, or a group's or the network's (`ONE_SUBJECT=groups/<name>`). The
         person is notified, and sees who added it from where, with Undo. Answers each field's length and the first 8
         hex of its SHA-256, never its value. The download is deleted from the browser.
         """,
@@ -289,6 +314,63 @@ defmodule Vault do
             }
           },
           required: ["item", "site", "fields"]
+        }
+      },
+      %{
+        name: "handle",
+        description: """
+        Makes a handle to one secret, for a command to be handed once without you seeing it: a field of an item whose
+        person switched on Commands for it (`item`, `field`), or what a browser of yours shows, as `save_from_browser`
+        takes it (`session`, with `target`, or `download` and `json`). Use it once, within 5 minutes: `one vault run
+        --handle <it> -- <command>` on a device of yours, Remote Shell's `run` or Containers' `exec` (`secrets`).
+        Answers the handle, and for a browser's, its site, length and the first 8 hex of its SHA-256.
+        """,
+        inputs: %{
+          type: "object",
+          properties: %{
+            item: Map.put(item, :description, "The item it's of, with `field`"),
+            field: %{type: "string", description: "The item's field, like client_secret"},
+            session: %{type: "string", description: "Or a browser, by the session it was opened with"},
+            target: %{type: "string", description: "With `session`, the element that holds it: its ref from the snapshot, like e12, or a unique selector"},
+            download: %{type: "string", description: "With `session`, a file the browser downloaded, by its name as Chrome saved it"},
+            json: %{type: "string", description: "With `download`, where it is in the file's JSON, like web.client_secret. The whole file if left out"},
+            by: %{type: "string", format: "device-name", description: "Your device fills this in"}
+          }
+        },
+        outputs: %{
+          type: "object",
+          properties: %{
+            handle: %{type: "string", description: "What a command is run with, once"},
+            expires: %{type: "integer", description: "When it can't be used any more, in seconds since 1970"},
+            site: %{type: "string", description: "The site a browser's was on"},
+            length: %{type: "integer", description: "How many characters a browser's is"},
+            sha256: %{type: "string", description: "The first 8 hex of a browser's SHA-256, to check it against"}
+          },
+          required: ["handle", "expires"]
+        }
+      },
+      %{
+        name: "redeem",
+        no_store: true,
+        description: """
+        Spends a handle and gives its secret to what runs the command: sealed to the device that asks, which alone
+        opens it, as `one vault run` does, or to the code of a trusted app that runs commands (Remote Shell, Containers).
+        Over the web it's refused. You don't call it: those do.
+        """,
+        inputs: %{
+          type: "object",
+          properties: %{
+            handle: %{type: "string"},
+            by: %{type: "string", format: "device-name", description: "Your device fills this in"}
+          },
+          required: ["handle"]
+        },
+        outputs: %{
+          type: "object",
+          properties: %{
+            sealed: %{type: "string", contentEncoding: "base64", description: "For a device: the secret, encrypted to its key"},
+            value: %{type: "string", description: "For a trusted app's code: the secret"}
+          }
         }
       },
       %{
@@ -559,7 +641,7 @@ defmodule Vault do
       },
       %{
         name: "expire",
-        description: "Marks requests that waited a week as expired, and lets go of those that ended a month ago. The Vault's timer calls it when the next one does",
+        description: "Marks requests that waited a week as expired, and lets go of those that ended a month ago, of what a browser sent for a handle once its time is over, and of handles a month old. The Vault's timer calls it when the next one does",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object", properties: %{expired: %{type: "integer"}}, required: ["expired"]}
       },
@@ -821,7 +903,7 @@ defmodule Vault do
   defp delete!(call, db, item), do: Call.tool(call, "soft-delete", "delete", %{"artifact" => Store.artifact(db, item["id"])})
 
   # The tools an app's code calls, which act for it. The rest are its person's.
-  @apps ~w(fetch items sign_in state access)
+  @apps ~w(fetch items sign_in state access redeem)
 
   @impl true
   def call(tool, _inputs, %Call{caller: caller}) when caller != nil and tool not in @apps,
@@ -884,7 +966,7 @@ defmodule Vault do
       |> Enum.sort_by(&String.downcase(&1.title))
 
     items = for item <- Enum.sort_by(Items.all(call, db), &String.downcase(&1["name"])), do: Items.listed(item, db, names, types, running)
-    %{items: items, requests: Requests.all(call, db, names), apps: use_it, types: Enum.map(types, &Map.delete(&1, :artifact))}
+    %{items: items, requests: Requests.all(call, db, names), handles: Handles.all(call, db), apps: use_it, types: Enum.map(types, &Map.delete(&1, :artifact))}
   end
 
   # A write of a field: into the item, or a new password where there's none. Websites given are added to its own,
@@ -907,7 +989,8 @@ defmodule Vault do
 
   # A secret from a browser of theirs, which Chrome sends sealed under a key made here for it alone (its `upload`), so
   # it never passes through a tool's result. It goes only into a new item, or one a save from a browser made, which
-  # its person sees was added, by whom and from where, and deletes as any item.
+  # its person sees was added, by whom and from where, and deletes as any item, in the Vault of whoever the call is
+  # for: theirs, or a group's or the network's, which they keep for its members.
   def call("save_from_browser", %{"session" => session, "item" => name, "fields" => fields} = inputs, call) do
     db = Store.own(call)
     secret = Map.new(fields, fn {field, about} -> {Items.field!(field), Map.get(about, "secret", true)} end)
@@ -920,21 +1003,8 @@ defmodule Vault do
 
       new_hosts!(call, found, Map.get(inputs, "hosts", []))
 
-      {blob, key} = {"saving/#{Store.random(12)}", :crypto.strong_rand_bytes(32)}
       taken = Map.new(fields, fn {field, about} -> {field, Map.take(about, ~w(target json))} end)
-      upload = %{"session" => session, "link" => Store.link(db, blob, :write), "key" => Base.encode64(key), "fields" => taken}
-      upload = if download = inputs["download"], do: Map.put(upload, "download", download), else: upload
-
-      %{"site" => site, "values" => values} =
-        try do
-          Call.tool(call, "chrome", "upload", upload)
-          {:ok, sealed, _tag} = Artifact.read(%{Store.root(db) | codec: nil}, blob)
-          JSON.decode!(opened(sealed, key))
-        after
-          Artifact.remove(Store.root(db), blob)
-        end
-
-      if Enum.sort(Map.keys(values)) != Enum.sort(Map.keys(secret)), do: raise("The browser sent other fields than were asked for.")
+      %{"site" => site, "values" => values} = from_browser(call, db, session, taken, inputs["download"])
       added = %{"by" => inputs["by"], "from" => site, "at" => Store.now()}
       hosts = Map.get(inputs, "hosts", [])
 
@@ -953,12 +1023,64 @@ defmodule Vault do
       })
 
       kept =
-        for {field, value} <- Enum.sort(values) do
-          sha256 = :sha256 |> :crypto.hash(value) |> Base.encode16(case: :lower) |> binary_part(0, 8)
-          %{name: field, secret: secret[field], length: String.length(value), sha256: sha256}
-        end
+        for {field, value} <- Enum.sort(values),
+            do: %{name: field, secret: secret[field], length: String.length(value), sha256: sha256(value)}
 
       %{item: saved["name"], site: site, fields: kept}
+    end)
+  end
+
+  def call("handle", inputs, call) do
+    db = Store.own(call)
+
+    Store.quietly("Making a handle", fn ->
+      case inputs do
+        %{"item" => name, "field" => field, "session" => _} ->
+          raise "A handle is of an item's field (#{name}, #{field}) or of what a browser shows, not both."
+
+        %{"item" => name, "field" => field} ->
+          handle = Handles.create(call, db, {:item, name, field}, inputs["by"])
+          timed(call, db)
+          %{handle: handle, expires: Store.now() + Handles.lasts()}
+
+        %{"session" => session} ->
+          taken = Map.take(inputs, ~w(target json))
+          %{"site" => site, "values" => %{"value" => value}} = from_browser(call, db, session, %{"value" => taken}, inputs["download"])
+          handle = Handles.create(call, db, {:site, site, value}, inputs["by"])
+          timed(call, db)
+          %{handle: handle, expires: Store.now() + Handles.lasts(), site: site, length: String.length(value), sha256: sha256(value)}
+
+        _ ->
+          raise "Say what it's a handle to: an item and its field, or a browser's session with a target or a download."
+      end
+    end)
+  end
+
+  # A handle's secret, for what runs a command: sealed to the device that asks, over its own connection, which alone
+  # opens it (as what a write answered is, `OneCore.Writes`), or to the code of a trusted app that runs commands.
+  def call("redeem", %{"handle" => handle} = inputs, call) do
+    client = Call.client(call) || %{}
+
+    to =
+      cond do
+        call.caller != nil and trusted?(call, call.caller) -> {:app, Items.app_name(call, call.caller)}
+        call.caller != nil -> raise "A handle's secret is handed only to a trusted app's code, which runs a command with it."
+        client["web"] == false and is_binary(client["device"]) -> {:device, client["device"], inputs["by"] || "a device"}
+        true -> raise "A handle is used on a device of yours (`one vault run`), or by Remote Shell or Containers: never over the web."
+      end
+
+    db = Store.own(call)
+
+    Store.quietly("Using the handle", fn ->
+      case to do
+        {:app, app} ->
+          %{value: Handles.use(call, db, handle, app)}
+
+        {:device, device, name} ->
+          value = Handles.use(call, db, handle, name)
+          {:ok, sealed} = OneCore.Iroh.seal(device, "one/vault/1/handle\n" <> handle, value)
+          %{sealed: Base.encode64(sealed)}
+      end
     end)
   end
 
@@ -1022,6 +1144,7 @@ defmodule Vault do
 
   def call("expire", _inputs, call) do
     db = Store.own(call)
+    Handles.expire(call, db)
     expired = Requests.expire(call, db)
     timed(call, db)
     if expired > 0, do: Call.changed(call)
@@ -1076,6 +1199,33 @@ defmodule Vault do
     if new != [], do: Access.person!(call, "Sending #{found["name"]}'s secrets to #{Enum.join(new, ", ")}")
   end
 
+  # What a browser of the person's shows: the elements or the download `fields` names, each by the name it's given,
+  # which Chrome sends sealed under a key made here for it alone (its `upload`), into a blob of this Vault's that's
+  # gone once it's read. The browser is whoever acts', whoever's Vault the call is for.
+  defp from_browser(call, db, session, fields, download) do
+    {blob, key} = {"saving/#{Store.random(12)}", :crypto.strong_rand_bytes(32)}
+    upload = %{"session" => session, "link" => Store.link(db, blob, :write), "key" => Base.encode64(key), "fields" => fields}
+    upload = if download, do: Map.put(upload, "download", download), else: upload
+
+    sent =
+      try do
+        Call.tool(%{call | subject: call.actor}, "chrome", "upload", upload)
+        {:ok, sealed, _tag} = Artifact.read(%{Store.root(db) | codec: nil}, blob)
+        JSON.decode!(opened(sealed, key))
+      after
+        Artifact.remove(Store.root(db), blob)
+      end
+
+    if Enum.sort(Map.keys(sent["values"])) != Enum.sort(Map.keys(fields)), do: raise("The browser sent other fields than were asked for.")
+    sent
+  end
+
+  # The first 8 hex of a value's SHA-256, to check it against what a site says, never the value.
+  defp sha256(value), do: :sha256 |> :crypto.hash(value) |> Base.encode16(case: :lower) |> binary_part(0, 8)
+
+  # Whether an app's code is trusted, as one that runs commands is: it runs in One Core, as this app's does.
+  defp trusted?(call, app), do: Enum.any?(OneCore.Apps.running(call.subject), fn {_name, version} -> version.artifact == app and version.trusted end)
+
   # The first thing someone's Vault lacks (`@readiness`), from their key and the servers that open it.
   defp readiness(key, servers) do
     cond do
@@ -1100,7 +1250,10 @@ defmodule Vault do
 
   defp opened(_sealed, _key), do: raise("What the browser sent isn't whole.")
 
-  # Has the Vault's timer go off when a request next waits a week or ended a month ago (`Database.timer/5`), kept in
-  # its own database, where One Core's clock finds it.
-  defp timed(call, db), do: Call.app(call, "database").timer(call, "expire", %{}, Requests.next(call, db))
+  # Has the Vault's timer go off when a request next waits a week or ended a month ago, or a handle's time is over or
+  # it's a month old (`Database.timer/5`), kept in its own database, where One Core's clock finds it.
+  defp timed(call, db) do
+    next = Enum.reject([Requests.next(call, db), Handles.next(call, db)], &is_nil/1)
+    Call.app(call, "database").timer(call, "expire", %{}, Enum.min(next, fn -> nil end))
+  end
 end

@@ -6,7 +6,7 @@ defmodule Vault.Store do
   (`change!/3`); its contents are blobs beside it, `<id>/contents/<blob>`, each sealed under a key the record holds.
   Their Vault's database, encrypted the same, says which id each name is (`artifacts`), so finding one by name is one
   read, and one soft delete took aside isn't there to read until it's restored. It keeps what's been asked for
-  (`Vault.Requests`) and the sign-ins under way (`Vault.SignIns`) too.
+  (`Vault.Requests`), the sign-ins under way (`Vault.SignIns`) and what's been handed to commands (`Vault.Handles`) too.
   """
 
   alias OneCore.{Artifact, Call, Server}
@@ -33,7 +33,14 @@ defmodule Vault.Store do
     ) without rowid
     """,
     # The browser a sign-in's link was opened in, by its hash, which alone finishes it.
-    "alter table sign_ins add column browser text"
+    "alter table sign_ins add column browser text",
+    # What's been handed to commands (`Vault.Handles`), and what a browser sent until it's used.
+    """
+    create table handles (
+      id text primary key, item text, field text, site text, value text, by text,
+      at integer not null, expires integer not null, used integer, used_by text
+    ) without rowid
+    """
   ]
 
   # Someone's Vault is theirs alone: no relation tuple has anyone else ask for a user, the network's owner included.

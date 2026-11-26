@@ -43,7 +43,7 @@ interface Item {
   status: Status | null
   fields: ItemField[]
   hosts: string[]
-  /** Who may use it: "agents", and the apps switched on for it, by name. */
+  /** Who may use it: "agents", "commands", and the apps switched on for it, by name. */
   access: string[]
   sign_in?: boolean
   /** If a save from a browser made it: the device of the agent that saved it, the site, and when. */
@@ -473,6 +473,11 @@ function ItemScreen(props: { item: Item } & Shown) {
             text="Use it, never see it"
             end={<Switch aria-label="Your agents" value={has("agents")} onValueChange={(on) => switchAccess("agents", "Your agents", on)} />}
           />
+          <Row
+            heading="Commands"
+            text="Handed to a command, which sees it"
+            end={<Switch aria-label="Commands" value={has("commands")} onValueChange={(on) => switchAccess("commands", "Commands", on)} />}
+          />
           <For each={contents().apps}>
             {(app) => (
               <Row
@@ -828,11 +833,11 @@ const src = (icon: string) => icon.replace(/^ui:\/\/([^/]+)\/([^/]+)\//, "../../
 /// A password's or key's grey line: what it is, and who uses it, each app by its icon and name, or agents. The row draws
 /// it inside a `Text`, so each app's `View` is a run of it and its `gap` does nothing: the spaces are in the words.
 function UsedBy(props: { item: Item }) {
-  const apps = () => props.item.access.filter((who) => who !== "agents").map((name) => contents().apps.find((app) => app.name === name) ?? { name, title: name, icon: null })
+  const apps = () => props.item.access.filter((who) => who !== "agents" && who !== "commands").map((name) => contents().apps.find((app) => app.name === name) ?? { name, title: name, icon: null })
   const what = () => props.item.fields.find((field) => field.secret)?.name
   return (
     <View style={look.inline}>
-      <Text>{[what() && label(what()!), apps().length ? "used by " : props.item.access.includes("agents") ? "agents may use it" : "used by nothing yet"].filter(Boolean).join(" · ")}</Text>
+      <Text>{[what() && label(what()!), apps().length ? "used by " : props.item.access.some((who) => who === "agents" || who === "commands") ? "agents may use it" : "used by nothing yet"].filter(Boolean).join(" · ")}</Text>
       <For each={apps()}>
         {(app, at) => (
           <View style={look.inline}>

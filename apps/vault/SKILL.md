@@ -23,8 +23,8 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   recovery key; a browser or an assistant never can, so it's `ready` without) or `ready`; and the devices holding its person's key, those asking to, and the servers that open it.
 - `list` shows what's there: each item's `kind` (`password`, `account` or `app_item`, an app's type), its fields, a
   secret one without its value, its websites (`hosts`), its `access` (`agents` and the apps switched on for it), its
-  `status` and its `artifact`; every request kept, with its `state`; the apps that use the Vault, by name and title;
-  and the kinds of item they keep.
+  `status` and its `artifact`; every request kept, with its `state`; what was handed to commands in the last month
+  (`handles`); the apps that use the Vault, by name and title; and the kinds of item they keep.
 - `request` asks for an item by its `title` and the `fields` it needs, for an `app` or, with none, for you. A field
   that isn't secret (`secret: false`) may carry a `value` you know, as an account name or an endpoint: the person's
   sheet shows it filled in and they can change it, so they type only what you don't know. A `value` on a secret field
@@ -45,7 +45,16 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   be shown, as a client_id. It makes a new item, or adds to one a save from a browser made, never another; its
   person is notified and sees "Added by an agent from <site>", and deletes it if they didn't want it. It answers each field's length and the
   first 8 hex of its SHA-256, to check against what the site says. Using it is still the person's to allow: an app
-  that needs it, or `fetch`, still asks with `request`, which they answer with the item.
+  that needs it, or `fetch`, still asks with `request`, which they answer with the item. It goes into the Vault of
+  whoever the call is for, from your own browser: a group's or the network's with `ONE_SUBJECT=groups/<name>` or
+  `network`. For another network's Vault, pipe a handle (below) into that network's `set`.
+- `handle` gives a command one secret without you seeing it: a field of an item whose person switched on Commands
+  for it, or what a browser of yours shows, taken as `save_from_browser` takes it. It's used once, within 5 minutes,
+  by `one vault run --handle <it> [--env NAME] -- <command>` on a device of yours (on the command's input, or in
+  NAME), or Remote Shell's `run` and Containers' `exec` (`secrets: {"NAME": "<handle>"}`), and what the command prints of
+  it is `<concealed>`. Into another network's Vault: `one vault run --handle <it> -- ptc vault set --item <name>
+  --field <field> --value-from /dev/stdin`. Run as the same owner it was made for (`ONE_SUBJECT`). Switching on
+  Commands is its person's, as access is; `list` keeps each use, by item and handle, never the value.
 - `fetch` fills `{{<field>}}` into a request's url, headers or body (escaped as JSON string text in a body whose
   `content-type` is JSON), for an item agents may use, and answers
   the status, headers and body. It goes only to one of the item's sites, and a secret the site says back is
@@ -58,7 +67,7 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   web, ask with `request` instead.
 - `access` gives an app (`who`, by its name) access to an item, or with `on: false` takes it away. An app with
   access uses it through the Vault's tools without seeing it, or, one with a service, is handed the secret itself,
-  which trusts its code with it. `who: "agents"` lets agents use it with `fetch`. Giving access, to an app or to
+  which trusts its code with it. `who: "agents"` lets agents use it with `fetch`, and `who: "commands"` hand it to a command (`handle`). Giving access, to an app or to
   agents, is the person's alone, in the Vault on their device: an agent asks with `request` (with `app` for an
   app), and `access` refuses it. Taking access away is anyone's.
 - The servers that open the Vault are those that act for whose it is, and they're handed its key only by its

@@ -234,7 +234,7 @@ defmodule Vault.Items do
       end
 
     type = item["type"] && Enum.find(types, &(&1.artifact == item["type"]["app"] and &1.name == item["type"]["name"]))
-    apps = Enum.uniq(for who <- item["access"], who != "agents", do: named(names, who))
+    apps = Enum.uniq(for who <- item["access"], who not in Vault.Access.own(), do: named(names, who))
 
     %{
       name: item["name"],
@@ -244,7 +244,7 @@ defmodule Vault.Items do
       status: item["status"] && screen(item["status"], running),
       fields: fields,
       hosts: item["hosts"],
-      access: if("agents" in item["access"], do: ["agents"], else: []) ++ Enum.sort(apps),
+      access: Enum.filter(Vault.Access.own(), &(&1 in item["access"])) ++ Enum.sort(apps),
       sign_in: item["oauth"] != nil,
       added: item["added"],
       changed: item["changed"]
