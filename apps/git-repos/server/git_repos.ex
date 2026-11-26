@@ -381,10 +381,14 @@ defmodule GitRepos do
 
   # A repo an app was deployed from, as git clones it (`one::users/alice/made/git-repos/notes`, by whichever
   # program's name), for a server looking for the app's update: all of it as a bundle, where whoever the app is may
-  # read it.
+  # read it. A repo this network hasn't, as one in another network (`ptc::` deployed to `one::`) or one removed, is
+  # nothing this app gives.
   def hook("source", %{"source" => source}, call) do
-    with [_, name] <- Regex.run(~r/^[a-z][a-z0-9+.-]*::(.+)$/, source), true <- name =~ @repo do
-      {folder, _state} = read(call, OneCore.User.renamed(name))
+    with [_, name] <- Regex.run(~r/^[a-z][a-z0-9+.-]*::(.+)$/, source),
+         true <- name =~ @repo,
+         repo = reach!(call, OneCore.User.renamed(name)),
+         {:ok, _json, _tag} <- Artifact.read(repo, "repo.json") do
+      {folder, _state} = synced(call, Mirror.of(call, repo), repo)
       %{"bundle" => Base.encode64(Mirror.git!(folder, ["bundle", "create", "--quiet", "-", "--all"], binary: true))}
     else
       _ -> nil
