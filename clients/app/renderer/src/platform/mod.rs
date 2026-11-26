@@ -382,8 +382,9 @@ struct Window {
     tag: serde_json::Value,
     /// A panel's file of where it was dragged to on each screen (`WindowOptions::places`).
     places: Option<std::path::PathBuf>,
-    /// Where a panel shows under, as its menu bar icon is (`Windows::summon_under`): in the screen's pixels, from the
-    /// top left of its first screen, as the system gives a menu bar icon's place.
+    /// Where a panel shows under, as its menu bar icon is (`Windows::summon_under`), as its host says: a Mac's, its icon's
+    /// window in points from the bottom left of its screens, as Cocoa has it; Windows', its icon's rect in pixels from
+    /// the top left of its first monitor.
     under: Option<crate::geometry::Bounds<f32>>,
     /// It's the root window (`WindowOptions::root`).
     root: bool,

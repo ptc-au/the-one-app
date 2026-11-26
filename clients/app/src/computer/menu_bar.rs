@@ -241,10 +241,29 @@ impl Extra {
         });
     }
 
-    /// Where its icon is on the screen, as the system says, where it does: a Linux panel's doesn't.
+    /// Where its icon is on the screen, as the system says, where it does: a Linux panel's doesn't. On a Mac that's its
+    /// status item's own window, in points as Cocoa has them from the bottom left of its screens (`tray_icon`'s `rect`
+    /// flips them by the main display's height and scales them by the window's); Windows' is its rect, in pixels from
+    /// the top left of its first monitor.
     fn under(&self) -> Option<Bounds<f32>> {
-        let rect = self.icon.rect()?;
-        Some(Bounds { origin: Point { x: rect.position.x as f32, y: rect.position.y as f32 }, size: Size { width: rect.size.width as f32, height: rect.size.height as f32 } })
+        #[cfg(target_os = "macos")]
+        {
+            use objc2::{msg_send, rc::Retained, runtime::AnyObject};
+            use objc2_foundation::NSRect;
+            let item = self.icon.ns_status_item()?;
+            // SAFETY: the main thread asks, as AppKit's windows are, of a status item that's alive.
+            let frame: NSRect = unsafe {
+                let button: Option<Retained<AnyObject>> = msg_send![&*item, button];
+                let window: Option<Retained<AnyObject>> = msg_send![&*button?, window];
+                msg_send![&*window?, frame]
+            };
+            Some(Bounds { origin: Point { x: frame.origin.x as f32, y: frame.origin.y as f32 }, size: Size { width: frame.size.width as f32, height: frame.size.height as f32 } })
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let rect = self.icon.rect()?;
+            Some(Bounds { origin: Point { x: rect.position.x as f32, y: rect.position.y as f32 }, size: Size { width: rect.size.width as f32, height: rect.size.height as f32 } })
+        }
     }
 
     /// What its page changed: the title beside its icon (`null` for none), its icon, one of Phosphor's by its name or

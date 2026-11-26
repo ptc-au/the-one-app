@@ -40,8 +40,8 @@ impl Windows {
         self.turn();
     }
 
-    /// Shows panel `id` as `summon` does, but under `under`, its menu bar icon, in the screen's pixels from the top left
-    /// of its first screen, as the system gives one's place: below it, as a Mac's menu bar extra's panel is, or above
+    /// Shows panel `id` as `summon` does, but under `under`, its menu bar icon, as its host says where it is
+    /// (`Window::under`): below it, as a Mac's menu bar extra's panel is, or above
     /// it where it's at the bottom of its screen, as a Windows notification-area icon's flyout is, as much of it as
     /// fits. With none, where the system doesn't say, it's where `summon` puts it.
     pub fn summon_under(&mut self, id: WindowId, asked: web_time::Instant, under: Option<crate::geometry::Bounds<f32>>) {

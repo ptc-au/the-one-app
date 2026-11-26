@@ -349,7 +349,8 @@ impl Display {
     /// down as Spotlight sits, with the keyboard; its parts follow it (`arrange`). It never activates the One App, so
     /// the app in front stays in front, and has the keyboard back as it goes.
     /// Where it was dragged to on that screen before (`places`), it's there, as Raycast's is, as much of it as fits.
-    /// `under` a menu bar extra, it's just below it, as a menu bar app's panel is, on the screen the icon is on.
+    /// `under` a menu bar extra (its icon's window, in points from the bottom left, as Cocoa has them), it's just below it,
+    /// as a menu bar app's panel is, on the screen the icon is on.
     pub fn summon(&self, window: &NativeWindow, places: &crate::platform::Places, room: Size<Pixels>, under: Option<crate::geometry::Bounds<f32>>) {
         window.shared.dragged.store(false, std::sync::atomic::Ordering::Relaxed);
         window.shared.shown.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -358,18 +359,15 @@ impl Display {
             let mouse: NSPoint = msg_send![objc2::class!(NSEvent), mouseLocation];
             let screens: Retained<NSArray<AnyObject>> = msg_send![objc2::class!(NSScreen), screens];
             let frame_of = |screen: &AnyObject| -> NSRect { msg_send![screen, frame] };
-            // A menu bar extra's place, as the system gives it, is in its screen's pixels from the top left of the first
-            // screen: in points, from the bottom left, as Cocoa places windows, it's on the screen it's in.
-            let first = screens.firstObject().map_or(0.0, |first| frame_of(&first).size.height);
+            // A menu bar extra's place is its icon's window, in points as Cocoa has them: on the screen its middle is on.
             let icon = under.and_then(|icon| {
+                let (x, y) = (f64::from(icon.origin.x + icon.size.width / 2.0), f64::from(icon.origin.y + icon.size.height / 2.0));
                 screens.iter().find_map(|screen| {
-                    let (frame, scale): (NSRect, f64) = (frame_of(&screen), msg_send![&*screen, backingScaleFactor]);
-                    let (x, y) = (f64::from(icon.origin.x) / scale, f64::from(icon.origin.y) / scale);
-                    let top = first - (frame.origin.y + frame.size.height);
-                    (x >= frame.origin.x && x < frame.origin.x + frame.size.width && y >= top && y < top + frame.size.height)
-                        .then(|| (x + f64::from(icon.size.width) / scale / 2.0, first - y - f64::from(icon.size.height) / scale, screen))
+                    let frame = frame_of(&screen);
+                    (x >= frame.origin.x && x < frame.origin.x + frame.size.width && y >= frame.origin.y && y < frame.origin.y + frame.size.height).then(|| (x, f64::from(icon.origin.y), screen))
                 })
             });
+            eprintln!("the panel's icon is at {under:?}, on screen: {:?}", icon.as_ref().map(|(x, bottom, _)| (x, bottom)));
             if let Some((middle, bottom, screen)) = icon {
                 let visible: NSRect = msg_send![&*screen, visibleFrame];
                 let width = f64::from(room.width.0);
