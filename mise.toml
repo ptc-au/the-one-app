@@ -12,8 +12,9 @@ zig = "0.15.2"
 # And DXC, which compiles Windows' shaders ahead of time (clients/app/renderer/build.rs).
 "github:microsoft/DirectXShaderCompiler" = "1.9.2609"
 # What signs a Mac's server and app with the owner's Developer ID (`tooling/release`), here.
-"github:indygreg/apple-platform-rs" = "0.29.0"
+"github:indygreg/apple-platform-rs" = { version = "0.29.0", version_prefix = "apple-codesign/" }
 # And what signs a Windows program and installer, as Power to Change (`tooling/windows-sign`), here: jsign, on Java.
+java = "temurin-21"
 "github:ebourg/jsign" = { version = "7.6", asset_pattern = "jsign-7.6.jar", bin = "jsign.jar" }
 # What gives a network's Android app its name and icon, in the plain APK's resources (`tooling/android-apk`): apktool, on Java.
 "github:iBotPeaches/Apktool" = { version = "2.12.1", asset_pattern = "apktool_2.12.1.jar", bin = "apktool.jar" }

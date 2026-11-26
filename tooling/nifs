@@ -8,8 +8,8 @@
 #     tooling/nifs [kind...]
 #
 # Each kind is built in one place, so every build of a commit is the same bytes, and an app deployed again from
-# an unchanged folder is unchanged: Linux's and Windows' on Linux, Linux's with zig for the same glibc as a server's VM
-# (`tooling/release`) and Windows' with cargo-xwin, as a DLL, which is kept under the same kind of name,
+# an unchanged folder is unchanged: Linux's and Windows' on Linux or a Mac, Linux's with zig for the same glibc as a
+# server's VM (`tooling/release`) and Windows' with cargo-xwin, as a DLL, which is kept under the same kind of name,
 # `windows-x86_64.so`; a Mac's on a Mac, with its own toolchain and SDK. A build is kept by what it's built from
 # (`tooling/input-hash`), in this machine's cache, outside any worktree, so one whose inputs haven't changed is
 # the one built before, by any worktree, and only a crate that changed is built. A Mac's too: from Linux, it's built
@@ -25,8 +25,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-# The tools Linux needs are the ones `mise.toml` names; a Mac needs only Rust.
-[[ $(uname -s) != Linux ]] || command -v cargo-zigbuild >/dev/null || exec mise exec -C "$root" -- "$0" "$@"
+# The tools it needs besides Rust are the ones `mise.toml` names.
+command -v cargo-zigbuild >/dev/null || exec mise exec -C "$root" -- "$0" "$@"
 cd "$root"
 
 kinds=("$@")
@@ -104,8 +104,6 @@ for kind in "${kinds[@]}"; do
       tar -xf "$downloaded/nifs.tar" && rm -r "$downloaded") &
     on_github=$!
     continue
-  elif [[ $kind != macos-* && $here != Linux ]]; then
-    echo "$kind's are built on Linux" >&2 && exit 1
   fi
 
   built=($(changed))

@@ -17,8 +17,9 @@
 # builds nothing.
 #
 # What's built is what the network of the client this machine's `one` is, or the one in ONE_HOME, runs, and what it
-# says is latest, which is the core's release's. Linux builds every server, from one set of NIFs (`tooling/nifs`), so each ships its apps as
-# the same files, and Linux's `one` and Windows', with the MSVC toolchain cargo-xwin downloads. A Mac's `one` needs
+# says is latest, which is the core's release's. Linux or a Mac builds every server, from one set of NIFs
+# (`tooling/nifs`), so each ships its apps as the same files, and Linux builds Linux's `one` and Windows', with the
+# MSVC toolchain cargo-xwin downloads. A Mac's `one` needs
 # its system's frameworks: from Linux, it's built on a Mac (`tooling/on-mac`: GitHub's runner, or the owner's), from
 # the same commit with the same Rust, and published with the rest. A server release and a client release run at once,
 # each in a checkout of its own, and one that asks for both publishes what both built as one update; a second of the
@@ -40,7 +41,7 @@
 # with them, One Core's Rust NIFs built for that machine (by `tooling/nifs`), and the UI library's build, and the Bun it
 # builds apps with, and on Windows Git, named by their SHA-256, which it downloads the first time (`OneCore.Programs`).
 # The builds are in
-# target/builds/<build> of the checkout it builds in, on Linux ~/.cache/the-one-app/release-<server or client>.
+# target/builds/<build> of the checkout it builds in, ~/.cache/the-one-app/release-<server or client>.
 #
 # A server for a kind of machine, `server/<kind>`, is published in two parts, which a machine puts together (`one
 # serve run`): `server-code`, One Core's own code, its release's `releases/` and the UI library, the same for every kind of
@@ -54,6 +55,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 # The tools this needs are the ones `mise.toml` names.
 command -v mix >/dev/null || exec mise exec -C "$root" -- "$0" "$@"
 cd "$root"
+# A Mac's tar packs a file's extended attributes as a `._<name>` file beside it, which a server's archive mustn't have.
+export COPYFILE_DISABLE=1
 
 # A release is batch work, so it runs with the weight of the machine's other batch work (CPU weight 10, as the headless
 # renderers' `headless.slice`, and `nice`): it uses every idle core and yields to whatever else needs them, as a cap
@@ -380,8 +383,6 @@ survey() {
     if [[ -n $latest ]] && covers "$latest" &&
       { [[ $name != server/* ]] || jq -e --arg n "server-runtime/$kind" '.latest[$n]' <<<"$builds" >/dev/null; }; then
       if [[ $latest == "$build" ]]; then notes+=("$name  $build is published already"); else notes+=("$name  $latest is published, which has $build's changes"); fi
-    elif [[ $name == server/* && $here != linux-* ]]; then
-      echo "$name is built on Linux: build it there with tooling/release $name" >&2 && exit 1
     elif [[ $name == server/* || $kind == "$here" || ($here == linux-* && ($kind == windows-* || $kind == android-* || $name == one/macos-*)) ]]; then
       # A client's inputs name the Rust that builds it, which is this machine's, and GitHub's for a Mac's.
       if [[ $name != server/* ]] && was=$(unchanged "$name"); then
@@ -420,7 +421,7 @@ holding() {
 }
 
 survey && covered
-if [[ -z $dry && $(uname) == Linux ]]; then
+if [[ -z $dry ]]; then
   mkdir -p "$(dirname "$kept")"
   ! command -v sccache >/dev/null || sccache --show-stats >/dev/null
   exec 9>>"$kept.lock"
@@ -448,14 +449,12 @@ done
   { echo "Windows' installer is made with makensis: sudo apt install nsis" >&2 && exit 1; }
 
 # It builds in one checkout kept for releasing each part on this machine, put at the commit released, so each release
-# builds, downloads and installs only what changed since the one before, as the Mac's ~/scratch/one-release does,
+# builds, downloads and installs only what changed since the one before,
 # rather than all of it again in each new worktree (most of a server's build, 17 Nov). A server's and a client's don't
 # touch, so they build at once.
-if [[ $(uname) == Linux ]]; then
-  [[ -d $kept ]] || { git worktree prune && git worktree add -q --detach "$kept" "$commit"; }
-  git -C "$kept" checkout -q --detach -f "$commit"
-  root=$kept && cd "$root"
-fi
+[[ -d $kept ]] || { git worktree prune && git worktree add -q --detach "$kept" "$commit"; }
+git -C "$kept" checkout -q --detach -f "$commit"
+root=$kept && cd "$root"
 
 servers=($(printf '%s\n' "${mine[@]}" | sed -n 's|^server/||p'))
 
@@ -650,7 +649,7 @@ for kind in "${servers[@]}"; do
   # rather than Erlang, which nobody there knows they have. Its file is `one-server.exe` (the release's scripts that start
   # it, and the sandbox, say so), since Windows keeps the name and icon it first showed for a path.
   # The scripts are One Core's code, which is packed from the first kind built and is the same for every kind.
-  sed -i 's/erl\.exe/one-server.exe/g' "$release"/releases/*/elixir.bat "$release"/releases/*/iex.bat
+  perl -pi -e 's/erl\.exe/one-server.exe/g' "$release"/releases/*/elixir.bat "$release"/releases/*/iex.bat
   if [[ $kind == windows-* ]]; then
     erts=$(echo "$release"/erts-*/bin)
     mv "$erts/erl.exe" "$erts/one-server.exe"
@@ -666,7 +665,7 @@ for kind in "${servers[@]}"; do
     erts=$(echo "$release"/erts-*/bin)
     emu=one-server && [[ $kind != macos-* ]] || emu="The One App server"
     mv "$erts/beam.smp" "$erts/$emu.smp"
-    sed -i "s/^EMU=beam\$/EMU=\"$emu\"/" "$erts/erl" "$erts/erl.src" "$erts/start_erl.src"
+    perl -pi -e "s/^EMU=beam\$/EMU=\"$emu\"/" "$erts/erl" "$erts/erl.src" "$erts/start_erl.src"
   fi
 
   # What it ships with: the UI library's build, which it builds apps against and serves, the network's edge, which it
