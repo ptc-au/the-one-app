@@ -227,7 +227,7 @@ type Content = { type: string; text?: string; uri?: string; data?: string; mimeT
 /// that only reads, and answers with it at once, but after a write waits for it asked again. A screen that shows what a
 /// tool answers reads it in a projection, `const notes = createProjection(() => call("notes_list").then(JSON.parse))`, under
 /// `<Loading>`: asked again (`refresh(notes)`), each record with the same `id` stays the same object, so what's drawn of
-/// it isn't made again, and nothing flashes. A memo's answer is new objects each time, which `lint:app` warns of.
+/// it isn't made again, and nothing flashes. A memo's answer is new objects each time, which `lint:app` fails.
 /// An app opened from a group's Home Screen page is answered for the group, with nothing said. A page that shows more
 /// than one of them says who each call is for: `call("home-screen_pages", {}, { subject: "groups/family" })`, or `network`.
 export const call: typeof Page.call = async (tool, inputs = {}, { subject } = {}) => {
@@ -511,7 +511,7 @@ function linked(to: string) {
 /// names (`one:my-week#week&start=2026-11-23`, which a browser's address says as `/my-week/week?start=2026-11-23`), what
 /// an assistant called where it shows the page as an MCP App, or where the page navigated (`navigate`). `first`, with no
 /// arguments, where nothing names one: the app's first screen. Every screen is a tool that only reads, and answers all
-/// it first draws: `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`. Each screen's tool
+/// it first draws: `createProjection(() => call("my-week_week", toolInput("my-week_week").arguments).then(JSON.parse))`. Each screen's tool
 /// says `ui: "client/index.html"` (and its `path`) in the app's `tools/0`, so an assistant draws the screen under its call.
 export const toolInput: typeof Page.toolInput = (first) => {
   firstScreen = first

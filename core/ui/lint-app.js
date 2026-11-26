@@ -2,7 +2,7 @@
 // alone, as its tsconfig.json says by extending tsconfig.app.json, with TypeScript's own checker. It fails on an element of
 // the DOM's, `document`, `window` or any other Web API, a stylesheet, a prop a native host can't draw, and a `For` as a
 // `List`'s rows, which makes them all at once (`List each` makes those near the window), and a `Row` straight in a `Section`,
-// which has no card (the `List` it's in draws it), and a `Button` of `variant="destructive"`, which only an alert draws; and it warns of a
+// which has no card (the `List` it's in draws it), and a `Button` of `variant="destructive"`, which only an alert draws; and it fails a
 // tool's answer read in a `createMemo`, which a projection keeps the same objects of as it's asked again. A server runs it
 // too, as the UI library it serves holds it (build.js), on the app it deploys, where an entrypoint says its `runtime_version`
 // (`OneCore.Entrypoint.lint/3`). Its errors are TypeScript's, a line each: file, line, column and message, as the folder names it.
@@ -125,7 +125,7 @@ function dom() {
           if (inner.type === "CallExpression" && inner.callee.type === "Identifier" && inner.callee.name === "call") calls = true
           if (inner.type === "MemberExpression" && inner.object.name === "JSON" && inner.property.name === "parse") parses = true
         })
-        if (calls && parses) noted.push(`${at(node)}: warning: a tool's answer in a \`createMemo\` is new objects each time it's asked again, so what's drawn of it is made again, and flashes: read it in \`createProjection(() => call(…).then(JSON.parse))\`, which keeps each record with the same \`id\` the same object`)
+        if (calls && parses) found.push(`${at(node)}: error: a tool's answer in a \`createMemo\` is new objects each time it's asked again, so what's drawn of it is made again, and flashes: read it in \`createProjection(() => call(…).then(JSON.parse))\`, which keeps each record with the same \`id\` the same object`)
       }
       // `globalThis.document`, `self["window"]`
       const object = unwrapped(node.object)

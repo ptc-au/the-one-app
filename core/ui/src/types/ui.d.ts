@@ -701,7 +701,7 @@ export interface ToolCall {
   name: string
   arguments: Record<string, unknown>
 }
-/** `createMemo(() => call("my-week_week", toolInput("my-week_week").arguments))`: the screen the page shows, as the tool that answers it and its arguments,
+/** `createProjection(() => call("my-week_week", toolInput("my-week_week").arguments).then(JSON.parse))`: the screen the page shows, as the tool that answers it and its arguments,
  * as it changes: what a link to the page names, what an assistant called, or where the page navigated; `first`, with
  * no arguments, where nothing names one. */
 export declare function toolInput(first: string): ToolCall
