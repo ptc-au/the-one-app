@@ -633,6 +633,11 @@ export interface Properties {
   animationIterationCount: number | "infinite"
   animationFillMode: "none" | "forwards" | "backwards" | "both"
   animationTimingFunction: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | [x1: number, y1: number, x2: number, y2: number]
+  /** The timeline its keyframes go through by (`translateTimelineName`'s), as CSS's `animation-timeline`. */
+  animationTimeline: string
+  /** A timeline by how far it's moved by its own size, along ("x") or down ("y"), from 0 to 1 (`view::transition`). */
+  translateTimelineName: string
+  translateTimelineAxis: "x" | "y"
   /** What of it is about to move, grow or fade (`translateX`, `translateY`, `scale`, `opacity`), as CSS's
    * `will-change`: drawn ahead as a layer of its own, which then only moves (`view::Layer`). */
   willChange: (keyof Properties)[]

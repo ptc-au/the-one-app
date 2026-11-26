@@ -17,6 +17,9 @@ import { negative, styles, type Styles } from "../styles.ts"
 import { pixels, tokens } from "../tokens.ts"
 import type { Rect } from "../drawing-primitives/renderer.ts"
 
+// How many splits have been made, each naming its own timeline.
+let splits = 0
+
 const look = styles({
   screen: { position: "relative", flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0 },
   // The bar keeps clear of what the device keeps for itself at the top under a finger (its status bar). On a computer
@@ -98,21 +101,24 @@ const look = styles({
   clipped: { overflow: "hidden" },
   pane: { minHeight: 0, minWidth: 0, overflow: "hidden", backgroundColor: tokens.colour.background },
   // Where there's no room for both, what's opened is pushed over its list, as UINavigationController pushes: it
-  // slides in from the end as it's made (`entering`) while the list slides a third of the way the other way under it
-  // and dims, and back the same way, drawn going till it's off (`exiting`), as UIKit keeps a popped view till its
-  // transition ends: on one spring the renderer draws, by the points it's across. The list stays drawn under it, as
-  // it was, with its place, where it's scrolled to and its pictures, so it's there whole the moment what's over it goes,
-  // and out of reach (`inert`) till then.
+  // slides in from the end as it's made (`entering`), and back the same way, drawn going till it's off (`exiting`), as
+  // UIKit keeps a popped view till its transition ends: on one spring the renderer draws, by the points it's across.
+  // The list under it follows it frame by frame, wherever it is, on its way or under a finger, as UIKit's interactive
+  // pop drives both by one percent: a third of the way the other way, and dimmed, as it covers it (`timeline`, by how
+  // far it's across). The list stays drawn under it, as it was, with its place, where it's scrolled to and its
+  // pictures, so it's there whole the moment what's over it goes, and out of reach (`inert`) till then.
   over: { position: "absolute", inset: 0 },
   // With less motion, it fades in over the list and out, which stays where it is.
   sliding: { transitionProperty: ["translateX", "opacity"], transition: tokens.motion.smooth },
-  slid: (translateX: number) => ({ translateX }),
   pushed: (translateX: { default: number; entering: number; exiting: number }) => ({ translateX }),
+  timeline: (name: `--${string}`) => ({ translateTimelineName: name, translateTimelineAxis: "x" }),
   fades: { opacity: { default: 1, entering: 0, exiting: 0 } },
   out: { pointerEvents: "none" },
   whole: { flexGrow: 1, flexShrink: 1, minHeight: 0, minWidth: 0 },
-  dim: { position: "absolute", inset: 0, backgroundColor: tokens.colour.overlay, opacity: 0, pointerEvents: "none", transitionProperty: ["opacity"], transition: tokens.motion.smooth },
-  dimmed: { opacity: 0.35 },
+  under: { animationName: { from: { translateX: "-30%" }, to: { translateX: 0 } } },
+  dim: { position: "absolute", inset: 0, backgroundColor: tokens.colour.overlay, opacity: 0, pointerEvents: "none", animationName: { from: { opacity: 0.35 }, to: { opacity: 0 } } },
+  // A host before timelines goes through no time of it, and leaves it where it is.
+  follows: (name: `--${string}`) => ({ animationTimeline: name, animationIterationCount: 0 }),
   // Where there is, the list keeps a readable width and what it opens has the rest.
   list: { flexBasis: "38%", minWidth: tokens.length.columnMin, maxWidth: tokens.length.column, flexShrink: 0, borderEndWidth: tokens.length.hairline, borderColor: tokens.colour.quinaryLabel },
   // A window's sidebar is narrower, as macOS's and Raycast's Settings' are.
@@ -579,12 +585,14 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
     return () => (open.splice(open.indexOf(close), 1), done())
   })
 
-  // Pushed over its list, a finger swipes it back.
+  // Pushed over its list, a finger swipes it back, and the list follows it by its timeline, its own.
   const pop = createPop({ enabled: () => !beside() && touch(), onClose: close })
+  const timeline = `--pushed-${++splits}` as const
+  const follows = () => !beside() && !reducedMotion()
 
   return (
     <View style={[look.split, beside() ? look.beside : look.clipped]}>
-      <View aria-hidden={!beside() && shown() ? "true" : undefined} inert={!beside() && shown() ? true : undefined} style={[look.pane, beside() ? look.list : [look.over, look.sliding, look.slid(shown() && !reducedMotion() ? -0.3 * room() : 0), shown() && look.out], beside() && sidebar && look.sidebar]}>
+      <View aria-hidden={!beside() && shown() ? "true" : undefined} inert={!beside() && shown() ? true : undefined} style={[look.pane, beside() ? look.list : [look.over, follows() && [look.under, look.follows(timeline)], shown() && look.out], beside() && sidebar && look.sidebar]}>
         <Room value={() => (beside() ? listWidth() : room())}>
           <Edge value={() => ({ start: edge().start, end: edge().end && !beside() })}>
           <Opened value={() => (props.open ? close : undefined)}>
@@ -600,13 +608,13 @@ export function Split(props: { open?: boolean; onClose?: () => void; pick?: stri
           </Opened>
           </Edge>
         </Room>
-        <Show when={!beside() && !reducedMotion()}>
-          <View style={[look.dim, shown() && look.dimmed]} />
+        <Show when={follows()}>
+          <View style={[look.dim, look.follows(timeline)]} />
         </Show>
       </View>
       <View aria-hidden={!beside() && !shown() ? "true" : undefined} style={beside() ? [look.pane, look.detail] : [look.over, !shown() && look.out]}>
         <Show when={beside() || props.open}>
-        <View {...pop} style={beside() ? look.whole : [look.pane, look.over, look.sliding, reducedMotion() ? moved() && look.fades : look.pushed({ default: 0, entering: moved() ? room() : 0, exiting: room() })]}>
+        <View {...pop} style={beside() ? look.whole : [look.pane, look.over, look.sliding, reducedMotion() ? moved() && look.fades : [look.pushed({ default: 0, entering: moved() ? room() : 0, exiting: room() }), look.timeline(timeline)]]}>
         <Room value={() => (beside() ? room() - listWidth() - 1 : room())}>
           <Edge value={() => ({ start: edge().start && !beside(), end: edge().end })}>
           <Leave value={close}>

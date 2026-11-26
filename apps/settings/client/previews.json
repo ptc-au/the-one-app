@@ -2781,6 +2781,31 @@
           "name": "AI",
           "includeHidden": true
         }
+      },
+      "The list follows the finger": {
+        "from": {
+          "x": 6,
+          "y": 400
+        },
+        "gesture": {
+          "moves": [
+            {
+              "dx": 160,
+              "ms": 500
+            },
+            {
+              "ms": 150
+            }
+          ],
+          "lift": true
+        },
+        "follow": {
+          "role": "button",
+          "name": "Notifications",
+          "includeHidden": true
+        },
+        "steady": true,
+        "tracks": true
       }
     }
   },

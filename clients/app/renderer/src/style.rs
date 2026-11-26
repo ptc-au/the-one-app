@@ -68,8 +68,14 @@ pub struct Look {
     pub fill: Paint,
     pub stroke: Paint,
     pub stroke_width: f32,
-    /// A motion that repeats while it's drawn (`animationName`, `animation`).
+    /// A motion that repeats while it's drawn (`animationName`, `animation`), or one a timeline drives
+    /// (`animationTimeline`).
     pub animation: Option<Animation>,
+    /// The timeline it names by how far it's moved (`translateTimelineName`), along (`translateTimelineAxis` "x") or
+    /// down ("y", the default, as CSS's block axis is): where it's moved by its own size that way, from 0 to 1, which
+    /// what names it in its `animationTimeline` goes through its keyframes by, as CSS's scroll-driven animations go by
+    /// a scroller's `scroll-timeline`.
+    pub translate_timeline: Option<(String, bool)>,
 }
 
 /// A motion that repeats while it's drawn, as CSS's `animation` with `@keyframes`: its keyframes, each how far
@@ -87,6 +93,10 @@ pub struct Animation {
     pub iterations: f32,
     pub backwards: bool,
     pub forwards: bool,
+    /// The timeline it goes through its keyframes by, in place of time (`animationTimeline`), as CSS's scroll-driven
+    /// animations do: where it is on it, from 0 to 1, is where it is through them, and where nothing names it, it has
+    /// no effect.
+    pub timeline: Option<String>,
 }
 
 impl Animation {
@@ -114,7 +124,7 @@ impl Animation {
             }
             _ => return None,
         };
-        Some(Animation { frames, duration: duration.max(1.0), easing, delay: 0.0, iterations: f32::INFINITY, backwards: false, forwards: false })
+        Some(Animation { frames, duration: duration.max(1.0), easing, delay: 0.0, iterations: f32::INFINITY, backwards: false, forwards: false, timeline: None })
     }
 }
 
@@ -170,6 +180,7 @@ impl Default for Look {
             stroke: Paint::None,
             stroke_width: 1.0,
             animation: None,
+            translate_timeline: None,
         }
     }
 }
@@ -700,9 +711,11 @@ fn computed(style: &Map<String, Value>, conditions: Conditions) -> Computed {
                 iterations: iterations.max(0.0),
                 backwards: matches!(fill, "backwards" | "both"),
                 forwards: matches!(fill, "forwards" | "both"),
+                timeline: word("animationTimeline").map(str::to_owned),
                 ..animation
             })
         }),
+        translate_timeline: word("translateTimelineName").map(|name| (name.to_owned(), word("translateTimelineAxis") == Some("x"))),
     };
 
     let type_style = get("font").and_then(token_of).and_then(|(token, _)| table().type_style(token, conditions)).map(|font| TextStyle {

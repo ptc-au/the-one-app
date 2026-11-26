@@ -136,6 +136,16 @@ export interface Look {
   animationIterationCount: number | "infinite"
   animationFillMode: "none" | "forwards" | "backwards" | "both"
   animationTimingFunction: "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | readonly [number, number, number, number]
+  /** The timeline its keyframes go through by in place of time, as CSS's scroll-driven animations: where what names
+   * it (`translateTimelineName`) is on it is where it is through them, following it frame by frame without its page,
+   * and where nothing names it, it has no effect. It takes no count of times through: say `animationIterationCount: 0`
+   * too, so a host before this one, which goes through them by time, leaves it be. */
+  animationTimeline: `--${string}`
+  /** Names a timeline by how far it's moved (its translate, dragged or on its way somewhere) by its own size, along
+   * (`translateTimelineAxis: "x"`) or down (`"y"`, the default), from 0 to 1, for what goes by it (`animationTimeline`),
+   * as Motion's `useTransform` follows a value: a list sliding under what's swiped off it. */
+  translateTimelineName: `--${string}`
+  translateTimelineAxis: "x" | "y"
   /** What of it is about to move, grow or fade, as CSS's `will-change`: a host draws it ahead, as a layer of its
    * own, so it moves from the first frame without being drawn then. Only for what's about to, as it holds memory. */
   willChange: (keyof Properties)[]

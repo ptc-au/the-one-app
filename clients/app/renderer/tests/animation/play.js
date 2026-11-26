@@ -302,6 +302,14 @@ async function play(built, scene, name, motion, hz, folder) {
   const slow = (n) => Math.abs((values[n + 1] ?? values[n]) - values[n - 1]) < 2 * pixel - 0.01
   const held = moved < 0 || motion.frameMs || motion.reducedMotion ? -1 : values.findIndex((value, n) => n > moved && (eases || frames[n].at > end + refresh + 0.5 || (frames[n].at > end + 0.5 && Math.abs(values[n - 1] - values[n - 2]) > 0.5) || driven(n)) && Math.abs(value - values[n - 1]) < 0.05 && !resized(n) && !turned(n) && !slow(n) && Math.abs(value - values.at(-1)) > 2)
   if (held >= 0) failed.push(`it held still at frame ${held + 1} (${frames[held].at} ms) as it moved`)
+  // What `tracks` follows moves with the finger while it's down, in every refresh the finger moves it, from the first it
+  // moves in, as a list under a screen swiped back follows it, not still till the finger lifts, then springing.
+  if (motion.tracks) {
+    const down = frames.findLastIndex((frame) => frame.at <= end)
+    const still = values.findIndex((value, n) => moved >= 0 && n > moved && n <= down && driven(n) && Math.abs(value - values[n - 1]) < 0.05)
+    if (moved < 0 || moved > down) failed.push(`it didn't move with the finger: ${moved < 0 ? "it never moved" : `it first moved at frame ${moved + 1}`}, and the finger last moved at frame ${down + 1}`)
+    else if (still >= 0) failed.push(`it held still at frame ${still + 1} (${frames[still].at} ms) as the finger moved it`)
+  }
   // No refresh draws nothing while something on the window is on its way somewhere (the headless renderer's `held`), whatever
   // it follows: a refresh so is one the loop missed, the frame before shown twice, then a jump. A device others load
   // (`frameMs`) takes several refreshes a frame. Before the motion's first frame there's no frame before: a press that

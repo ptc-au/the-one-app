@@ -371,12 +371,25 @@ pub(crate) struct Transitions {
     started: HashMap<Id, (f64, crate::style::Animation)>,
     /// The nodes going through keyframes a number of times, which end: on their way, as a transition is.
     playing: HashSet<Id>,
+    /// Each timeline a node names by how far it's moved (`Look::translate_timeline`): which node, and where it is on it,
+    /// as it was last styled; and each node going through its keyframes by one (`Animation::timeline`): which, where it
+    /// was on it as it was last styled (none where nothing names it), and whether its keyframes only move, grow or fade
+    /// it, so it's drawn as a layer of its own.
+    timelines: HashMap<String, (Id, f32)>,
+    followers: HashMap<Id, Follower>,
     /// Where each node that moves as it's laid out again (`layout`) was laid out last, in the window, unscrolled, and
     /// each such node on its way from where it was to there; and where what shares a place (`layoutId`) was last laid
     /// out, by what and in which frame.
     laid: HashMap<Id, Bounds<f32>>,
     flips: HashMap<Id, Flip>,
     shared: HashMap<String, (Id, Bounds<f32>, u64)>,
+}
+
+/// A node going through its keyframes by a timeline (`Transitions::followers`).
+struct Follower {
+    timeline: String,
+    at: Option<f32>,
+    whole: bool,
 }
 
 /// A node on its way from where it was laid out to where it is, as Motion's layout animations and the FLIP technique:
@@ -588,8 +601,25 @@ impl Transitions {
             self.animated.remove(&id);
             self.playing.remove(&id);
             self.started.remove(&id);
+            self.followers.remove(&id);
             return;
         };
+        // By a timeline, it's where that is, whatever the time, and nothing where nothing names it, as CSS's
+        // scroll-driven animations are; it moves as what names it does, so it's never on its way by itself.
+        if let Some(timeline) = animation.timeline.clone() {
+            self.animated.remove(&id);
+            self.playing.remove(&id);
+            self.started.remove(&id);
+            // (Mutant: nothing names it, as a host before timelines has it.)
+            let at = self.timelines.get(&timeline).map(|(_, at)| *at).filter(|_| !crate::mutants::mutant("timeline-unnamed"));
+            let whole = animation.frames.iter().all(|(_, style)| style.keys().all(|property| matches!(property.as_str(), "translateX" | "translateY" | "scale" | "opacity")));
+            self.followers.insert(id, Follower { timeline, at, whole });
+            if let Some(at) = at {
+                Self::keyframes(&animation, computed, at, conditions);
+            }
+            return;
+        }
+        self.followers.remove(&id);
         let started = match self.started.get(&id) {
             Some((at, was)) if *was == animation => *at,
             _ => {
@@ -623,6 +653,11 @@ impl Transitions {
         if !shown {
             return;
         }
+        Self::keyframes(&animation, computed, part, conditions);
+    }
+
+    /// `computed` as `animation`'s keyframes have it `part` of the way through them.
+    fn keyframes(animation: &crate::style::Animation, computed: &mut Computed, part: f32, conditions: crate::tokens::Conditions) {
         let frames: Vec<(f32, Computed)> = animation.frames.iter().map(|(at, style)| (*at, crate::style::compute(&[serde_json::Value::Object(style.clone())], Default::default(), conditions))).collect();
         for (property, _) in PROPERTIES {
             let mut stops: Vec<(f32, Value)> = animation.frames.iter().zip(&frames).filter(|((_, style), _)| style.contains_key(property)).filter_map(|((at, _), (_, frame))| Some((*at, get(frame, property)?))).collect();
@@ -645,6 +680,33 @@ impl Transitions {
                 set(computed, property, value);
             }
         }
+    }
+
+    /// Node `id`, styled as `computed`, `size` big, names the timeline its style says by how far it's moved
+    /// (`Look::translate_timeline`) where it does, at where that has it now, which what goes by it goes by.
+    pub fn lead(&mut self, id: Id, computed: &Computed, size: Size<f32>) {
+        match &computed.look.translate_timeline {
+            Some((name, along)) => {
+                let (moved, room) = if *along { (computed.look.translate.0.of(size.width), size.width) } else { (computed.look.translate.1.of(size.height), size.height) };
+                let at = if room > 0.0 { (moved / room).clamp(0.0, 1.0) } else { 0.0 };
+                self.timelines.insert(name.clone(), (id, at));
+            }
+            None => self.timelines.retain(|_, (leader, _)| *leader != id),
+        }
+    }
+
+    /// The nodes going through their keyframes by a timeline that's moved, or come or gone, since they were styled:
+    /// styled again, after what names it, each frame is drawn with both where they are in it.
+    pub fn behind(&self) -> Vec<Id> {
+        self.followers.iter().filter(|(_, follower)| follower.at != self.timelines.get(&follower.timeline).map(|(_, at)| *at)).map(|(id, _)| *id).collect()
+    }
+
+    /// The nodes going through their keyframes by a timeline whose node is on its way somewhere, at `now` where it's
+    /// said (one that arrives then is where it rests), and whether each only moves, grows or fades.
+    fn following(&self, now: Option<f64>) -> impl Iterator<Item = (Id, bool)> + '_ {
+        let on_the_way = self.moving.iter().filter(|(_, moving)| now.is_none_or(|now| !moving.done(now))).map(|((id, _), _)| *id);
+        let leading: HashSet<Id> = on_the_way.chain(self.dragged.iter().filter(|(_, dragged)| now.is_none_or(|now| !dragged.done(now))).map(|(id, _)| *id)).collect();
+        self.followers.iter().filter(move |(_, follower)| self.timelines.get(&follower.timeline).is_some_and(|(leader, _)| leading.contains(leader))).map(|(id, follower)| (*id, follower.whole))
     }
 
     /// Node `id`, which moves as it's laid out again, is laid out at `laid` in `frame`: where that's moved from where it
@@ -756,6 +818,8 @@ impl Transitions {
     /// Node `id` is no longer in the tree as it's drawn: put back, it enters again.
     pub fn forget(&mut self, id: Id) {
         self.transitioned.remove(&id);
+        self.followers.remove(&id);
+        self.timelines.retain(|_, (leader, _)| *leader != id);
         self.dragged.remove(&id);
         self.laid.remove(&id);
         self.flips.remove(&id);
@@ -779,7 +843,7 @@ impl Transitions {
 
     /// The nodes with something on its way, which are styled again each frame until it's arrived.
     pub fn moving(&self) -> HashSet<Id> {
-        self.on_the_way().chain(self.animated.iter().copied()).collect()
+        self.on_the_way().chain(self.animated.iter().copied()).chain(self.following(None).map(|(id, _)| id)).collect()
     }
 
     /// How many nodes move by a loop and nothing else (`animation`, a spinner), which never arrives: it's at rest as
@@ -801,7 +865,8 @@ impl Transitions {
     pub fn moving_whole(&self, now: f64) -> HashSet<Id> {
         let whole = |property: &str| matches!(property, "translateX" | "translateY" | "scale" | "opacity");
         let on_the_way = self.moving.iter().filter(|((_, property), moving)| whole(property) && !moving.done(now)).map(|((id, _), _)| *id);
-        let mut ids: HashSet<Id> = on_the_way.chain(self.dragged.iter().filter(|(_, dragged)| !dragged.done(now)).map(|(id, _)| *id)).collect();
+        let following = self.following(Some(now)).filter(|(_, whole)| *whole).map(|(id, _)| id);
+        let mut ids: HashSet<Id> = on_the_way.chain(self.dragged.iter().filter(|(_, dragged)| !dragged.done(now)).map(|(id, _)| *id)).chain(following).collect();
         for (id, _) in self.moving.keys().filter(|(_, property)| !whole(property)) {
             ids.remove(id);
         }

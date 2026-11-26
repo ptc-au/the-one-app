@@ -87,6 +87,7 @@ impl Painter<'_> {
         let before = self.layout.kept.get(&id).map(|kept| &self.layout.leaf(kept.node).look).filter(|_| entering.is_none());
         self.transitions.apply(id, &mut computed, entering.as_ref(), before, self.time, self.since, self.conditions.reduced_motion, self.unseen, size);
         self.transitions.animate(id, &mut computed, self.time, self.conditions);
+        self.transitions.lead(id, &computed, size);
         let mut layout = computed.layout.clone();
         let mut look = computed.look.clone();
         // A `Text` inherits what it's in, as CSS does.

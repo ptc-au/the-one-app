@@ -349,6 +349,14 @@ impl Screen {
             Some(_) => {}
         }
         let root = painter.build(0, body, true);
+        // What goes through its keyframes by a timeline is styled again after what names it, as it's now, wherever each
+        // is in the tree, so both are drawn as they are in the same frame.
+        for id in painter.transitions.behind() {
+            if let Some(kept) = painter.layout.kept.get(&id) {
+                let (inherited, state) = (kept.inherited, kept.state);
+                painter.restyle(id, inherited, state, false);
+            }
+        }
         // What's no longer in the tree goes, unless it moved elsewhere in it.
         for id in std::mem::take(&mut painter.gone) {
             painter.layout.forget(id, painter.frame, painter.transitions);

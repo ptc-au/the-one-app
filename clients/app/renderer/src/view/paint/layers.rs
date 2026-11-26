@@ -191,7 +191,7 @@ impl Painter<'_> {
             self.parts.push(Part::Scene(std::sync::Arc::new(scene), None));
             self.parts.push(Part::Sublayer(Sublayer { taffy_node, offset, transform, mask, opacity, turn: self.turn }));
             return;
-        } else if (self.layered.contains(&id) && self.room() || grouped || dissolving.is_some()) && !starting && self.turn == TransformationMatrix::unit() && (look.animation.is_none() || grouped) && !crate::mutants::mutant("faded-apart") {
+        } else if (self.layered.contains(&id) && self.room() || grouped || dissolving.is_some()) && !starting && self.turn == TransformationMatrix::unit() && (look.animation.as_ref().is_none_or(|animation| animation.timeline.is_some()) || grouped) && !crate::mutants::mutant("faded-apart") {
             // Cross-dissolving, it's drawn from its picture in two places, which drawn in what it's in it couldn't be:
             // it's a surface whatever the window's others take.
             return self.paint_layer(taffy_node, id, offset, transform, &look, mask, opacity);
