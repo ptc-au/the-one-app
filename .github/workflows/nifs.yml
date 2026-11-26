@@ -37,6 +37,10 @@ jobs:
           toolchain: ${{ inputs.rust }}
           targets: aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
+      # tooling/nifs runs with the tools mise.toml names; only these are what a Mac's NIFs are built with.
+      - uses: jdx/mise-action@v2
+        with:
+          install_args: zig github:rust-cross/cargo-zigbuild
       # tooling/nifs keeps each build by what it's built from, so a crate that didn't change isn't built again.
       - uses: actions/cache@v4
         with:
