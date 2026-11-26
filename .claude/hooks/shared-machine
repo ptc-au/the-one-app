@@ -22,6 +22,12 @@ done < <(grep -oE '(^|[^[:alnum:]_-])ps([[:space:]][^|;&]*)?' <<<"$command")
   grep -qE '(^|[^[:alnum:]_-])h?top[^|;&]*[[:space:]]-[[:alpha:]]*c' <<<"$command"; } &&
   refuse "This reads every process's command line, which holds other agents' work and secrets. Look at your own by PID."
 
+# A folder every agent keeps its work in is never removed whole: a job's cleanup ran `rm -rf ~/wt` and wiped other
+# agents' live worktrees and their unsaved edits (26 Nov).
+grep -qE '(^|[^[:alnum:]_-])rm[[:space:]]+(-[[:alnum:]-]+[[:space:]]+)*-[[:alpha:]]*[rR][[:alpha:]]*[[:space:]]' <<<"$command" &&
+  grep -qE '(~|\$HOME|/home/[^/[:space:]]+)/(wt|scratch|\.t3/worktrees|\.t3/worktrees/[^/[:space:]]+)/?(\*)?([[:space:];&|"'"'"']|$)' <<<"$command" &&
+  refuse "This removes a folder every agent keeps its work in, or everything in it. Remove only your own worktree (\`git worktree remove <your path>\`) and your own files, by their exact paths."
+
 # The Mac is the owner's, and shared: two simulators at once took its load to 300 (17 Nov).
 if grep -qE 'simctl[[:space:]]+boot([[:space:]]|$)' <<<"$command"; then
   if [[ $(uname) == Darwin ]]; then on=(bash -c); else on=(ssh -o BatchMode=yes -o ConnectTimeout=5 mac); fi
