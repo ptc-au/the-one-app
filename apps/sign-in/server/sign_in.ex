@@ -846,12 +846,20 @@ defmodule SignIn do
 
   # The database module goes with the database it opened.
   # What the network keeps as each subject's picture, as `{source, blob}`, a person's own before Google's, and nil for none: a
-  # group has none, and a name that isn't a user's has nothing to read.
+  # group has none, and a name that isn't a user's has nothing to read. Google's is read only for whoever has no
+  # picture of their own: two reads for each person, where one that set theirs needs one.
   defp kept(call, subjects) do
     wanted = for subject <- subjects, {source, name} <- picture_blobs(subject), do: {subject, source, name}
-    reads = Artifact.read_all(call.own, Enum.map(wanted, &elem(&1, 2)))
-    found = for {{subject, source, _}, {:ok, blob, _tag}} <- Enum.zip(wanted, reads), do: {subject, source, blob}
+    {own, google} = Enum.split_with(wanted, &(elem(&1, 1) != "google"))
+    found = read(call, own)
+    without = google |> Enum.reject(fn {subject, _source, _name} -> Enum.any?(found, &(elem(&1, 0) == subject)) end)
+    found = found ++ read(call, without)
     Map.new(subjects, fn subject -> {subject, Enum.find_value(found, fn {^subject, source, blob} -> {source, blob}; _ -> nil end)} end)
+  end
+
+  defp read(call, wanted) do
+    reads = Artifact.read_all(call.own, Enum.map(wanted, &elem(&1, 2)))
+    for {{subject, source, _}, {:ok, blob, _tag}} <- Enum.zip(wanted, reads), do: {subject, source, blob}
   end
 
   # The people in each of `groups` that you're in too, as Permissions has them: a group in a group, a link to it and

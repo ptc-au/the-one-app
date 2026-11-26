@@ -2,7 +2,7 @@
 // members' faces, and else their initials on a colour of their own. Drawn on the drawing primitives, the same on every host.
 import { createEffect, createSignal, For, Show, untrack } from "solid-js"
 import { Image, Text, View } from "#primitives"
-import { call, changed } from "#bridge"
+import { call } from "#bridge"
 import { styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 
@@ -105,12 +105,12 @@ function seen(subject: string) {
 
 const [version, setVersion] = createSignal(0)
 /// `refreshAvatars()`: has every avatar ask for its picture again, as it's set or changed in this page. Avatars ask
-/// again by themselves as what the page was answered changes, and five minutes after they were last drawn.
+/// again by themselves five minutes after they were last drawn, as a picture changed on another device is drawn: not
+/// as the page is told something changed, which it is as often as anything does, and every picture was asked for again.
 export function refreshAvatars() {
   kept.clear()
   setVersion((was) => was + 1)
 }
-changed(refreshAvatars)
 
 /** A subject's initials: its name's first two words' first letters, or its name's, `users/andre-van-tonder` being "AV". */
 function initials(subject: string, name?: string) {
