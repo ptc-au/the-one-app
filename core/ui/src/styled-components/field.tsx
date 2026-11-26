@@ -101,10 +101,10 @@ const look = styles({
     transitionProperty: ["backgroundColor"],
     transition: tokens.motion.settle,
   },
-  // On, as iOS's and macOS's switches are: green, with a white thumb.
-  on: { backgroundColor: tokens.colour.green, boxShadow: { default: "none", focused: tokens.shadow.focus } },
+  // On, in the text's colour with the page's colour as its thumb, as a checkbox is ticked: colour isn't for "on" (DESIGN.md).
+  on: { backgroundColor: tokens.colour.label, boxShadow: { default: "none", focused: tokens.shadow.focus } },
   thumb: { width: tokens.grid[4], height: tokens.grid[4], borderRadius: tokens.radius.full, backgroundColor: tokens.colour.thumb, boxShadow: tokens.shadow.edge, transitionProperty: ["translateX"], transition: tokens.motion.settle },
-  thumbOn: { translateX: tokens.grid[3] },
+  thumbOn: { translateX: tokens.grid[3], backgroundColor: tokens.colour.background },
   radios: { minWidth: 0 },
 })
 

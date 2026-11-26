@@ -262,7 +262,7 @@ const roles = {
   /** Words and icons on an accent: white in light, black in dark, where the accents are light enough to read on
    * black, and white on them falls short of 4.5:1 (red's 2.8:1). */
   onAccent: colour(white, black),
-  /** A switch's thumb: white in light and dark, as iOS's and macOS's are, off its track by its edge's shadow. */
+  /** A switch's thumb while it's off: white in light and dark, as iOS's and macOS's are, off its track by its edge's shadow. */
   thumb: colour(white),
   loader: alpha(label, 40),
   /** The row that's open among a few, each showing what it's about where it's open (Welcome's four, Connect your AI's
