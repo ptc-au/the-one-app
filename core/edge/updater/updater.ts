@@ -30,10 +30,11 @@
 //     any ──a newer build──► (none), and servers first
 //
 // A server that's asleep or gone as an update begins, or goes while it's under way, is skipped, and caught up under
-// the same rules once it's back. So is one that doesn't say it began within a minute of being told (`ANSWER`): a server
-// that's here says so at once, and the relay may still hold the connection of a machine that has gone, or one that
-// can't take a build. It's back once it's heard from again: it connects, or says what it is. Each server prepares and goes as it's told (`clients/cli/src/serving.rs`): this
-// decides only when.
+// the same rules once it's back: here again and ready, which the next thing the updater hears finds. One that's here
+// but doesn't say it began within a minute of being told (`ANSWER`), as one that can't take a build, or whose list of
+// builds is older than the network's, is behind, and tries again as any does (`RETRIES`): a server that's here says
+// so at once, and one that has gone but is held by the relay never does. Each server prepares and goes as it's told
+// (`clients/cli/src/serving.rs`): this decides only when.
 //
 // It hears only through the relay's Durable Object, which calls it: a build released (`core.ts`) or Update Now (`/relay/update`), what each server says of itself as it changes (`/relay/seen`), and a
 // server coming or going there. Each time it's given who's here (`Presence`), and answers with what it is, and what
@@ -275,7 +276,7 @@ export class NetworkUpdater extends DurableObject<Env> {
     state.build = build;
     const known = Object.keys(reported).filter((key) => this.takes(key, presence, reported));
     const behind = known.filter((key) => !on(state, reported[key]));
-    const away = (key: string) => !presence[key]?.server_ready || state.skipped.includes(key);
+    const away = (key: string) => !presence[key]?.server_ready;
     // One already preparing this pair has begun.
     const begun = (key: string) => reported[key].server_update_status !== "up_to_date" && on(state, { ...reported[key], version: reported[key].next_build ?? undefined, program: reported[key].next_program });
     const taking = behind.filter((key) => !away(key));
@@ -320,7 +321,7 @@ export class NetworkUpdater extends DurableObject<Env> {
       const back =
         state.build &&
         Object.keys(reported).some(
-          (key) => this.takes(key, presence, reported) && !wentBack.has(key) && !state.skipped.includes(key) && !on(state, reported[key]) && presence[key]?.server_ready,
+          (key) => this.takes(key, presence, reported) && !wentBack.has(key) && !on(state, reported[key]) && presence[key]?.server_ready,
         );
       if (back) this.begin(state, state.build!, presence, reported);
       return;
@@ -340,11 +341,15 @@ export class NetworkUpdater extends DurableObject<Env> {
       if (server.begun && server.ready === undefined && said.server_update_status === "up_to_date" && !on(state, said) && said.went_back)
         this.wentBack(state, server.key, said.name, said.went_back);
     }
-    // One that's gone, but for one restarting to take it, or that hasn't said it began, is caught up once it's back.
+    // One that's gone, but for one restarting to take it, is caught up once it's back. One that's here and hasn't said
+    // it began is behind, and tries again, not left out until it says something, which it never does.
     const silent = (server: Taking) => !server.begun && server.prepared === undefined && !!state.told && Date.now() >= state.told + ANSWER;
-    const gone = state.servers.filter((server) => server.ready === undefined && server.went === undefined && (!presence[server.key]?.connected || silent(server)));
+    const waiting = state.servers.filter((server) => server.ready === undefined && server.went === undefined);
+    const gone = waiting.filter((server) => !presence[server.key]?.connected);
     state.skipped.push(...gone.map((server) => server.key));
     state.servers = state.servers.filter((server) => !gone.includes(server));
+    for (const server of waiting.filter((server) => !gone.includes(server) && silent(server)))
+      this.wentBack(state, server.key, reported[server.key]?.name, `didn't say it began within ${ANSWER / 60_000} min of being told`);
 
     if (state.network_update_status === "preparing") {
       if (state.servers.some((server) => server.prepared === undefined && server.ready === undefined)) return;
