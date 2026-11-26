@@ -32,6 +32,12 @@ const look = styles({
   // A phone's first screen's name, large, at the top of what scrolls, as iOS's large titles and Android's large top
   // app bar have it: it goes under the bar as what's in it scrolls, and the bar's own small title takes its place.
   large: { paddingInline: tokens.length.gutter, paddingTop: tokens.grid[1], paddingBottom: tokens.grid[1], font: tokens.type.largeTitle, textAlign: "start" },
+  // Its line keeps clear of the buttons beside it (`inline`).
+  largeEnd: (end: number) => ({ paddingEnd: end }),
+  // A bar that's only room over a large title lets a finger through to what scrolls under it, but for its buttons.
+  through: { pointerEvents: "none" },
+  taken: { pointerEvents: "auto" },
+  lift: (by: number) => ({ translateY: by }),
   row: { flexDirection: "row", alignItems: "center", gap: tokens.grid[2], minHeight: tokens.length.bar, paddingInline: tokens.length.gutter },
   // A long name, which may be all the screen says of what it's about, takes two lines, as Android's bars do.
   title: { flexGrow: 1, flexShrink: 1, minWidth: 0, paddingBlock: tokens.grid[1], font: tokens.type.headline, lineClamp: 2, textAlign: "start" },
@@ -254,9 +260,18 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
   const [trailingHeight, setTrailingHeight] = createSignal(0)
   // Under a finger, a first screen draws its heading large itself.
   const large = !computer && !props.back && !props.largeTitle
+  const action = children(() => props.action)
+  // One or two small buttons sit at the end of a large title's line, vertically centred on it, and the bar has no row
+  // of its own above it till the title scrolls under, as Music's, Photos' and the App Store's do; three or more keep
+  // their row above it, as UINavigationBar's do.
+  const buttons = () => action.toArray().filter(Boolean).length + (tips() ? 1 : 0) + (floating() ? 0 : (props.floatingActions?.leading?.length ?? 0) + (props.floatingActions?.trailing ? 1 : 0))
+  const inline = () => large && buttons() <= 2
+  const [endWidth, setEndWidth] = createSignal(0)
   const [scrolled, setScrolled] = createSignal(0)
   const [largeHeight, setLargeHeight] = createSignal(LARGE)
   const [barHeight, setBarHeight] = createSignal<number>()
+  // How far the buttons are from the large title's middle, which they go to from as it goes under the bar.
+  const lift = () => (inline() && barHeight() ? (largeHeight() - (barHeight()! - safeArea().top)) / 2 * (1 - under()) : 0)
   // How far its large title has gone under the bar, or what's in it has, from 0 to 1, as Compose's top app bar's
   // `collapsedFraction` is: a large title from halfway under it to all the way.
   const under = () => {
@@ -276,7 +291,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
     <Typing value={(on) => setTyping((count) => count + (on ? 1 : -1))}>
     <View style={look.screen}>
       <Show when={barred()}>
-      <View role="banner" style={[look.bar, !computer && look.clear, !computer && look.floating]} onLayout={computer ? undefined : (event) => setBarHeight(event.currentTarget.getBoundingClientRect().height)}>
+      <View role="banner" style={[look.bar, !computer && look.clear, !computer && look.floating, inline() && look.through]} onLayout={computer ? undefined : (event) => setBarHeight(event.currentTarget.getBoundingClientRect().height)}>
         <Show when={!computer}>
           <View style={[look.backdrop, look.faded(under())]} />
         </Show>
@@ -309,36 +324,38 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
           <Heading level={1} aria-hidden={named() ? undefined : "true"} style={[look.title, computer && look.computerTitle, titleShown() < 1 && look.faded(titleShown())]}>
             {props.heading}
           </Heading>
-          <Show when={!computer && tips()}>
-            {(now) => <Tips tips={now()} />}
-          </Show>
-          <Show when={props.action || (!floating() && props.floatingActions)}>
-            <BarEnd value={true}>
-              <View style={look.action}>
-                <Show when={!floating()}>
-                  <For each={props.floatingActions?.leading}>
+          <View style={[look.action, look.taken, look.lift(lift())]} onLayout={(event) => setEndWidth(event.currentTarget.getBoundingClientRect().width)}>
+            <Show when={!computer && tips()}>
+              {(now) => <Tips tips={now()} />}
+            </Show>
+            <Show when={action.toArray().some(Boolean) || (!floating() && props.floatingActions)}>
+              <BarEnd value={true}>
+                <View style={look.action}>
+                  <Show when={!floating()}>
+                    <For each={props.floatingActions?.leading}>
+                      {(one) => (
+                        <Button size="icon" variant={one.primary ? "default" : "ghost"} aria-label={one.label} disabled={one.disabled} onPress={one.onPress}>
+                          <Icon name={one.icon} />
+                        </Button>
+                      )}
+                    </For>
+                  </Show>
+                  {action()}
+                  <Show when={!floating() && props.floatingActions?.trailing}>
                     {(one) => (
-                      <Button size="icon" variant={one.primary ? "default" : "ghost"} aria-label={one.label} disabled={one.disabled} onPress={one.onPress}>
-                        <Icon name={one.icon} />
+                      <Button variant="outline" disabled={one().disabled} onPress={one().onPress}>
+                        <Icon name={one().icon} />
+                        {one().label}
                       </Button>
                     )}
-                  </For>
-                </Show>
-                {props.action}
-                <Show when={!floating() && props.floatingActions?.trailing}>
-                  {(one) => (
-                    <Button variant="outline" disabled={one().disabled} onPress={one().onPress}>
-                      <Icon name={one().icon} />
-                      {one().label}
-                    </Button>
-                  )}
-                </Show>
-              </View>
-            </BarEnd>
-          </Show>
-          <Show when={computer && tips()}>
-            {(now) => <Tips tips={now()} />}
-          </Show>
+                  </Show>
+                </View>
+              </BarEnd>
+            </Show>
+            <Show when={computer && tips()}>
+              {(now) => <Tips tips={now()} />}
+            </Show>
+          </View>
           <Show when={computer && splitTips().over && edge().end}>
             <View style={look.tipsRoom} />
           </Show>
@@ -348,13 +365,15 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
       <ScrollView role="main" style={look.main} onScroll={!computer || props.largeTitle ? (event) => setScrolled(event.currentTarget.scrollTop) : undefined}>
         <View style={[look.safe, computer && !barred() && look.clear]}>
           <Show when={!computer}>
-            <Show when={barHeight()} fallback={<View style={look.clear}><View style={look.clearRow} /></View>}>
-              <View style={look.clearBy(barHeight()!)} />
+            <Show when={!inline()} fallback={<View style={look.clear} />}>
+              <Show when={barHeight()} fallback={<View style={look.clear}><View style={look.clearRow} /></View>}>
+                <View style={look.clearBy(barHeight()!)} />
+              </Show>
             </Show>
           </Show>
           <Show when={large}>
             <View onLayout={(event) => setLargeHeight(event.currentTarget.getBoundingClientRect().height)}>
-              <Heading level={1} aria-hidden={named() ? "true" : undefined} style={[look.large, under() > 0 && look.faded(Math.max(0, 1 - 2 * under()))]}>
+              <Heading level={1} aria-hidden={named() ? "true" : undefined} style={[look.large, inline() && endWidth() > 0 && look.largeEnd(pixels(tokens.length.gutter) + endWidth() + pixels(tokens.grid[2])), under() > 0 && look.faded(Math.max(0, 1 - 2 * under()))]}>
                 {props.heading}
               </Heading>
             </View>

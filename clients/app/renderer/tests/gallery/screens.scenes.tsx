@@ -141,6 +141,23 @@ export default {
     },
     motions: { "Scrolled under its bar": { from: { x: 195, y: 600 }, gesture: { swipe: [0, -200], speed: 400 }, follow: { role: "heading", name: "Notes" }, once: { role: "heading", name: "Notes" } } },
   },
+  // With no buttons, the large title is right under the status bar, with no row of the bar above it, as Music's is.
+  "Screens/A phone's first screen with nothing in its bar": {
+    alone: true, layout: "fullscreen", touch: true, safeArea: [47, 0, 34, 0],
+    render: () => <View style={look.phone}><Screen heading="Telemetry"><List>{notes.map((note) => <Row heading={note} />)}</List></Screen></View>,
+    motions: { "Scrolled under its bar": { from: { x: 195, y: 600 }, gesture: { swipe: [0, -200], speed: 400 }, follow: { role: "heading", name: "Telemetry" }, once: { role: "heading", name: "Telemetry" } } },
+  },
+  // Three buttons keep the bar's row above the large title, as UINavigationBar's do.
+  "Screens/A phone's first screen with three buttons": {
+    alone: true, layout: "fullscreen", touch: true, safeArea: [47, 0, 34, 0],
+    render: () => (
+      <View style={look.phone}>
+        <Screen heading="Devices" tips={[{ title: "Devices", body: "Every device that's signed in." }, { title: "Invite", body: "Add one of yours." }]} action={<><More /><Button>Invite</Button></>}>
+          <List>{notes.map((note) => <Row heading={note} />)}</List>
+        </Screen>
+      </View>
+    ),
+  },
   "Screens/Settings": { alone: true, layout: "fullscreen", size: [1100, 720], render: () => <View style={look.window}>{settings()}</View> },
   // A list and nothing open: its detail side says what to do, as Mail's says "No Message Selected", never blank.
   "Screens/A split with nothing open": {
