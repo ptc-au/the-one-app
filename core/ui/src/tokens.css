@@ -15,6 +15,7 @@
   --panel: light-dark(oklch(0.991 0.001 286.38 / 92%), oklch(0.185 0 0 / 92%));
   --glass: light-dark(oklch(1 0 0 / 80%), oklch(0.26 0 0 / 80%));
   --veil: light-dark(oklch(0.977 0.003 286.35 / 55%), oklch(0 0 0 / 55%));
+  --folder-veil: light-dark(oklch(0.977 0.003 286.35 / 25%), oklch(0 0 0 / 25%));
   --tile: color-mix(in oklab, var(--label) 14%, transparent);
   --field: light-dark(oklch(1 0 0 / 70%), oklch(1 0 0 / 10%));
   --transparent: oklch(0 0 0 / 0%);
@@ -266,6 +267,7 @@
     --panel: light-dark(oklch(0.991 0.001 286.38), oklch(0.185 0 0));
     --glass: light-dark(oklch(1 0 0), oklch(0.26 0 0));
     --veil: light-dark(oklch(0.977 0.003 286.35), oklch(0 0 0));
+    --folder-veil: light-dark(oklch(0.977 0.003 286.35), oklch(0 0 0));
     --material-glass: none;
     --material-thin: none;
     --material-window: none;

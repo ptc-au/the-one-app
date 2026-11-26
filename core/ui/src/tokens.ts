@@ -252,6 +252,9 @@ const roles = {
   /** What veils a page behind something opened over it, over what's blurred; where glass is a plain tint, opaque: what's
    * behind, unblurred, would show its words through the words over it. */
   veil: colour(opacity(zinc[977], 55), opacity(black, 55), [zinc[977], black]),
+  /** What veils the App Library behind a category opened over it, over what's blurred, as an iOS folder's does: a
+   * quarter, so what's behind keeps its colours, blurred; where glass is a plain tint, opaque, as `veil` is. */
+  folderVeil: colour(opacity(zinc[977], 25), opacity(black, 25), [zinc[977], black]),
   /** A tile's tint, as an App Library category's square is. */
   tile: alpha(label, 14),
   /** What's typed in, and an outline button: a field's fill, a little lighter than what it's on, as iOS's

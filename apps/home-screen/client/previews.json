@@ -3296,22 +3296,22 @@
           ]
         },
         "follow": {
-          "role": "button",
-          "name": "Weather",
+          "role": "group",
+          "name": "Utilities",
           "within": {
             "role": "dialog",
             "name": "Utilities"
           }
         },
         "opensFrom": {
-          "role": "button",
-          "name": "Weather",
+          "role": "group",
+          "name": "Utilities",
           "within": {
-            "role": "group",
-            "name": "Utilities"
-          },
-          "includeHidden": true
-        }
+            "role": "region",
+            "name": "Apps"
+          }
+        },
+        "onward": true
       },
       "Open it by its small icons": {
         "from": {
@@ -3326,22 +3326,22 @@
           ]
         },
         "follow": {
-          "role": "button",
-          "name": "Weather",
+          "role": "group",
+          "name": "Utilities",
           "within": {
             "role": "dialog",
             "name": "Utilities"
           }
         },
         "opensFrom": {
-          "role": "button",
-          "name": "Weather",
+          "role": "group",
+          "name": "Utilities",
           "within": {
-            "role": "group",
-            "name": "Utilities"
-          },
-          "includeHidden": true
-        }
+            "role": "region",
+            "name": "Apps"
+          }
+        },
+        "onward": true
       },
       "Open it by its name": {
         "from": {
@@ -3356,22 +3356,55 @@
           ]
         },
         "follow": {
-          "role": "button",
-          "name": "Weather",
+          "role": "group",
+          "name": "Utilities",
           "within": {
             "role": "dialog",
             "name": "Utilities"
           }
         },
         "opensFrom": {
-          "role": "button",
-          "name": "Weather",
+          "role": "group",
+          "name": "Utilities",
           "within": {
-            "role": "group",
-            "name": "Utilities"
+            "role": "region",
+            "name": "Apps"
+          }
+        },
+        "onward": true
+      },
+      "Close it": {
+        "before": [
+          {
+            "press": {
+              "role": "group",
+              "name": "Utilities"
+            }
           },
-          "includeHidden": true
-        }
+          {
+            "wait": 1000
+          }
+        ],
+        "from": {
+          "x": 200,
+          "y": 700
+        },
+        "gesture": {
+          "moves": [
+            {
+              "ms": 90
+            }
+          ]
+        },
+        "follow": {
+          "role": "group",
+          "name": "Utilities",
+          "within": {
+            "role": "dialog",
+            "name": "Utilities"
+          }
+        },
+        "onward": true
       }
     }
   },

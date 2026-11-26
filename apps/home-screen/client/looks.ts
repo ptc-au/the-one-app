@@ -131,28 +131,28 @@ export const looks = styles({
   dialog: { position: "absolute", top: 0, start: 0 },
   categoryLayer: { zIndex: 10 },
   heldLayer: { zIndex: 20 },
-  // Its apps fly out of its square and back into it, and the veil over what's behind blurs and dims with them, on
-  // one spring, which a change on the way turns from where it is.
+  // It zooms out of its square and back into it, and the veil over what's behind blurs with it, on one spring, which
+  // a change on the way turns from where it is.
+  folderVeil: { backgroundColor: tokens.colour.folderVeil, backdropFilter: tokens.material.thin },
   veils: { opacity: { default: 1, entering: 0 }, transitionProperty: ["opacity"], transition: tokens.motion.smooth },
   opening: { position: "absolute", overflow: "hidden", pointerEvents: "none" },
   unveiled: { opacity: 0 },
-  // With less motion, its apps dissolve between its square and it, as nothing flies.
+  // Its square fades back as it shrinks into it, and goes at once as it opens over it, so the blur behind it is made
+  // once, not again each frame the square fades.
   handing: { transitionProperty: ["opacity"], transition: tokens.motion.smooth },
   unseen: { opacity: 0 },
+  // What zooms comes in quickly over its square, and fades as it shrinks home, on the zoom's spring.
+  fadesIn: { opacity: 1, transitionProperty: ["opacity"], transition: tokens.motion.quick },
+  fadesOut: { opacity: 0, transitionProperty: ["opacity"], transition: tokens.motion.smooth },
   inOpened: { position: "absolute", top: 0, start: 0 },
   openedArea: { position: "absolute", top: 0, start: 0, overflow: "hidden", pointerEvents: "auto" },
-  // Each of its apps flies from its icon in the square.
-  flies: { transitionProperty: ["scale", "translateX", "translateY"], transition: tokens.motion.smooth },
-  // Over its app, across its middle, for what flies with it unscaled.
-  badged: { position: "absolute", top: 0, start: 0, end: 0, alignItems: "center", pointerEvents: "none" },
-  // Each of its apps leaves its square, and comes back, after the ones before it.
-  after: (ms: number) => ({ transitionDelay: ms }),
+  // Its name and its apps, which zoom: painted ahead, as it's made under the finger, so the frame it opens on only
+  // draws them, as the blur is made then.
+  zoomed: { willChange: ["scale", "translateX", "translateY"] },
+  // What fades in it, as a picture of its own kept as it zooms.
+  zoomedColumn: { gap: tokens.grid[8] },
+  zooms: { transitionProperty: ["scale", "translateX", "translateY"], transition: tokens.motion.smooth },
   scaledAt: (scale: number, translateX: number, translateY: number) => ({ scale, translateX, translateY }),
-  // Its name and its apps' come in once its apps have landed (`landing`, the same for its square's), and go first as it
-  // closes.
-  named: { opacity: 1, transitionProperty: ["opacity"], transition: tokens.motion.settle, transitionDelay: 0 },
-  unnamed: { opacity: 0, transitionProperty: ["opacity"], transition: tokens.motion.quick, transitionDelay: 0 },
-  opened: { gap: tokens.grid[8] },
   categoryTitle: { font: tokens.type.largeTitle },
   // Its apps as Home's, spread across, four on a phone.
   openedApps: { display: "grid", gridTemplateColumns: { fill: sizes.found }, justifyContent: "space-between", rowGap: tokens.grid[4], columnGap: tokens.grid[3] },

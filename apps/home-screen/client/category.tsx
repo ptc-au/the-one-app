@@ -1,27 +1,27 @@
 import { createEffect, createMemo, createSignal, For } from "solid-js"
-import { covers, keydown, Pressable, reducedMotion, type Rect, ScrollView, Text, View, viewport } from "ui"
+import { covers, keydown, type Laid, Pressable, reducedMotion, type Rect, ScrollView, Text, View, viewport } from "ui"
 import { type Entrypoint } from "./types.ts"
 import { looks } from "./looks.ts"
 import { along, home, room, tapping, windowWidth } from "./store.ts"
 import { type Owner, badgeOf, opens, press } from "./owners.ts"
 import { holds } from "./holds.ts"
-import { Count, Tile } from "./tiles.tsx"
-import { flyingHome, landing, openedCategory, places, setLanding, wait } from "./library.tsx"
+import { Tile } from "./tiles.tsx"
+import { openedCategory, places } from "./library.tsx"
 
 /// How large an opened category's apps' icons are, how wide each is with its name, and the gap between them across,
 /// as `sizes.found` and `looks.openedApps` have them.
 const [ICON, APP, APART] = [60, 76, 12]
 
 /// A category opened over its App Library, as an iPhone's is: the whole screen (in the launcher, its card), its name as
-/// a large title over all its apps in a grid, as Home's, which scrolls, over the App Library blurred and dimmed. Each of
-/// its apps flies out of its own icon in its square there and back into it, as an iOS folder's do, wherever the square
-/// is, the blur and the dim with them, on one spring the renderer draws, each a little after the one before it (`wait`) so none crosses another, turning back from wherever they've got to:
-/// closed, each is as large as that icon and on it, and the square's are handed over to it as it opens and back once
-/// they're in the square again, so each app is drawn once. Its name and its apps' come in as they arrive, and go first.
-/// Tapping beside its apps, Escape or the device's own back closes it at once, however far it's got: what's still moving
-/// is the renderer's to finish. For whoever asked for less motion, it fades. It's made ahead (`made`, as a press goes
-/// down on its square) and kept made, closed, in its square and not shown, taking nothing, so the frame it opens or
-/// closes on only changes how it's drawn.
+/// a large title over all its apps in a grid, as Home's, which scrolls, over the App Library blurred and lightly
+/// veiled. It zooms out of its square and back into it whole, as an iOS folder does, its name and its apps' with it:
+/// closed, its grid is as wide as the square and at its top, wherever the square is, on one spring the renderer draws,
+/// with no bounce, the veil and the blur with it, turning back from wherever it's got to. Opening, the square goes at
+/// once and it comes in quickly over it; closing, it fades as it shrinks while the square fades back in, on the same
+/// spring, so they're handed over as one. Tapping beside its apps, Escape or the
+/// device's own back closes it at once, however far it's got: what's still moving is the renderer's to finish. For
+/// whoever asked for less motion, it fades. It's made ahead (`made`, as a press goes down on its square) and kept made,
+/// closed, on its square and not shown, taking nothing, so the frame it opens or closes on only changes how it's drawn.
 export function OpenCategory(props: { owner: Owner; made: string; open: boolean; within?: Rect }) {
   const category = () => openedCategory(props.owner.library, props.made)
   const close = () => home.send({ type: "close" })
@@ -43,66 +43,39 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
   const area = () => props.within ?? { x: 0, y: 0, width: windowWidth(), height: viewport().height }
   // Where its apps start: under its title, in from the area's side.
   const inset = () => (props.within ? { top: 24, inline: 24, bottom: 24 } : { top: room().safe.top + 108, inline: 24 + room().safe.left, bottom: 32 + room().safe.bottom })
-  // Where each of its apps is in it, open, from its top left: measured as each category is made in it, whose apps are
-  // its own, and again as the area's width changes, which moves its apps' columns. Till then nothing in it has a
-  // transition, so it goes straight to where that puts it, not on its way there as it opens.
-  const [laid, setLaid] = createSignal<{ all?: Rect; apps: Record<number, Rect> }>({ apps: {} })
-  const measuring = createMemo(() => `${props.made} ${area().width}`)
-  createEffect(measuring, () => void setLaid({ apps: {} }))
-  const measured = createMemo(() => {
-    const { all, apps } = laid()
-    const count = category()?.entrypoints.length ?? 0
-    return all && Object.keys(apps).length === count ? Array.from({ length: count }, (_, index) => ({ ...apps[index], x: apps[index].x - all.x, y: apps[index].y - all.y })) : undefined
-  })
-  // Each app is drawn on its icon in its square, as it was drawn when it was pressed, while it's closed, as large as
-  // that is. A scale is around its middle, and its icon is at its top, in the middle across.
-  const square = () => places[props.made] ?? { apps: [], along: 0 }
-  // The pages it's on can be swiped while its apps fly home, as the screen is a screen again the moment it closes, and
-  // its square goes with them: they fly to where it is, not where it was.
-  const carried = () => (!props.open && flyingHome(props.made, "rested") ? (square().along - along()) * room().width : 0)
-  // With less motion they stay where they are and fade, as an iPhone's folder's do, not jump onto it as they go.
-  const leg = (index: number) => {
-    const at = measured()?.[index]
-    const icon = square().apps[index]
-    return reducedMotion() || !at || !icon ? undefined : { at, icon: { ...icon, x: icon.x + carried() }, scale: Math.max(icon.width / ICON, 0.01) }
+  // Where its name and its apps are in it, open, and its grid of apps: measured as each category is made in it, and
+  // again as the area's width changes, which moves its columns. Till then it isn't zoomed and has no transition, so
+  // it's laid out whole, and goes straight to its square once it's measured, not on its way there.
+  const [laid, setLaid] = createSignal<{ content?: Rect; grid?: Rect }>({})
+  const measured = () => (laid().content && laid().grid ? (laid() as { content: Rect; grid: Rect }) : undefined)
+  const measure = (part: "content" | "grid") => (event: Laid) => {
+    const at = event.currentTarget.getBoundingClientRect()
+    setLaid((laid) => ({ ...laid, [part]: { ...at, x: at.x - area().x, y: at.y - area().y } }))
   }
-  const flight = (index: number) => (props.open ? undefined : leg(index))
-  // Each app that flies tells as it all but lands, out or home, and its names, and its square's, come in once the last
-  // has; and again at rest, where its square's icons are handed back once the last is. A host that doesn't say which
-  // (`rest`) tells once, as it all but lands. Only opening or closing sets them flying: Solid runs this again whenever
-  // what `open` reads changes, as an app's menu opening elsewhere in the App Library changes the state, and closed
-  // again, nothing flies, so nothing would ever land and its names and its square's icons waited for them for good.
-  let [landed, rested] = [new Set<number>(), new Set<number>()]
+  const measuring = createMemo(() => `${props.made} ${area().width}`)
+  createEffect(measuring, () => void setLaid({}))
+  // It moves once it's first opened since then: shrunk onto its square before, it's there at once, so it's opened from
+  // there, not from on its way.
+  const [moves, setMoves] = createSignal(false)
+  createEffect(measuring, () => void setMoves(false))
   createEffect(
     () => props.open,
-    (open, was) => {
-      if (open === was) return
-      ;[landed, rested] = [new Set(), new Set()]
-      setLanding({ key: props.made, open, landed: 0, rested: 0, travels: (category()?.entrypoints ?? []).filter((_, index) => leg(index)).length })
-    },
+    (open) => void (open && setMoves(true)),
   )
-  const lands = (index: number, rest?: boolean) => {
-    landed.add(index)
-    if (rest !== false) rested.add(index)
-    setLanding((now) => ({ ...now, landed: landed.size, rested: rested.size }))
+  // The pages it's on can be swiped while it shrinks home, as the screen is a screen again the moment it closes, and its
+  // square goes with them: it goes to where the square is, not where it was.
+  const square = () => places[props.made]
+  const carried = () => (props.open || !square() ? 0 : (square()!.along - along()) * room().width)
+  // Closed, it's drawn shrunk onto its square, grown around its middle: its grid as wide as the square and at its top.
+  // With less motion it stays where it is and fades, as an iPhone's folder does.
+  const zoom = () => {
+    const [at, from] = [measured(), square()]
+    if (props.open || reducedMotion() || !at || !from) return undefined
+    const scale = Math.max(from.width / at.grid.width, 0.01)
+    const [middleX, middleY] = [at.content.x + at.content.width / 2, at.content.y + at.content.height / 2]
+    const [toX, toY] = [from.x + carried() - area().x, from.y - area().y]
+    return looks.scaledAt(scale, toX - middleX - scale * (at.grid.x - middleX), toY - middleY - scale * (at.grid.y - middleY))
   }
-  // Shown while it's open and while its apps fly home, handed to its square at once as they come to rest, or with less
-  // motion dissolved.
-  const shown = createMemo(() => props.open || flyingHome(props.made, "rested"))
-  const arrived = createMemo(() => landing().key === props.made && landing().open && landing().landed >= landing().travels)
-  const flown = (index: number) => {
-    const flying = flight(index)
-    if (!flying) return undefined
-    const { at, icon, scale } = flying
-    return looks.scaledAt(scale, icon.x + icon.width / 2 - area().x - at.x - at.width / 2, icon.y - area().y - at.y - at.height / 2 + (scale * at.height) / 2)
-  }
-  // A badge is as large as it is on the icon in the square, all the way, as an iPhone's is: it isn't scaled with its app,
-  // but moves with its icon's top right corner, which is `scale` times as far from the app's middle there.
-  const flownBadge = (index: number) => {
-    const flying = flight(index)
-    return flying && looks.scaledAt(1, flying.icon.x + flying.icon.width - area().x - flying.at.x - (flying.at.width + ICON) / 2, flying.icon.y - area().y - flying.at.y)
-  }
-  const named = () => (props.open && arrived() ? looks.named : looks.unnamed)
   // In a launcher's card, its name and its apps are a column in the card's middle, as Home's pages are, as wide as its
   // apps take, as a Mac's Launchpad's folder is; a phone's are its whole screen, as an iPhone's.
   const column = () => {
@@ -115,32 +88,27 @@ export function OpenCategory(props: { owner: Owner; made: string; open: boolean;
   const beside = () => tapping() && close()
   return (
     <View aria-hidden={props.open ? undefined : "true"} style={[looks.dialog, looks.categoryLayer, !props.open && looks.inert, looks.sized(windowWidth(), viewport().height)]}>
-      {/* What's behind blurs and dims through a veil. */}
-      <Pressable aria-hidden="true" onPress={close} style={[looks.cover, looks.frosted, looks.veils, !props.open && looks.unveiled, props.within && looks.round, props.within && looks.at(area().x, area().y, area().width, area().height)]} />
-      <View role="dialog" aria-label={category()?.category} style={[looks.opening, props.within && looks.round, looks.at(area().x, area().y, area().width, area().height)]}>
-        <View style={[looks.inOpened, reducedMotion() && looks.handing, !shown() && looks.unseen]}>
+      {/* What's behind blurs and is veiled. */}
+      <Pressable aria-hidden="true" onPress={close} style={[looks.cover, looks.folderVeil, looks.veils, !props.open && looks.unveiled, props.within && looks.round, props.within && looks.at(area().x, area().y, area().width, area().height)]} />
+      <View role="dialog" aria-description={JSON.stringify([zoom(), measured(), square(), moves()])} aria-label={category()?.category} style={[looks.opening, props.within && looks.round, looks.at(area().x, area().y, area().width, area().height)]}>
+        <View style={looks.inOpened}>
           <ScrollView style={[looks.openedArea, !props.open && looks.inert, looks.sized(area().width, area().height)]}>
-            <Pressable onPress={beside} onLayout={measured() ? undefined : (event) => setLaid((laid) => ({ ...laid, all: event.currentTarget.getBoundingClientRect() }))} style={[looks.opened, props.within && looks.centred, looks.libraryPadding(inset().inline, inset().top, inset().bottom), looks.atLeast(area().height)]}>
-              <Text role="heading" aria-level={2} style={[looks.categoryTitle, named(), column()]}>
+            <Pressable onPress={beside} style={[props.within && looks.centred, looks.libraryPadding(inset().inline, inset().top, inset().bottom), looks.atLeast(area().height)]}>
+              <View onLayout={laid().content ? undefined : measure("content")} style={[looks.zoomed, (props.open || moves()) && looks.zooms, zoom()]}>
+              <View style={[looks.zoomedColumn, props.open ? looks.fadesIn : moves() ? looks.fadesOut : looks.unseen]}>
+              <Text role="heading" aria-level={2} style={[looks.categoryTitle, column()]}>
                 {category()?.category}
               </Text>
-              <View style={[looks.openedApps, column()]}>
+              <View role="group" aria-label={category()?.category} style={[looks.openedApps, column()]} onLayout={laid().grid ? undefined : measure("grid")}>
                 <For each={category()?.entrypoints ?? []} keyed={(entrypoint) => entrypoint.entrypoint ?? entrypoint.app}>
-                  {(entrypoint, index) => {
+                  {(entrypoint) => {
                     // What's held here is an app of the App Library, as there: its menu, or carried onto Home's pages.
                     const held = holds(() => ({ item: opens(entrypoint()), listed: entrypoint(), page: 0, index: -1, from: "library" }), () => true)
-                    return (
-                      <View style={looks.slots} onLayout={measured() ? undefined : (event) => setLaid((laid) => ({ ...laid, apps: { ...laid.apps, [index()]: event.currentTarget.getBoundingClientRect() } }))}>
-                        <Tile name={entrypoint().name} icon={entrypoint().icon} size={ICON} scale={1} style={[measured() && [looks.flies, looks.after(wait(index()))], flown(index())]} nameStyle={named()} badge={badgeOf(entrypoint() as Entrypoint, props.owner)} counted={false} onTransitionEnd={(event) => lands(index(), event.rest)} holds={held} onPress={(behind, from) => press(entrypoint(), props.owner, behind, from)} />
-                        <View aria-hidden="true" style={looks.badged}>
-                          <View style={[looks.slots, looks.square(ICON), measured() && [looks.flies, looks.after(wait(index()))], flownBadge(index())]}>
-                            <Count count={badgeOf(entrypoint() as Entrypoint, props.owner)} />
-                          </View>
-                        </View>
-                      </View>
-                    )
+                    return <Tile name={entrypoint().name} icon={entrypoint().icon} size={ICON} scale={1} badge={badgeOf(entrypoint() as Entrypoint, props.owner)} holds={held} onPress={(behind, from) => press(entrypoint(), props.owner, behind, from)} />
                   }}
                 </For>
+              </View>
+              </View>
               </View>
             </Pressable>
           </ScrollView>
