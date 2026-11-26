@@ -75,7 +75,15 @@ defmodule OneCore.Otlp do
     do: String.replace_prefix(Exception.format_banner(kind, reason, stacktrace), "** ", "")
 
   defp message({:string, text}), do: IO.chardata_to_string(text)
-  defp message({format, arguments}) when is_list(arguments), do: IO.chardata_to_string(:io_lib.format(format, arguments))
+  # OTP's `global` warns that it disconnected a node with `~s` of a string that has `…` in it, which isn't Latin-1,
+  # so no formatter can fill it in (`:io_lib.format/2` raises `badarg`, and a filter that raises is removed by
+  # `:logger` for good). It's exported as the format it was.
+  defp message({format, arguments}) when is_list(arguments) do
+    IO.chardata_to_string(:io_lib.format(format, arguments))
+  rescue
+    ArgumentError -> IO.chardata_to_string(format)
+  end
+
   defp message({:report, _report}), do: nil
 
   ## The exporter, for each of the SDK's signals
