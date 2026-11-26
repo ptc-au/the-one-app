@@ -444,22 +444,36 @@ defmodule GitRepos do
   defp run("list", _inputs, call) do
     command = command(call)
     called = for %{"group" => group, "called" => called} <- Call.tool(call, "permissions", "groups", %{})["groups"], into: %{}, do: {group, called}
-    names = for "index/" <> name <- Artifact.list(index(), "index/"), Call.reaches?(call, name), do: name
+    # An entry is read once, as it is while its tag is: the list says each one's tag (`OneCore.Bucket.list_tagged/1`), so
+    # a call reads only the entries that changed, where it read every repo's (21 on PTC) on each call.
+    prefix = index().prefix <> "index/"
+    tagged = for {key, tag} <- OneCore.Bucket.list_tagged(prefix), name = String.replace_prefix(key, prefix, ""), Call.reaches?(call, name), do: {name, tag}
+    entries = Task.async_stream(tagged, fn {name, tag} -> {name, entry(name, tag)} end, max_concurrency: 16, timeout: :infinity)
 
     repos =
-      names
-      |> Enum.zip(Artifact.read_all(index(), Enum.map(names, &("index/" <> &1))))
-      |> Enum.flat_map(fn {name, {:ok, data, _tag}} ->
-        stored = JSON.decode!(data)
-
+      entries
+      |> Enum.flat_map(fn {:ok, {name, stored}} ->
         # A repo restored while Git Repos wasn't installed wasn't heard of, so one marked removed is looked for.
-        if stored["purging"] || (stored["removed"] && OneCore.Bucket.size(name <> "/repo.json") == :absent),
-          do: [],
-          else: [listed(call, name, stored, command, called)]
+        cond do
+          stored == nil -> []
+          stored["purging"] || (stored["removed"] && OneCore.Bucket.size(name <> "/repo.json") == :absent) -> []
+          true -> [listed(call, name, stored, command, called)]
+        end
       end)
       |> Enum.sort_by(& &1.pushed, :desc)
 
     %{repos: repos}
+  end
+
+  # What the index says of a repo, as its blob of that `tag` has it, or `nil` where it went since the list.
+  defp entry(name, tag) do
+    OneCore.Cache.fetch(__MODULE__, {name, tag}, fn ->
+      case Artifact.read(index(), "index/" <> name) do
+        {:ok, data, ^tag} -> {:commit, JSON.decode!(data), expire: :timer.hours(1)}
+        {:ok, data, _changed} -> {:ignore, JSON.decode!(data)}
+        :absent -> {:ignore, nil}
+      end
+    end)
   end
 
   defp run("branches", %{"repo" => name}, call) do
