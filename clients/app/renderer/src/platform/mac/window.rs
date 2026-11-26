@@ -367,7 +367,6 @@ impl Display {
                     (x >= frame.origin.x && x < frame.origin.x + frame.size.width && y >= frame.origin.y && y < frame.origin.y + frame.size.height).then(|| (x, f64::from(icon.origin.y), screen))
                 })
             });
-            eprintln!("the panel's icon is at {under:?}, on screen: {:?}", icon.as_ref().map(|(x, bottom, _)| (x, bottom)));
             if let Some((middle, bottom, screen)) = icon {
                 let visible: NSRect = msg_send![&*screen, visibleFrame];
                 let width = f64::from(room.width.0);
