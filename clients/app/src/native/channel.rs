@@ -422,6 +422,9 @@ pub(super) fn channel(
     let (to, mut out) = unbounded_channel::<Value>();
     // A page in a frame, or a menu bar extra's, isn't its app's window, which a link to its app opens beside it.
     let _ = to.send(json!({"hello": {"entrypoint": entrypoint, "subject": subject, "link": link, "frame": framed.is_some() || menu_bar}}));
+    if framed.is_some() {
+        super::framed_in(&window, &to);
+    }
     let (read, mut write) = tokio::io::split(ours);
     crate::spawn(async move {
         while let Some(message) = out.recv().await {

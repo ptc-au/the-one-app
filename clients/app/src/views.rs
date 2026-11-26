@@ -131,17 +131,22 @@ impl Views {
         }
         let views: Vec<_> = self.subscriptions.lock().expect("no view panics").iter().map(|(view, shown)| (view.clone(), shown.clone())).collect();
         let mut asks = tokio::task::JoinSet::new();
+        let (mut asked, mut held) = (Vec::new(), Vec::new());
         for (view, shown) in views {
             {
                 let mut windows = self.windows.lock().expect("no view panics");
                 if !windows.on_screen(&view) {
+                    held.push(view.clone());
                     windows.missed.insert(view);
                     continue;
                 }
             }
+            asked.push(view);
             let changed = changed.clone();
             asks.spawn(async move { shown.refresh(&changed).await });
         }
+        // Said in the app's log, beside what the servers said (`session`).
+        eprintln!("{changed:?} asked again of {asked:?}; not on screen: {held:?}");
         while asks.join_next().await.is_some() {}
     }
 

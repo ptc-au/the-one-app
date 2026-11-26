@@ -217,6 +217,50 @@ struct Table {
 /// A new build of the UI library or an app is new files, which are loaded as its pages open.
 static LOADED: Mutex<(Option<String>, Vec<(String, u32)>)> = Mutex::new((None, Vec::new()));
 
+/// What each window last said of being on screen, with its frames' pages' channels: a page in a frame is on screen as
+/// its window is, so it's told what its window says, as a widget in a computer's launcher is put away with it.
+static FRAMED: Mutex<Vec<Framed>> = Mutex::new(Vec::new());
+
+struct Framed {
+    window: std::sync::Weak<OnceLock<WindowId>>,
+    on_screen: Option<bool>,
+    frames: Vec<UnboundedSender<Value>>,
+}
+
+/// What `window` is kept as in `FRAMED`, the windows gone forgotten.
+fn framed_of<'a>(all: &'a mut Vec<Framed>, window: &Arc<OnceLock<WindowId>>) -> &'a mut Framed {
+    all.retain(|framed| framed.window.strong_count() > 0);
+    let at = match all.iter().position(|framed| std::ptr::eq(framed.window.as_ptr(), Arc::as_ptr(window))) {
+        Some(at) => at,
+        None => {
+            all.push(Framed { window: Arc::downgrade(window), on_screen: None, frames: Vec::new() });
+            all.len() - 1
+        }
+    };
+    &mut all[at]
+}
+
+/// Says over `to`, the channel of `window`'s page, whether it's on screen, and over each of its frames' pages'.
+fn visible(window: &Arc<OnceLock<WindowId>>, to: &UnboundedSender<Value>, on_screen: bool) {
+    let said = json!({"id": "visible", "command": "visible", "args": {"onScreen": on_screen}});
+    let _ = to.send(said.clone());
+    let mut all = FRAMED.lock().expect("nothing panics holding it");
+    let framed = framed_of(&mut all, window);
+    framed.on_screen = Some(on_screen);
+    framed.frames.retain(|frame| frame.send(said.clone()).is_ok());
+}
+
+/// Keeps `to`, the channel of a page in a frame of `window`, told what its window says of being on screen, starting
+/// from what it last said.
+fn framed_in(window: &Arc<OnceLock<WindowId>>, to: &UnboundedSender<Value>) {
+    let mut all = FRAMED.lock().expect("nothing panics holding it");
+    let framed = framed_of(&mut all, window);
+    if let Some(on_screen) = framed.on_screen {
+        let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": on_screen}}));
+    }
+    framed.frames.push(to.clone());
+}
+
 /// Whether table `at` of a page's, `file`, is loaded: its token table, if it's the one loaded now; another, if it's
 /// been loaded.
 fn loaded(at: usize, file: &str) -> bool {
@@ -453,7 +497,7 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 // A computer's launcher, and a menu bar extra's panel, is drawn put away, and is on screen once it's
                 // summoned (`Shown`).
                 if !(launcher || menu_bar) || Native::phone() {
-                    let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": true}}));
+                    visible(&shown, &to, true);
                 }
                 // The device hears its person's notifications once their home is on screen, as the web
                 // launcher's page has it (`listen`).
@@ -470,7 +514,7 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                 if let Ok(views) = crate::views() {
                     views.client.report(json!({"name": "one.client.native.summon.duration", "value": ms, "attributes": {"one.view": app, "one.system.busy": load.busy()}}));
                 }
-                let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": true}}));
+                visible(&shown, &to, true);
                 crate::memory::changed();
             }
             Event::Live => Opening::live(&opening_view),
@@ -486,11 +530,11 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
             // Its person knows how to go home now: the page says so to Home Screen, for every device.
             Event::Tipped => crate::app().shell.emit("tipped", json!(null)),
             Event::PutAway | Event::Hidden(true) => {
-                let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": false}}));
+                visible(&shown, &to, false);
                 crate::memory::changed();
             }
             Event::Hidden(false) => {
-                let _ = to.send(json!({"id": "visible", "command": "visible", "args": {"onScreen": true}}));
+                visible(&shown, &to, true);
                 crate::memory::changed();
             }
             // Its person is using something else, so a new build waiting for what they typed to be sent looks
