@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 
 #[cfg(not(mobile))]
-use ::client::Connection;
+use ::client::{Changed, Connection};
 use serde_json::{Value, json};
 
 use crate::*;
@@ -48,7 +48,7 @@ pub(crate) fn waited(view: String, place: String, ms: u64) {
 /// Asks again for what a view was answered: its user returned to it.
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) async fn refresh(view: String) -> Result<(), String> {
-    views()?.subscription(&view).refresh(None).await;
+    views()?.subscription(&view).refresh(&Changed::Anything).await;
     Ok(())
 }
 
@@ -199,7 +199,7 @@ pub(crate) async fn recovery_key(subject: Option<String>) -> Result<String, Stri
 pub(crate) async fn recover(key: String, subject: Option<String>) -> Result<(), String> {
     let views = views()?;
     encryption_client::recover(&views.client, &key, subject.as_deref()).await.map_err(|error| error.to_string())?;
-    views.refresh(None).await;
+    views.refresh(Changed::Anything).await;
     Ok(())
 }
 

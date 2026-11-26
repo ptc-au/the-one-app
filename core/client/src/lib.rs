@@ -36,7 +36,7 @@ use tokio::sync::{Mutex, broadcast, watch};
 use tokio::time::timeout;
 
 pub use resolve::{InputResolver, Input};
-pub use cache::Subscription;
+pub use cache::{Changed, Subscription};
 pub use state::{State, Connection};
 pub use auth::{Network, DeviceAuthorization, NotApproved};
 pub use transport::{ALPN, LIMIT, CONNECT, THERE, REFUSED, STOPPED, endpoint, address, relay, RequestError, Reached, Unreached, notify};

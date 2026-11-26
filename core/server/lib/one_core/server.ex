@@ -20,7 +20,7 @@ defmodule OneCore.Server do
   requests: `handle`, which answers a message (`OneCore.Mcp.handle/3`); `wake`, which has the apps that can wake a
   device wake it, and says whether one did (`OneCore.Hooks.wake/1`); `covering`, the servers that run an owner's apps
   (`OneCore.Apps.covering/1`), told of what's new of theirs; and `started`, which tells the clients watching it that
-  something changed (`OneCore.Apps.changed/2`), as it starts.
+  it started (`OneCore.Apps.built/0`).
   """
   def start_link(options), do: GenServer.start_link(__MODULE__, Map.new(options), name: __MODULE__)
 

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use std::time::{Duration, Instant};
 
-use ::client::{Client, Connection, State};
+use ::client::{Changed, Client, Connection, State};
 use serde_json::{Value, json};
 use tokio::sync::broadcast;
 use url::Url;
@@ -157,10 +157,16 @@ pub(crate) async fn opens() {
                     }
                     Some("notifications/one/changed") => {
                         let changed = message["params"].clone();
-                        let again = changed["app"].is_null() && last.as_ref().is_some_and(|(was, at)| *was == changed && at.elapsed() < AGAIN);
-                        said.push(format!("{} {}{}", &server[..8], changed["app"].as_str().unwrap_or("anything"), if again { " again" } else { "" }));
+                        let what = Changed::of(&changed);
+                        let again = !matches!(what, Changed::App(_)) && last.as_ref().is_some_and(|(was, at)| *was == changed && at.elapsed() < AGAIN);
+                        let named = match &what {
+                            Changed::Anything => "anything".to_owned(),
+                            Changed::App(app) => app.clone(),
+                            Changed::Tools(tools) => tools.join(" "),
+                        };
+                        said.push(format!("{} {named}{}", &server[..8], if again { " again" } else { "" }));
                         if !again {
-                            if changed["app"].is_null() {
+                            if !matches!(what, Changed::App(_)) {
                                 last = Some((changed.clone(), Instant::now()));
                             }
                             changes.push(changed);
@@ -195,17 +201,14 @@ pub(crate) async fn opens() {
                 eprintln!("a server said {stale:?} were loaded against what's gone");
                 app.shell.emit("stale", json!(stale));
             }
-            // Every app's tools, if any change said no app's, or else each app's that one did.
-            let apps: Option<HashSet<&str>> = changes.iter().map(|changed| changed["app"].as_str()).collect();
-            match apps {
-                Some(apps) => {
-                    for app in apps {
-                        views.refresh(Some(app)).await
-                    }
-                }
-                None => {
-                    views.client.refresh_listed();
-                    views.refresh(None).await
+            // Everything, if any change said anything, or else what each one said.
+            let told: HashSet<Changed> = changes.iter().map(Changed::of).collect();
+            if told.contains(&Changed::Anything) {
+                views.client.refresh_listed();
+                views.refresh(Changed::Anything).await
+            } else {
+                for changed in told {
+                    views.refresh(changed).await
                 }
             }
         }
@@ -358,7 +361,7 @@ async fn follows(client: Arc<Client>) {
             {
                 // What it missed: what every view was answered, and a newer build or page (`updater`).
                 spawn(updater::caught_up());
-                spawn(views.refresh(None));
+                spawn(views.refresh(Changed::Anything));
             }
         }
         if state.changed().await.is_err() {

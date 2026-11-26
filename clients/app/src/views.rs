@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use ::client::{Client, Subscription};
+use ::client::{Changed, Client, Subscription};
 use data_encoding::BASE64;
 use serde_json::{Value, json};
 use url::Url;
@@ -86,7 +86,7 @@ impl Views {
             for view in back {
                 spawn(async move {
                     let Ok(views) = views() else { return };
-                    views.subscription(&view).refresh(None).await
+                    views.subscription(&view).refresh(&Changed::Anything).await
                 });
             }
         } else {
@@ -118,13 +118,13 @@ impl Views {
     /// Asks again, as a window is back on screen, if something changed while none was.
     pub(crate) async fn caught_up(&self) {
         if self.on_screen() && self.missed.swap(false, Ordering::Relaxed) {
-            self.refresh(None).await
+            self.refresh(Changed::Anything).await
         }
     }
 
-    /// Asks again for what every view on screen was answered, all at once, or only of `app`'s tools. A view that isn't
+    /// Asks again for what every view on screen was answered that `changed` says may have changed. A view that isn't
     /// on screen asks again once it is (`shown`), and while no window is, every view does (`caught_up`).
-    pub(crate) async fn refresh(&self, app: Option<&str>) {
+    pub(crate) async fn refresh(&self, changed: Changed) {
         if !self.on_screen() {
             self.missed.store(true, Ordering::Relaxed);
             return;
@@ -139,8 +139,8 @@ impl Views {
                     continue;
                 }
             }
-            let app = app.map(str::to_owned);
-            asks.spawn(async move { shown.refresh(app.as_deref()).await });
+            let changed = changed.clone();
+            asks.spawn(async move { shown.refresh(&changed).await });
         }
         while asks.join_next().await.is_some() {}
     }

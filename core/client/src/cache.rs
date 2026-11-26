@@ -311,13 +311,11 @@ impl Subscription {
         }
     }
 
-    /// Asks the server again for everything the view still reads, or with `app`, the tools of that app, which is
-    /// all a server says changed when it's one's call that did (`notifications/one/changed`), and tells the view as
-    /// each answer changes. What the view hasn't read since it was last told something changed is no longer shown,
+    /// Asks the server again for what the view still reads that `changed` says may have changed, and tells the view
+    /// as each answer changes. What the view hasn't read since it was last told something changed is no longer shown,
     /// as a screen it went on from, and is forgotten rather than asked again: read again, what was kept is shown at
     /// once and asked again behind it.
-    pub async fn refresh(&self, app: Option<&str>) {
-        let prefix = app.map(|app| format!("{app}_"));
+    pub async fn refresh(&self, changed: &Changed) {
         let mut asks = Vec::new();
         let mut waiting = Vec::new();
         let dropped;
@@ -328,7 +326,7 @@ impl Subscription {
             responses.retain(|_, query| query.read >= told);
             dropped = before != responses.len();
             for (key, query) in responses.iter() {
-                if !matches_app(&query.method, &query.params, prefix.as_deref()) {
+                if !changed.covers(&query.method, &query.params) {
                     continue;
                 }
                 // A write's refetch is already on its way to the server; join it rather than sending a duplicate
@@ -513,8 +511,37 @@ fn asked(method: &str, params: &Value) -> String {
     params["name"].as_str().map_or_else(|| method.to_owned(), |tool| format!("{method} {tool}"))
 }
 
-fn matches_app(method: &str, params: &Value, prefix: Option<&str>) -> bool {
-    prefix.is_none_or(|prefix| method == "tools/call" && params["name"].as_str().is_some_and(|name| name.starts_with(prefix)))
+/// What a server says changed (`notifications/one/changed`): what one app's call did, its tools' answers (`app`); what
+/// only some of One Core's own tools answer, as a server's build or status (`tools`); or with neither, anything, as an
+/// install or a deploy changes what's listed and what every app answers.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum Changed {
+    Anything,
+    App(String),
+    Tools(Vec<String>),
+}
+
+impl Changed {
+    /// What a server's notice says changed, by its params.
+    pub fn of(params: &Value) -> Self {
+        if let Some(app) = params["app"].as_str() {
+            return Self::App(app.to_owned());
+        }
+        match params["tools"].as_array() {
+            Some(tools) => Self::Tools(tools.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
+            None => Self::Anything,
+        }
+    }
+
+    /// Whether what was asked, `method` with `params`, may be answered differently now.
+    pub fn covers(&self, method: &str, params: &Value) -> bool {
+        let tool = (method == "tools/call").then(|| params["name"].as_str()).flatten();
+        match self {
+            Self::Anything => true,
+            Self::App(app) => tool.and_then(|tool| tool.strip_prefix(app.as_str())).is_some_and(|rest| rest.starts_with('_')),
+            Self::Tools(tools) => tool.is_some_and(|tool| tools.iter().any(|one| one == tool)),
+        }
+    }
 }
 
 /// Whether a write call may change the server's `tools/list`: One Core's own tools (no `_`) or `apps_*`.

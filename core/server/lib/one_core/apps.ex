@@ -213,7 +213,7 @@ defmodule OneCore.Apps do
   window took to show it.
   """
   def changed(owners \\ [], app \\ nil, deployed \\ nil) do
-    Task.Supervisor.start_child(OneCore.Asks, fn ->
+    telling(fn ->
       apps =
         Map.new(owners, fn owner ->
           {owner, for({name, version} <- versions([owner]), into: %{}, do: {name, version.code})}
@@ -224,7 +224,20 @@ defmodule OneCore.Apps do
       params = if deployed, do: Map.put(params, :deployed, deployed), else: params
       Server.tell("changed", params)
     end)
+  end
 
+  @doc """
+  Tells every client watching this server that its build or status changed, as it starts, as the program keeping it
+  running says something new of it (`OneCore.Release.told/1`), and as the network's update moves: what only One Core's
+  `builds` answers (`tools`), so a client asks only that again, and the UI library's build (`library`), against which
+  it finds its stale pages.
+  """
+  def built do
+    telling(fn -> Server.tell("changed", %{library: OneCore.Entrypoint.library().code, apps: %{}, tools: ["builds"]}) end)
+  end
+
+  defp telling(tell) do
+    Task.Supervisor.start_child(OneCore.Asks, tell)
     :ok
   end
 
@@ -494,7 +507,7 @@ defmodule OneCore.Apps do
   @impl true
   def init(nil) do
     Hooks.keep()
-    # What this server is changing, and the network's update, are told to the clients watching (`changed/2`).
+    # What this server is changing, and the network's update, are told to the clients watching (`built/0`).
     Registry.register(OneCore.Waiting, :status, nil)
     Registry.register(OneCore.Waiting, :network, nil)
     {:ok, %{installed: %{}, reloaded: %{}, running: %{}, latest: %{}, described: %{}, syncs: %{}}, {:continue, :start}}
@@ -650,7 +663,7 @@ defmodule OneCore.Apps do
 
   @impl true
   def handle_info(changed, state) when changed in [:status, :network] do
-    changed()
+    built()
     {:noreply, state}
   end
 
