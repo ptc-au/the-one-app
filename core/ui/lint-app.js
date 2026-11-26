@@ -3,7 +3,7 @@
 // the DOM's, `document`, `window` or any other Web API, a stylesheet, a prop a native host can't draw, and a `For` as a
 // `List`'s rows, which makes them all at once (`List each` makes those near the window), and a `Row` straight in a `Section`,
 // which has no card (the `List` it's in draws it), and a `Button` of `variant="destructive"`, which only an alert draws; and it fails a
-// tool's answer read in a `createMemo`, which a projection keeps the same objects of as it's asked again. A server runs it
+// tool's answer read in a `createMemo` (or in a helper it calls that returns one), which a projection keeps the same objects of as it's asked again. A server runs it
 // too, as the UI library it serves holds it (build.js), on the app it deploys, where an entrypoint says its `runtime_version`
 // (`OneCore.Entrypoint.lint/3`). Its errors are TypeScript's, a line each: file, line, column and message, as the folder names it.
 // A raw colour, length, shadow or font in a static style fails it, and a colour written out anywhere in its code, but in
@@ -30,15 +30,45 @@ const noted = []
 function dom() {
   const found = []
   const root = resolve(folder)
+  const walk = (node, visit, parent) => {
+    if (!node || typeof node.type !== "string") return
+    visit(node, parent)
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "parent") continue
+      if (Array.isArray(value)) value.forEach((one) => one && typeof one === "object" && walk(one, visit, node))
+      else if (value && typeof value === "object") walk(value, visit, node)
+    }
+  }
+  const files = []
   for (const path of readdirSync(root, { recursive: true })) {
     if (!/\.[mc]?[jt]sx?$/.test(path) || path.endsWith(".d.ts") || path.split(sep).includes("node_modules")) continue
     const code = readFileSync(join(root, path), "utf8")
-    let ast
     try {
-      ast = parseAst(code, { lang: extname(path).slice(1).replace(/^[mc]/, "") }, path)
+      files.push({ path, code, ast: parseAst(code, { lang: extname(path).slice(1).replace(/^[mc]/, "") }, path) })
     } catch {
       continue // the checker and the build say why it doesn't parse
     }
+  }
+  // Whether a tool's answer is read in it: it calls `call` and parses the text.
+  const reads = (node) => {
+    let calls = false
+    let parses = false
+    walk(node, (inner) => {
+      if (inner.type === "CallExpression" && inner.callee.type === "Identifier" && inner.callee.name === "call") calls = true
+      if (inner.type === "MemberExpression" && inner.object.name === "JSON" && inner.property.name === "parse") parses = true
+    })
+    return calls && parses
+  }
+  // The functions an app writes that return a tool's answer (`const json = <T,>(tool) => call(tool).then(JSON.parse)`),
+  // by name, in any of its files, as a memo of one is a memo of the answer.
+  const helpers = new Set()
+  for (const { ast } of files) {
+    walk(ast, (node) => {
+      if (node.type === "FunctionDeclaration" && node.id && reads(node.body)) helpers.add(node.id.name)
+      if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && /Function/.test(node.init?.type ?? "") && reads(node.init.body)) helpers.add(node.id.name)
+    })
+  }
+  for (const { path, code, ast } of files) {
     const at = (node) => {
       const before = code.slice(0, node.start).split("\n")
       return `${path}(${before.length},${before.at(-1).length + 1})`
@@ -56,15 +86,6 @@ function dom() {
     }
     // `(globalThis as any)`, `globalThis!`
     const unwrapped = (node) => (node && ["TSAsExpression", "TSNonNullExpression", "TSTypeAssertion", "TSSatisfiesExpression", "ParenthesizedExpression"].includes(node.type) ? unwrapped(node.expression) : node)
-    const walk = (node, visit, parent) => {
-      if (!node || typeof node.type !== "string") return
-      visit(node, parent)
-      for (const [key, value] of Object.entries(node)) {
-        if (key === "parent") continue
-        if (Array.isArray(value)) value.forEach((one) => one && typeof one === "object" && walk(one, visit, node))
-        else if (value && typeof value === "object") walk(value, visit, node)
-      }
-    }
     walk(ast, (node) => {
       if (node.type === "VariableDeclaration" && !node.declare) for (const one of node.declarations) names(one.id, (name) => own.add(name))
       if (/Function/.test(node.type)) {
@@ -119,13 +140,15 @@ function dom() {
       // them blank while it's fetched again: the app flashes. A projection keeps each record with the same `id` the
       // same object, so only what changed is drawn again.
       if (node.type === "CallExpression" && node.callee.name === "createMemo" && node.arguments[0]) {
-        let calls = false
-        let parses = false
-        walk(node.arguments[0], (inner) => {
-          if (inner.type === "CallExpression" && inner.callee.type === "Identifier" && inner.callee.name === "call") calls = true
-          if (inner.type === "MemberExpression" && inner.object.name === "JSON" && inner.property.name === "parse") parses = true
-        })
-        if (calls && parses) found.push(`${at(node)}: error: a tool's answer in a \`createMemo\` is new objects each time it's asked again, so what's drawn of it is made again, and flashes: read it in \`createProjection(() => call(…).then(JSON.parse))\`, which keeps each record with the same \`id\` the same object`)
+        // Through one of the app's helpers the same (`createMemo(() => json("notes_list"))`), where a memo of an `async`
+        // function is its own value, made of several answers, as an owner's pages are of what their tools said.
+        let helped = false
+        if (!node.arguments[0].async) {
+          walk(node.arguments[0], (inner) => {
+            if (inner.type === "CallExpression" && inner.callee.type === "Identifier" && helpers.has(inner.callee.name)) helped = true
+          })
+        }
+        if (reads(node.arguments[0]) || helped) found.push(`${at(node)}: error: a tool's answer in a \`createMemo\` is new objects each time it's asked again, so what's drawn of it is made again, and flashes: read it in \`createProjection(() => call(…).then(JSON.parse))\`, which keeps each record with the same \`id\` the same object`)
       }
       // `globalThis.document`, `self["window"]`
       const object = unwrapped(node.object)
