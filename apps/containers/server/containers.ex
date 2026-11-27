@@ -12,10 +12,12 @@ defmodule Containers do
   `names/<whose>/<name>`, with the machine its container is on, so it's taken while that machine is off too.
   """
   @behaviour OneCore.App
+  require Logger
   alias Containers.Podman
   alias OneCore.{Artifact, Call, Service}
 
   @idle_hours 4
+  @remove_after_days 3
   @container %{type: "string", description: "the container, by its name"}
   # Where `upload` and `download` send a file or fetch it, and what it's sealed with (`Containers.Sealed`).
   @link %{
@@ -46,6 +48,7 @@ defmodule Containers do
       last_on: %{type: "integer", description: "When its machine, off now, was last on, in milliseconds since 1970"},
       size: %{type: ["string", "null"], description: "small, medium or large"},
       restart: %{type: "string", enum: ~w(no on-failure always), description: "Its restart policy"},
+      keep: %{type: "boolean", description: "Whether it is kept when exited and unused (never auto-removed)"},
       by: %{type: ["string", "null"], description: "Who created it"},
       created: %{type: "integer", description: "In milliseconds since 1970"},
       last_used: %{type: "integer", description: "In milliseconds since 1970"},
@@ -194,6 +197,11 @@ defmodule Containers do
               enum: ~w(no on-failure always),
               description:
                 "whether it starts again, as Docker's --restart: no (the default) leaves it stopped once its command ends; on-failure starts it again when its command fails; always starts it again whenever its command ends, and after the machine reboots. One stopped by hand, or for going unused, stays stopped until the machine reboots"
+            },
+            keep: %{
+              type: "boolean",
+              description:
+                "keep this container even after it has been exited and unused for remove_after_days; default false (containers created by a person from the app, or with restart: always, are always kept)"
             },
             machine: %{type: "string", description: "the machine to run it on, as `machines` names it; default the first"},
             ports: %{
@@ -414,21 +422,27 @@ defmodule Containers do
       %{
         name: "settings",
         description:
-          "The settings: idle_hours, how long a running container goes unused before it's stopped (default #{@idle_hours}). Gives them; with one given, its owner changes it.",
+          "The settings: idle_hours, how long a running container goes unused before it's stopped (default #{@idle_hours}), and remove_after_days, how long an exited non-kept container goes unused before it's removed (default #{@remove_after_days}). Gives them; with one given, its owner changes it.",
         inputs: %{
           type: "object",
-          properties: %{idle_hours: %{type: "integer", minimum: 1, description: "hours a container may go unused"}}
+          properties: %{
+            idle_hours: %{type: "integer", minimum: 1, description: "hours a running container may go unused before it's stopped"},
+            remove_after_days: %{type: "integer", minimum: 1, description: "days an exited non-kept container may go unused before it's removed"}
+          }
         },
         outputs: %{
           type: "object",
-          properties: %{idle_hours: %{type: "integer", description: "Hours a container may go unused before it's stopped"}},
-          required: ["idle_hours"]
+          properties: %{
+            idle_hours: %{type: "integer", description: "Hours a running container may go unused before it's stopped"},
+            remove_after_days: %{type: "integer", description: "Days an exited non-kept container may go unused before it's removed"}
+          },
+          required: ["idle_hours", "remove_after_days"]
         }
       },
       %{
         name: "stop_idle",
         description:
-          "Stop every running container, anyone's, that has gone unused longer than idle_hours, on each machine. It's run every hour, and gives the ones it stopped.",
+          "Stop running containers unused longer than idle_hours, remove exited non-kept containers unused longer than remove_after_days, and prune older desktop and dangling images on each machine. Run every hour.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{
           type: "object",
@@ -441,9 +455,25 @@ defmodule Containers do
                 required: ["machine", "name"]
               }
             },
+            removed: %{
+              type: "array",
+              items: %{
+                type: "object",
+                properties: %{machine: %{type: ["string", "null"]}, name: %{type: "string"}},
+                required: ["machine", "name"]
+              }
+            },
+            pruned_images: %{
+              type: "array",
+              items: %{
+                type: "object",
+                properties: %{machine: %{type: ["string", "null"]}, image: %{type: "string"}},
+                required: ["machine", "image"]
+              }
+            },
             failed: @failed
           },
-          required: ["stopped", "failed"]
+          required: ["stopped", "removed", "pruned_images", "failed"]
         }
       }
     ]
@@ -511,6 +541,9 @@ defmodule Containers do
           Service.call(call, Podman, :pull, [image], server)
         end
 
+    person? = match?(%{"name" => client} when client in ["one-app", "one-web"], Call.client(call))
+    keep? = inputs["keep"] == true or (inputs["restart"] || "no") == "always" or person?
+
     spec = %{
       "id" => "#{name}-#{id}",
       "image" => image,
@@ -526,6 +559,7 @@ defmodule Containers do
         "description" => inputs["description"],
         "size" => inputs["size"] || "small",
         "restart" => inputs["restart"] || "no",
+        "keep" => if(keep?, do: "true", else: nil),
         "by" => call.actor || call.subject
       }
     }
@@ -659,32 +693,47 @@ defmodule Containers do
 
   def call("settings", inputs, call) do
     settings = settings(call)
+    updates = Map.take(inputs, ["idle_hours", "remove_after_days"])
 
-    case inputs do
-      %{"idle_hours" => hours} ->
-        # The settings are whoever's it was installed for, so it's they who must be owned, not whoever it runs for.
-        if not Call.owns?(%{call | subject: call.installed}), do: raise("Only its owner changes Containers' settings")
-        changed = Map.put(settings, "idle_hours", hours)
+    if map_size(updates) > 0 do
+      # The settings are whoever's it was installed for, so it's they who must be owned, not whoever it runs for.
+      if not Call.owns?(%{call | subject: call.installed}), do: raise(Call.Refused, "Only its owner changes Containers' settings")
+      changed = Map.merge(settings, updates)
 
-        case Artifact.read(call.own, "settings") do
-          {:ok, _data, tag} -> Artifact.replace(call.own, "settings", JSON.encode!(changed), tag)
-          :absent -> Artifact.write(call.own, "settings", JSON.encode!(changed))
-        end
+      case Artifact.read(call.own, "settings") do
+        {:ok, _data, tag} -> Artifact.replace(call.own, "settings", JSON.encode!(changed), tag)
+        :absent -> Artifact.write(call.own, "settings", JSON.encode!(changed))
+      end
 
-        changed
-
-      _ ->
-        settings
+      changed
+    else
+      settings
     end
   end
 
   def call("stop_idle", _inputs, call) do
-    idle = settings(call)["idle_hours"] * 3_600_000
+    s = settings(call)
+    idle = s["idle_hours"] * 3_600_000
+    remove_after = s["remove_after_days"] * 86_400_000
+    on = for server <- Service.servers(call, Podman), not is_integer(Service.seen(server)), do: server
+    {answers, failed} = OneCore.Asks.each(on, &Service.call(call, Podman, :clean, [idle, remove_after], &1))
 
-    {stopped, failed} = Service.stop_idle(call, Podman, idle)
+    stopped =
+      for {server, %{"stopped" => names}} <- answers, name <- names, do: %{machine: Service.name(server), name: name}
 
-    if stopped != [], do: Call.changed(call)
-    %{stopped: stopped, failed: failed}
+    removed =
+      for {server, %{"removed" => items}} <- answers, item <- items do
+        machine = Service.name(server)
+        if item["artifact"], do: Artifact.remove(call.own, name_record(String.replace(item["artifact"], ~r{/made/.*}, ""), item["name"]))
+        Logger.info("Containers removed exited container #{item["name"]} on #{machine} (unused for over #{s["remove_after_days"]} days, created by #{item["by"] || "unknown"})")
+        %{machine: machine, name: item["name"]}
+      end
+
+    pruned_images =
+      for {server, %{"pruned_images" => images}} <- answers, image <- images, do: %{machine: Service.name(server), image: image}
+
+    if stopped != [] or removed != [] or pruned_images != [], do: Call.changed(call)
+    %{stopped: stopped, removed: removed, pruned_images: pruned_images, failed: Service.named(failed)}
   end
 
   # Computer Use asks for the caller's screens: each running container of theirs with a display is one, called what
@@ -748,9 +797,11 @@ defmodule Containers do
   end
 
   defp settings(call) do
+    defaults = %{"idle_hours" => @idle_hours, "remove_after_days" => @remove_after_days}
+
     case Artifact.read(call.own, "settings") do
-      {:ok, data, _tag} -> Map.merge(%{"idle_hours" => @idle_hours}, JSON.decode!(data))
-      :absent -> %{"idle_hours" => @idle_hours}
+      {:ok, data, _tag} -> Map.merge(defaults, JSON.decode!(data))
+      :absent -> defaults
     end
   end
 

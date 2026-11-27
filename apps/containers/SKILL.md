@@ -38,8 +38,10 @@ machines that run them.
 
 Containers cost memory and CPU on the user's machine while they run. Stop or remove one when you're done with it.
 One left running and unused (no `exec`, file, screenshot or request) for `idle_hours`, 4 unless `settings` says,
-is stopped on the hour; `start` brings it back with its files. Yours are yours: nobody else sees them but the
-network's owner.
+is stopped on the hour; `start` brings it back with its files. An exited container an agent made that goes unused for
+`remove_after_days` (3 unless `settings` says) is removed on the hour and older desktop and dangling images pruned,
+unless it was created with `keep: true`, `restart: "always"`, or by a person from the app. Yours are yours: nobody else
+sees them but the network's owner.
 
 Every server that has Podman (rootless where it can be) runs containers by itself, with nothing installed. One that
 can't says what it lacks in `machines` (`lacks`), in Settings and in Device Activity, and runs them once it has it.

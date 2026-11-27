@@ -124,6 +124,7 @@ defmodule Containers.Podman do
         description: labels["one.description"],
         size: labels["one.size"],
         restart: labels["one.restart"] || "no",
+        keep: labels["one.keep"] == "true" or (labels["one.restart"] || "no") == "always",
         by: labels["one.by"],
         image: c["Image"],
         state: c["State"],
@@ -347,6 +348,45 @@ defmodule Containers.Podman do
       stop(service, c.id)
       c.name
     end
+  end
+
+  @doc """
+  Stops running containers unused for `idle` ms, removes exited non-kept containers unused for `remove_after` ms,
+  and prunes older desktop images and dangling images this server made.
+  """
+  def clean(service, idle, remove_after) do
+    now = System.system_time(:millisecond)
+    all = list(service)
+
+    stopped =
+      for c <- all, c.state == "running", now - c.last_used > idle do
+        stop(service, c.id)
+        c.name
+      end
+
+    removed =
+      for c <- all,
+          c.state == "exited",
+          not c.keep,
+          c.restart != "always",
+          now - max(c.last_used, c.finished || c.created) > remove_after do
+        remove(service, c.id)
+        %{name: c.name, artifact: c.artifact, by: c.by}
+      end
+
+    old_desktops =
+      case desktops(service) do
+        [_newest | old] -> for img <- old, run(service, ["rmi", img], 60).exit == 0, do: img
+        _ -> []
+      end
+
+    dangling =
+      case run(service, ["image", "prune", "--force", "--filter", "label=#{made_here()}"], 60) do
+        %{exit: 0, stdout: out} -> String.split(out, "\n", trim: true)
+        _ -> []
+      end
+
+    %{stopped: stopped, removed: removed, pruned_images: Enum.uniq(old_desktops ++ dangling)}
   end
 
   def logs(service, id, tail), do: run(service, ["logs", "--tail", "#{tail}", id], 30)
