@@ -424,7 +424,15 @@ const devices = () => ({
      */
     deviceState: createAuthEndpoint("/device/state", { method: "GET", query: z.object({ user_code: z.string() }) }, async (ctx) => {
       const code = await ctx.context.adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.query.user_code) }] });
-      return ctx.json({ state: code ? state(code) : "unknown", server: code?.scope === "server" });
+      // A code that ended on its own, with the one its device shows now, as it asks for another each time: where its
+      // person is offered that, not a dead end. A code its person stopped isn't followed: they said no to it.
+      const [next] =
+        code && state(code) === "expired"
+          ? (await ctx.context.adapter.findMany<DeviceCode>({ model: "deviceCode", where: [{ field: "clientId", value: code.clientId }] }))
+              .filter((other) => state(other) === "waiting" && !other.userId && (other.scope ?? null) === (code.scope ?? null))
+              .toSorted((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime())
+          : [];
+      return ctx.json({ state: code ? state(code) : "unknown", server: code?.scope === "server", next: next?.userCode ?? null });
     }),
     /** Whether an invitation stands, and the email of the only Google account it's for, if it names one, so the sign-in page offers just that. */
     inviteState: createAuthEndpoint("/invite/state", { method: "GET", query: z.object({ invite: z.string() }) }, async (ctx) =>
@@ -1036,6 +1044,16 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   if (!user && building && ask !== "invite" && USERNAME.test(named)) user = await made(adapter, origin, named);
 
   if (ask === "whose") return whoseDevice(String(about.device));
+  // The devices showing a code that nobody has opened yet, each by its newest: one asks for another as its code ends.
+  // A server's isn't one, which an owner adds with their passkey and is told of by its own page.
+  if (ask === "waiting") {
+    const newest = new Map<string, DeviceCode>();
+    for (const code of await adapter.findMany<DeviceCode>({ model: "deviceCode" })) {
+      const was = newest.get(code.clientId);
+      if (state(code) === "waiting" && !code.userId && code.scope !== "server" && (!was || new Date(code.expiresAt) > new Date(was.expiresAt))) newest.set(code.clientId, code);
+    }
+    return { waiting: [...newest.values()].map((code) => ({ device: code.clientId, name: code.name, command: code.command ?? null, code: code.userCode })) };
+  }
   // With `who`, someone who has joined, as a way back; otherwise someone new, who nobody names.
   if (ask === "invite") return named ? reinvite(adapter, origin, named, user, about.again === true) : invite(adapter, origin, about.email);
   // The network's first owner is invited only until they've joined, so a link to join as them isn't made after.
@@ -1231,8 +1249,8 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       await missed.again();
       return { error: "That isn't a code any device is showing now." };
     }
-    // A server's code puts it on the network's list, which is one of the network's owners', with a passkey, on the link they
-    // show (the `/device/approve` check above): no assistant does a passkey's part, so it isn't placed as a device of this person's.
+    // A server's code puts it on the network's list, which is one of the network's owners', with a passkey, on the link it
+    // shows (the `/device/approve` check above): no assistant does a passkey's part, so it isn't placed as a device of this person's.
     if (code.scope === "server") return { error: "That code is a server's. Only one of the network's owners adds a server, with their passkey, on the link the server shows, so an assistant can't approve it." };
     const now = state(code);
     if (now === "expired") return { error: "That code expired. The device shows another when it's asked again." };

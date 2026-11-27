@@ -87,6 +87,14 @@ interface Thing extends ServerStatus {
   services?: (Service & { on: boolean })[]
 }
 
+/** A device showing a code and waiting to be let in, as `waiting` answers it, told to the network's owners. */
+interface Waiting {
+  device: string
+  name: string
+  command: string | null
+  link: string
+}
+
 /** What Settings draws of what other apps add to a place a section offers: a device's page (`settings.sections`). */
 type Groups = (props: { in: "device"; device: string; kind: string; server?: string; services?: string[] }) => Element
 
@@ -94,8 +102,9 @@ const json = <T,>(tool: string, inputs?: object, who?: string): Promise<T> => ca
 
 /// What's known of the devices and servers, each as a row says it. Whoever owns the network sees its servers too.
 const mine = createMemo(async () => {
-  const [{ devices }, here, builds, network, services, networkServices] = await Promise.all([
+  const [{ devices }, { waiting }, here, builds, network, services, networkServices] = await Promise.all([
     json<{ devices: Omit<Thing, "here">[] }>("sign-in_devices"),
+    json<{ waiting: Waiting[] }>("sign-in_waiting"),
     client(),
     json<Builds>("builds"),
     json<Builds>("builds", {}, "network"),
@@ -124,7 +133,7 @@ const mine = createMemo(async () => {
     }
   }
   const update = network?.network ?? builds.network ?? undefined
-  return { devices: rows, servers: [...servers.values()].toSorted((a, b) => Number(b.here) - Number(a.here)), here, update, who: network ? "network" : undefined }
+  return { devices: rows, waiting, servers: [...servers.values()].toSorted((a, b) => Number(b.here) - Number(a.here)), here, update, who: network ? "network" : undefined }
 })
 changed(() => refresh(mine))
 
@@ -415,6 +424,20 @@ function Things(props: { all: All; groups?: Groups } & Shown) {
               />
             </List>
           )}
+        </Show>
+        <Show when={props.all.waiting.length}>
+          <Section heading="Waiting to Be Let In">
+            <List each={props.all.waiting} keyed={(waiting) => waiting.device}>
+              {(waiting) => (
+                <Row
+                  start={<View style={look.glyph}><Icon name={waiting().command ? "terminal-window" : "devices"} /></View>}
+                  heading={waiting().name}
+                  text="Showing a code"
+                  action={<Button variant="secondary" onPress={() => visit(waiting().link)}>Let In</Button>}
+                />
+              )}
+            </List>
+          </Section>
         </Show>
         <Section heading="Your Devices">
           <Show when={props.all.devices.length} fallback={<Empty>No devices yet.</Empty>}>

@@ -60,6 +60,9 @@ that one question for it, and a new device when they also say the code it shows 
   they sign in, with a passkey or Google, on the device or any device of theirs, and says whether the code there
   matches. Pass both on as they are: the code is what keeps a stranger's device out. A device signed in reaches
   what's unencrypted at once, and what's encrypted once their passkey lets it hold the key.
+  A device's code ends after 30 minutes and it shows another, so an old link says so and offers the new code. The
+  network's owners are notified once when a device starts waiting (`notify`, every minute), and Devices lists those
+  waiting with Let In, which opens the link (`waiting`, which says nothing to anyone else).
 - `approve` lets that device in yourself, as the person you act for, with no tap from them: when a device shows a
   code and they've asked for that device to be let in, call it with the code, and say which device it let in by
   the name it answers. Never let in a device nobody asked for, or one whose code came from anyone but your person

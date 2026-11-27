@@ -130,7 +130,7 @@ type Stage =
   | { stage: "created"; by?: string; on?: string[] }
   | { stage: "unlocking"; doing: string }
   | { stage: "unlocked"; handed: [whose: string, names: string[]][] }
-  | { stage: "failed"; why: string; ended?: boolean; server?: boolean }
+  | { stage: "failed"; why: string; ended?: boolean; server?: boolean; next?: string }
 
 const [stage, setStage] = createSignal<Stage>({ stage: "checking" })
 /// How the app's own window lets its device in: by a passkey with the device's code, or with the link and the code to
@@ -178,6 +178,8 @@ async function ask<T = unknown>(path: string, body: object): Promise<T> {
 /// What a device's code that isn't waiting any more says, as the edge has it (`/device/state` in `edge/auth.ts`).
 const ended = {
   expired: "This code expired. Start again on the device.",
+  // Its device asks for another each time its code ends, which the edge says (`next`).
+  renewed: "This code expired, and the device is showing a new one.",
   approved: "Already approved.",
   denied: "This device was stopped. Start again on it.",
   unknown: "No device is showing that code. Start again on the device.",
@@ -215,11 +217,12 @@ async function begin() {
       return setStage({ stage: "invited", email: state.email })
     }
     if (flow.flow === "device") {
+      // A code that ended says so, rather than asking them to sign in for nothing, and offers the one its device shows now.
+      // Asked before it's claimed, which forgets an expired code and with it whose it was.
+      const { state, server, next } = await (await fetch(`/sign-in/auth/device/state?user_code=${encodeURIComponent(flow.code)}`)).json()
+      if (state !== "waiting") return setStage({ stage: "failed", why: next ? ended.renewed : (ended[state as keyof typeof ended] ?? ended.unknown), ended: true, server, next: next ?? undefined })
       const { data } = await auth.getSession()
-      if (data) return claim()
-      // A code that ended says so, rather than asking them to sign in for nothing.
-      const { state, server } = await (await fetch(`/sign-in/auth/device/state?user_code=${encodeURIComponent(flow.code)}`)).json()
-      return setStage(state === "waiting" ? { stage: "needsSignIn" } : { stage: "failed", why: ended[state as keyof typeof ended] ?? ended.unknown, ended: true, server })
+      return data ? claim() : setStage({ stage: "needsSignIn" })
     }
   } catch (error) {
     setStage({ stage: "failed", why: (error as Error).message })
@@ -611,9 +614,13 @@ function shows(): Shows {
           return { mark: <DoneMark />, heading: `${now.name} is signed in`, done: now.unlocked ? "It holds your key too. You can close this page and go back to it." : "You can close this page and go back to it." }
         case "denied":
           return { heading: `${now.name} wasn't approved`, done: "You can close this page." }
-        // A code that has ended is started again only on its device, so there's nothing to try again here.
-        default:
-          return { heading: now.stage === "failed" && now.server ? "Add a server" : "Approve a device", problem: failed, ...(now.stage === "failed" && now.ended ? {} : { button: "Try Again", onSignIn: begin }) }
+        // A code that has ended is started again only on its device, which shows another: this offers it, or says there's none to try here.
+        default: {
+          const heading = now.stage === "failed" && now.server ? "Add a server" : "Approve a device"
+          if (now.stage !== "failed" || !now.ended) return { heading, problem: failed, button: "Try Again", onSignIn: begin }
+          const next = now.next
+          return next ? { heading, problem: failed, button: "Approve the New Code", onSignIn: () => location.assign(new URL(`?${new URLSearchParams({ ...Object.fromEntries(params), user_code: next })}`, location.href).href) } : { heading, problem: failed }
+        }
       }
     case "assistant":
       switch (now.stage) {

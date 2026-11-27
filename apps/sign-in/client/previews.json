@@ -151,9 +151,33 @@
       "sign-in_encrypt_for_passkeys": {},
       "permissions_groups": {
         "groups": []
+      },
+      "sign-in_waiting": {
+        "waiting": []
       }
     },
     "component": "devices"
+  },
+  "Devices, a device waiting": {
+    "like": "Devices",
+    "answers": {
+      "sign-in_waiting": {
+        "waiting": [
+          {
+            "device": "dev9",
+            "name": "Sam's Tablet",
+            "command": null,
+            "link": "https://network.example.com/sign-in/?user_code=WDJBMJHT"
+          },
+          {
+            "device": "dev8",
+            "name": "A device",
+            "command": "ptc",
+            "link": "https://network.example.com/sign-in/?user_code=KRTSMNPQ"
+          }
+        ]
+      }
+    }
   },
   "Server": {
     "like": "Devices",
@@ -260,6 +284,9 @@
     "answers": {
       "sign-in_devices": {
         "$error": "The server that runs this isn't answering right now."
+      },
+      "sign-in_waiting": {
+        "waiting": []
       }
     },
     "component": "devices",

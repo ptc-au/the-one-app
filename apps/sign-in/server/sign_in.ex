@@ -24,6 +24,9 @@ defmodule SignIn do
   @impl true
   def requires, do: %{"core" => ">= 0.37.0", "database" => "to keep what happens in it"}
 
+  @impl true
+  def jobs, do: [%{tool: "notify", every: 60}]
+
   # Nothing looks into it as it runs (`server-debug`): what it's given and keeps are what people sign in with.
   @impl true
   def sensitive, do: true
@@ -185,6 +188,49 @@ defmodule SignIn do
           required: ["who"]
         },
         outputs: %{type: "object", properties: %{who: %{type: "string"}}, required: ["who"]}
+      },
+      %{
+        name: "waiting",
+        read_only: true,
+        description: """
+        Lists the devices that are showing a code and waiting to be let in, which only the network's owners are told (nothing
+        for anyone else): each with the `link` that opens where its owner approves it, with a passkey or Google, and says
+        whether the code there matches the one on the device
+        """,
+        inputs: none,
+        outputs: %{
+          type: "object",
+          properties: %{
+            waiting: %{
+              type: "array",
+              items: %{
+                type: "object",
+                properties: %{
+                  device: %{type: "string", description: "Its key"},
+                  name: %{type: "string", description: "What it calls itself"},
+                  command: %{type: ["string", "null"], description: "The command that ran it, if a terminal did"},
+                  link: %{type: "string", description: "Where its code is approved"}
+                },
+                required: ["device", "name", "command", "link"]
+              }
+            }
+          },
+          required: ["waiting"]
+        }
+      },
+      %{
+        name: "notify",
+        description:
+          "Notifies the network's owners once when a device starts waiting to be let in, as the clock runs it, and again if it waits again after it was let in or stopped. Says which devices are waiting, and which it told them of just now",
+        inputs: none,
+        outputs: %{
+          type: "object",
+          properties: %{
+            waiting: %{type: "array", items: %{type: "string"}, description: "The devices waiting, by what they call themselves"},
+            told: %{type: "array", items: %{type: "string"}, description: "Those it notified the owners of just now"}
+          },
+          required: ["waiting", "told"]
+        }
       },
       %{
         name: "check",
@@ -663,6 +709,34 @@ defmodule SignIn do
     %{who: who}
   end
 
+  # Whoever owns the network is told of a device when it shows its first code, which the edge says it's waiting with
+  # (its newest code is the one it shows: it asks for another each time its code ends, so each is told once while it's
+  # there). What's kept is who's waiting now, so one that's let in or stopped and waits again is told of again.
+  def call("notify", _inputs, %Call{subject: "network"} = call) do
+    waiting = waiting_devices()
+
+    told = with {:ok, told, _tag} <- Artifact.read(call.own, "told/devices"), do: JSON.decode!(told), else: (:absent -> [])
+    new = Enum.reject(waiting, &(&1["device"] in told))
+
+    if new != [] do
+      names = Enum.map(new, & &1["name"])
+      {title, are} = {Enum.join(names, ", "), if(length(names) == 1, do: "is", else: "are")}
+      people = for "people/" <> name <- Artifact.list(call.own, "people/"), do: "users/" <> name
+
+      for to <- Enum.filter(people, &owns_network?(call, &1)),
+          do: Call.tool(call, "notifications", "send", %{"title" => "#{title} #{are} waiting to be let in", "text" => "Open Devices and let #{if length(names) == 1, do: "it", else: "them"} in.", "to" => to, "section" => "devices"})
+    end
+
+    Artifact.update(call.own, "told/devices", fn _was -> JSON.encode!(Enum.map(waiting, & &1["device"])) end)
+    %{waiting: Enum.map(waiting, & &1["name"]), told: Enum.map(new, & &1["name"])}
+  end
+
+  def call("notify", _inputs, _call), do: %{waiting: [], told: []}
+
+  def call("waiting", _inputs, call) do
+    %{waiting: if(owns_network?(call, person(call)), do: waiting_devices(), else: [])}
+  end
+
   # The servers whose key someone was told they're waiting for are kept, so each is told of once while it waits, and again
   # if it waits again after it was handed the key. The network's owners are told of the network's, and a person of their
   # own (a job of theirs that no server can open the key for asks, `Encryption`).
@@ -923,6 +997,13 @@ defmodule SignIn do
   end
 
   defp code(_key), do: nil
+
+  # The devices that show a code now and wait to be let in, newest code each, as the edge says, with where it's approved.
+  defp waiting_devices do
+    for waiting <- ask(%{ask: "waiting"})["waiting"] do
+      waiting |> Map.put("link", address() <> "/sign-in/?user_code=" <> waiting["code"]) |> Map.delete("code")
+    end
+  end
 
   # Whether `who` owns the network, as the apps that validate `reach` say.
   defp owns_network?(call, who) do
