@@ -256,6 +256,11 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
             }
             return Some(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
         }
+        // A finger landing on an app's icon only starts it (`behind`), which nothing is shown for: pressing and holding an
+        // icon is a hold, not an app that opens or a page that throws.
+        if method == "ui/open-link" && params["behind"] == true {
+            return Some(json!({"jsonrpc": "2.0", "id": id, "result": {}}));
+        }
         let answer = answered(&answers, id, method, params);
         if let (true, Some(tool)) = (method == "tools/call", params["name"].as_str()) {
             calling.borrow_mut().push(asked_of(params).unwrap_or_else(|| tool.to_owned()));
