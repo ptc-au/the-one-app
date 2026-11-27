@@ -65,14 +65,20 @@ const ABOUT: Record<Destination["state"], (destination: Destination) => string> 
   changed: () => "Changed since it was sent",
   interrupted: () => "Last backup cut short",
 }
-/// Whether it needs someone, as Time Machine says it couldn't complete the backup: its last backup failed, or none
-/// finished within its schedule and a day.
-const needs = (destination: Destination) => destination.state === "failed" || (destination.overdue && destination.state !== "backing_up")
+/// Whether it needs someone, matching `Backups.needs?/2` for the badge: its last backup failed, what's there was
+/// changed, or none finished within its schedule and a day while not backing up now.
+const needs = (destination: Destination) =>
+  destination.state === "failed" || destination.state === "changed" || (destination.overdue && destination.state !== "backing_up")
 /// When it was last backed up, as a sentence.
 const lastBackup = (destination: Destination) => (destination.last ? `The last backup was ${since(destination.last.at)}.` : "It hasn't been backed up yet.")
-const about = (destination: Destination) => (needs(destination) ? `Couldn't complete the backup · ${destination.last ? `last ${since(destination.last.at)}` : "never backed up"}` : ABOUT[destination.state](destination))
+const about = (destination: Destination) => {
+  if (destination.state === "failed") return `Couldn't complete the backup · ${destination.last ? `last ${since(destination.last.at)}` : "never backed up"}`
+  if (destination.state === "changed") return ABOUT.changed(destination)
+  if (destination.overdue && destination.state !== "backing_up") return `Backup overdue · ${destination.last ? `last ${since(destination.last.at)}` : "never backed up"}`
+  return ABOUT[destination.state](destination)
+}
 /// Whether its grey line is a warning.
-const warns = (destination: Destination) => needs(destination) || ["changed", "interrupted"].includes(destination.state)
+const warns = (destination: Destination) => needs(destination) || destination.state === "interrupted"
 
 /// Does something, says why if it couldn't, and shows everything as it is after. → whether it was done.
 async function doing<T>(does: () => Promise<T>): Promise<T | true | false> {
@@ -144,14 +150,17 @@ function Opened(props: { destination: Destination; show: Shown["show"] }) {
         <Match when={destination().state === "backing_up"}>
           <Status heading="Backing up…" text={`Since ${time.format(destination().running!.at)}${on()}.`} />
         </Match>
-        <Match when={needs(destination())}>
+        <Match when={destination().state === "failed"}>
           <Problem heading="Backups couldn't complete the backup" text={[lastBackup(destination()), destination().problem?.text].filter(Boolean).join(" ")} action={now()} />
-        </Match>
-        <Match when={destination().state === "interrupted"}>
-          <Problem warn heading="The last backup was cut short" text={`It stopped${on()} before it finished, at ${time.format(destination().running!.at)}. Backing up again sends only what it didn't.`} action={now()} />
         </Match>
         <Match when={destination().state === "changed"}>
           <Problem heading={`What's at ${destination().name} was changed`} text="Part of the newest backup isn't there as it was sent. Back up now to send it again." action={now()} />
+        </Match>
+        <Match when={destination().overdue && destination().state !== "backing_up"}>
+          <Problem heading="Backup overdue" text={lastBackup(destination())} action={now()} />
+        </Match>
+        <Match when={destination().state === "interrupted"}>
+          <Problem warn heading="The last backup was cut short" text={`It stopped${on()} before it finished, at ${time.format(destination().running!.at)}. Backing up again sends only what it didn't.`} action={now()} />
         </Match>
       </Switch>
       <List>

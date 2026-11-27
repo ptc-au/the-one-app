@@ -403,33 +403,41 @@ defmodule Backups do
   end
 
   # How each destination stands: when it was last backed up (when it was added, if never), how often it's to be, its
-  # problem, whether it's overdue, and whether it needs someone: its last backup failed or what's there was changed,
-  # or it's overdue.
+  # state, its problem, whether it's overdue, and whether it needs someone: the same rule the row and the badge use.
   defp standing(db) do
     every = @schedules[setting(db, "every")]
     now = System.os_time(:millisecond)
     finished = Map.new(query(db, "select destination, max(at) as at from backups group by destination"), &{&1["destination"], &1["at"]})
     problems = Map.new(query(db, "select * from problems"), &{&1["destination"], &1})
+    runs = Map.new(query(db, "select * from runs"), &{&1["destination"], &1})
     told = Map.new(query(db, "select * from told"), &{&1["destination"], &1["at"]})
 
     for destination <- destinations(db) do
-      since = finished[destination["id"]] || destination["added"]
+      id = destination["id"]
+      since = finished[id] || destination["added"]
       overdue = every != nil and now - since > every * 1000 + @overdue
-      problem = problems[destination["id"]]
+      problem = problems[id]
+      listed = if finished[id], do: [:some], else: []
+      state = state(runs[id], problem, listed, now)
 
       %{
-        id: destination["id"],
+        id: id,
         name: destination["name"],
-        last: finished[destination["id"]],
+        last: finished[id],
         since: since,
         every: every || 0,
         overdue: overdue,
+        state: state,
         problem: problem && problem["text"],
-        needs: overdue or problem != nil,
-        told: told[destination["id"]]
+        needs: needs?(state, overdue),
+        told: told[id]
       }
     end
   end
+
+  # Whether a destination needs someone, used by both `badge` and the rows: failed, changed since it was sent, or
+  # overdue while not backing up now.
+  defp needs?(state, overdue), do: state in ["failed", "changed"] or (overdue and state != "backing_up")
 
   # Says how each destination stands where a person hears of it: to Telemetry, whose `backup` alert fires on it, and
   # to the network's owner, told once when it starts to need them, and again only after it's backed up.
@@ -476,9 +484,11 @@ defmodule Backups do
         at -> "The last backup to #{destination.name} was #{ago(System.os_time(:millisecond) - at)}."
       end
 
+    title = if destination.problem, do: "Backups couldn't complete the backup", else: "Backup overdue"
+
     if owner = OneCore.User.first_owner() do
       Call.app(call, "notifications").send(call, %{
-        "title" => "Backups couldn't complete the backup",
+        "title" => title,
         "text" => when_last,
         "to" => owner,
         "section" => "backups"
