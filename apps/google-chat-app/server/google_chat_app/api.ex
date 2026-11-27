@@ -85,16 +85,29 @@ defmodule GoogleChatApp.Api do
     %{space: space, subscription: subscription["name"], expire_time: subscription["expireTime"]}
   end
 
-  @doc "Stops watching the subscription `name`."
+  @doc "Stops watching the subscription `name`. One Google already ended (404) is already stopped."
   def unsubscribe(call, config, name) do
-    request(call, config, @bot, "DELETE", @events <> name)
-    :ok
+    case fetch(call, config, @bot, "DELETE", @events <> name) do
+      %{status: status} when status in 200..299 or status == 404 -> :ok
+      response -> refuse_or_raise!(config, @bot, "DELETE", @events <> name, response)
+    end
   end
 
-  @doc "Renews the subscription `name` for as long as Google lets it last, and says when it now expires."
+  @doc "Renews the subscription `name` for as long as Google lets it last, or `:not_found` where Google already ended it."
   def renew(call, config, name) do
-    renewed = subscription!(request(call, config, @read, "PATCH", @events <> name <> "?updateMask=ttl", JSON.encode!(%{"ttl" => "0s"})))
-    %{subscription: renewed["name"], expire_time: renewed["expireTime"]}
+    url = @events <> name <> "?updateMask=ttl"
+
+    case fetch(call, config, @read, "PATCH", url, JSON.encode!(%{"ttl" => "0s"})) do
+      %{status: status, body: body} when status in 200..299 ->
+        renewed = subscription!(JSON.decode!(body))
+        {:ok, %{subscription: renewed["name"], expire_time: renewed["expireTime"]}}
+
+      %{status: 404} ->
+        :not_found
+
+      response ->
+        refuse_or_raise!(config, @read, "PATCH", url, response)
+    end
   end
 
   # The subscription a Workspace Events call made. Google answers one of its long-running operations, with the
@@ -176,24 +189,48 @@ defmodule GoogleChatApp.Api do
   defp chat(call, config, scope, method, path, body \\ nil), do: request(call, config, scope, method, @chat <> path, body)
 
   # Google's API as the Chat app: a token from its key for `scope`, good for an hour, then the call itself. What a
-  # person reads where Google refuses says what's usually missing: the Chat app in the space, or the admin's approval.
+  # person reads where Google refuses says what's missing for that call: adding the app to the space, or the admin's
+  # approval for reading and watching.
   defp request(call, config, scope, method, url, body \\ nil) do
-    headers = %{"authorization" => "Bearer " <> token(call, config, scope), "content-type" => "application/json"}
-    request = %{url: url, method: method, headers: headers}
-
-    case Call.fetch(call, if(body, do: Map.put(request, :body, body), else: request)) do
+    case fetch(call, config, scope, method, url, body) do
       %{status: status, body: body} when status in 200..299 ->
         if body in [nil, ""], do: nil, else: JSON.decode!(body)
 
-      %{status: status, body: body} when status in [403, 404] ->
-        raise Call.Refused,
-              "Google answered #{method} #{URI.parse(url).path} with #{status}: #{reason(body)}\n\n" <>
-                "#{config["display_name"] || "The Chat app"} reads and posts only in a space it's a member of: add it to the space in Google Chat. " <>
-                "Reading messages and watching a space also need a Workspace admin's one-time approval of the app (Google Chat App's skill says how)."
-
-      %{status: status, body: body} ->
-        raise "Google answered #{method} #{URI.parse(url).path} with #{status}: #{reason(body)}"
+      response ->
+        refuse_or_raise!(config, scope, method, url, response)
     end
+  end
+
+  defp fetch(call, config, scope, method, url, body \\ nil) do
+    headers = %{"authorization" => "Bearer " <> token(call, config, scope), "content-type" => "application/json"}
+    request = %{url: url, method: method, headers: headers}
+    Call.fetch(call, if(body, do: Map.put(request, :body, body), else: request))
+  end
+
+  defp refuse_or_raise!(config, scope, method, url, %{status: status, body: body}) when status in [403, 404] do
+    path = URI.parse(url).path
+    msg = reason(body)
+    app = config["display_name"] || "The Chat app"
+    raise Call.Refused, "Google answered #{method} #{path} with #{status}: #{msg}\n\n#{advice(status, scope, path, msg, app)}"
+  end
+
+  defp refuse_or_raise!(_config, _scope, method, url, %{status: status, body: body}) do
+    raise "Google answered #{method} #{URI.parse(url).path} with #{status}: #{reason(body)}"
+  end
+
+  defp advice(404, _scope, "/v1/subscriptions/" <> _, _msg, _app),
+    do: "That Workspace Events subscription no longer exists at Google."
+
+  defp advice(_status, @bot, _path, _msg, app),
+    do: "#{app} posts, edits and deletes only in a space it's a member of: add it to the space in Google Chat."
+
+  defp advice(404, @read, _path, _msg, app),
+    do: "#{app} couldn't find that space: check the space name and make sure #{app} is a member of it in Google Chat."
+
+  defp advice(403, @read, _path, msg, app) do
+    if String.downcase(msg) =~ ~r/not a member|not in (this|the) space/,
+      do: "#{app} reads only in a space it's a member of: add it to the space in Google Chat.",
+      else: "Reading messages and watching a space need a Workspace admin's one-time approval of #{app} (Google Chat App's skill says how), and #{app} must be a member of the space."
   end
 
   defp token(call, config, scope) do
@@ -201,8 +238,19 @@ defmodule GoogleChatApp.Api do
     form = URI.encode_query(%{"grant_type" => @grant, "assertion" => assertion(email, pem, scope)})
 
     case Call.fetch(call, %{url: @token, method: "POST", headers: %{"content-type" => "application/x-www-form-urlencoded"}, body: form}) do
-      %{status: 200, body: body} -> JSON.decode!(body)["access_token"] || raise("Google gave Google Chat App no access token.")
-      %{status: status, body: body} -> raise "Google gave Google Chat App no access token (#{status}): #{reason(body)}"
+      %{status: 200, body: body} ->
+        JSON.decode!(body)["access_token"] || raise("Google gave Google Chat App no access token.")
+
+      %{status: status, body: body} when status in [400, 403] and scope == @read ->
+        msg = reason(body)
+        app = config["display_name"] || "The Chat app"
+
+        if String.downcase(msg) =~ ~r/unauthorized_client|access_denied|invalid_scope|admin|approv/,
+          do: raise(Call.Refused, "Google gave Google Chat App no access token (#{status}): #{msg}\n\nReading messages and watching a space need a Workspace admin's one-time approval of #{app} (Google Chat App's skill says how)."),
+          else: raise("Google gave Google Chat App no access token (#{status}): #{msg}")
+
+      %{status: status, body: body} ->
+        raise "Google gave Google Chat App no access token (#{status}): #{reason(body)}"
     end
   end
 

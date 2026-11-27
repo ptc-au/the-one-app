@@ -331,7 +331,9 @@ defmodule GoogleChat do
           made
 
         kept ->
-          %{kept | expire_time: Api.renew(call, kept.account, kept.subscription).expire_time}
+          if lapsed?(kept.expire_time, DateTime.utc_now()),
+            do: resubscribe(call, kept),
+            else: %{kept | expire_time: Api.renew(call, kept.account, kept.subscription).expire_time}
       end
 
     Store.save_subscription(call, subscription)

@@ -90,7 +90,8 @@ defmodule GoogleChatApp do
       properties: %{
         space: space,
         subscription: string.("Its name at Google: subscriptions/DDDD"),
-        expire_time: string.("When Google stops it, unless it's renewed: RFC 3339, in UTC")
+        expire_time: string.("When Google stops it, unless it's renewed: RFC 3339, in UTC"),
+        last_event_at: nullable.(string.("When Google last sent an event for this space: RFC 3339, in UTC"))
       },
       required: ["space", "subscription", "expire_time"]
     }
@@ -296,9 +297,9 @@ defmodule GoogleChatApp do
     %{name: message, deleted: true}
   end
 
-  # Google ends a subscription four hours after it was last renewed, so one that wasn't, in an outage of every server,
-  # is gone: it's made again, for the same space. One that fails doesn't stop the others being renewed: the first
-  # failure is raised once they all have been.
+  # Google ends a subscription four hours after it was last renewed, or earlier if suspended/deleted: one that's
+  # lapsed or gone (404) is made again for the same space. One that fails doesn't stop the others being renewed: the
+  # first failure is raised once they all have been.
   defp run("renew_subscriptions", _inputs, call) do
     now = DateTime.utc_now()
     config = configured!(call)
@@ -306,11 +307,7 @@ defmodule GoogleChatApp do
     results =
       for subscription <- Store.subscriptions(call), expiring?(subscription.expire_time, now) do
         try do
-          subscription =
-            if lapsed?(subscription.expire_time, now),
-              do: Api.subscribe(call, config, subscription.space, topic!(config)),
-              else: %{subscription | expire_time: Api.renew(call, config, subscription.subscription).expire_time}
-
+          subscription = renew_or_subscribe(call, config, subscription, now)
           Store.save_subscription(call, subscription)
           {:ok, subscription}
         rescue
@@ -326,19 +323,28 @@ defmodule GoogleChatApp do
   defp run("watch_space", %{"space" => space}, call) do
     space = space!(space)
     config = configured!(call)
+    now = DateTime.utc_now()
 
     subscription =
       case Store.subscription(call, space) do
-        nil ->
-          Api.subscribe(call, config, space, topic!(config))
-
-        kept ->
-          %{kept | expire_time: Api.renew(call, config, kept.subscription).expire_time}
+        nil -> Api.subscribe(call, config, space, topic!(config))
+        kept -> renew_or_subscribe(call, config, kept, now)
       end
 
     Store.save_subscription(call, subscription)
     Store.add_watcher(call, space, call.subject)
-    subscription
+    Store.subscription(call, space)
+  end
+
+  defp renew_or_subscribe(call, config, kept, now) do
+    if lapsed?(kept.expire_time, now) do
+      Api.subscribe(call, config, kept.space, topic!(config))
+    else
+      case Api.renew(call, config, kept.subscription) do
+        {:ok, renewed} -> %{kept | expire_time: renewed.expire_time}
+        :not_found -> Api.subscribe(call, config, kept.space, topic!(config))
+      end
+    end
   end
 
   defp run("unwatch_space", %{"space" => space}, call) do
@@ -393,9 +399,11 @@ defmodule GoogleChatApp do
           answer(400)
 
         true ->
-          watchers = Store.watchers(call, subscription: subscription_of(attributes["ce-source"]))
+          sub = subscription_of(attributes["ce-source"])
+          watchers = Store.watchers(call, subscription: sub)
 
           if watchers != [] and Store.unseen?(call, id) do
+            Store.touch_event(call, sub)
             data = Api.payload(event)
 
             for whose <- watchers, do: OneCore.Events.emit(%{call | actor: nil, subject: whose}, name, data)

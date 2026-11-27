@@ -11,7 +11,8 @@ defmodule GoogleChatApp.Store do
     "create table subscriptions (space text primary key, name text not null unique, expire_time text, created_at text not null)",
     "create table watchers (space text not null, owner text not null, primary key (space, owner)) without rowid",
     "create table seen_events (id text primary key, seen_at integer not null)",
-    "create index seen_events_by_seen_at on seen_events (seen_at)"
+    "create index seen_events_by_seen_at on seen_events (seen_at)",
+    "alter table subscriptions add column last_event_at text"
   ]
 
   # How long an event is remembered, and how many at most: Pub/Sub sends one twice now and then, and the table never
@@ -49,22 +50,31 @@ defmodule GoogleChatApp.Store do
   @doc "Every space it watches, by its name."
   def subscriptions(call) do
     transaction(call, fn db ->
-      for row <- query(db, "select space, name, expire_time from subscriptions order by space"), do: row(row)
+      for row <- query(db, "select space, name, expire_time, last_event_at from subscriptions order by space"), do: row(row)
     end)
   end
 
   @doc "The subscription watching `space`, or nil where there's none."
   def subscription(call, space) do
     transaction(call, fn db ->
-      case query(db, "select space, name, expire_time from subscriptions where space = ?", [space]) do
+      case query(db, "select space, name, expire_time, last_event_at from subscriptions where space = ?", [space]) do
         [row] -> row(row)
         [] -> nil
       end
     end)
   end
 
-  defp row(%{"space" => space, "name" => name, "expire_time" => expire}),
-    do: %{space: space, subscription: name, expire_time: expire}
+  defp row(%{"space" => space, "name" => name, "expire_time" => expire, "last_event_at" => last_event_at}),
+    do: %{space: space, subscription: name, expire_time: expire, last_event_at: last_event_at}
+
+  @doc "Records when `subscription` last delivered an event."
+  def touch_event(call, name) when is_binary(name) do
+    transaction(call, fn db ->
+      query(db, "update subscriptions set last_event_at = ? where name = ?", [DateTime.utc_now() |> DateTime.to_iso8601(), name])
+    end)
+  end
+
+  def touch_event(_call, _name), do: :ok
 
   @doc "Keeps a space's subscription, and when it expires."
   def save_subscription(call, %{space: space, subscription: name, expire_time: expire}) do
