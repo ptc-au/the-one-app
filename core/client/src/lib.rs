@@ -19,6 +19,7 @@ pub mod serve;
 mod state;
 pub mod system;
 mod telemetry;
+pub use telemetry::report_unopened;
 mod transport;
 
 use std::io::{ErrorKind, Write};

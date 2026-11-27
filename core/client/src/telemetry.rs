@@ -236,6 +236,17 @@ fn short(text: &str) -> String {
     text.chars().take(1000).collect()
 }
 
+/// Keeps `record` (as `Client::report` takes one) in `home`'s reports for a program of this device, `service`, that failed
+/// before it had a client to say it: whichever client of the device next reaches a server tells it, as it does a
+/// panic.
+pub fn report_unopened(home: PathBuf, service: &str, record: &Value) {
+    let mut resource = resource(service);
+    resource.insert("host.name".to_owned(), json!(name()));
+    let telemetry = Telemetry::new(home, &resource);
+    telemetry.record(record);
+    telemetry.flush();
+}
+
 /// What a client tells a server of what it reported, for the apps that hear `measured`.
 const MEASURED: &str = "notifications/one/measured";
 

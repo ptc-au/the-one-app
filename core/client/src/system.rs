@@ -184,6 +184,7 @@ mod imp {
         if program.desktop && !DISPLAY.iter().any(|name| env::var_os(name).is_some()) && !session()?.status.success() {
             return Ok(());
         }
+        // It fails where the unit isn't failed or isn't made yet, and starting it next says what's wrong.
         systemctl(&["reset-failed", name]).ok();
         systemctl(&[if again { "restart" } else { "start" }, name])
     }

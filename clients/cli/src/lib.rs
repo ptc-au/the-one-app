@@ -57,6 +57,11 @@ pub fn main() -> ExitCode {
     };
     result.unwrap_or_else(|error| {
         eprintln!("{error:#}");
+        // Whatever stopped it, even before a client opened, is kept for Telemetry and told by the next that reaches a
+        // server (`client::report_unopened`).
+        if let Ok(home) = client::home() {
+            client::report_unopened(home, "cli", &json!({"name": "one.cli.failed", "error": format!("{error:#}")}));
+        }
         ExitCode::FAILURE
     })
 }
@@ -119,7 +124,12 @@ async fn run(args: Vec<String>) -> Result<ExitCode> {
             let request = json!({"name": "execute", "arguments": {"code": code}, "_meta": {"mode": "code"}});
             let result = client.request("tools/call", request).await?;
             println!("{}", result["structuredContent"]["text"].as_str().unwrap_or_default());
-            if result["isError"] == true { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+            if result["isError"] == true {
+                client.report(json!({"name": "one.cli.run.failed", "error": text(&result)}));
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
         }
         ["search", query @ ..] if !query.is_empty() && !query[0].starts_with("--") => {
             let request = json!({"name": "search", "arguments": {"query": query.join(" ")}, "_meta": {"mode": "cli"}});
