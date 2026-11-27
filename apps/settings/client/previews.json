@@ -1192,7 +1192,10 @@
       "encryption_key": {
         "slot": 1
       },
-      "sign-in_encrypt_for_passkeys": {}
+      "sign-in_encrypt_for_passkeys": {},
+      "sign-in_waiting": {
+        "waiting": []
+      }
     },
     "size": [
       1100,
