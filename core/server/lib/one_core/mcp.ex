@@ -949,13 +949,22 @@ defmodule OneCore.Mcp do
   end
 
   # A widget's tool answers a layout, which the Home Screen draws (`@widget_page`), at the size it was asked for or its
-  # first, and says its name and sizes (`_meta.widget`) as a Home Screen page's card has them.
+  # first, and says its name and sizes (`_meta.widget`) as a Home Screen page's card has them. One that shows what only
+  # time changes says how often it's asked again (`refresh`, in seconds), which is how long a client takes it as fresh
+  # (`_meta.maxAge`, as HTTP's `Cache-Control: max-age`), where it keeps other answers until a server says they changed.
   defp paged({:ok, %{} = result}, name, %{widget: widget}, {actor, subject}) do
-    meta = %{page: "home-screen/#{@widget_page}", tool: name, widget: widget}
+    meta = Map.merge(%{page: "home-screen/#{@widget_page}", tool: name, widget: widget}, max_age(result))
     {:ok, with_meta(result, if(subject == actor, do: meta, else: Map.put(meta, :subject, subject)))}
   end
 
   defp paged(outcome, _name, _tool, _principal), do: outcome
+
+  # Its layout's `refresh` as `maxAge`: this server's answer has `structuredContent`, another's decoded "structuredContent".
+  defp max_age(result) do
+    layout = Map.get(result, :structuredContent) || Map.get(result, "structuredContent")
+    refresh = is_map(layout) && (Map.get(layout, "refresh") || Map.get(layout, :refresh))
+    if is_number(refresh) and refresh > 0, do: %{maxAge: refresh}, else: %{}
+  end
 
   # What a tool that says `no_store` answered says no device may keep it (`_meta.noStore`), as HTTP's
   # `Cache-Control: no-store` does: what an encrypted item holds.

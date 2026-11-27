@@ -239,7 +239,7 @@ struct Query {
     fetched: u64,
     /// The refetch a write started, which a refresh joins rather than asking again.
     fetching: Option<(u64, watch::Receiver<bool>)>,
-    /// When a server last answered it: never, for one shown from what was kept, which is stale.
+    /// When what a server last answered it with was asked: never, for one shown from what was kept, which is stale.
     answered: Option<Instant>,
     /// How many times the view had been told something changed when it last read it (`Subscription::told`).
     read: u64,
@@ -253,9 +253,13 @@ struct Query {
 /// `sign-in_people` a week on PTC, the answers the same each time).
 const STALE_TIME: Duration = Duration::from_secs(5 * 60);
 
-/// Whether a read's answer is stale (`STALE_TIME`), or never came from a server.
+/// Whether a read's answer is stale: older than `STALE_TIME`, or than it says it's fresh for (`_meta.maxAge`, in
+/// seconds, as HTTP's `Cache-Control: max-age`: a widget that shows what only time changes), counted from when it was
+/// asked, as HTTP's `Age` is; or it never came from a server.
 fn stale(query: &Query) -> bool {
-    query.answered.is_none_or(|at| at.elapsed() > STALE_TIME)
+    let max_age = query.response["_meta"]["maxAge"].as_f64().filter(|seconds| seconds.is_finite() && *seconds >= 0.0);
+    let fresh = max_age.map_or(STALE_TIME, |seconds| STALE_TIME.min(Duration::from_secs_f64(seconds)));
+    query.answered.is_none_or(|at| at.elapsed() >= fresh)
 }
 
 /// What one view has been answered since it opened. It asks through this, and every view gets the same, with
@@ -408,6 +412,7 @@ impl Subscription {
             }
             return Ok(query.response.clone());
         }
+        let asked = Instant::now();
         let (response, revalidate) = match self.client.cached(method, &params) {
             Some(cached) => (cached, true),
             None => (self.first(&key, method, &params).await?, false),
@@ -430,7 +435,7 @@ impl Subscription {
             invalidated: 0,
             fetched: 0,
             fetching: revalidate.then_some((0, rx)),
-            answered: (!revalidate).then(Instant::now),
+            answered: (!revalidate).then_some(asked),
             read: self.told.load(Ordering::Relaxed),
         });
         drop(responses);
@@ -483,6 +488,7 @@ impl Subscription {
         generation: u64,
         done: Option<watch::Sender<bool>>,
     ) {
+        let asked = Instant::now();
         let fresh = self.client.fresh(&method, &params).await;
         let mut notify = false;
         {
@@ -504,7 +510,7 @@ impl Subscription {
                     && generation >= query.fetched
                 {
                     query.fetched = generation;
-                    query.answered = Some(Instant::now());
+                    query.answered = Some(asked);
                     if query.response != fresh {
                         query.response = fresh;
                         notify = true;

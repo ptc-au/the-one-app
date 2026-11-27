@@ -284,7 +284,13 @@ for (const [target, event] of /** @type {const} */ ([[window, "online"], [docume
 /// `core/client/src/cache.rs`): what changes, a server says (`heard`).
 const STALE_TIME = 5 * 60 * 1000
 /** @param {CachedQuery} entry */
-const stale = (entry) => entry.answered === undefined || performance.now() - entry.answered > STALE_TIME
+/// One that says how long it's fresh (`_meta.maxAge`, in seconds, as HTTP's `Cache-Control: max-age`: a widget that shows
+/// what only time changes) is stale after that, counted from when it was asked, as HTTP's `Age` is.
+const stale = (entry) => {
+  const maxAge = /** @type {any} */ (entry.response)?._meta?.maxAge
+  const fresh = typeof maxAge === "number" && maxAge >= 0 ? Math.min(STALE_TIME, maxAge * 1000) : STALE_TIME
+  return entry.answered === undefined || performance.now() - entry.answered >= fresh
+}
 /** @type {Map<string, Map<string, CachedQuery>>} */
 const views = new Map()
 /** @param {string} view */
@@ -301,6 +307,7 @@ function tell(view) {
 
 /** @param {string} view @param {CachedQuery} entry @param {number} generation @returns {Promise<boolean>} */
 function fetchEntry(view, entry, generation) {
+  const asked = performance.now()
   const done = mcp(entry.method, entry.params).then(
     (fresh) => {
       if (entry.fetching?.generation === generation) entry.fetching = undefined
@@ -314,7 +321,7 @@ function fetchEntry(view, entry, generation) {
       }
       if (generation < entry.invalidated || generation < entry.fetched) return true
       entry.fetched = generation
-      entry.answered = performance.now()
+      entry.answered = asked
       ;(kept.reads[view] ??= {})[JSON.stringify([entry.method, entry.params])] = fresh
       keep()
       if (JSON.stringify(fresh) !== JSON.stringify(entry.response)) {
@@ -357,9 +364,10 @@ async function read(view, method, params) {
     fetchEntry(view, entry, 0)
     return entry.response
   }
+  const asked = performance.now()
   const response = await mcp(method, params)
   if (unkept(response)) return response
-  if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0, read: toldViews.get(view) ?? 0, answered: performance.now() })
+  if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0, read: toldViews.get(view) ?? 0, answered: asked })
   ;(kept.reads[view] ??= {})[request] = response
   keep()
   return /** @type {CachedQuery} */ (responses(view).get(request)).response

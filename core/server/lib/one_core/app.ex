@@ -587,7 +587,7 @@ defmodule OneCore.App do
     and an Android phone's own home screen, natively, where the person picks it, and it's asked again as often as the
     phone allows. A client asks again when something changed, and when the page is
     returned to. A widget that shows what only time changes, such as a load, says `refresh` in its layout's root part:
-    how many seconds until it's asked again, while it's in view.
+    how many seconds until it's asked again, while it's in view, and how long a client takes its answer as fresh.
   - `column` and `row` hold `parts`, with a `gap` between them in points if not the usual. Any part can say
     `grow: true` to take the room that's left, and a `width` in points. `align: "center"` centres what a column
     or row holds, and `dim: true` fades it, for what's off. A column or row with `from: "sm"` or `"md"` is
