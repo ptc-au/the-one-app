@@ -54,7 +54,7 @@ import { fileURLToPath } from "node:url"
 import { PNG } from "pngjs"
 import { outline } from "../../../../core/ui/src/drawing-primitives/outline.ts"
 import { messages } from "../../../../core/ui/src/words.ts"
-import { rules } from "./rules.js"
+import { coveredBy, rules } from "./rules.js"
 import { lint } from "../../../../core/ui/lint-tokens.js"
 import { build, built, cached, changed, judged, COMPONENTS, decoded, differs, copied, machine, env, glass, headless, jobs, lavapipe, library, monospaced, pageFolder, panel, phone, pLimit, runThere, scenesOf as gallery, setHeadless, slot, stale, stopped, usedFolder, TITLE_ROW, work } from "./animation.js"
 
@@ -677,9 +677,10 @@ async function onAMac(drawn, scene, folder, app) {
   if (!window.title) wrong.push("its title wasn't drawn")
   else if (window.title.x < clear) wrong.push(`its title starts at x ${window.title.x}, ${Math.round(clear - window.title.x)} pt short of ${LIGHTS_CLEAR} pt after the traffic lights, which end at ${window.lights}`)
   const nodes = said.findLast((answer) => answer.result?.nodes)?.result.nodes ?? []
+  const covered = coveredBy(nodes)
   for (const node of nodes) {
     const { rect } = node
-    if (!rect || !(node.opacity > 0) || !(node.seen > 0) || !(node.kind === "text" || node.actions) || rect.width >= scene.size[0] - 1) continue
+    if (!rect || !(node.opacity > 0) || !(node.seen > 0) || !(node.kind === "text" || node.actions) || rect.width >= scene.size[0] - 1 || covered(node)) continue
     if (rect.y < TITLE_ROW && rect.y + rect.height > 0 && rect.x < clear && rect.x + rect.width > 0)
       wrong.push(`"${node.name ?? node.role ?? node.kind}" is drawn in the title row from x ${Math.round(rect.x)}, ${Math.round(clear - rect.x)} pt short of ${LIGHTS_CLEAR} pt after the traffic lights, which end at ${window.lights}`)
   }
@@ -739,13 +740,14 @@ function underTheDevice(nodes, height, { top, bottom }) {
 /// words (a button's label) aren't a row's. → what's wrong, a line each.
 const SQUEEZED = 0.5
 function squeezedWords(nodes, window) {
+  const covered = coveredBy(nodes)
   const parent = new Map(nodes.flatMap((node) => (node.children ?? []).map((child) => [child, node])))
   return nodes.flatMap((node) => {
-    if (node.kind !== "text" || !node.rect || !(node.opacity > 0) || !(node.seen > 0) || !(node.cut || node.lines?.length > 1)) return []
+    if (node.kind !== "text" || !node.rect || !(node.opacity > 0) || !(node.seen > 0) || !(node.cut || node.lines?.length > 1) || covered(node)) return []
     const above = []
     for (let up = parent.get(node.node); up; up = parent.get(up.node)) above.push(up)
     const row = above.find((up) => up.role === "listitem")
-    const said = node.name ?? above.find((up) => up.name)?.name
+    const said = node.name ?? above.find((up) => up.name)?.name ?? "text"
     // Outside a row, only a name cut short counts: wrapped to a second line it's shown whole.
     if (!row) return node.cut && node.rect.width < SQUEEZED * window ? [`"${said}" is ${Math.round(node.rect.width)} pt wide in a window ${window} pt wide, cut short`] : []
     if (!row.rect || node.rect.width >= SQUEEZED * row.rect.width) return []

@@ -125,6 +125,13 @@ function pages(nodes) {
   })
 }
 
+/// Which of `nodes` another's drawn over: a screen a navigation pushed over, a sheet or a menu, whose words a person
+/// doesn't read there. → whether a node is.
+export function coveredBy(nodes) {
+  const covered = new Set(pages(nodes).flatMap(({ here, covered }) => here.filter(covered).map((node) => node)))
+  return (node) => covered.has(node)
+}
+
 /// What a person sees whole: drawn opaque, all of its box in the window, and nothing above it disabled (WCAG asks no
 /// contrast of what's disabled).
 const seen = (node) => node.rect && node.rect.width > 0 && node.rect.height > 0 && node.opacity >= 0.99 && node.seen >= 0.99
