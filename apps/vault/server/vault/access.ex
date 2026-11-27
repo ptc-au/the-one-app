@@ -60,6 +60,9 @@ defmodule Vault.Access do
   @doc "Whether the call is its person's own, made on a screen of theirs (`person!/2`), and not an agent's or an app's."
   def screen?(call), do: call.caller == nil and OneCore.Call.app(call, "sign-in").screen?(call)
 
+  @doc "Whether the call is its person's own device's `one` CLI, rather than an assistant or an MCP client."
+  def cli?(call), do: call.caller == nil and OneCore.Call.app(call, "sign-in").cli?(call)
+
   @doc "Whoever an app is called by its name, as its person picks it: its artifact, or one of `@own`."
   def who!(_call, own) when own in @own, do: own
   def who!(call, app), do: Apps.app(call.subject, app) || Apps.app("network", app) || raise("There's no app named #{app}.")

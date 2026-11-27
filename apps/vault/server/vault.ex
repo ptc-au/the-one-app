@@ -84,14 +84,32 @@ defmodule Vault do
   @impl true
   def hooks, do: ["privacy.sections", "soft-delete.moved"]
 
-  # An item an agent deleted, which its person is told of, as of an agent's other changes (`told/4`): soft delete says
-  # whether it was an agent (`agent`), and it's in Recently Deleted for 30 days.
+  # An item an agent deleted, which its person is told of, as of an agent's other changes (`replaced!/5`): soft delete
+  # says whether it was an agent (`agent`), and its id in Recently Deleted (`item`), which the notification opens.
   @impl true
-  def hook("soft-delete.moved", %{"artifact" => artifact, "to" => "deleted", "agent" => true}, call) do
+  def hook("soft-delete.moved", %{"artifact" => artifact, "to" => "deleted", "agent" => true} = about, call) do
     Store.quietly("Telling of a deleted item", fn ->
       name = Enum.find_value(Store.names(call, Store.own(call)), fn {id, name} -> id == artifact && name end)
-      if name, do: Store.notify(call, "An agent deleted #{name}", "It's in Recently Deleted for 30 days. Restore it there if you want it back.", "accounts")
+      section = if item = about["item"], do: "deleted#item=#{URI.encode_www_form(item)}", else: "deleted"
+
+      if name,
+        do: Store.notify(call, "An agent deleted #{name}", "It's in Recently Deleted for 30 days. Restore it there if you want it back.", section, %{"app" => "soft-delete"})
     end)
+
+    nil
+  rescue
+    _ -> nil
+  end
+
+  # An item deleted for good (purged from Recently Deleted) forgets its kept earlier versions too.
+  def hook("soft-delete.moved", %{"artifact" => artifact, "to" => "purged"}, call) do
+    with id when id != "items" <- item_id(call, artifact) do
+      Store.quietly("Forgetting versions of a purged item", fn ->
+        db = Store.own(call)
+        Versions.forget_item(call, db, id)
+        timed(call, db)
+      end)
+    end
 
     nil
   rescue
@@ -175,7 +193,7 @@ defmodule Vault do
                   changed: %{type: ["integer", "null"], description: "When it last changed, in seconds since 1970"},
                   versions: %{
                     type: "array",
-                    description: "What it held before a field was replaced or removed, kept 30 days, newest first, never a value: `id` (for `restore_version`), `field`, `secret`, `kind` (replaced or removed), `at` and `by` (agent or person)",
+                    description: "What it held before a field was replaced or removed, kept 30 days, newest first, never a value: `id` (for `restore_version` and `forget_version`), `field`, `secret`, `kind` (replaced or removed), `at` and `by` (agent or person)",
                     items: %{type: "object"}
                   }
                 },
@@ -686,6 +704,19 @@ defmodule Vault do
         outputs: %{type: "object", properties: %{item: item, field: %{type: "string"}}, required: ["item", "field"]}
       },
       %{
+        name: "forget_version",
+        description:
+          "Erases one earlier version (`id`) or all of an item's earlier versions (`item`) from storage now, rather than waiting 30 days, as after rotating a leaked secret. It's its person's, on their own device: an agent can't",
+        inputs: %{
+          type: "object",
+          properties: %{
+            id: %{type: "integer", description: "One version to forget, by the `id` in the item's `versions`"},
+            item: Map.put(item, :description, "Or an item's name, to forget all of its earlier versions")
+          }
+        },
+        outputs: %{type: "object", properties: %{forgotten: %{type: "integer", description: "How many versions were forgotten"}}, required: ["forgotten"]}
+      },
+      %{
         name: "expire",
         description: "Marks requests that waited a week as expired, and lets go of those that ended a month ago, of what a browser sent for a handle once its time is over, and of handles a month old. The Vault's timer calls it when the next one does",
         inputs: %{type: "object", properties: %{}},
@@ -945,10 +976,10 @@ defmodule Vault do
     end
   end
 
-  # An item's field is about to be replaced or removed: keeps it as it was for 30 days, and where an agent does it, tells its
-  # person once, in words that never say the value.
+  # An item's field is about to be replaced or removed: keeps it as it was for 30 days, and where an agent does it (not
+  # its person on their own screen or their own device's CLI), tells its person once, in words that never say the value.
   defp replaced!(call, db, item, field, kind) do
-    agent = not Access.screen?(call)
+    agent = not Access.screen?(call) and not Access.cli?(call)
     Versions.keep(call, db, item, field, kind, if(agent, do: "agent", else: "person"))
     timed(call, db)
 
@@ -1183,7 +1214,37 @@ defmodule Vault do
     db = Store.own(call)
     restored = Store.quietly("Restoring the version", fn -> Versions.restore!(call, db, id, "person") end)
     timed(call, db)
+    Call.changed(call)
     restored
+  end
+
+  # Erases one earlier version (`id`) or all of an item's (`item`) from storage now. Only its person on their own screen
+  # may, so an agent can't cover its tracks.
+  def call("forget_version", inputs, call) do
+    Access.person!(call, "Forgetting an earlier version")
+    db = Store.own(call)
+
+    forgotten =
+      Store.quietly("Forgetting the version", fn ->
+        case inputs do
+          %{"id" => _, "item" => _} ->
+            raise "Give either a version's `id` or an item's name (`item`), not both."
+
+          %{"id" => id} when is_integer(id) ->
+            Versions.forget!(call, db, id)
+
+          %{"item" => name} when is_binary(name) ->
+            found = Items.find!(call, db, name)
+            Versions.forget_item(call, db, found["id"])
+
+          _ ->
+            raise "Say which version to forget (`id`), or which item's versions (`item`)."
+        end
+      end)
+
+    timed(call, db)
+    Call.changed(call)
+    %{forgotten: forgotten}
   end
 
   # An app's own code may only take its own access away.
@@ -1354,6 +1415,16 @@ defmodule Vault do
   end
 
   defp opened(_sealed, _key), do: raise("What the browser sent isn't whole.")
+
+  # The item id of a Vault item's artifact (`<owner>/made/vault/<id>`), or nil for anything else.
+  defp item_id(call, artifact) do
+    prefix = "#{call.subject}/made/vault/"
+
+    case String.replace_prefix(artifact, prefix, "") do
+      ^artifact -> nil
+      id -> if not String.contains?(id, "/"), do: id
+    end
+  end
 
   # Has the Vault's timer go off when a request next waits a week or ended a month ago, a handle's time is over or
   # it's a month old, or a version of an item is (`Database.timer/5`), kept in its own database, where One Core's clock finds it.

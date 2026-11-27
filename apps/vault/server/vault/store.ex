@@ -169,11 +169,14 @@ defmodule Vault.Store do
 
   @doc """
   Tells their person, on their devices and in their inbox, and opens the Vault where `section` says (`accounts#request=4`)
-  when it's tapped. Only a user's own Vault has someone to tell: a group's or the network's has owners, whom this doesn't know.
+  when it's tapped (or another app's section when `extra` names `"app"`, such as `soft-delete`). Only a user's own
+  Vault has someone to tell: a group's or the network's has owners, whom this doesn't know.
   """
-  def notify(call, title, text, section) do
-    if String.starts_with?(call.subject, "users/"),
-      do: Call.app(call, "notifications").send(call, %{"title" => String.slice(title, 0, 120), "text" => text, "section" => section})
+  def notify(call, title, text, section, extra \\ %{}) do
+    if String.starts_with?(call.subject, "users/") do
+      body = Map.merge(%{"title" => String.slice(title, 0, 120), "text" => text, "section" => section}, extra)
+      Call.app(call, "notifications").send(call, body)
+    end
   end
 
   def random(bytes), do: Base.url_encode64(:crypto.strong_rand_bytes(bytes), padding: false)

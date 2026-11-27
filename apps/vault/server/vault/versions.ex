@@ -6,6 +6,7 @@ defmodule Vault.Versions do
   which field, what happened to it, by whom and when, and `restore!/3` puts one back without showing it.
 
       kept --restore!----------> back in its item (what it replaces is kept in its place)
+      kept --forget!/forget_item--> gone
       kept --a month, or past the newest 20 of its item--> gone
   """
 
@@ -50,6 +51,33 @@ defmodule Vault.Versions do
     Store.change!(db, item, &Items.put_field(&1, version["field"], version["value"], version["secret"] == 1))
     Store.transaction(call, db, &Store.query(&1, "delete from versions where id = ?", [id]))
     %{item: item["name"], field: version["field"]}
+  end
+
+  @doc "Forgets one kept version by its `id`, erasing it from storage now. Raises where it isn't kept any more."
+  def forget!(call, db, id) do
+    removed =
+      Store.transaction(call, db, fn d ->
+        case Store.query(d, "select id from versions where id = ?", [id]) do
+          [%{"id" => ^id}] ->
+            Store.query(d, "delete from versions where id = ?", [id])
+            1
+
+          [] ->
+            0
+        end
+      end)
+
+    if removed == 0, do: raise("That version isn't kept any more.")
+    removed
+  end
+
+  @doc "Forgets every kept version of item `item_id`, erasing them from storage now. Gives how many were forgotten."
+  def forget_item(call, db, item_id) do
+    Store.transaction(call, db, fn d ->
+      [%{"n" => count}] = Store.query(d, "select count(*) as n from versions where item = ?", [item_id])
+      if count > 0, do: Store.query(d, "delete from versions where item = ?", [item_id])
+      count
+    end)
   end
 
   @doc "When a version next goes, in seconds since 1970, or `nil` with none."

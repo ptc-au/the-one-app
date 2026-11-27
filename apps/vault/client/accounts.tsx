@@ -446,6 +446,14 @@ function ItemScreen(props: { item: Item } & Shown) {
     if (!(await confirm({ heading: `Delete ${shown(item())}?`, text: "Whatever uses it stops working. It's in Recently Deleted for 30 days.", action: "Delete", destructive: true }))) return
     if (await does("soft-delete_delete", { artifact: item().artifact })) props.show({ owner: props.inputs.owner })
   }
+  const forget = async (version: Version) => {
+    if (!(await confirm({ heading: `Forget earlier ${label(version.field)}?`, text: "It's erased now and can't be restored.", action: "Forget", destructive: true }))) return
+    await does("vault_forget_version", { id: version.id })
+  }
+  const forgetAll = async () => {
+    if (!(await confirm({ heading: `Forget all earlier versions of ${shown(item())}?`, text: "They're erased now and can't be restored.", action: "Forget All", destructive: true }))) return
+    await does("vault_forget_version", { item: item().name })
+  }
   return (
     <Screen
       heading={
@@ -485,13 +493,23 @@ function ItemScreen(props: { item: Item } & Shown) {
                 heading={label(version().field)}
                 text={`${version().kind === "removed" ? "Removed" : "Replaced"} by ${version().by === "agent" ? "an agent" : "you"} on ${day(version().at)}`}
                 action={
-                  <Button variant="outline" onPress={() => void does("vault_restore_version", { id: version().id })}>
-                    Restore
-                  </Button>
+                  <View style={look.line}>
+                    <Button variant="outline" onPress={() => void does("vault_restore_version", { id: version().id })}>
+                      Restore
+                    </Button>
+                    <Button variant="ghost" onPress={() => void forget(version())}>
+                      Forget
+                    </Button>
+                  </View>
                 }
               />
             )}
           </List>
+          <Show when={item().versions.length > 1}>
+            <List>
+              <Row heading="Forget All…" destructive onPress={() => void forgetAll()} />
+            </List>
+          </Show>
         </Section>
       </Show>
       <Section heading={item().hosts.length === 1 ? "Website" : "Websites"}>
