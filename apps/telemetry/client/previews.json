@@ -157,9 +157,10 @@
           "git-repos": "Git Repos"
         },
         "retention": {
+          "since": 1766620800000,
           "days": 14,
           "bytes": 212000000,
-          "most_bytes": 1000000000
+          "most_bytes": 268435456
         }
       },
       "telemetry_alerts": {
@@ -292,9 +293,10 @@
         "spending": [],
         "names": {},
         "retention": {
+          "since": 1767139200000,
           "days": 14,
           "bytes": 5000000,
-          "most_bytes": 1000000000
+          "most_bytes": 268435456
         }
       },
       "telemetry_alerts": {
