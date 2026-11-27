@@ -44,10 +44,11 @@ const STOP = 30_000;
 /** Cloudflare's longest inactivity timeout for a container, which it's given each time it's looked at. */
 const INACTIVE = 6 * 60 * 60_000;
 /**
- * The smallest instance with at least the 1 GiB a network's server needs (310 to 530 MB, measured on `linux`, 26 Nov)
- * that starts it within a minute.
+ * Its size: 2 GiB, as a network's server takes 450 to 560 MB with 650 to 740 MB at its peak, and 2 vCPUs, as it builds
+ * every app again on a fresh disk as it starts, which was ready in 35 s, where 1 vCPU took 95 s, standard-1's ½ 135 s
+ * and basic's ¼ 230 s (27 Nov). CPU is billed as it's used, so the 2 cost only that minute more.
  */
-const INSTANCE = "standard-1";
+const INSTANCE = { vcpu: 2, memoryMib: 2048, diskMb: 8000 };
 /** The server's `ONE_HOME` in its image (`image/Dockerfile`), named here as what's run in it is given none of its environment. */
 const HOME = "/data/home";
 /** What's kept of a joined server, from its `ONE_HOME`, as a gzipped tar in base64, once its record says it's active. */
