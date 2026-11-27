@@ -2,7 +2,8 @@
 // in a Cloudflare Container, for when none of the others is on, as when the one machine they run on is off. Its
 // Durable Object (`Fallback`) starts it once the network has had no server ready for `GONE`, and stops it once another
 // has been ready for `COVERED`, keeping it on meanwhile, so the network's scheduled jobs (backups, the Board's
-// schedules, Google's subscriptions renewed) go on as its calls do.
+// schedules, Google's subscriptions renewed) go on as its calls do. From the moment it's started, the relay holds calls
+// for it as for any server starting (`relay/relay.ts`).
 //
 // It's a server as any other is (`image/entrypoint.sh`): the first time, it joins the network as one whose owner adds it
 // at the network's address with a passkey, and it says the link and code for that in its log. Its disk is its image's
@@ -14,9 +15,10 @@
 // call a server answers asks the bucket, which a container on another continent waited a round trip for each time
 // (San Jose to Oceania, 27 Nov: calls took 4 to 15 times as long as on the network's other servers).
 //
-// It looks every minute, as the Worker's cron says, and at the moment something it waits for is due, by its alarm.
-// Being asked every minute is also what keeps the container on: Cloudflare stops one whose Durable Object hasn't been
-// asked anything for its inactivity timeout.
+// It looks every `LOOK` while it's off, by its alarm, as the relay, which knows the moment the last server stops, can't
+// tell it: the relay is deployed before it, and on every network, where it's only on one whose account runs Containers.
+// It looks every minute too, as the Worker's cron says, which starts the alarm and is also what keeps the container on:
+// Cloudflare stops one whose Durable Object hasn't been asked anything for its inactivity timeout.
 import { DurableObject } from "cloudflare:workers";
 import { hex } from "../ask.ts";
 import type { Network } from "../presigner/presigner.ts";
@@ -35,9 +37,11 @@ declare global {
 
 /**
  * How long the network has had no server ready before it starts: a server restarting, to take an update, is back in
- * 7 to 24 s (PTC, 23 Nov), and the relay takes one that left within a minute as coming back (`LEFT` in `relay.ts`).
+ * 7 to 24 s (PTC, 23 Nov), and the relay holds calls meanwhile, as it does while this starts.
  */
-const GONE = 60_000;
+const GONE = 30_000;
+/** How often it looks while it's off, in milliseconds, so it starts within this of `GONE`. */
+const LOOK = 5_000;
 /** How long another server has been ready before it stops. */
 const COVERED = 10 * 60_000;
 /**
@@ -115,12 +119,13 @@ export class Fallback extends DurableObject<FallbackEnv> {
       return this.stop(`${servers.filter((key) => here[key]?.server_ready).map((key) => key.slice(0, 8)).join(", ")} has been ready for ${COVERED / 60_000} min`);
     }
     await storage.delete("covered");
+    await storage.setAlarm(now + LOOK);
     if (ready) return void (await storage.delete("none"));
     // Since when none has been: since the last of them left, or now where one is here and not ready.
     const left = servers.map((key) => (here[key]?.connected ? now : (here[key]?.last_seen ?? 0)));
     const none = (await storage.get<number>("none")) ?? Math.max(0, ...left);
     await storage.put("none", none);
-    if (now - none < GONE) return void (await storage.setAlarm(none + GONE));
+    if (now - none < GONE) return;
     await this.start(servers.length ? `none of its ${servers.length} servers has been ready since ${new Date(none).toISOString()}` : "it has no other server");
   }
 
@@ -134,6 +139,8 @@ export class Fallback extends DurableObject<FallbackEnv> {
     });
     await this.container.setInactivityTimeout(INACTIVE);
     await this.ctx.storage.delete("none");
+    const key = await this.ctx.storage.get<string>("key");
+    if (key) await relay(this.env.RELAY, (relay) => relay.starting(key));
     console.log(JSON.stringify({ fallback: "started", why, joined: !!identity }));
   }
 

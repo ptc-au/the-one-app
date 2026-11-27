@@ -36,7 +36,7 @@ import { blake3 } from "@noble/hashes/blake3.js";
 import { verifiedKey, hex, signedBy } from "../ask.ts";
 import type { Input, NetworkUpdater, Reported } from "../updater/updater.ts";
 import type { Network } from "../presigner/presigner.ts";
-import { relay, spoken, type Presence, type Protocol, type ServerReadyReason, type ServerStatus } from "./common.ts";
+import { relay, spoken, talk, type Presence, type Protocol, type ServerReadyReason, type ServerStatus } from "./common.ts";
 
 /** Its bindings to the edge's Worker, typed (`worker-configuration.d.ts` has them untyped). */
 declare global {
@@ -90,6 +90,18 @@ const STOPPING = 60_000;
  * back is known again as it says what it is, so forgetting loses nothing.
  */
 const REAP = 24 * 60 * 60_000;
+/**
+ * How many webhooks no server took the relay keeps, and how many bytes of them, at most (`keep`): a service whose
+ * webhook is refused sends it again later, as Google's Pub/Sub does for 7 days, and one that doesn't loses it.
+ */
+const KEPT = 1_000;
+const KEPT_BYTES = 256 * 1_048_576;
+/**
+ * How long a kept webhook sent to a server waits for its answer before it's sent again, to a server that's here then, in
+ * milliseconds: one that left, or stepped aside, which answers nothing, never answers it. A webhook is given 10 s to
+ * answer (`WEBHOOK_WAIT` in `mcp/mcp.ts`), so one that's answered isn't sent twice.
+ */
+const RESEND = 60_000;
 
 /** An endpoint joined to the relay: the connection its datagrams are passed over, and when its token expires. */
 interface Joined {
@@ -224,8 +236,21 @@ export class Relay extends DurableObject<RelayEnv> {
   constructor(ctx: DurableObjectState, env: RelayEnv) {
     super(ctx, env);
     console.log(JSON.stringify({ relay: "woke", connections: ctx.getWebSockets().length }));
-    // Its heartbeats go on as it wakes, as an alarm set by code before them never was.
-    ctx.blockConcurrencyWhile(async () => void ((await ctx.storage.getAlarm()) ?? (await ctx.storage.setAlarm(Date.now()))));
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS webhooks (id TEXT PRIMARY KEY, servers TEXT NOT NULL, message TEXT NOT NULL, kept INTEGER NOT NULL, sent_to TEXT, sent INTEGER)");
+    ctx.blockConcurrencyWhile(async () => {
+      // Its heartbeats go on as it wakes, as an alarm set by code before them never was.
+      (await ctx.storage.getAlarm()) ?? (await ctx.storage.setAlarm(Date.now()));
+      // A deploy of the relay ends every connection it held, and nothing says so to the code after it: each that was
+      // here and has no connection now left just now, and a server is coming back (`coming` in `relay.ts`), as each
+      // connects again within seconds.
+      const now = Date.now();
+      const gone = [...(await ctx.storage.list<boolean>({ prefix: "here " }))]
+        .filter(([at, here]) => here && !ctx.getWebSockets(`on ${at.slice("here ".length)}`).length && !ctx.getWebSockets(`outside ${at.slice("here ".length)}`).length)
+        .map(([at]) => at.slice("here ".length));
+      for (let at = 0; at < gone.length; at += 64) {
+        await ctx.storage.put(Object.fromEntries(gone.slice(at, at + 64).flatMap((device) => [[`here ${device}`, false], [`seen ${device}`, now]])));
+      }
+    });
   }
 
   async fetch(request: Request) {
@@ -313,10 +338,75 @@ export class Relay extends DurableObject<RelayEnv> {
   /** Who's waiting for a server to come or go (`ready`), each woken as one does (`seen`). */
   waiting = new Set<() => void>();
 
-  /** A server came or went (`moved`) or said what it is: every server is told, and whoever waits for one to be ready looks again. */
+  /**
+   * A server came or went (`moved`) or said what it is: every server is told, whoever waits for one to be ready looks
+   * again, and the webhooks kept for one are sent.
+   */
   seen(moved = true) {
     this.notify(moved ? SEEN : SAID);
+    this.wake();
+  }
+
+  /** Whoever waits for a server (`ready`, `next`) looks again, and the webhooks kept for one are sent. */
+  wake() {
     for (const wake of this.waiting) wake();
+    this.ctx.waitUntil(this.deliver());
+  }
+
+  /** Waits until a server comes, goes, connects again or says what it is, or for `within` milliseconds. */
+  async next(within: number) {
+    await new Promise<void>((resolve) => {
+      const wake = () => {
+        clearTimeout(timer);
+        this.waiting.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, within);
+      this.waiting.add(wake);
+    });
+  }
+
+  /**
+   * A server is starting, as the network's fallback server is from the moment it's started (`fallback/worker.ts`),
+   * before it can say so itself.
+   */
+  async starting(key: string) {
+    const was = await this.ctx.storage.get<ServerStatus>(`presence ${key}`);
+    await this.ctx.storage.put(`presence ${key}`, { server_membership: was?.server_membership ?? "active", server_daemon_status: "starting", at: Date.now() } satisfies ServerStatus);
+    this.seen(was?.server_daemon_status !== "starting");
+  }
+
+  /**
+   * Keeps `message`, a webhook no server took, until one of `servers` is ready and answers it (`deliver`): whether it
+   * was kept, which it isn't where `KEPT` webhooks or `KEPT_BYTES` are kept already.
+   */
+  keep(servers: string[], message: string): boolean {
+    const { sql } = this.ctx.storage;
+    const [{ count, bytes }] = sql.exec<{ count: number; bytes: number }>("SELECT count(*) AS count, coalesce(sum(length(message)), 0) AS bytes FROM webhooks").toArray();
+    if (count >= KEPT || bytes + message.length > KEPT_BYTES) return false;
+    sql.exec("INSERT INTO webhooks (id, servers, message, kept) VALUES (?, ?, ?, ?)", `webhook ${crypto.randomUUID()}`, servers.join(","), message, Date.now());
+    this.ctx.waitUntil(this.deliver());
+    return true;
+  }
+
+  /**
+   * Sends each kept webhook, oldest first, to one of its servers that's ready and talks with the edge, unless one it was
+   * sent to is here and has had less than `RESEND` to answer. Its answer, by its id, has it forgotten (`webSocketMessage`).
+   */
+  async deliver() {
+    const { sql } = this.ctx.storage;
+    const kept = sql.exec<{ id: string; servers: string; sent_to: string | null; sent: number | null }>("SELECT id, servers, sent_to, sent FROM webhooks ORDER BY kept").toArray();
+    const waiting = kept.filter(({ sent_to, sent }) => !sent_to || !this.on(sent_to) || Date.now() - sent! >= RESEND);
+    if (!waiting.length) return;
+    const keys = [...new Set(waiting.flatMap(({ servers }) => servers.split(",")))];
+    const [presence, protocols] = await Promise.all([this.presence(keys), this.protocols(keys)]);
+    for (const { id, servers } of waiting) {
+      const to = servers.split(",").find((key) => presence[key]?.server_ready && talk(protocols[key]) && open(this.ctx.getWebSockets(`outside ${key}`)));
+      if (!to) continue;
+      const [{ message }] = sql.exec<{ message: string }>("SELECT message FROM webhooks WHERE id = ?", id).toArray();
+      open(this.ctx.getWebSockets(`outside ${to}`))!.send(JSON.stringify({ call: id, message }));
+      sql.exec("UPDATE webhooks SET sent_to = ?, sent = ? WHERE id = ?", to, Date.now(), id);
+    }
   }
 
   /**
@@ -401,6 +491,8 @@ export class Relay extends DurableObject<RelayEnv> {
    */
   async alarm() {
     let open = false;
+    // A kept webhook sent to a server that hasn't answered it within `RESEND` is sent again.
+    this.ctx.waitUntil(this.deliver());
     for (const ws of this.ctx.getWebSockets()) {
       const attachment: Attachment = ws.deserializeAttachment() ?? {};
       const { outside, since = Date.now(), answered } = attachment;
@@ -477,6 +569,8 @@ export class Relay extends DurableObject<RelayEnv> {
       const { call, answer, notify } = JSON.parse(message as string);
       if (call === "heartbeat") {
         ws.serializeAttachment({ ...attachment, answered: Date.now() });
+        // A server that connected again, whose first answer this is, may be what a call waits for.
+        if (attachment.answered === undefined) this.wake();
         return this.moved(attachment.outside, true);
       }
       if (typeof notify === "string") {
@@ -485,6 +579,8 @@ export class Relay extends DurableObject<RelayEnv> {
         }
         return;
       }
+      // A kept webhook is answered once: whatever the server answers, it's no longer kept.
+      if (typeof call === "string" && call.startsWith("webhook ")) return void this.ctx.storage.sql.exec("DELETE FROM webhooks WHERE id = ?", call);
       open(this.ctx.getWebSockets(`call ${call}`))?.send(answer);
       return;
     }

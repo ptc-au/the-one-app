@@ -12,12 +12,10 @@
 // speaks, and its build, as it says what it is. A call from outside goes only to a server that talks with the edge,
 // and says the edge's protocol and build: a rule apart from being ready.
 import { WorkerEntrypoint } from "cloudflare:workers";
-/** The protocols the edge speaks, and the cutoff for parts too old to say theirs (`core/protocol.json`). */
-import PROTOCOL_CONFIG from "../../protocol.json";
 import { verifiedKey, hex } from "../ask.ts";
 import { admits, reader } from "../presigner/presigner.ts";
 import type { Input, Reported } from "../updater/updater.ts";
-import { relay as relayed, spoken, type Presence, type Protocol, type ServerDaemonStatus, type ServerMembership } from "./common.ts";
+import { relay as relayed, spoken, talk, SPEAKS, type Presence, type Protocol, type ServerDaemonStatus, type ServerMembership } from "./common.ts";
 import type { Relay } from "./worker.ts";
 
 /**
@@ -28,24 +26,29 @@ import type { Relay } from "./worker.ts";
  */
 const REACH = 5_000;
 /**
- * How long a call waits for a server that's coming back, as `OneCore.Servers.back/1` has servers wait, with the same rule
- * for one that is (`coming`): a server restarting onto a build takes 7 to 24 s to be back (PTC, 23 Nov), and what an MCP
- * client waits for an answer is 30 seconds.
+ * How long a call is held for a server to take it, in milliseconds, where none is ready but one is coming back (`coming`),
+ * as `OneCore.Servers.back/1` has servers wait, or where the ready ones didn't answer, as servers whose connections a
+ * deploy of the relay ended are connecting again. A server restarting onto a build is back in 7 to 24 s (PTC, 23 Nov),
+ * the network's fallback server is ready 11 to 35 s after it starts (27 Nov), and an MCP client waits 30 s for an answer
+ * (Claude's): it's told the network is starting within that, rather than seeing its own timeout.
  */
-const BACK = 30_000;
+const HOLD = 25_000;
 /** How recently a server that isn't connected left for it to be coming back, in milliseconds (`OneCore.Servers`' `@left`). */
 const LEFT = 60_000;
-/** Whether a server whose presence is `here` is starting, stopping, or left within `LEFT`: it's coming back. */
+/**
+ * Whether a server whose presence is `here` is starting, stopping, or left within `LEFT`: it's coming back. The
+ * network's fallback server is starting from the moment it's started (`fallback/worker.ts`), and a server the relay held
+ * when it started again left as it did (`worker.ts`).
+ */
 const coming = (here: Presence | null) =>
   here?.server_daemon_status === "starting" ||
   here?.server_daemon_status === "stopping" ||
   (here?.connected === false && here.last_seen !== undefined && Date.now() - here.last_seen < LEFT);
 /** MCP's ping, which a server answers at once, whoever asks. */
 const MCP_PING = JSON.stringify({ jsonrpc: "2.0", id: 0, method: "ping" });
-/** The protocols the edge speaks, from `oldest` to `newest`. */
-const SPEAKS: Protocol = { oldest: PROTOCOL_CONFIG.oldest, newest: PROTOCOL_CONFIG.newest };
-/** Whether a part that speaks `theirs` talks with the edge: their ranges overlap. */
-const talk = (theirs: Protocol | undefined) => !!theirs && theirs.oldest <= SPEAKS.newest && SPEAKS.oldest <= theirs.newest;
+/** What a caller is told where no server took a call: one is coming back, or none is on. */
+const STARTING = "This network's servers are starting. Try again in a minute.";
+const NONE = "None of this network's servers answered. Try again once one is on.";
 /** What a range is, said: `1`, `1 to 2`, or `none`. */
 const named = (protocol: Protocol | undefined) => (!protocol ? "none" : protocol.oldest === protocol.newest ? `${protocol.oldest}` : `${protocol.oldest} to ${protocol.newest}`);
 
@@ -97,63 +100,79 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 /**
- * Passes an outsider's `message` to one of `servers`, by their keys, and gives `{server, answer}`: the first of
- * them to show it's there by answering a ping within `REACH`, or `null` if none does. The wait for the answer is
- * on a connection the relay holds asleep, so nothing is billed for it, and it's as long as the call takes. It's under
- * the span of the request that asked, whose `traceparent` the message carries, and says in that span which server
- * answered, or why none did.
+ * What came of a call passed to a server: its `answer`, or `why` none was given, with the `server` that took the call
+ * where it left before it answered.
  */
-export async function forward(env: Env, servers: string[], message: string): Promise<{ server: string; answer: string } | null> {
+export type Forwarded = { server: string; answer: string } | { server?: string; why: string };
+
+/** `message` as the edge passes it to a server: saying the edge's protocol and build. */
+function stamped(env: Env, message: string) {
   const call = JSON.parse(message);
-  message = JSON.stringify({ ...call, params: { ...call.params, _meta: { ...call.params?._meta, protocol: SPEAKS, version: env.VERSION } } });
+  return JSON.stringify({ ...call, params: { ...call.params, _meta: { ...call.params?._meta, protocol: SPEAKS, version: env.VERSION } } });
+}
+
+/**
+ * Passes an outsider's `message` to one of `servers`, by their keys: the first of them to show it's there by answering
+ * a ping within `REACH`. Where none does, the call is held for up to `hold` milliseconds for one coming back, or
+ * connecting again, and tried as one does. The wait for the answer is on a connection the relay holds asleep, so
+ * nothing is billed for it, and it's as long as the call takes. It's under the span of the request that asked, whose
+ * `traceparent` the message carries, and says in that span which server answered, or why none did.
+ */
+export async function forward(env: Env, servers: string[], message: string, hold = HOLD): Promise<Forwarded> {
+  const until = Date.now() + hold;
+  message = stamped(env, message);
   const said = (attributes: Record<string, string | number>, error?: string) => console.log(JSON.stringify({ telemetry: { attributes, error } }));
 
+  if (!servers.length) return { why: "None of this network's servers is on yet. Turn one on, then try again." };
   // Only a server that talks with the edge is asked, and only one that's ready, or isn't known not to be.
   const protocols = await relay(env, (relay) => relay.protocols(servers));
   const talking = servers.filter((server) => talk(protocols[server]));
   if (!talking.length) {
     said({ "one.servers": servers.length }, `None of its ${servers.length} servers speaks a protocol the edge's ${named(SPEAKS)} does: ${servers.map((server) => `${server.slice(0, 8)} ${named(protocols[server])}`).join(", ")}`);
-    return null;
+    const theirs = [...new Set(servers.map((server) => named(protocols[server])))].join(" and ");
+    return { why: `The edge and this network's servers don't speak a protocol version in common: the edge speaks ${named(SPEAKS)}, the servers ${theirs}. Update whichever is older, then try again.` };
   }
-  let here = await presence(env, talking);
-  // None of them ready where one is coming back has the call wait for it: a network with one server answers through
-  // its restart, as its servers' own calls do (`OneCore.Servers.back/1`).
-  const back = talking.filter((server) => coming(here[server]));
-  if (back.length && !talking.some((server) => here[server]?.server_ready !== false)) here = { ...here, ...(await presence(env, back, BACK)) };
-  servers = talking.filter((server) => here[server]?.server_ready !== false);
-  if (!servers.length) {
-    said({ "one.servers": talking.length }, `None of its ${talking.length} servers is ready: ${talking.map((server) => `${server.slice(0, 8)} ${here[server]?.server_ready_reason}`).join(", ")}`);
-    return null;
+  // Whether a server that was ready didn't answer, as one whose connection is being made again doesn't.
+  let missed = false;
+  for (;;) {
+    const here = await presence(env, talking);
+    const ready = talking.filter((server) => here[server]?.server_ready !== false);
+    const tries = ready.map((server) => reach(relay(env, (relay) => relay.fetch(`https://relay/call?to=${server}`, { headers: { upgrade: "websocket" } })), server, Math.max(Math.min(REACH, until - Date.now()), 0)));
+    // With none reached, `error` below says why each try failed.
+    const reached = await Promise.any(tries).catch(() => null);
+    for (const tried of tries) tried.then((other) => other !== reached && other.close(), () => {});
+    if (reached) {
+      const answer = await reached.ask(message);
+      reached.close();
+      const server = reached.server;
+      said({ "one.servers": ready.length, "one.server": server.slice(0, 8) }, answer === null ? `${server.slice(0, 8)} left before it answered` : undefined);
+      return answer === null ? { server, why: NONE } : { server, answer };
+    }
+    missed ||= ready.some((server) => here[server]?.server_ready);
+    const back = talking.some((server) => coming(here[server]));
+    const left = until - Date.now();
+    if (left > 0 && (back || missed)) {
+      await relay(env, (relay) => relay.next(left));
+      continue;
+    }
+    // With none reached, every try has failed, and each says why.
+    const why = (tried: Promise<unknown>, at: number) => tried.then(() => "", (error: Error) => `${ready[at].slice(0, 8)} ${error.message}`);
+    said(
+      { "one.servers": talking.length },
+      ready.length
+        ? `None of its ${ready.length} servers answered: ${(await Promise.all(tries.map(why))).join("; ")}`
+        : `None of its ${talking.length} servers is ready: ${talking.map((server) => `${server.slice(0, 8)} ${here[server]?.server_ready_reason}`).join(", ")}`,
+    );
+    return { why: back ? STARTING : NONE };
   }
-  const tries = servers.map((server) => reach(relay(env, (relay) => relay.fetch(`https://relay/call?to=${server}`, { headers: { upgrade: "websocket" } })), server));
-  // With none reached, `error` below says why each try failed.
-  const reached = await Promise.any(tries).catch(() => null);
-  for (const tried of tries) tried.then((other) => other !== reached && other.close(), () => {});
-  const answer = reached && (await reached.ask(message));
-  reached?.close();
-  // With none reached, every try has failed, and each says why.
-  const why = (tried: Promise<unknown>, at: number) => tried.then(() => "", (error: Error) => `${servers[at].slice(0, 8)} ${error.message}`);
-  const error = !reached
-    ? `None of its ${servers.length} servers answered: ${(await Promise.all(tries.map(why))).join("; ") || "it has none"}`
-    : answer === null
-      ? `${reached.server.slice(0, 8)} left before it answered`
-      : undefined;
-  said({ "one.servers": servers.length, ...(reached && { "one.server": reached.server.slice(0, 8) }) }, error);
-  return reached && answer !== null ? { server: reached.server, answer } : null;
 }
 
 /**
- * What to tell whoever's call `forward` gave no answer to, said for them: which of the network's `servers` there are,
- * whether any speaks a protocol the edge does, and otherwise that none answered.
+ * Keeps `message` in the relay for the first of `servers` to be ready, as a webhook no server took: whether it was kept,
+ * which it isn't where the relay holds as many as it keeps.
  */
-export async function unanswered(env: Env, servers: string[]): Promise<string> {
-  if (!servers.length) return "None of this network's servers is on yet. Turn one on, then try again.";
-  const protocols = await relay(env, (relay) => relay.protocols(servers));
-  if (!servers.some((server) => talk(protocols[server]))) {
-    const theirs = [...new Set(servers.map((server) => named(protocols[server])))].join(" and ");
-    return `The edge and this network's servers don't speak a protocol version in common: the edge speaks ${named(SPEAKS)}, the servers ${theirs}. Update whichever is older, then try again.`;
-  }
-  return "None of this network's servers answered. Try again once one is on.";
+export async function keep(env: Env, servers: string[], message: string): Promise<boolean> {
+  return relay(env, (relay) => relay.keep(servers, stamped(env, message)));
 }
 
 /** Tells every server that's here `message`, which none answers: a JSON-RPC notification. */
@@ -172,13 +191,10 @@ export async function listen(env: Env, servers: string[]): Promise<WebSocket> {
   return webSocket;
 }
 
-/**
- * Whether each of `keys`, servers' and devices', is here (`Presence`), or `null` for one never seen: as the relay says
- * it once one of them is ready, or after `within` milliseconds (0 is now).
- */
-export async function presence(env: Env, keys: string[], within = 0): Promise<Record<string, Presence | null>> {
+/** Whether each of `keys`, servers' and devices', is here (`Presence`), or `null` for one never seen. */
+export async function presence(env: Env, keys: string[]): Promise<Record<string, Presence | null>> {
   // Disposed of once it's copied, so the relay's call ends as it answers. Its own keys are copied, not its disposer.
-  using presence = await relay(env, (relay) => relay.ready(keys, within));
+  using presence = await relay(env, (relay) => relay.ready(keys, 0));
   return Object.fromEntries(Object.entries(presence));
 }
 
@@ -194,7 +210,8 @@ export class RelayEntrypoint extends WorkerEntrypoint<Env> {
     const parent: string | undefined = call.params?._meta?.traceparent;
     const traceparent = `00-${TRACE.exec(parent ?? "")?.[1] ?? hex.encode(crypto.getRandomValues(new Uint8Array(16)))}-${hex.encode(crypto.getRandomValues(new Uint8Array(8)))}-01`;
     try {
-      return await forward(this.env, servers, JSON.stringify({ ...call, params: { ...call.params, _meta: { ...call.params?._meta, traceparent } } }));
+      const forwarded = await forward(this.env, servers, JSON.stringify({ ...call, params: { ...call.params, _meta: { ...call.params?._meta, traceparent } } }));
+      return "answer" in forwarded ? forwarded : null;
     } finally {
       console.log(JSON.stringify({ telemetry: { traceparent, parent, start, end: Date.now() } }));
     }

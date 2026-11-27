@@ -10,7 +10,7 @@
 import { verifiedKey, unsigned, hex, NETWORK } from "../ask.ts";
 import { randomBytes } from "@noble/hashes/utils.js";
 import { reader, servers as acting } from "../presigner/presigner.ts";
-import { forward as relayed, listen as listened, notify, unanswered } from "../relay/relay.ts";
+import { forward as relayed, keep, listen as listened, notify, type Forwarded } from "../relay/relay.ts";
 import rules from "../../server/priv/rules.md";
 
 /** Who a request is from, as the app that signs people in says. */
@@ -310,6 +310,11 @@ const LIMIT = 1_048_576;
  * waiting past its own limit for one.
  */
 const WEBHOOK_WAIT = 10_000;
+/**
+ * How long a webhook is held for a server to take it, in milliseconds, before it's kept for one instead (`keep` in
+ * `relay/relay.ts`): within `WEBHOOK_WAIT`, with time to keep it.
+ */
+const WEBHOOK_HOLD = 7_000;
 /** What's said of a webhook's address that isn't one. */
 const WEBHOOKS_ARE = "A webhook's address is /webhooks/<owner>/<app>/<token>, where owner is users/<name>, groups/<name> or network";
 
@@ -361,15 +366,18 @@ async function webhook(request: Request, env: Env, url: URL, ctx: ExecutionConte
     },
   });
   // A webhook not answered in time is given up on as a client that went is: the server running it is told, and stops.
+  // One no server took is kept for one and answered 202, but for a GET or a HEAD, which asks for an answer now.
   const signal = AbortSignal.timeout(WEBHOOK_WAIT);
   const gaveUp = new Promise<null>((done) => signal.addEventListener("abort", () => done(null), { once: true }));
-  const answering = forward(env, message, { webhook: at }, [of, NETWORK], undefined, undefined, { signal, ctx }).catch((error) => {
+  const keeps = !["GET", "HEAD"].includes(request.method);
+  const answering = forward(env, message, { webhook: at }, [of, NETWORK], undefined, undefined, { signal, ctx, hold: WEBHOOK_HOLD, keep: keeps }).catch((error) => {
     // Never log the token: it's the secret in the webhook's address.
     console.log(JSON.stringify({ telemetry: { attributes: { "one.webhook": `${of}${app}` }, error: String(error) } }));
     return null;
   });
   const answer = await Promise.race([answering, gaveUp]);
   if (!answer || answer.status === 503) return new Response("None of this network's servers answered. Try again in a moment.", { status: 503, headers: { "retry-after": "5" } });
+  if (answer.status === 202) return new Response(null, { status: 202 });
   const { result, error } = await answer.json<{ result?: { status?: number; headers?: [string, string][]; body?: string }; error?: { code?: number; message?: string } }>();
   if (error) return failed(STATUS[error.code ?? 0] ?? 502, error.message ?? "The server couldn't say what happened");
   const status = result?.status ?? 200;
@@ -390,7 +398,8 @@ type Call = { id?: unknown; method?: unknown; params?: { _meta?: Record<string, 
  * Passes one JSON-RPC message to a server acting for one of `of`, as from `from`, a device, a sharing link's holder
  * or a webhook, and answers what the server did. What's asked says who it's from, who it's for and which app's page asked
  * (a device's), the span it's under and what MCP has it say, and nothing else of itself. `headers` are the HTTP request's, if it's one, and
- * `client` its client's connection, whose going before its answer the servers are told.
+ * `client` its client's connection, whose going before its answer the servers are told, how long it's `hold` for a server
+ * (`forward` in `relay/relay.ts`), and whether one no server took is kept for one (`keep`), and answered 202.
  */
 async function forward(
   env: Env,
@@ -399,7 +408,7 @@ async function forward(
   of: string[],
   headers?: Headers,
   mode?: string,
-  client?: { signal: AbortSignal; ctx: ExecutionContext },
+  client?: { signal: AbortSignal; ctx: ExecutionContext; hold?: number; keep?: boolean },
 ) {
   let call: Call;
   try {
@@ -422,7 +431,7 @@ async function forward(
   message = JSON.stringify({ ...call, params: { ...call.params, _meta: forwardedMeta } });
   const lists = reader(env);
   const servers = [...new Set((await Promise.all(of.map((of) => acting(lists, of)))).flat())];
-  const forwarded = relayed(env, servers, message);
+  const forwarded = relayed(env, servers, message, client?.hold);
   // A client that goes away before its answer is said to have, by the request's id: what a call does then is its own
   // (`OneCore.Call.State.gone/1`). MCP's Streamable HTTP has a client cancel with `notifications/cancelled`, which is
   // passed on as any message is.
@@ -437,9 +446,12 @@ async function forward(
   // its answer, however long it runs. One answered sooner is answered as any other.
   const token = meta.progressToken;
   const streams = "id" in call && (typeof token === "string" || typeof token === "number") && headers?.get("accept")?.includes("text/event-stream");
-  if (streams && (await Promise.race([forwarded.then(() => false), scheduler.wait(PROGRESS).then(() => true)]))) return streamed(forwarded, call.id, token, () => unanswered(env, servers));
+  if (streams && (await Promise.race([forwarded.then(() => false), scheduler.wait(PROGRESS).then(() => true)]))) return streamed(forwarded, call.id, token);
   const reached = await forwarded;
-  if (!reached) return refuse(503, await unanswered(env, servers));
+  if (!("answer" in reached)) {
+    if (client?.keep && !reached.server && (await keep(env, servers, message))) return new Response(null, { status: 202 });
+    return refuse(503, reached.why);
+  }
   // A notification has no answer.
   if (reached.answer === "") return new Response(null, { status: 202 });
   // From MCP's 2026-07-28, a version or method a server doesn't have is said in the status too.
@@ -453,7 +465,7 @@ async function forward(
  * notification every second while it runs, how far it is being the seconds it's run, as a server says it, and then
  * the answer. Whoever asked closing it stops the telling, and the servers are told it went (`forward`).
  */
-function streamed(forwarded: Promise<{ answer: string } | null>, id: unknown, token: string | number, why: () => Promise<string>) {
+function streamed(forwarded: Promise<Forwarded>, id: unknown, token: string | number) {
   let ran = 1;
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const stream = writable.getWriter();
@@ -465,7 +477,7 @@ function streamed(forwarded: Promise<{ answer: string } | null>, id: unknown, to
     try {
       await progress();
       const reached = await forwarded;
-      await send(reached?.answer ?? JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: await why() } }));
+      await send("answer" in reached ? reached.answer : JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: reached.why } }));
     } finally {
       clearInterval(telling);
       await stream.close();

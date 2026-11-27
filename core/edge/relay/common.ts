@@ -1,6 +1,8 @@
 // What the relay's Worker (`worker.ts`) and the edge's side of it (`relay.ts`) both say: what a server says of itself,
 // and how the relay's Durable Object is reached. A Worker's main module exports only its handlers, so they're here.
 import type { Relay } from "./worker.ts";
+/** The protocols the edge speaks, and the cutoff for parts too old to say theirs (`core/protocol.json`). */
+import PROTOCOL_CONFIG from "../../protocol.json";
 
 /**
  * How long a call to the relay's Durable Object is tried again, in milliseconds. A deploy leaves the object on the
@@ -14,6 +16,10 @@ import type { Relay } from "./worker.ts";
 const SWITCH = 12_000;
 /** The protocols a part speaks, from `oldest` to `newest` (`core/protocol.json`). */
 export type Protocol = { oldest: number; newest: number };
+/** The protocols the edge speaks, from `oldest` to `newest`. */
+export const SPEAKS: Protocol = { oldest: PROTOCOL_CONFIG.oldest, newest: PROTOCOL_CONFIG.newest };
+/** Whether a part that speaks `theirs` talks with the edge: their ranges overlap. */
+export const talk = (theirs: Protocol | undefined) => !!theirs && theirs.oldest <= SPEAKS.newest && SPEAKS.oldest <= theirs.newest;
 /** The protocols a part speaks, as it `said`: none known for one that said none, as `OneCore.Protocol.of/1` says. */
 export function spoken(said: unknown): Protocol | undefined {
   const { oldest, newest } = (said ?? {}) as Partial<Protocol>;
