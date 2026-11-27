@@ -42,10 +42,10 @@ export function createScreens(props: { owners: Owner[] }) {
   /// Each owner's Home screenfuls, which their row of pages has.
   const homes = (owner: number) => screens()[owner]?.filter(({ kind }) => kind === "home") ?? []
   const laid = createMemo(() => ({ owners: props.owners.map((owner) => owner.key), screens: screens().map((owner) => owner.map(({ kind }) => kind)), fit: room().fit }), { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) })
-  // What was just kept shows until the Home Screen has been asked again.
+  // What was just kept shows until its owner's pages have been asked again, which come one owner at a time.
   createEffect(
     () => props.owners,
-    () => void setKept([]),
+    (now, was) => void setKept(kept().filter((one) => now[one.owner] === was?.[one.owner])),
     { defer: true },
   )
   createEffect(laid, ({ owners, screens, fit }) => home.send({ type: "laid", owners, screens, fit }))

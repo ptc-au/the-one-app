@@ -15,6 +15,8 @@ export interface Owner extends Pages {
   name: string
   /** Whose picture it's shown by: the person's own `users/<name>` for yours, else its subject. */
   avatar: string
+  /** Set while its pages aren't there to draw: `true` while they're asked for, or why they couldn't be had. */
+  missing?: true | Error
 }
 
 /// The groups whose page was refused as not theirs, with the group list that still named them: the client answers a
@@ -22,15 +24,30 @@ export interface Owner extends Pages {
 /// every read of the Home Screen in that while would ask for its page and fail. They're left out until the list changes.
 const refused = { list: "", groups: new Set<string>() }
 
+/// An owner whose pages haven't come, drawn in their place: `missing` is `true` while they're asked for, and why they
+/// couldn't be had once they weren't.
+const unseen = (who: Pick<Owner, "subject" | "name" | "avatar">, missing: true | Error): Owner => ({
+  ...who,
+  key: who.subject ?? "you",
+  who: "",
+  arranges: false,
+  pages: [],
+  library: [],
+  widgets: [],
+  apps: [],
+  missing,
+})
+
 /// Every owner as they're answered: you, everyone, then each of your groups, in the order they're listed. A network
-/// with nothing that keeps groups has none. Yours and everyone's are asked for beside the groups, which they don't
-/// wait on. Asked again and not answered, as while a server restarts, it's what it was, as a phone's Home Screen
-/// stays: only a Home Screen that never had an answer says why.
-export const answered = createMemo(async (was?: Owner[]) => {
+/// with nothing that keeps groups has none. The Home Screen is drawn once yours is, with each other owner's place in
+/// it, and each fills in as their pages come: one that's slow doesn't hold the rest, and one that fails says so in
+/// its place. Asked again and not answered, as while a server restarts, an owner is what they were, as a phone's Home
+/// Screen stays: only a Home Screen that never had an answer says why.
+export const answered = createMemo(async function* (was?: Owner[]) {
   // An app with no screen of its own is listed only if it has a section in Settings, which opening it shows, as macOS
   // opens a menu-bar app's preferences: its own page, or a section of the sidebar (a device's page isn't about it).
   const sections = json<{ sections: { app: string; in: string }[] }>("settings_sections").then(({ sections }) => new Set(sections.filter((section) => section.in !== "device").map((section) => section.app)), () => new Set<string>())
-  const pages = (who: { subject?: string; name: string; avatar: string }) =>
+  const pages = (who: Pick<Owner, "subject" | "name" | "avatar">) =>
     Promise.all([json<Pages>("home-screen_pages", {}, who.subject), sections]).then(([pages, has]): Owner => ({
       ...pages,
       ...who,
@@ -40,26 +57,48 @@ export const answered = createMemo(async (was?: Owner[]) => {
         return entrypoints.length ? [{ ...category, entrypoints }] : []
       }),
     }))
-  const groups = json<{ groups: { group: string; called: string }[] }>("permissions_groups").then(({ groups }) => groups, (): { group: string; called: string }[] => [])
-  const theirs = groups.then((groups) => {
-    const listed = JSON.stringify(groups)
-    if (listed !== refused.list) Object.assign(refused, { list: listed, groups: new Set() })
-    return Promise.all(
-      groups
-        .filter(({ group }) => !refused.groups.has(group))
-        .map(({ group, called }) =>
-          pages({ subject: group, name: called, avatar: group }).catch((error: Error) => {
-            if (!String(error.cause ?? error.message).includes("isn't a member of")) throw error
-            refused.groups.add(group)
-          }),
-        ),
-    )
-  })
-  // Asked beside their pages, which don't wait on it: it's only whose picture is theirs.
-  const people = json<{ people: { who: string }[] }>("sign-in_people")
-  const you = Promise.all([people, pages({ name: "You", avatar: "" })]).then(([{ people }, yours]) => ({ ...yours, avatar: people[0].who }))
-  const all = Promise.all([you, pages({ subject: "network", name: "Everyone", avatar: "network" }), theirs])
-  return all.then(([yours, everyone, groupsPages]) => [yours, everyone, ...groupsPages.filter((owner) => owner !== undefined)], (error) => was ?? Promise.reject(error))
+  // Whose picture is yours, beside their pages, which don't wait on it: a picture it can't be had for is their initials.
+  const picture = json<{ people: { who: string }[] }>("sign-in_people").then(({ people }) => people[0]?.who ?? "", () => "")
+  // Asked now, beside the groups, and answered below: a refusal before then is theirs to read, not unhandled.
+  const asked = <T,>(promise: Promise<T>) => (promise.catch(() => undefined), promise)
+  const you = asked(Promise.all([picture, pages({ name: "You", avatar: "" })]).then(([avatar, yours]) => ({ ...yours, avatar })))
+  const everyone = asked(pages({ subject: "network", name: "Everyone", avatar: "network" }))
+  const groups = await json<{ groups: { group: string; called: string }[] }>("permissions_groups").then(({ groups }) => groups, (): { group: string; called: string }[] => [])
+  const listed = JSON.stringify(groups)
+  if (listed !== refused.list) Object.assign(refused, { list: listed, groups: new Set() })
+  const theirs = groups.filter(({ group }) => !refused.groups.has(group)).map(({ group, called }) => ({ subject: group, name: called, avatar: group }))
+  const had = (key: string) => was?.find((owner) => owner.key === key && !owner.missing)
+  const slots = new Map<string, Owner>()
+  let yours: Owner
+  try {
+    yours = await you
+  } catch (error) {
+    if (!was) throw error
+    yield was
+    return
+  }
+  slots.set("you", yours)
+  const rest = [{ subject: "network", name: "Everyone", avatar: "network" }, ...theirs]
+  for (const who of rest) slots.set(who.subject, had(who.subject) ?? unseen(who, true))
+  const all = () => ["you", ...rest.map((who) => who.subject)].flatMap((key) => slots.get(key) ?? [])
+  yield all()
+  const coming = new Set<Promise<void>>()
+  for (const who of rest) {
+    const arrived: Promise<void> = (who.subject === "network" ? everyone : pages(who)).then(
+      (owner) => void slots.set(who.subject, owner),
+      (error: Error) => {
+        if (String(error.cause ?? error.message).includes("isn't a member of")) {
+          refused.groups.add(who.subject)
+          slots.delete(who.subject)
+        } else slots.set(who.subject, had(who.subject) ?? unseen(who, error))
+      },
+    ).finally(() => coming.delete(arrived))
+    coming.add(arrived)
+  }
+  while (coming.size) {
+    await Promise.race(coming)
+    yield all()
+  }
 })
 changed(() => refresh(answered))
 

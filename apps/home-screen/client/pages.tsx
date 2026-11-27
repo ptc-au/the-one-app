@@ -1,14 +1,14 @@
 // A Home page and what's on it: each app or widget where it's placed, jiggling while its page is edited, gliding to
 // where it now goes.
-import { createEffect, createSignal, For, Show, untrack } from "solid-js"
-import { confirm, Empty, reducedMotion, Spinner, View } from "ui"
+import { createEffect, createSignal, For, refresh, Show, untrack } from "solid-js"
+import { Button, confirm, Empty, Problem, reducedMotion, Spinner, Status, View } from "ui"
 import { glide, spring } from "./pager.ts"
 import { type Box as Place, cell as cellOf, type Page as Laid } from "./layout.ts"
 import { carries, type Held, type Placed } from "./machine.ts"
 import { type Entrypoint, type Item, type Widget as WidgetItem } from "./types.ts"
 import { looks } from "./looks.ts"
 import { home, state, editingNow, editingOwner, launcher, selected, setSelected, landing } from "./store.ts"
-import { type Owner, badgeOf, launch, removal } from "./owners.ts"
+import { answered, type Owner, badgeOf, launch, named, removal } from "./owners.ts"
 import { Card, Tile, Minus } from "./tiles.tsx"
 import { holds } from "./holds.ts"
 
@@ -76,7 +76,7 @@ export function HomePage(props: { owner: Owner; index: number; page: number; pla
       style={[looks.slots, looks.sized(props.laid.width, props.laid.height)]}
     >
       {/* An empty page says so in its middle; in the launcher, a page isn't the screen, and the card says it once. */}
-      <Show when={props.placed.length || editingHere()} fallback={launcher() ? undefined : <View style={looks.empty(props.laid.top, props.laid.left, props.laid.right, props.laid.bottom)}><Empty>No apps on this page.</Empty></View>}>
+      <Show when={props.placed.length || editingHere()} fallback={launcher() ? undefined : <View style={looks.empty(props.laid.top, props.laid.left, props.laid.right, props.laid.bottom)}><Nothing owner={props.owner} /></View>}>
         <For each={props.placed} keyed={({ item }) => (item.item.widget ?? item.item.entrypoint) + (item.item.size ?? "")}>
           {(placed) => (
             <HomeCell
@@ -100,6 +100,25 @@ export function HomePage(props: { owner: Owner; index: number; page: number; pla
         </For>
       </Show>
     </View>
+  )
+}
+
+/// What an owner's page says where its apps would be, while they aren't there: that they're coming, or why they couldn't
+/// be had, which trying again may help; or, with no apps on it, so.
+export function Nothing(props: { owner: Owner }) {
+  return (
+    <Show when={props.owner.missing} fallback={<Empty>No apps on this page.</Empty>}>
+      {(missing) => (
+        <Show
+          when={missing() !== true && (missing() as Error)}
+          fallback={<Status heading="Opening…" />}
+        >
+          {(error) => (
+            <Problem warn heading={`Can't show ${props.owner.subject ? `${props.owner.name}'s` : "your"} Home Screen`} text={error()} action={<Button onPress={() => refresh(answered)}>Try Again</Button>} />
+          )}
+        </Show>
+      )}
+    </Show>
   )
 }
 

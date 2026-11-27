@@ -8,7 +8,7 @@ import { looks } from "./looks.ts"
 import { home, state, at, screensOf, editingNow, editingOwner, launcher, query, setQuery, chosenResult, setChosenResult, type Selected, selected, setSelected, room, laidPage, networks, askNetworks, switcherTop, cardTop, device } from "./store.ts"
 import { type Owner, badgeOf, findAll, type From, launch, opens, press, opener } from "./owners.ts"
 import { Card, Tile } from "./tiles.tsx"
-import { type Cell, HomePage } from "./pages.tsx"
+import { type Cell, HomePage, Nothing } from "./pages.tsx"
 import { Library } from "./library.tsx"
 import { OwnerPill, DotsPill, TipsPill, LibraryButton } from "./pills.tsx"
 import { type Screens } from "./screens.ts"
@@ -426,7 +426,7 @@ export function LauncherPanel(props: { owners: Owner[]; layout: Screens; paging:
                       <Show when={!(pages()[index()] ?? []).some((placed) => placed.length) && !editingOwner(index())}>
                         <View style={[looks.absolute, looks.at(0, overhang(), room().width, room().height)]}>
                           <View style={looks.empty(0, 0, 0, 0)}>
-                            <Empty>No apps on this page.</Empty>
+                            <Nothing owner={owner()} />
                           </View>
                         </View>
                       </Show>
