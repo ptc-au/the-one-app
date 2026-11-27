@@ -50,6 +50,26 @@ defmodule Board do
   @impl true
   def hooks, do: ["renamed"]
 
+  @impl true
+  def offers do
+    [
+      %{
+        name: "channel_status",
+        kind: :collect,
+        description:
+          "Sync or bridge status for channels, as shown on Board's screens. About `%{}` or `%{\"channel\" => channel}`. " <>
+            "An app answers a map of `channel => %{label, state, tone}` (or a list of those per channel)."
+      },
+      %{
+        name: "message_status",
+        kind: :collect,
+        description:
+          "Sync delivery status for messages that haven't reached their destination yet or failed. " <>
+            "About `%{\"ids\" => [id, ...]}`. An app answers a map of `id => %{label, status, text}` for affected messages only."
+      }
+    ]
+  end
+
   # Someone renamed wrote, reacted to, owns and claimed what they did by their new name.
   @impl true
   def hook("renamed", %{"who" => old, "to" => new}, call) do
@@ -606,6 +626,8 @@ defmodule Board do
   defp dispatch("channels", inputs, call) do
     prefix = inputs["prefix"]
 
+    statuses = collect_channel_status(call, %{})
+
     channels =
       Store.transaction(call, fn db ->
         rows =
@@ -635,7 +657,11 @@ defmodule Board do
               "last_at" => last_at
             } <- rows,
             prefix == nil or prefix == "" or ch == prefix or String.starts_with?(ch, String.trim_trailing(prefix, "/") <> "/") do
-          %{channel: ch, threads: threads, ready: ready || 0, claimed: claimed || 0, blocked: blocked || 0, last_at: last_at}
+          entry = %{channel: ch, threads: threads, ready: ready || 0, claimed: claimed || 0, blocked: blocked || 0, last_at: last_at}
+          case Map.get(statuses, ch, []) do
+            [] -> entry
+            sync -> Map.put(entry, :sync, sync)
+          end
         end
       end)
 
@@ -643,35 +669,49 @@ defmodule Board do
   end
 
   defp dispatch("thread", %{"id" => id}, call) do
-    Store.transaction(call, fn db ->
-      case Store.query(
-             db,
-             """
-             select id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at, edited_at, deleted_at
-             from messages where id = ?
-             """,
-             [id]
-           ) do
-        [root_row] ->
-          root = Store.format_message(db, root_row)
+    result =
+      Store.transaction(call, fn db ->
+        case Store.query(
+               db,
+               """
+               select id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at, edited_at, deleted_at
+               from messages where id = ?
+               """,
+               [id]
+             ) do
+          [root_row] ->
+            root = Store.format_message(db, root_row)
 
-          replies =
-            Store.query(
-              db,
-              """
-              select id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at, edited_at, deleted_at
-              from messages where root_id = ? order by created_at asc
-              """,
-              [id]
-            )
-            |> Enum.map(&Store.format_message(db, &1))
+            replies =
+              Store.query(
+                db,
+                """
+                select id, channel, root_id, reply_to, author, profile, body, blocks, revision, no_sync, created_at, edited_at, deleted_at
+                from messages where root_id = ? order by created_at asc
+                """,
+                [id]
+              )
+              |> Enum.map(&Store.format_message(db, &1))
 
-          %{thread: Map.put(root, :task, Store.task_row(db, id)), replies: replies}
+            {:ok, Map.put(root, :task, Store.task_row(db, id)), replies}
 
-        [] ->
-          {:error, "Thread #{id} not found."}
-      end
-    end)
+          [] ->
+            {:error, "Thread #{id} not found."}
+        end
+      end)
+
+    case result do
+      {:ok, root, replies} ->
+        msg_statuses = collect_message_status(call, [root.id | Enum.map(replies, & &1.id)])
+        ch_sync = Map.get(collect_channel_status(call, %{"channel" => root.channel}), root.channel, [])
+        root = attach_sync_status(root, msg_statuses)
+        replies = Enum.map(replies, &attach_sync_status(&1, msg_statuses))
+        base = %{thread: root, replies: replies}
+        if ch_sync == [], do: base, else: Map.put(base, :channel_sync, ch_sync)
+
+      {:error, why} ->
+        {:error, why}
+    end
   end
 
   defp dispatch("read", inputs, call) do
@@ -680,34 +720,38 @@ defmodule Board do
     label = inputs["label"]
     limit = min(max(inputs["limit"] || 50, 1), 200)
 
-    Store.transaction(call, fn db ->
-      {where_sql, params} = read_filters(channel, state, label, inputs["before"])
+    %{threads: threads, next: next} =
+      Store.transaction(call, fn db ->
+        {where_sql, params} = read_filters(channel, state, label, inputs["before"])
 
-      roots =
-        Store.query(
-          db,
-          """
-          select m.id, m.channel, m.root_id, m.reply_to, m.author, m.profile, m.body, m.blocks,
-                 m.revision, m.no_sync, m.created_at, m.edited_at, m.deleted_at
-          from messages m
-          #{where_sql}
-          order by m.created_at desc, m.id desc
-          limit ?
-          """,
-          params ++ [limit + 1]
-        )
+        roots =
+          Store.query(
+            db,
+            """
+            select m.id, m.channel, m.root_id, m.reply_to, m.author, m.profile, m.body, m.blocks,
+                   m.revision, m.no_sync, m.created_at, m.edited_at, m.deleted_at
+            from messages m
+            #{where_sql}
+            order by m.created_at desc, m.id desc
+            limit ?
+            """,
+            params ++ [limit + 1]
+          )
 
-      {roots, next} = if length(roots) > limit, do: {Enum.take(roots, limit), List.last(Enum.take(roots, limit))["id"]}, else: {roots, nil}
+        {roots, next} = if length(roots) > limit, do: {Enum.take(roots, limit), List.last(Enum.take(roots, limit))["id"]}, else: {roots, nil}
 
-      threads =
-        Enum.map(roots, fn %{"id" => id} = row ->
-          msg = Store.format_message(db, row)
-          [%{"n" => reply_count}] = Store.query(db, "select count(*) as n from messages where root_id = ? and deleted_at is null", [id])
-          msg |> Map.put(:reply_count, reply_count) |> Map.put(:task, Store.task_row(db, id))
-        end)
+        threads =
+          Enum.map(roots, fn %{"id" => id} = row ->
+            msg = Store.format_message(db, row)
+            [%{"n" => reply_count}] = Store.query(db, "select count(*) as n from messages where root_id = ? and deleted_at is null", [id])
+            msg |> Map.put(:reply_count, reply_count) |> Map.put(:task, Store.task_row(db, id))
+          end)
 
-      %{threads: threads, next: next}
-    end)
+        %{threads: threads, next: next}
+      end)
+
+    msg_statuses = collect_message_status(call, Enum.map(threads, & &1.id))
+    %{threads: Enum.map(threads, &attach_sync_status(&1, msg_statuses)), next: next}
   end
 
   defp dispatch("post", inputs, call) do
@@ -1192,9 +1236,14 @@ defmodule Board do
 
       case result do
         {:ok, created} ->
+          display = Store.display_author(owner, profile)
 
-          for t <- created, t.state == "ready" do
-            Events.emit(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile})
+          for t <- created do
+            posted(call, %{id: t.id, channel: channel, root_id: nil, author: owner, profile: profile, display_author: display, body: t.body, no_sync: false})
+
+            if t.state == "ready" do
+              Events.emit(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile})
+            end
           end
 
           %{tasks: created}
@@ -1258,7 +1307,19 @@ defmodule Board do
               Store.query(db, "insert or replace into labels (message_id, key, value) values (?, ?, ?)", [id, k, v])
             end
 
-            insert_task(db, id, channel, body, owner, profile, assigned, needs)
+            with {:ok, task} <- insert_task(db, id, channel, body, owner, profile, assigned, needs) do
+              {:ok, task,
+               %{
+                 id: id,
+                 channel: channel,
+                 root_id: nil,
+                 author: owner,
+                 profile: profile,
+                 display_author: Store.display_author(owner, profile),
+                 body: body,
+                 no_sync: no_sync == 1
+               }}
+            end
           end
         end)
 
@@ -1853,6 +1914,11 @@ defmodule Board do
 
   # --- Private Helpers ---
 
+  defp finish_task_create(call, {:ok, task, msg}) do
+    posted(call, msg)
+    finish_task_create(call, {:ok, task})
+  end
+
   defp finish_task_create(call, {:ok, task}) do
     if task.state == "ready" do
       Events.emit(call, "task_ready", %{id: task.id, channel: task.channel, body: task.body, owner: task.owner, assigned_profile: task.assigned_profile})
@@ -1862,6 +1928,46 @@ defmodule Board do
   end
 
   defp finish_task_create(_call, {:error, why}), do: {:error, why}
+
+  defp collect_channel_status(call, about) do
+    case Call.run_hook(call, "channel_status", about) do
+      {:ok, parts, _failed} ->
+        Enum.reduce(parts, %{}, fn {_app, per_channel}, acc ->
+          if is_map(per_channel) do
+            Enum.reduce(per_channel, acc, fn {ch, status}, acc2 ->
+              items = if is_list(status), do: status, else: [status]
+              Map.update(acc2, ch, items, &(&1 ++ items))
+            end)
+          else
+            acc
+          end
+        end)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp collect_message_status(_call, []), do: %{}
+
+  defp collect_message_status(call, ids) do
+    case Call.run_hook(call, "message_status", %{"ids" => ids}) do
+      {:ok, parts, _failed} ->
+        Enum.reduce(parts, %{}, fn {_app, per_msg}, acc ->
+          if is_map(per_msg), do: Map.merge(acc, per_msg), else: acc
+        end)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp attach_sync_status(msg, statuses) do
+    case Map.get(statuses, msg.id) do
+      nil -> msg
+      status -> Map.put(msg, :sync_status, status)
+    end
+  end
 
   defp create_plan(db, channel, owner, profile, plan) do
     # Two passes: insert messages + validate keys, then wire tasks & dependencies atomically.

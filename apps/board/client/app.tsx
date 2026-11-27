@@ -38,6 +38,18 @@ import {
   View,
 } from "ui"
 
+interface ChannelSyncInfo {
+  label: string
+  state: string
+  tone: "ok" | "warn" | "error"
+}
+
+interface MessageSyncStatus {
+  label: string
+  status: "pending" | "failed"
+  text: string
+}
+
 interface ChannelInfo {
   channel: string
   threads: number
@@ -45,6 +57,7 @@ interface ChannelInfo {
   claimed: number
   blocked: number
   last_at: string
+  sync?: ChannelSyncInfo[]
 }
 
 interface SchemaBlock {
@@ -101,6 +114,7 @@ interface BoardMessage {
   edited_at?: string | null
   reply_count?: number
   task?: TaskInfo | null
+  sync_status?: MessageSyncStatus | null
 }
 
 const look = styles({
@@ -127,6 +141,15 @@ const look = styles({
   mono: { fontFamily: tokens.font.mono, color: tokens.colour.label },
   composer: { gap: tokens.grid[2], paddingTop: tokens.grid[2] },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: tokens.grid[2] },
+  syncBanner: {
+    backgroundColor: tokens.colour.card,
+    borderRadius: tokens.radius.medium,
+    padding: tokens.grid[4],
+    marginHorizontal: tokens.grid[4],
+    marginBottom: tokens.grid[2],
+    gap: tokens.grid[1.5],
+  },
+  syncNote: { gap: tokens.grid[1], paddingTop: tokens.grid[1] },
 })
 
 const screen = () => toolInput("board_read")
@@ -185,12 +208,16 @@ const threadsAnswer = createProjection(async (): Promise<{ threads: BoardMessage
 })
 const threadsData = () => threadsAnswer.threads
 
-const detailAnswer = createProjection(async (): Promise<{ value: { thread: BoardMessage; replies: BoardMessage[] } | null }> => {
-  const id = openId()
-  if (!id) return { value: null }
-  const res: { thread: BoardMessage; replies: BoardMessage[] } = JSON.parse(await call("board_thread", { id }))
-  return { value: res }
-})
+const detailAnswer = createProjection(
+  async (): Promise<{ value: { thread: BoardMessage; replies: BoardMessage[]; channel_sync?: ChannelSyncInfo[] } | null }> => {
+    const id = openId()
+    if (!id) return { value: null }
+    const res: { thread: BoardMessage; replies: BoardMessage[]; channel_sync?: ChannelSyncInfo[] } = JSON.parse(
+      await call("board_thread", { id }),
+    )
+    return { value: res }
+  },
+)
 const detailData = () => detailAnswer.value
 
 changed(() => {
@@ -343,6 +370,18 @@ function MessageCard(props: { msg: BoardMessage }) {
             </For>
           </View>
         </Show>
+        <Show when={props.msg.sync_status}>
+          {(sync) => (
+            <View style={look.syncNote}>
+              <View style={look.rowWrap}>
+                <Badge variant={sync().status === "failed" ? "destructive" : "outline"}>
+                  {sync().status === "failed" ? "Not sent" : "Sending"}
+                </Badge>
+                <Text style={look.meta}>{sync().text}</Text>
+              </View>
+            </View>
+          )}
+        </Show>
       </Show>
     </View>
   )
@@ -421,6 +460,20 @@ function ThreadDetail(props: { id: string }) {
 
             return (
               <Screen heading={`#${thread().channel}`} action={actionButton()}>
+                <Show when={(data().channel_sync || []).length > 0}>
+                  <View style={look.syncBanner}>
+                    <For each={data().channel_sync || []}>
+                      {(s) => (
+                        <View style={look.rowWrap}>
+                          <Badge variant={s.tone === "error" ? "destructive" : s.tone === "warn" ? "default" : "secondary"}>
+                            {s.label}
+                          </Badge>
+                          <Text style={look.meta}>{s.state}</Text>
+                        </View>
+                      )}
+                    </For>
+                  </View>
+                </Show>
                 <Show when={task()}>
                   {(t) => {
                     const rows = () =>
@@ -529,6 +582,35 @@ function BoardApp() {
             </View>
           </Show>
 
+          {(() => {
+            const visibleSync = () => {
+              const sel = selectedChannel()
+              const items: { channel: string; sync: ChannelSyncInfo }[] = []
+              for (const ch of channels()) {
+                for (const s of ch.sync || []) {
+                  if (sel ? ch.channel === sel : s.tone !== "ok") items.push({ channel: ch.channel, sync: s })
+                }
+              }
+              return items
+            }
+            return (
+              <Show when={visibleSync().length > 0}>
+                <View style={look.syncBanner}>
+                  <For each={visibleSync()}>
+                    {(item) => (
+                      <View style={look.rowWrap}>
+                        <Badge variant={item.sync.tone === "error" ? "destructive" : item.sync.tone === "warn" ? "default" : "secondary"}>
+                          {`#${item.channel} · ${item.sync.label}`}
+                        </Badge>
+                        <Text style={look.meta}>{item.sync.state}</Text>
+                      </View>
+                    )}
+                  </For>
+                </View>
+              </Show>
+            )
+          })()}
+
           <Section>
             <Show
               when={threads().length > 0}
@@ -541,11 +623,13 @@ function BoardApp() {
               <List each={threads()} keyed={(t) => t.id}>
                 {(t) => {
                   const task = () => t().task
+                  const failedSync = () => t().sync_status?.status === "failed"
                   const subtitle = () =>
                     [
                       `#${t().channel}`,
                       t().display_author,
                       (t().reply_count || 0) > 0 ? `${t().reply_count} ${t().reply_count === 1 ? "reply" : "replies"}` : null,
+                      failedSync() ? "Not sent to Google Chat" : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")
@@ -557,6 +641,8 @@ function BoardApp() {
                       end={
                         task() ? (
                           <Badge variant={stateTone(task()!.state)}>{stateLabel(task()!)}</Badge>
+                        ) : failedSync() ? (
+                          <Badge variant="destructive">Not sent</Badge>
                         ) : (
                           since(t().created_at, "narrow")
                         )

@@ -475,5 +475,65 @@
         "replies": []
       }
     }
+  },
+  "Sync Warning": {
+    "like": "Threads",
+    "answers": {
+      "board_channels": {
+        "channels": [
+          {
+            "channel": "dev",
+            "threads": 3,
+            "ready": 1,
+            "claimed": 1,
+            "blocked": 1,
+            "last_at": "2025-12-31T23:50:00Z",
+            "sync": [
+              {
+                "label": "Google Chat",
+                "state": "Board → Chat on; Chat → Board waiting for your Workspace admin's approval",
+                "tone": "warn"
+              }
+            ]
+          },
+          { "channel": "security/audit", "threads": 1, "ready": 0, "claimed": 0, "blocked": 0, "last_at": "2025-12-31T22:30:00Z" }
+        ]
+      }
+    }
+  },
+  "Failed Sync Message": {
+    "like": "Threads",
+    "page": "client/index.html#thread&id=msg_syncfail1",
+    "answers": {
+      "board_thread": {
+        "channel_sync": [
+          {
+            "label": "Google Chat",
+            "state": "Board → Chat on; Chat → Board waiting for your Workspace admin's approval; 1 failed to send",
+            "tone": "error"
+          }
+        ],
+        "thread": {
+          "id": "msg_syncfail1",
+          "channel": "dev",
+          "author": "users/andre",
+          "profile": null,
+          "display_author": "andre",
+          "body": "Shipped the staging build for claims.",
+          "blocks": [],
+          "labels": {},
+          "reactions": [],
+          "attachments": [],
+          "revision": 1,
+          "created_at": "2025-12-31T23:50:00Z",
+          "sync_status": {
+            "label": "Google Chat",
+            "status": "failed",
+            "text": "Couldn't send to Google Chat: Google answered POST /v1/spaces/TEST1/messages with 403: The Chat app is not a member of this space."
+          }
+        },
+        "replies": []
+      }
+    }
   }
 }
