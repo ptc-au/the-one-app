@@ -232,6 +232,21 @@ defmodule Settings do
   # What every app whoever this runs for has adds, as each app answered `settings.sections`, each with its app's title
   # and icon. One that doesn't say what it must is left out, as one that couldn't answer is.
   defp sections(call) do
+    sections = listed(call)
+
+    # Each section's red count, as its app's badge tool says it, all at once: one after another, a slow badge held up
+    # every section's. A badge that failed or didn't answer in time is no count, as a section with none.
+    {counts, _failed} =
+      sections
+      |> Enum.flat_map(&if(&1.badge, do: [{&1.app, &1.badge}], else: []))
+      |> Enum.uniq()
+      |> OneCore.Asks.each(fn {app, badge} -> Call.tool(call, app, badge, %{})["count"] end)
+
+    counts = Map.new(counts)
+    for section <- sections, do: section |> Map.put(:count, counts[{section.app, section.badge}]) |> Map.delete(:badge)
+  end
+
+  defp listed(call) do
     {:ok, parts, _failed} = Hooks.collect("settings.sections", %{}, {call.actor, call.subject})
     running = Apps.running(call.subject)
 
@@ -256,7 +271,7 @@ defmodule Settings do
         kinds: section["kinds"],
         service: section["service"] == true,
         needs: section["needs"],
-        count: count(call, app, section["badge"])
+        badge: section["badge"]
       }
     end
   end
@@ -271,13 +286,4 @@ defmodule Settings do
     do: true
 
   defp section?(_section, _trusted), do: false
-
-  # A section's red count, as its app's badge tool says it, or nil where it has none or the tool failed.
-  defp count(_call, _app, nil), do: nil
-
-  defp count(call, app, badge) do
-    Call.tool(call, app, badge, %{})["count"]
-  rescue
-    _ -> nil
-  end
 end
