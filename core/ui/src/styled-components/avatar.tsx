@@ -66,7 +66,7 @@ const wanted = new Map<string, (seen: Seen) => void>()
 /** How many pictures one ask is for, as `sign-in_pictures` takes. */
 const MOST = 100
 
-/** Asks for every picture the avatars drawn in this turn want, together. One that can't be had is none until it's asked for again. */
+/** Asks for every picture the avatars drawn in this turn want, together. One that can't be had, as a non-member is refused, is none, kept as an answer is, until `KEPT` has passed or `refreshAvatars`. */
 async function ask() {
   const subjects = [...wanted.keys()]
   const resolve = new Map(wanted)
@@ -84,10 +84,7 @@ async function ask() {
       }
     } catch (error) {
       console.error(`Couldn't ask for the pictures of ${these.join(", ")}: ${(error as Error).message}`)
-      for (const subject of these) {
-        kept.delete(subject)
-        resolve.get(subject)!(known.get(subject) ?? { picture: null })
-      }
+      for (const subject of these) resolve.get(subject)!(known.get(subject) ?? { picture: null })
     }
   }
 }
