@@ -187,7 +187,11 @@ async fn read(entrypoint: &str, subject: Option<&str>, resource: &Value) -> anyh
         Some(src) => crate::hosts::file(src).await.ok().and_then(|file| Some(format!("data:{};base64,{}", file["kind"].as_str()?, file["body"].as_str()?))),
         None => None,
     };
-    let page = Url::parse(&origin(entrypoint, subject))?.join(entrypoint)?;
+    // Its page and everything it names by a relative address are the version listed now (`<app>@<code>/<path>`), as a
+    // browser's page is by its `<base>`: a list that moves to a newer version between its page and its module being
+    // read, as an update does, would otherwise name the module (`assets/index-<hash>.js`) in a version that has none.
+    let (app, code, path) = crate::views::parts(resource["uri"].as_str().unwrap_or_default()).ok_or_else(|| anyhow::anyhow!("its page is listed with no version"))?;
+    let page = Url::parse(&origin(entrypoint, subject))?.join(&format!("{app}@{code}/{path}"))?;
     let html = crate::hosts::file(page.as_str()).await.map_err(|error| anyhow::anyhow!(error))?;
     let html = BASE64.decode(html["body"].as_str().unwrap_or_default().as_bytes())?;
     Opening::step(&view, "page read");

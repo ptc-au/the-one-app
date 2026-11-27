@@ -194,16 +194,19 @@ impl Views {
         let file = address.path().trim_start_matches('/');
         let none = || anyhow::anyhow!("no app here has {file}");
         let (name, path) = file.split_once('/').ok_or_else(none)?;
-        // `<app>@<version>` is that version's file, as the edge has it for a browser: an icon a page shows, by what's
-        // in it (`ui://icons/<sha256>/…`), which never changes.
-        if let Some((name, code)) = name.split_once('@') {
-            return Ok((format!("ui://{name}/{code}/{path}"), None));
-        }
         let app = address.host_str().and_then(|host| host.strip_suffix(".localhost")).unwrap_or_default();
         // Android's and Windows' web views name the app after the scheme, in a host's name.
         let app = app.strip_prefix("oneapp.").unwrap_or(app);
         let subject: Vec<&str> = app.split('.').skip(1).collect();
         let subject = (!subject.is_empty()).then(|| subject.into_iter().rev().collect::<Vec<_>>().join("/"));
+        // `<app>@<version>` is that version's file, as the edge has it for a browser: an app's page loads all its files
+        // from the version it began on, and an icon a page shows is by what's in it (`ui://icons/<sha256>/…`), which
+        // never changes. Whatever version it is, it's one of what the app loaded, as it's told when it's gone (`stale`).
+        if let Some((name, code)) = name.split_once('@') {
+            let resource = format!("ui://{name}/{code}/{path}");
+            self.loaded.lock().expect("no view panics").entry(app.to_owned()).or_default().insert(resource.clone());
+            return Ok((resource, subject));
+        }
         let listed = self.listed(subject.as_deref()).await?;
         let mut versions = resources(&listed).filter_map(parts).filter(|(of, ..)| *of == name);
         let (_, code, _) = versions.next().ok_or_else(none)?;
