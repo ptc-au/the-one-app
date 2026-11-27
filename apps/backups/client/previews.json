@@ -210,5 +210,36 @@
     "taps": [
       "Home Disk"
     ]
+  },
+  "Loading": {
+    "like": "Destinations",
+    "answers": {
+      "backups_destinations": {
+        "$pending": true
+      }
+    },
+    "wait": 1000
+  },
+  "Signed out": {
+    "like": "Destinations",
+    "answers": {
+      "backups_destinations": {
+        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours."
+      }
+    },
+    "errors": [
+      "This device isn't signed in here"
+    ]
+  },
+  "No access": {
+    "like": "Destinations",
+    "answers": {
+      "backups_destinations": {
+        "$error": "You don't have access to this.\n\nusers/alex isn't a member of groups/family. Whoever owns it adds them, with permissions_share."
+      }
+    },
+    "errors": [
+      "You don't have access to this"
+    ]
   }
 }
