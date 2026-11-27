@@ -61,6 +61,7 @@ defmodule OneCore.Apps.Version do
     :title,
     :icon,
     :core,
+    settings: [],
     requires: %{},
     exports: [],
     own: :subject,

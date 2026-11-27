@@ -461,8 +461,9 @@ defmodule OneCore.App do
         @impl true
         def menu_bar_extra, do: %{page: "client/index.html", icon: "menu-bar.svg"}
 
-  - An app's settings are in Settings, where it adds a section, or a group in another's page, by the hook
-    `settings.sections`, with the component that draws it, as Settings' skill says.
+  - An app's settings are in Settings, where it declares a section, or a group in another's page, in `settings/0`
+    (with `owner: true` where only the network's owners see it, and `badge` naming a read-only tool where it has a red
+    count), as Settings' skill says.
   - An app that keeps something in its people's Vaults (an account at an outside service, a Chrome profile, a key)
     registers its item type there, as the Vault's skill says: `vault.types`, with the section it's listed under, how
     one is added, and the component that draws one, if it has one. An account is such an item, and isn't an app:

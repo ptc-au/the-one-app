@@ -21,6 +21,7 @@ defmodule OneCore.Apps.Version.Checks do
       icon: icon,
       widgets: widgets,
       menu_bar_extra: menu_bar_extra,
+      settings: settings,
       exports: exports,
       hooks: hooks
     } =
@@ -31,13 +32,14 @@ defmodule OneCore.Apps.Version.Checks do
     prefix = if app, do: Version.own_name(app) <> ".", else: ""
 
     problems =
-      Enum.flat_map([:tools, :entrypoints, :widgets, :menu_bar_extra, :offers, :events], &Shape.problems(&1, description[&1], prefix)) ++
+      Enum.flat_map([:tools, :entrypoints, :widgets, :menu_bar_extra, :settings, :offers, :events], &Shape.problems(&1, description[&1], prefix)) ++
         tool_problems(tools, rest, prefix) ++
         change_problems(tools, prefix) ++
         entrypoint_problems(entrypoints, rest, prefix) ++
         widget_problems(widgets, tools, prefix) ++
         badge_problems(entrypoints, tools, prefix) ++
         menu_bar_extra_problems(menu_bar_extra, rest, prefix) ++
+        settings_problems(settings, tools, rest, prefix) ++
         other_problems(description, app, prefix)
 
     case problems do
@@ -46,7 +48,7 @@ defmodule OneCore.Apps.Version.Checks do
 
         title = Version.title(skills)
         version = version(under, app, tools, entrypoints, widgets, Enum.sort(services), rest, icon, title)
-        version = %{version | menu_bar_extra: menu_bar_extra(menu_bar_extra, rest)}
+        version = %{version | menu_bar_extra: menu_bar_extra(menu_bar_extra, rest), settings: settings}
 
         with {:ok, jobs} <- jobs(jobs, tools, prefix),
              do:
@@ -138,6 +140,20 @@ defmodule OneCore.Apps.Version.Checks do
 
     for {%{badge: name}, at} <- indexed(entrypoints), is_binary(name), why = reading_tool(name, tools) do
       "#{prefix}entrypoints()[#{at}].badge: got #{Shape.given(name)}, #{why}"
+    end
+  end
+
+  # A Settings section's badge is a read-only tool of the app, and its icon, if given, is a file of the app.
+  defp settings_problems(settings, tools, rest, prefix) do
+    tools = for {tool, _at} <- indexed(tools), do: tool
+
+    for {section, at} <- indexed(settings),
+        {field, why} <- [
+          {:badge, is_binary(section[:badge]) && reading_tool(section[:badge], tools)},
+          {:icon, is_binary(section[:icon]) && not is_map_key(rest, section[:icon]) && "expected a file of the app"}
+        ],
+        why do
+      "#{prefix}settings()[#{at}].#{field}: got #{Shape.given(section[field])}, #{why}"
     end
   end
 

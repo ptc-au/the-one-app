@@ -99,6 +99,23 @@ defmodule OneCore.Apps.Version.Shape do
         }
       }
     },
+    settings: %{
+      "type" => "object",
+      "required" => ["in", "component"],
+      "properties" => %{
+        "in" => %{"enum" => ["settings", "device", "app"]},
+        "component" => @text,
+        "name" => @text,
+        "icon" => %{"type" => "string", "description" => "a file of the app's client/"},
+        "group" => %{"enum" => ["you", "network", "general", "system"]},
+        "order" => %{"type" => "integer"},
+        "badge" => %{"type" => "string", "description" => "the name of one of this app's tools that only reads"},
+        "needs" => @text,
+        "kinds" => %{"type" => "array", "items" => %{"enum" => ["app", "browser", "assistant", "server"]}},
+        "service" => %{"type" => "boolean"},
+        "owner" => %{"type" => "boolean", "description" => "true if only the network's owners see this section"}
+      }
+    },
     offers: %{
       "type" => "object",
       "required" => ["name", "kind", "description"],

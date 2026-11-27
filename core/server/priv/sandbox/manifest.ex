@@ -20,6 +20,7 @@ defmodule OneCore.App.Manifest do
     icon: nil,
     widgets: [],
     menu_bar_extra: nil,
+    settings: [],
     hooks: [],
     offers: [],
     jobs: [],
@@ -34,6 +35,7 @@ defmodule OneCore.App.Manifest do
     entrypoints: ~w(name page icon category subject badge runtime_version)a,
     widgets: ~w(name tool sizes)a,
     menu_bar_extra: ~w(page icon runtime_version)a,
+    settings: ~w(in component name icon group order badge needs kinds service owner)a,
     offers: ~w(name kind description untrusted)a,
     jobs: ~w(tool every inputs)a,
     events: ~w(name description inputs outputs delivery)a
@@ -46,6 +48,7 @@ defmodule OneCore.App.Manifest do
     entrypoints: 0,
     widgets: 0,
     menu_bar_extra: 0,
+    settings: 0,
     hooks: 0,
     hook: 3,
     webhook: 2,
@@ -75,6 +78,7 @@ defmodule OneCore.App.Manifest do
       @callback entrypoints() :: [%{required(:page) => String.t(), optional(atom) => String.t()}]
       @callback widgets() :: [%{name: String.t(), tool: String.t(), sizes: [String.t()]}]
       @callback menu_bar_extra() :: %{required(:page) => String.t(), required(:icon) => String.t(), optional(:runtime_version) => pos_integer}
+      @callback settings() :: [%{required(:in) => String.t(), required(:component) => String.t(), optional(atom) => term}]
       @callback hooks() :: [String.t()]
       @callback hook(hook :: String.t(), about :: map, OneCore.Call.t()) :: term
       @callback webhook(OneCore.Call.t(), request :: map) :: {:ok, map}

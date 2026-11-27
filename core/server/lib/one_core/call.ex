@@ -307,6 +307,8 @@ defmodule OneCore.Call do
          installed: at,
          entrypoints: version.entrypoints,
          widgets: version.widgets,
+         settings: version.settings,
+         hooks: version.hooks,
          tools: tools
        })}
     end
