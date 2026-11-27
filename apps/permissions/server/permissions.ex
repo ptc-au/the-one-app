@@ -526,11 +526,11 @@ defmodule Permissions do
       end)
 
     if waits do
-      told(call, receivers, "#{named(by)} wants to move #{short(artifact)} to #{whom(to)}", "Accept it, or decline it, in #{app_of(artifact)}.")
+      told(call, receivers, artifact, "#{named(by)} wants to move #{short(artifact)} to #{whom(to)}", "Accept it, or decline it, in #{app_of(artifact)}.")
       %{artifact: artifact, to: to, now: now, state: "waiting"}
     else
       moved!(call, artifact, to, now)
-      told(call, receivers, "#{short(artifact)} is #{if(user?(to), do: "yours", else: whose(to))} now", "#{named(by)} moved it to #{whom(to)}. It's at #{now}.")
+      told(call, receivers, artifact, "#{short(artifact)} is #{if(user?(to), do: "yours", else: whose(to))} now", "#{named(by)} moved it to #{whom(to)}. It's at #{now}.")
       %{artifact: artifact, to: to, now: now, state: "moved"}
     end
   end
@@ -571,7 +571,7 @@ defmodule Permissions do
 
     now = renamed!(artifact, to)
     moved!(call, artifact, to, now)
-    told(call, [sender] -- [by], "#{short(artifact)} was moved to #{whom(to)}", "#{named(by)} accepted it. It's at #{now}.")
+    told(call, [sender] -- [by], artifact, "#{short(artifact)} was moved to #{whom(to)}", "#{named(by)} accepted it. It's at #{now}.")
     %{artifact: artifact, to: to, now: now, state: "moved"}
   end
 
@@ -589,7 +589,7 @@ defmodule Permissions do
         {to, sender}
       end)
 
-    told(call, [sender] -- [by], "#{short(artifact)} wasn't moved to #{whom(to)}", "#{named(by)} declined it.")
+    told(call, [sender] -- [by], artifact, "#{short(artifact)} wasn't moved to #{whom(to)}", "#{named(by)} declined it.")
     %{artifact: artifact}
   end
 
@@ -730,12 +730,17 @@ defmodule Permissions do
   defp receivers(db, to), do: Enum.filter(users_with(db, to, "owner"), &user?/1)
 
   # Tells each of them, as the network does, so whoever asks needn't share a group with them, which a person must to tell
-  # someone. It's a notification, never an email.
-  defp told(_call, [], _title, _text), do: :ok
+  # someone. Sent for the artifact's own app so a tap opens the app the text names (such as Git Repos), not Permissions.
+  defp told(_call, [], _artifact, _title, _text), do: :ok
 
-  defp told(call, users, title, text) do
+  defp told(call, users, artifact, title, text) do
     as = %{call | actor: nil, subject: "network"}
-    for to <- users, do: OneCore.Call.tool(as, "notifications", "send", %{"title" => title, "text" => text, "to" => to})
+    extra = case Regex.run(@made, artifact) do
+      [_, _owner, app, _id] -> %{"app" => app}
+      _ -> %{}
+    end
+
+    for to <- users, do: OneCore.Call.tool(as, "notifications", "send", Map.merge(%{"title" => title, "text" => text, "to" => to}, extra))
     :ok
   end
 
