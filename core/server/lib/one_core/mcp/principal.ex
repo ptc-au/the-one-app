@@ -1,9 +1,8 @@
 defmodule OneCore.Mcp.Principal do
   @moduledoc """
-  Who a request is by and who it's for, its principal (`OneCore.User` says who each is). Signing in is an app,
-  which tells One Core whose device a request came from: `asking/3` is the one place that's decided, and it asks
-  the apps that mutate `device` (`OneCore.Hooks.whose/1`). A device no app places is nobody's, and nobody is
-  refused everything: so with no app signing anyone in, a network answers nobody.
+  Who a request is by and who it's for, its principal (`OneCore.User` says who each is). Signing in is the network's
+  edge, which tells One Core whose device a request came from: `asking/3` is the one place that's decided, and it asks
+  the edge (`OneCore.Hooks.whose/1`). A device the edge doesn't place is nobody's, and nobody is refused everything.
 
   A request is for whoever it's from, unless it says who else: a group, the network, or a person. It then runs for
   them, with their artifacts, once the apps that validate `reach` say whoever asked is their `member`, or, for a tool

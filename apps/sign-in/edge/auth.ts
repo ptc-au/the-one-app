@@ -285,6 +285,20 @@ async function whose() {
   };
 }
 
+/**
+ * Whose the device `device` is, as a server that asks has it: `{who}`, or nothing for one that's nobody's. It's what
+ * `whose` has, for one, read where it's asked, so what a server learns is as new as what's here.
+ */
+async function whoseDevice(device: string) {
+  const [devices, sessions] = await env.DB.batch<{ id?: string; name: string }>([
+    env.DB.prepare('select user.name from device join user on user.id = device."userId" where device.id = ?').bind(device),
+    env.DB.prepare('select session.id, user.name from session join user on user.id = session."userId" where session."expiresAt" > ?').bind(new Date().toISOString()),
+  ]);
+  if (devices.results[0]) return { who: who(devices.results[0]) };
+  for (const { id, name } of sessions.results) if ((await browserDevice(id!)) === device) return { who: who({ name }) };
+  return {};
+}
+
 /** Makes `device` the user's, under `name`, from now on, and says which command ran it if it was run from a terminal. */
 async function place(adapter: Adapter, device: string, kind: Device["kind"], name: string, user: { id: string; name: string }, command?: string | null) {
   const [was] = await adapter.findMany<Device>({ model: "device", where: [{ field: "id", value: device }] });
@@ -1001,7 +1015,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   // they're first asked about, so they approve a device's code as anyone who joined does.
   if (!user && building && ask !== "invite" && USERNAME.test(named)) user = await made(adapter, origin, named);
 
-  if (ask === "whose") return whose();
+  if (ask === "whose") return about.device === undefined ? whose() : whoseDevice(String(about.device));
   if (ask === "invite") return invite(adapter, origin, named, user, about.again === true);
   // The network's first owner is invited only until they've joined, so a link to join as them isn't made after.
   if (ask === "owner") return user && (await joined(adapter, user)) ? { joined: true } : invite(adapter, origin, named, user, false);

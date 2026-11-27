@@ -291,23 +291,43 @@ defmodule OneCore.Hooks do
   end
 
   @doc """
-  Whose the device `device` is, as the apps that mutate `device` say: a user, or `nil` for nobody's. Kept
-  once it's somebody's, so a call asks nothing. `{:error, why}` where an app couldn't say, or none that says runs
-  here (as while it waits for this server's update), which isn't nobody's: only an app says a device is nobody's, and
-  a device a client is told is nobody's is signed out.
+  Whose the device `device` is, as the network's edge says, which is where Sign-In keeps who each device is and is as
+  new as a device let in or taken out: a user, or `nil` for nobody's. Kept once it's somebody's, so a call asks nothing.
+  `{:error, why}` where the edge couldn't say, which isn't nobody's: only the edge says a device is nobody's, and a
+  device a client is told is nobody's is signed out.
+
+  The edge, not an app that says whose a device is: that one runs on the network's own servers, and where none is on,
+  as while they're all asleep, a person's own server, which has no copy of Sign-In to ask, couldn't tell whose any
+  device was, and so refused every call.
   """
   def whose(device) do
     Cache.fetch(@caches["device"], device, fn ->
-      with [_ | _] <- hooking("device", "network"),
-           {:ok, %{"who" => who}, _by} <- mutate("device", %{"device" => device, "who" => nil}, {nil, "network"}),
+      with true <- device =~ ~r/^[0-9a-f]{64}$/,
+           {:ok, %{"who" => who}} <- at_edge(device),
            :ok <- OneCore.User.user(who) do
         {:commit, who, expire: @ttl}
       else
-        [] -> {:ignore, {:error, "no app that says whose a device is runs on this server"}}
-        {:refuse, why} -> {:ignore, {:error, why}}
-        _ -> {:ignore, nil}
+        {:error, why} -> {:ignore, {:error, why}}
+        _nobody -> {:ignore, nil}
       end
     end)
+  end
+
+  defp at_edge(device) do
+    case Application.get_env(:one_core, :address) do
+      nil -> {:error, "People sign in at a network's address, and this network has none."}
+      address -> sign_in(address, JSON.encode!(%{ask: "whose", device: device}))
+    end
+  end
+
+  defp sign_in(address, body) do
+    case OneCore.Edge.ask!([method: :post, url: address <> "/sign-in/ask", body: body, retry: false], "/sign-in/ask") do
+      %{status: 200, body: %{"error" => why}} -> {:error, why}
+      %{status: 200, body: %{} = answer} -> {:ok, answer}
+      %{status: status} -> {:error, "the network's edge answered #{status}"}
+    end
+  rescue
+    error in OneCore.Edge.Unreachable -> {:error, Exception.message(error)}
   end
 
   @doc """

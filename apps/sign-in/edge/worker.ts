@@ -291,6 +291,11 @@ async function ask(request: Request, auth: Auth, url: URL) {
   } catch {
     return Response.json({ error: "An ask is JSON" }, { status: 400 });
   }
+  // Whose a device is, any of the network's servers is told, as each answers whoever calls it, whichever it acts for.
+  if (what.ask === "whose" && what.device !== undefined) {
+    if (!(await env.NETWORK.admits(server, request.headers.get("one-token")))) return Response.json({ error: "Only a server of the network asks this" }, { status: 403 });
+    return Response.json(await asked(auth, url.origin, what));
+  }
   const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "network", "whose"].includes(what.ask ?? "");
   const theirs = `${what.who}/`;
   // A server of a group they're in acts for them by the network's word, a token it shows with every ask, as it does
