@@ -115,6 +115,12 @@ defmodule OneCore.Cache do
       {:ets.lookup_element(__MODULE__, {:generation, cache}, 2, 0),
        :ets.lookup_element(__MODULE__, {:generation, cache, key}, 2, 0)}
 
+  @doc "Keeps `value` for `key` in `cache` for `expire` milliseconds, over what's kept, until the key or the cache is invalidated."
+  def put(cache, key, value, expire) do
+    :ets.insert(__MODULE__, {{:value, cache, key}, value, generations(cache, key), :erlang.monotonic_time(:millisecond) + expire})
+    :ok
+  end
+
   @doc "Invalidates everything `cache` keeps, so each key is fetched again when next asked for."
   def invalidate(cache) do
     :ets.update_counter(__MODULE__, {:generation, cache}, 1, {{:generation, cache}, 0})

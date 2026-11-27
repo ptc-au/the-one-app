@@ -290,6 +290,19 @@ defmodule OneCore.Hooks do
     Enum.any?(woken, fn {_app, part} -> part["woken"] == true end)
   end
 
+  # How long what the edge last said of a device is used where the edge doesn't answer, in milliseconds, as while it's
+  # deployed. It's what a removal told to no server that wasn't reached waits for, on top of `@ttl`, and it's gone as
+  # soon as any server is told to ask again (`invalidate/1`): the edge says so as a device is removed.
+  @stale 60_000
+
+  # How long one used that way is kept before the edge is asked again, in milliseconds, so what's asked of a device
+  # while it doesn't answer waits for it once each time, not at every call.
+  @blip 5_000
+
+  # How long the edge has to answer, in milliseconds: it answers in about a hundredth of that, and a call waits
+  # for it.
+  @answer 2_000
+
   @doc """
   Whose the device `device` is, as the network's edge says, which is where Sign-In keeps who each device is and is as
   new as a device let in or taken out: a user, or `nil` for nobody's. Kept once it's somebody's, so a call asks nothing.
@@ -298,17 +311,36 @@ defmodule OneCore.Hooks do
 
   The edge, not an app that says whose a device is: that one runs on the network's own servers, and where none is on,
   as while they're all asleep, a person's own server, which has no copy of Sign-In to ask, couldn't tell whose any
-  device was, and so refused every call.
+  device was, and so refused every call. Where the edge doesn't answer in time, as while it's deployed, what it last
+  said of the device is used for up to a minute after (`@stale`), and a device it said is nobody's, or that was told
+  to be asked about again, is never.
   """
   def whose(device) do
-    Cache.fetch(@caches["device"], device, fn ->
+    cache = @caches["device"]
+
+    Cache.fetch(cache, device, fn ->
       with true <- device =~ ~r/^[0-9a-f]{64}$/,
-           {:ok, %{"who" => who}} <- at_edge(device),
-           :ok <- OneCore.User.user(who) do
-        {:commit, who, expire: @ttl}
+           {:ok, answer} <- at_edge(device) do
+        with %{"who" => who} <- answer, :ok <- OneCore.User.user(who) do
+          Cache.put(cache, {:said, device}, who, @stale)
+          {:commit, who, expire: @ttl}
+        else
+          _nobody ->
+            Cache.invalidate(cache, {:said, device})
+            {:ignore, nil}
+        end
       else
-        {:error, why} -> {:ignore, {:error, why}}
-        _nobody -> {:ignore, nil}
+        {:unanswered, why} ->
+          case Cache.fetch(cache, {:said, device}, fn -> {:ignore, nil} end) do
+            nil -> {:ignore, {:error, why}}
+            who -> {:commit, who, expire: @blip}
+          end
+
+        {:error, why} ->
+          {:ignore, {:error, why}}
+
+        _nobody ->
+          {:ignore, nil}
       end
     end)
   end
@@ -321,13 +353,16 @@ defmodule OneCore.Hooks do
   end
 
   defp sign_in(address, body) do
-    case OneCore.Edge.ask!([method: :post, url: address <> "/sign-in/ask", body: body, retry: false], "/sign-in/ask") do
+    request = [method: :post, url: address <> "/sign-in/ask", body: body, retry: false, receive_timeout: @answer]
+
+    case OneCore.Edge.ask!(request, "/sign-in/ask") do
       %{status: 200, body: %{"error" => why}} -> {:error, why}
       %{status: 200, body: %{} = answer} -> {:ok, answer}
+      %{status: status} when status >= 500 -> {:unanswered, "the network's edge answered #{status}"}
       %{status: status} -> {:error, "the network's edge answered #{status}"}
     end
   rescue
-    error in OneCore.Edge.Unreachable -> {:error, Exception.message(error)}
+    error in OneCore.Edge.Unreachable -> {:unanswered, Exception.message(error)}
   end
 
   @doc """
