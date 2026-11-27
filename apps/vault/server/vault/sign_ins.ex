@@ -12,7 +12,8 @@ defmodule Vault.SignIns do
   It's `started` as its link is given, and kept by its `state` with where it began (`began/1`): an app's screen, an
   agent, or `one` in a terminal. Its service sends its person's browser back, which moves it, written once from
   `started` (`move!/4`), so its page shows the same ending however often it's opened, until it's let go with the rest
-  that waited too long. Try Again on one that didn't sign in starts another as it began.
+  that waited too long. Try Again on one that didn't sign in, waited too long (`@waits`) or was opened in another browser
+  starts another as it began.
 
   The protocol is ours, not a library's: what it needs (a link, a code swapped for tokens, a renewal, an ID token's
   claims) is four small requests over Req, which One Core already has, where a library would be a new dependency of
@@ -25,11 +26,14 @@ defmodule Vault.SignIns do
 
   @moves %{"started" => ~w(ok cancelled failed)}
 
-  # How long a sign-in waits for its browser, in seconds.
+  # How long a sign-in waits for its browser, and how long one is kept after, so its page still says how it ended and
+  # starts it again, in seconds.
   @waits 600
+  @kept 86_400
 
-  # What a sign-in's page says in a browser its link wasn't opened in.
+  # What a sign-in's page says in a browser its link wasn't opened in, and of one that waited too long.
   @elsewhere "Finish signing in in the browser you began in, or start it again."
+  @waited "This sign-in waited too long. Start it again."
 
   @doc "The states a sign-in is in."
   def states, do: ["started" | @moves["started"]]
@@ -71,7 +75,7 @@ defmodule Vault.SignIns do
       if not String.contains?(item, "{{"), do: ours!(Items.find(call, db, item), app, service.name)
 
       Store.transaction(call, db, fn d ->
-        Store.query(d, "delete from sign_ins where at < ?", [Store.now() - @waits])
+        Store.query(d, "delete from sign_ins where at < ?", [Store.now() - @kept])
 
         Store.query(
           d,
@@ -121,15 +125,17 @@ defmodule Vault.SignIns do
       db = Store.own(call)
 
       sign_in =
-        case Store.transaction(call, db, &Store.query(&1, "select * from sign_ins where state = ? and at > ?", [state, Store.now() - @waits])) do
+        case Store.transaction(call, db, &Store.query(&1, "select * from sign_ins where state = ?", [state])) do
           [sign_in] -> sign_in
           [] -> raise "This sign-in isn't waiting any more. Start it again."
         end
 
+      # What its page shows when it can't finish: how it began, so it can start again (`again/3`), never only words.
       cond do
-        inputs["open"] -> opened(call, db, sign_in, inputs["open"])
-        not browser?(sign_in, inputs["browser"]) -> raise(@elsewhere)
         inputs["again"] -> again(call, db, sign_in)
+        stale?(sign_in) -> unfinished(sign_in, @waited)
+        inputs["open"] -> opened(call, db, sign_in, inputs["open"])
+        not browser?(sign_in, inputs["browser"]) -> unfinished(sign_in, @elsewhere)
         sign_in["ending"] -> ending(sign_in, JSON.decode!(sign_in["ending"]))
         true -> returned(call, db, sign_in, inputs)
       end
@@ -144,7 +150,11 @@ defmodule Vault.SignIns do
   """
   def status(call, db, state) do
     case Store.transaction(call, db, &Store.query(&1, "select * from sign_ins where state = ?", [state])) do
-      [%{"ending" => nil} = sign_in] -> %{service: JSON.decode!(sign_in["service"])["name"], status: "started"}
+      [%{"ending" => nil} = sign_in] ->
+        if stale?(sign_in),
+          do: sign_in |> unfinished(@waited) |> Map.take([:service, :status, :problem]),
+          else: %{service: JSON.decode!(sign_in["service"])["name"], status: "started"}
+
       [sign_in] -> sign_in |> ending(JSON.decode!(sign_in["ending"])) |> Map.take([:service, :status, :account, :problem])
       [] -> raise "This sign-in isn't waiting any more. Start it again."
     end
@@ -219,8 +229,16 @@ defmodule Vault.SignIns do
     |> Map.merge(Map.new(ending, fn {key, value} -> {String.to_existing_atom(key), value} end))
   end
 
-  # Try Again: one that ended without signing in starts another, as it began, for the same app and item.
-  defp again(call, db, %{"ended" => ended} = sign_in) when ended in ["cancelled", "failed"] do
+  # One that waited longer than `@waits` for its browser can't finish.
+  defp stale?(%{"ended" => nil, "at" => at}), do: at <= Store.now() - @waits
+  defp stale?(_sign_in), do: false
+
+  # What its page shows of one that can't finish, with nothing written: it didn't sign in, and says why.
+  defp unfinished(sign_in, problem), do: ending(sign_in, %{"status" => "failed", "problem" => problem})
+
+  # Try Again: one that didn't sign in, or can't finish, starts another, as it began, for the same app and item.
+  # Whoever holds its state may, as they could have opened its link: only one that signed in doesn't start again.
+  defp again(call, db, %{"ended" => ended} = sign_in) when ended in [nil, "cancelled", "failed"] do
     service = service(JSON.decode!(sign_in["service"]))
     began = JSON.decode!(sign_in["began"])
     apps = JSON.decode!(sign_in["apps"])
@@ -313,11 +331,19 @@ defmodule Vault.SignIns do
         Store.query(d, "update sign_ins set browser = ? where state = ? and browser is null and ended is null returning state", [hashed(browser), sign_in["state"]])
       end)
 
-    if opened == [], do: raise("This sign-in was opened already, in another browser. Start it again.")
-    service = service(JSON.decode!(sign_in["service"]))
-    client = client_fields(call, db, service.client)
-    url = link(service, client["client_id"], address() <> "/vault/callback", sign_in["state"], sign_in["verifier"])
-    %{service: service.name, status: "started", began: JSON.decode!(sign_in["began"]), apps: JSON.decode!(sign_in["apps"]), url: url}
+    cond do
+      sign_in["ending"] ->
+        ending(sign_in, JSON.decode!(sign_in["ending"]))
+
+      opened == [] ->
+        unfinished(sign_in, "This sign-in was opened already, in another browser. Start it again.")
+
+      true ->
+        service = service(JSON.decode!(sign_in["service"]))
+        client = client_fields(call, db, service.client)
+        url = link(service, client["client_id"], address() <> "/vault/callback", sign_in["state"], sign_in["verifier"])
+        %{service: service.name, status: "started", began: JSON.decode!(sign_in["began"]), apps: JSON.decode!(sign_in["apps"]), url: url}
+    end
   end
 
   defp opened(_call, _db, _sign_in, _browser), do: raise(@elsewhere)

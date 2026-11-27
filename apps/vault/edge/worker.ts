@@ -89,7 +89,9 @@ export default {
     if (url.pathname === "/vault/start") {
       const state = url.searchParams.get("state") ?? "";
       const open = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/[+/=]/g, "");
-      const { url: to, problem } = (await callback(url.searchParams, { open })) as { url?: string; problem?: string };
+      const { url: to, status, problem } = (await callback(url.searchParams, { open })) as { url?: string; status?: string; problem?: string };
+      // One that can't be opened (it waited too long, or was opened in another browser) says so on its page, with Try Again.
+      if (!to && status) return Response.redirect(new URL(`/vault/callback?state=${encodeURIComponent(state)}`, url).href, 302);
       if (!to) return new Response(problem ?? "This sign-in couldn't be opened.", { status: 400 });
       const headers = new Headers({ location: to });
       headers.append("set-cookie", `${await cookie(state)}=${open}; Path=/vault; Max-Age=600; HttpOnly; Secure; SameSite=Lax`);

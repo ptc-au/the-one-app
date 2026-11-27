@@ -722,7 +722,7 @@ defmodule Vault do
             state: %{type: "string"},
             code: %{type: "string"},
             error: %{type: "string"},
-            again: %{type: "boolean", description: "Starts it again, once it ended without signing in"},
+            again: %{type: "boolean", description: "Starts it again, once it ended without signing in, waited too long or was opened in another browser"},
             open: %{type: "string", description: "Its link opened, in the browser this random value is kept in"},
             browser: %{type: "string", description: "The random value the browser it was opened in keeps"}
           },
