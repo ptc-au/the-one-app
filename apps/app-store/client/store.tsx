@@ -479,14 +479,19 @@ function Page(props: { market: Market; all: Owners; listed: Listed }) {
   )
 }
 
+/// A tool as a person reads it: `notes_add_to_list` of notes is "Add to list".
+const said = (app: string, tool: string) => {
+  const words = tool.replace(`${app}_`, "").replaceAll("_", " ")
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 /// See All: everything else an app is made of.
 function Details(props: { listed: Listed }) {
   return (
     <Screen heading={props.listed.title} back onBack={out}>
-      <Section heading="Tools">
-        <Text>{String(props.listed.tools.length)}</Text>
+      <Section heading="What agents can do">
         <View style={look.tools}>
-          <For each={props.listed.tools}>{(tool) => <Text style={look.quiet}>{tool}</Text>}</For>
+          <For each={props.listed.tools}>{(tool) => <Text style={look.quiet}>{said(props.listed.name, tool)}</Text>}</For>
         </View>
       </Section>
       <Show when={props.listed.trusted !== null}>
