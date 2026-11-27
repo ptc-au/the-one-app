@@ -13,7 +13,7 @@ export const page = async (request: Request, env: Env) => named(await env.ASSETS
  * A page of the client's files with the network's name where it says the app's (`data-name`: its tab's title, and its
  * text), as Downloads' page has it (`apps/downloads/edge/worker.ts`), so a browser's tab, a link's preview and Add to
  * Home Screen say "the PTC App" from its first byte. The name is the one its web app's manifest says, which Sign-In's
- * part answers from what the network's owner set (`sign-in network`), kept as long as the manifest says; without that
+ * part answers from what the network's owner set (`sign-in set_network`), kept as long as the manifest says; without that
  * part, the page says the One App's, as its file does. A page with its name is sent without its file's ETag, which
  * would let a browser keep it as it was named before.
  */
