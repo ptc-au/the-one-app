@@ -221,46 +221,21 @@ export async function keep() {
 }
 
 /**
- * Says whose a device is has changed: the version `whose` gives moves on, so a copy made from an older answer is
- * never kept over a newer one. It's a time, in milliseconds, or one more than the last where that's later, so it moves
- * on after a backup that kept an older one is given back (`keep`) too.
- */
-async function changed() {
-  await env.DB.prepare("insert into setting (name, value) values ('devices', ?1) on conflict (name) do update set value = max(cast(value as integer) + 1, ?1)").bind(Date.now()).run();
-}
-
-/**
  * A browser that signs in again, as it does for an approval that needs a new sign-in, replaces the session it had: the
  * one its request carries is deleted, as the cookie for it is replaced.
  */
 async function replaced(session: { token: string }, ctx: GenericEndpointContext | null) {
-  await changed();
   const old = ctx && (await ctx.getSignedCookie(ctx.context.authCookies.sessionToken.name, ctx.context.secret));
   if (old && old !== session.token) await ctx.context.internalAdapter.deleteSession(old);
 }
 
 /**
- * Has one of the network's servers copy whose each device is (`whose`), for every server: the server's `copy`, which
- * only reads what's here, so whoever asks for it is nobody, as a sharing link's holder is to a server. One that finds
- * the copy as new as what's here writes nothing.
- */
-export async function copied() {
-  const call = { name: "sign-in_copy", arguments: {}, _meta: { link: "network/sign-in" } };
-  const reached = await env.RELAY.forward(await env.NETWORK.servers(), JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: call }));
-  const { result, error }: { result?: { isError?: boolean; content?: { text?: string }[] }; error?: { message?: string } } = JSON.parse(reached?.answer ?? "{}");
-  if (!reached || error || result?.isError)
-    console.log(JSON.stringify({ telemetry: { error: `No server copied whose each device is just now: ${reached ? (error?.message ?? result?.content?.[0]?.text) : "none answered"}` } }));
-}
-
-/**
- * Makes what's gone nobody's on every server: one of them copies whose each device is again, and then every server is
- * told to ask again. Where none answers, one copies it at the next ten minutes (`scheduled` in `worker.ts`).
+ * Makes what's gone nobody's on every server: each is told to ask again whose a device is, as it asks the edge (`whoseDevice`),
+ * after the answer, as where none answers the relay waits 30 s for one. One that's off asks as it's back, and keeps
+ * nothing for longer than ten seconds (`OneCore.Hooks`).
  */
 async function gone() {
-  await changed();
-  // After the answer: where no server answers, as when they're all off, the relay waits 30 s for one, which held up
-  // every answer that deletes a session, a device's token among them, past the time the device waits for it.
-  waitUntil(copied().then(() => env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } }))));
+  waitUntil(env.RELAY.notify(JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/invalidate", params: { hooks: ["device"] } })));
 }
 
 /** Deletes the sessions that ended (`UNUSED`), which Better Auth otherwise deletes only as one is used again. The edge calls this every ten minutes. */
@@ -268,27 +243,7 @@ export async function expire() {
   await env.DB.prepare('delete from session where "expiresAt" <= ?').bind(new Date().toISOString()).run();
 }
 
-/**
- * Whose each device is, as a server keeps a copy of it (`SignIn`): each device and assistant, and each browser that's
- * signed in, by its key, with the version of that (`changed`), all as one read.
- */
-async function whose() {
-  const [version, devices, sessions] = await env.DB.batch<{ value?: string; id?: string; name: string }>([
-    env.DB.prepare("select value from setting where name = 'devices'"),
-    env.DB.prepare('select device.id, user.name from device join user on user.id = device."userId"'),
-    env.DB.prepare('select session.id, user.name from session join user on user.id = session."userId" where session."expiresAt" > ?').bind(new Date().toISOString()),
-  ]);
-  const browsers = await Promise.all(sessions.results.map(async ({ id, name }) => [await browserDevice(id!), who({ name })]));
-  return {
-    version: Number(version.results[0]?.value ?? 0),
-    devices: Object.fromEntries([...devices.results.map(({ id, name }) => [id, who({ name })]), ...browsers]),
-  };
-}
-
-/**
- * Whose the device `device` is, as a server that asks has it: `{who}`, or nothing for one that's nobody's. It's what
- * `whose` has, for one, read where it's asked, so what a server learns is as new as what's here.
- */
+/** Whose the device `device` is, as a server asks: `{who}`, or nothing for one that's nobody's, as new as what's here. Each browser that's signed in is one, by its key. */
 async function whoseDevice(device: string) {
   const [devices, sessions] = await env.DB.batch<{ id?: string; name: string }>([
     env.DB.prepare('select user.name from device join user on user.id = device."userId" where device.id = ?').bind(device),
@@ -304,7 +259,6 @@ async function place(adapter: Adapter, device: string, kind: Device["kind"], nam
   const [was] = await adapter.findMany<Device>({ model: "device", where: [{ field: "id", value: device }] });
   if (was) await remove(adapter, was);
   await adapter.create({ model: "device", data: { id: device, userId: user.id, kind, name, command: command ?? null, createdAt: new Date() }, forceAllowId: true });
-  await changed();
 }
 
 /**
@@ -1015,7 +969,7 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
   // they're first asked about, so they approve a device's code as anyone who joined does.
   if (!user && building && ask !== "invite" && USERNAME.test(named)) user = await made(adapter, origin, named);
 
-  if (ask === "whose") return about.device === undefined ? whose() : whoseDevice(String(about.device));
+  if (ask === "whose") return whoseDevice(String(about.device));
   if (ask === "invite") return invite(adapter, origin, named, user, about.again === true);
   // The network's first owner is invited only until they've joined, so a link to join as them isn't made after.
   if (ask === "owner") return user && (await joined(adapter, user)) ? { joined: true } : invite(adapter, origin, named, user, false);

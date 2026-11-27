@@ -34,8 +34,8 @@ defmodule OneCore.Hooks do
   another server is validated on both.
 
   That something may be reached, and whose a device is, is kept by the server that asked, so that it asks once: for
-  10 seconds (`@ttl`), or until a tool that doesn't only read is called of an app that validates it or says whose,
-  which that server invalidates at once and tells the others to, or that app's edge function says to. A refusal is
+  10 seconds (`@ttl`), or until a tool that doesn't only read is called of an app that validates it, which that
+  server invalidates at once and tells the others to, or until the edge says a device was taken out. A refusal is
   never kept, nor that a device is nobody's. So giving access is seen at once, and taking it away reaches every
   server it's told to at once and every other within 10 seconds: one that's stuck or out of reach as it's told still
   answers from what it kept for no longer than that, so nothing waits on telling it.

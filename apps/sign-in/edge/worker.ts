@@ -6,7 +6,7 @@
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import { requireMcpAuth } from "@better-auth/mcp";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { asked, assistant, at, BELIEVED, browserDevice, copied, expire, keep, network, ONE_APP, pictures, who, type Ask, type Auth } from "./auth.ts";
+import { asked, assistant, at, BELIEVED, browserDevice, expire, keep, network, ONE_APP, pictures, who, type Ask, type Auth } from "./auth.ts";
 
 export default {
   async fetch(request: Request, _env, ctx) {
@@ -23,7 +23,7 @@ export default {
   },
   async scheduled() {
     // Each runs to its end whichever fails, as a Worker's work is cut off when its handler's promise settles.
-    const done = await Promise.allSettled([keep(), copied(), expire(), pictures()]);
+    const done = await Promise.allSettled([keep(), expire(), pictures()]);
     const failed = done.filter((one) => one.status === "rejected");
     if (failed.length) throw new AggregateError(failed.map((one) => one.reason), `${failed.length} of the ten minutes' jobs failed`);
   },
@@ -292,11 +292,11 @@ async function ask(request: Request, auth: Auth, url: URL) {
     return Response.json({ error: "An ask is JSON" }, { status: 400 });
   }
   // Whose a device is, any of the network's servers is told, as each answers whoever calls it, whichever it acts for.
-  if (what.ask === "whose" && what.device !== undefined) {
+  if (what.ask === "whose") {
     if (!(await env.NETWORK.admits(server, request.headers.get("one-token")))) return Response.json({ error: "Only a server of the network asks this" }, { status: 403 });
     return Response.json(await asked(auth, url.origin, what));
   }
-  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "network", "whose"].includes(what.ask ?? "");
+  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "network"].includes(what.ask ?? "");
   const theirs = `${what.who}/`;
   // A server of a group they're in acts for them by the network's word, a token it shows with every ask, as it does
   // the presigner (`OneCore.Edge.token/2`).

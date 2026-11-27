@@ -6,8 +6,7 @@
   // Its accounts: who has signed in, their passkeys, and the devices and assistants they let act as them. Its tables
   // are made by its migrations, which the edge's deploy applies (`generate.ts` writes Better Auth's).
   "d1_databases": [{ "binding": "DB", "database_name": "network-sign-in", "migrations_dir": "migrations" }],
-  // Its people, passkeys and devices are kept in the bucket every ten minutes, where they changed (`keep` in `auth.ts`),
-  // and a server copies whose each device is (`copied`).
+  // Its people, passkeys and devices are kept in the bucket every ten minutes, where they changed (`keep` in `auth.ts`).
   "triggers": { "crons": ["*/10 * * * *"] },
   // Makes the pictures people set square and small (`pictures.ts`).
   "images": { "binding": "IMAGES" },
