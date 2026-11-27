@@ -86,9 +86,8 @@ pub struct Panel {
     pub whole: bool,
 }
 
-/// What the window says over its page of where the page is, as a phone's app says it over an app (DESIGN.md, App
-/// windows): its network not answering ("Reconnecting…"), or its page updated ("Updated", with Reload). A pill at its
-/// top, over the page, with its one action.
+/// What the window says over its page, as the window page's banner does over every app (DESIGN.md, App windows): its
+/// network not answering ("Reconnecting…"), with its one action, if it has one. Where it says it is `NoticeAt`.
 /// One of a window's own buttons, which a window with no frame of the system's draws in its title row (a GNOME header
 /// bar's), on the side and in the order its desktop sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +119,32 @@ pub struct TextMenu {
 pub struct Notice {
     pub text: String,
     pub action: Option<(String, Box<dyn FnMut()>)>,
+}
+
+/// Where a window says its notice (`Notice`): under a finger, as on a phone, a thin banner across its top, under its status bar, which
+/// moves the page down by its height and covers none of it, as a mail or chat app's does; on a computer, in the middle
+/// of its title row, where it has one; and elsewhere, as in the launcher's panel, whose page lays out what floats on the
+/// system's glass edge to edge (its search and card), a pill at the start of its foot, over the page, where the
+/// launcher's App Library is at its end. A computer's page keeps its top bar at its top, whatever its safe area.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum NoticeAt {
+    Top,
+    Row,
+    Foot,
+}
+
+impl Notice {
+    /// What the window says over its page while its network doesn't answer, by its client's word for whether it does
+    /// (`Connection` in core/client: `offline`, `reconnecting`), as the window page's banner does: nothing while it
+    /// answers.
+    pub fn connection(connection: &str) -> Option<Notice> {
+        let text = match connection {
+            "offline" => "Can't reach your network",
+            "reconnecting" => "Reconnecting…",
+            _ => return None,
+        };
+        Some(Notice { text: text.into(), action: None })
+    }
 }
 
 /// The rail's tip over an app's page (DESIGN.md, The rail): a callout pointing at its line, "Pull to go home", with

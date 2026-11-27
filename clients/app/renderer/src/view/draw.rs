@@ -5,7 +5,8 @@ use super::*;
 impl Screen {
     /// The conditions its tokens' values vary by, as its window is now.
     pub(super) fn conditions(&self) -> Conditions {
-        let insets = [self.insets.top, self.insets.right, self.insets.bottom, self.insets.left].map(|inset| inset.round().max(0.0) as u16);
+        let insets = self.page_insets();
+        let insets = [insets.top, insets.right, insets.bottom, insets.left].map(|inset| inset.round().max(0.0) as u16);
         let title_bar = if self.chrome.title_start > 0 { [self.chrome.title_start, if self.chrome.title_end > 0 { self.chrome.title_end } else { 16 }] } else { self.title_bar };
         let (phone, rem) = match self.text_size {
             Some(size) => (true, (size * 100.0).round() as u16),
@@ -127,7 +128,7 @@ impl Screen {
     /// an MCP App.
     fn tell_room(&mut self, size: Size<Pixels>) {
         self.room = Size { width: size.width.0, height: size.height.0 };
-        let now = (self.room, self.reduced_motion, self.insets, self.pressure);
+        let now = (self.room, self.reduced_motion, self.page_insets(), self.pressure);
         if self.told.is_some_and(|told| told != now) {
             self.told = Some(now);
             let context = json!({
@@ -142,12 +143,13 @@ impl Screen {
 
     /// Each frame's page first, in the room its frame had, as this one looks, which this frame splices in.
     fn paint_frames(&mut self, at: Option<Instant>, scale: f32, text: &mut TextSystem, atlas: &Atlas) {
+        let page_insets = self.page_insets();
         for (id, child) in &mut self.frames {
             let screen = &mut child.screen;
             (screen.theme, screen.appearance, screen.reduced_motion, screen.reduced_transparency, screen.touch) = (self.theme, self.appearance, self.reduced_motion, self.reduced_transparency, self.touch);
             screen.active = self.active && self.focus.focused == Some(*id);
             // What of the window's own safe area its frame reaches, as an iframe's `env(safe-area-inset-*)` is: its page keeps clear of the part under it.
-            let (rect, insets) = (child.rect, self.insets);
+            let (rect, insets) = (child.rect, page_insets);
             screen.insets = Edges {
                 top: (insets.top - rect.origin.y).max(0.0),
                 left: (insets.left - rect.origin.x).max(0.0),
@@ -285,6 +287,7 @@ impl Screen {
         let line = self.line();
         let stretched = self.stretched();
         let handles = self.handles_on();
+        let notice_at = self.notice_at();
         let mut painter = Painter {
             tree: &self.tree,
             layout: &mut self.layout,
@@ -469,7 +472,7 @@ impl Screen {
             (self.chrome.title_start, self.chrome.title_end) = (start, end);
             self.again = true;
         }
-        self.chrome.action = self.notice.as_ref().and_then(|notice| painter.notice(notice, self.insets.top, self.chrome.action.as_ref().is_some_and(hovering) || keyed(NOTICE_ACTION)));
+        self.chrome.action = self.notice.as_ref().zip(notice_at).and_then(|(notice, at)| painter.notice(notice, at, self.insets, self.chrome.action.as_ref().is_some_and(hovering) || keyed(NOTICE_ACTION)));
         // The rail's line, over everything: dark over a light page and light over a dark one, as iOS's home
         // indicator is, the page's own label colour.
         if let Some(line) = line {

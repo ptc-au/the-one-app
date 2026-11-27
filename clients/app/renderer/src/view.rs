@@ -103,6 +103,9 @@ const PAGE: Id = 0;
 /// The window's own nodes beside its page's, as Tab and the inspector reach them: its notice and the notice's action
 /// (`Screen::semantics`).
 pub const NOTICE: Id = u64::MAX - 2;
+/// How tall the window's notice is (`Notice`), in points, under what the window keeps for itself at its top: the window
+/// page's banner's, 2.25rem.
+pub const NOTICE_HEIGHT: f32 = 36.0;
 pub const NOTICE_ACTION: Id = u64::MAX - 3;
 
 /// How far in from a full-screen window's edge its title starts, in points.
@@ -181,7 +184,7 @@ pub struct Screen {
     text_menu: Option<TextMenu>,
     /// Its window is a panel, whose background the host draws, under its page's.
     pub panel: Option<Panel>,
-    /// What the window says over its page.
+    /// What the window says at the top of its page, which its page is moved down by (`page_insets`).
     pub notice: Option<Notice>,
     /// The rail's tip over its page, while it shows, and whether its Got it was tapped, which its window takes.
     pub tip: Option<Tip>,
@@ -604,9 +607,30 @@ impl Screen {
         self.theme.unwrap_or(self.appearance) == Appearance::Dark
     }
 
-    /// Its insets as MCP Apps' host context says them (`safeAreaInsets`).
+    /// Where it says its notice, while it has one (`NoticeAt`).
+    pub(crate) fn notice_at(&self) -> Option<NoticeAt> {
+        self.notice.as_ref()?;
+        Some(match (&self.title, self.panel, self.touch) {
+            (Some(_), _, _) => NoticeAt::Row,
+            (None, None, true) => NoticeAt::Top,
+            _ => NoticeAt::Foot,
+        })
+    }
+
+    /// What its page keeps clear of at each edge: what the window keeps for itself (`insets`), and its notice where
+    /// it's a banner, which covers none of the page, as the window page's banner doesn't.
+    pub(crate) fn page_insets(&self) -> Edges<f32> {
+        let insets = self.insets;
+        match self.notice_at() {
+            Some(NoticeAt::Top) => Edges { top: insets.top + NOTICE_HEIGHT, ..insets },
+            _ => insets,
+        }
+    }
+
+    /// Its page's insets as MCP Apps' host context says them (`safeAreaInsets`).
     fn safe_area(&self) -> Value {
-        json!({"top": self.insets.top, "right": self.insets.right, "bottom": self.insets.bottom, "left": self.insets.left})
+        let insets = self.page_insets();
+        json!({"top": insets.top, "right": insets.right, "bottom": insets.bottom, "left": insets.left})
     }
 
     /// Notes that what it draws changed now, if nothing had since the frame drawn last.

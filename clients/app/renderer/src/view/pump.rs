@@ -40,7 +40,7 @@ impl Screen {
         answer["result"]["hostContext"]["safeAreaInsets"] = self.safe_area();
         answer["result"]["hostContext"]["visible"] = json!(self.visible);
         answer["result"]["hostContext"]["deviceCapabilities"]["scan"] = json!(self.device.scans());
-        self.told = Some((self.room, self.reduced_motion, self.insets, self.pressure));
+        self.told = Some((self.room, self.reduced_motion, self.page_insets(), self.pressure));
     }
 
     /// Logs what the app's JS threw, as a browser's console does, and carries on.

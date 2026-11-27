@@ -4,6 +4,7 @@
 //!       [--ui core/ui/dist/client] [--answers answers.json] [--size 480x360] [--scale 2] [--dark] [--requests <file>|-]
 //!       [--safe-area <top>,<right>,<bottom>,<left>] [--touch] [--reduced-motion] [--panel <corner>] [--title <name>] [--icon <png>] [--measure] [--seed <n>]
 //!       [--latency <ms> [--cached <tool>,…]] [--slower <times>] [--memory <GB>] [--time-zone <IANA name>] [--hz <n>]
+//!       [--connection offline|reconnecting]
 //!
 //! It runs the module the folder's `index.html` loads, as `bun app.js` built it, with the UI library a native host
 //! loads from `--ui` (`bun run build` in core/ui), and answers what the page asks its client from `--answers`, as
@@ -50,6 +51,8 @@
 //! `--memory` gives its page the memory it would have on a device with that many GB, as a phone of 4 has 256 MB
 //! (`renderer::js::memory_limit`), so one that runs away runs out as soon as it would there.
 //! `--time-zone` has the page's clock show times in that time zone, as a device in it does: the clock is `UTC` otherwise.
+//! `--connection` is whether its network answers, as its client tells an app's window (`Connection` in core/client):
+//! not answering, the window says so over its page (`Notice::connection`).
 //! `--hz` is how often its display refreshes from the start, as a device's says before its first frame (60 unless it
 //! says): a `replay` at another rate plays at that one, then the display's is its own again.
 //! `--measure` says, on stderr after the rest, how quickly it draws, as a line `measured {…}`: its first
@@ -432,6 +435,9 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
     let ran = started.elapsed();
     if let Some(why) = windows.with(id, |screen| screen.didnt_start().map(str::to_owned)).flatten() {
         anyhow::bail!("its page didn't start: {why}");
+    }
+    if let Some(connection) = flag("--connection") {
+        windows.with(id, |screen| screen.notice = renderer::Notice::connection(&connection));
     }
     // With `--latency`, the page's clock runs as it opens, each answer coming when it's due, until it's had them all:
     // its first content is then, on that clock.

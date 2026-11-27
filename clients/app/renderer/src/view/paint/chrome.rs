@@ -59,31 +59,47 @@ impl Painter<'_> {
         }
     }
 
-    /// The window's notice over the top of its page (`Notice`), `top` points down: a pill of the foreground's colour
-    /// with its words in the background's, as a toast, centred, and its action after them, highlighted under the
-    /// pointer. → where its action is.
-    pub(in crate::view) fn notice(&mut self, notice: &Notice, top: f32, hovered: bool) -> Option<Bounds<f32>> {
+    /// The window's notice (`Notice`) where it says it (`NoticeAt`), clear of what the window keeps for itself
+    /// (`insets`): a banner, `NOTICE_HEIGHT` tall, in the muted fill with its words in the muted foreground, as the
+    /// window page's banner is (client.css's `#banner`), centred, and its action after them, highlighted under the
+    /// pointer; or in a title row, a pill of the same in its middle, and in a panel, at the start of its foot. → where its
+    /// action is.
+    pub(in crate::view) fn notice(&mut self, notice: &Notice, at: NoticeAt, insets: Edges<f32>, hovered: bool) -> Option<Bounds<f32>> {
         let conditions = self.conditions;
         let window = self.window;
         let colour = |id: &str| colour_token(id, conditions);
         let (words_style, action_style) = chrome_type(conditions);
         let words = self.text.paragraph(&notice.text, &words_style, &[], None, Some(1));
         let action = notice.action.as_ref().map(|(name, _)| self.text.paragraph(name, &action_style, &[], None, Some(1)));
-        let (pad, gap, height) = (12.0, 4.0, 30.0);
-        let action_width = action.as_ref().map_or(0.0, |action| gap + pad + action.size().width.ceil() + pad - 4.0);
-        let width = pad + words.size().width.ceil() + action_width + if action.is_some() { 4.0 } else { pad };
-        let pill = Bounds { origin: point((window.size.width - width) / 2.0, top + 8.0), size: Size { width, height } };
-        self.quad(pill, ContentMask::from(window), colour("label"), Edges::default(), Hsla::default(), Corners::all(height / 2.0), false, 1.0);
-        let middle = pill.origin.y + height / 2.0;
+        let (pad, gap, height) = (8.0, 8.0, crate::view::NOTICE_HEIGHT);
+        let action_width = action.as_ref().map_or(0.0, |action| gap + pad + action.size().width.ceil() + pad);
+        let width = words.size().width.ceil() + action_width;
+        let (banner, round) = match at {
+            NoticeAt::Row => {
+                let height = 24.0;
+                let pill = Bounds { origin: point((window.size.width - width) / 2.0 - 12.0, (insets.top - height) / 2.0), size: Size { width: width + 24.0, height } };
+                (pill, Corners::all(height / 2.0))
+            }
+            NoticeAt::Top => (Bounds { origin: point(0.0, insets.top), size: Size { width: window.size.width, height } }, Corners::default()),
+            NoticeAt::Foot => {
+                let height = 28.0;
+                let pill = Bounds { origin: point(insets.left + 16.0, window.size.height - insets.bottom - 16.0 - height), size: Size { width: width + 24.0, height } };
+                (pill, Corners::all(height / 2.0))
+            }
+        };
+        let height = banner.size.height;
+        self.quad(banner, ContentMask::from(window), colour("muted"), Edges::default(), Hsla::default(), round, false, 1.0);
+        let middle = banner.origin.y + height / 2.0;
         let words_at = |paragraph: &Paragraph, x: f32| Bounds { origin: point(x, middle - paragraph.size().height / 2.0), size: paragraph.size() };
-        let text = Text { style: words_style, color: colour("background"), align: 0.0, wrap: false, underline: false, selectable: false };
-        self.paint_text(&words, &[], words_at(&words, pill.origin.x + pad), words.size().width.ceil(), 1.0, text, 1.0, ContentMask::from(window));
+        let text = Text { style: words_style, color: colour("muted-foreground"), align: 0.0, wrap: false, underline: false, selectable: false };
+        let start = if at == NoticeAt::Foot { banner.origin.x + 12.0 } else { (window.size.width - width) / 2.0 };
+        self.paint_text(&words, &[], words_at(&words, start), words.size().width.ceil(), 1.0, text, 1.0, ContentMask::from(window));
         let action = action?;
-        let x = pill.origin.x + pad + words.size().width.ceil() + gap;
-        let bounds = Bounds { origin: point(x, pill.origin.y + 4.0), size: Size { width: pad + action.size().width.ceil() + pad, height: height - 8.0 } };
+        let x = start + words.size().width.ceil() + gap;
+        let bounds = Bounds { origin: point(x, banner.origin.y + 4.0), size: Size { width: pad + action.size().width.ceil() + pad, height: height - 8.0 } };
         if hovered {
-            let mut highlight = colour("background");
-            highlight.a *= 0.2;
+            let mut highlight = colour("label");
+            highlight.a *= 0.08;
             self.quad(bounds, ContentMask::from(window), highlight, Edges::default(), Hsla::default(), Corners::all(bounds.size.height / 2.0), false, 1.0);
         }
         self.paint_text(&action, &[], words_at(&action, x + pad), action.size().width.ceil(), 1.0, Text { style: action_style, ..text }, 1.0, ContentMask::from(window));
