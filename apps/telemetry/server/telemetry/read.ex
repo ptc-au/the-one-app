@@ -1,8 +1,7 @@
 defmodule Telemetry.Read do
   @moduledoc """
-  What's kept, read: errors by kind, tools by how long they took, a trace whole, a metric over time and what AI
-  cost, from OTLP laid flat (`Telemetry.Otlp`). Numbers are OpenTelemetry's histograms, with explicit buckets, which
-  add up by their buckets and give quantiles within a bucket; times out of here are milliseconds.
+  What's kept, read: errors by kind, tools by how long they took, a trace whole and a metric over time, from OTLP laid
+  flat (`Telemetry.Otlp`). Numbers are OpenTelemetry's histograms, with explicit buckets, which add up by their buckets and give quantiles within a bucket; times out of here are milliseconds.
   """
 
   @doc """
@@ -259,40 +258,6 @@ defmodule Telemetry.Read do
     end
   end
 
-  @doc """
-  What AI used, per model per day, newest first: tokens in and out, and what it cost where the endpoint said, as apps
-  record them (OpenTelemetry's `gen_ai.client.token.usage`, and `gen_ai.client.cost` in US dollars).
-  """
-  def spending(batches) do
-    points =
-      for b <- batches, p <- b["metrics"], p["name"] in ["gen_ai.client.token.usage", "gen_ai.client.cost"], do: p
-
-    points
-    |> Enum.group_by(&{day(&1["time"]), &1["attributes"]["gen_ai.request.model"]})
-    |> Enum.map(fn {{day, model}, points} ->
-      sum = fn name, type ->
-        for p <- points,
-            p["name"] == name,
-            type == nil or p["attributes"]["gen_ai.token.type"] == type,
-            reduce: 0,
-            do: (s -> s + p["sum"])
-      end
-
-      cost =
-        if Enum.any?(points, &(&1["name"] == "gen_ai.client.cost")),
-          do: Float.round(sum.("gen_ai.client.cost", nil) / 1, 6)
-
-      %{
-        day: day,
-        model: model,
-        input: round(sum.("gen_ai.client.token.usage", "input")),
-        output: round(sum.("gen_ai.client.token.usage", "output")),
-        cost: cost
-      }
-    end)
-    |> Enum.sort_by(&{&1.day, &1.model}, :desc)
-  end
-
   # Where a log line is from, as a person reads it: an app's page or a client that failed, or the server that logged
   # it.
   # Where an exception threw, as OpenTelemetry's `code` attributes say it: a page's, in its app's source.
@@ -426,5 +391,4 @@ defmodule Telemetry.Read do
   end
 
   defp ms(ns), do: div(ns, 1_000_000)
-  defp day(ns), do: ns |> div(1_000_000_000) |> DateTime.from_unix!() |> DateTime.to_date() |> Date.to_iso8601()
 end

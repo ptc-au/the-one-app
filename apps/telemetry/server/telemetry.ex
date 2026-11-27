@@ -490,6 +490,7 @@ defmodule Telemetry do
     # How much is kept is listed as what's kept is read.
     retention = meanwhile(fn -> Tracer.with_span("telemetry retention", do: Store.retention(call.own)) end)
     shown = meanwhile(fn -> shown(call) end)
+    spending = meanwhile(fn -> Alerts.spending(call, inputs["hours"] || 24) end)
     {batches, from, to} = read(call, inputs["hours"] || 24)
     {shown, names} = {shown(shown), names(call)}
 
@@ -499,7 +500,7 @@ defmodule Telemetry do
         to: div(to, 1_000_000),
         failing: Read.errors(batches, shown) |> Enum.take(20) |> Enum.map(&Map.delete(&1, :minutes)),
         slowest: Read.slowest(batches, from, to, names) |> Enum.take(12),
-        spending: Read.spending(batches),
+        spending: Task.await(spending),
         calls: Read.calls(batches, from, to),
         names: names
       }
@@ -540,8 +541,7 @@ defmodule Telemetry do
   end
 
   def call("spending", inputs, call) do
-    {batches, _from, _to} = read(call, (inputs["days"] || Store.days()) * 24)
-    %{spending: Read.spending(batches)}
+    %{spending: Alerts.spending(call, (inputs["days"] || Store.days()) * 24)}
   end
 
   def call("record", %{"records" => records}, _call) do

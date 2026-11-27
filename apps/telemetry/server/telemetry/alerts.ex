@@ -27,7 +27,7 @@ defmodule Telemetry.Alerts do
   What it reads is each batch kept since it last looked that it hasn't read, by its name (`Telemetry.Store.since/3`),
   so one kept late is read all the same, and it keeps of that only what its rules need: each server's last start and
   failure, each kind of error and when it first and last arrived, and per app per minute its calls, its failures and
-  how often it didn't answer, what Backups last said of each destination, and what Encryption last said of each encrypted artifact. Its first look reads the last 14 days for the kinds of error there were, and has no alert for
+  how often it didn't answer, what AI used each day per model (`spending/2`), what Backups last said of each destination, and what Encryption last said of each encrypted artifact. Its first look reads the last 14 days for the kinds of error there were, and has no alert for
   any of them. An error and a crash loop are judged by when they arrive, not when they happened, as Prometheus's alerts
   are by when they're evaluated: what a device kept while it was away, or a server said once it was back, is told
   when it's heard. Whether a server is one of the network's and ready, and how the network's update is, it asks of the relay
@@ -101,7 +101,9 @@ defmodule Telemetry.Alerts do
     "create table opens (device text not null, view text not null, name text, at integer not null, took integer not null, steps text, primary key (device, view, at)) without rowid",
     # Since when each latest build is the latest of its name (`OneCore.Builds.latest/0`): a machine is behind from then.
     "alter table builds drop column behind",
-    "create table newest (name text primary key, build text not null, since integer not null) without rowid"
+    "create table newest (name text primary key, build text not null, since integer not null) without rowid",
+    # What AI used each day, per model, added up as it's read (`spending/2`): '' is a model not said.
+    "create table spending (day text not null, model text not null, input real not null default 0, output real not null default 0, cost real, primary key (day, model)) without rowid"
   ]
 
   @kinds %{
@@ -363,6 +365,14 @@ defmodule Telemetry.Alerts do
       else: [{:frames, device, Read.from(point), minute(point["time"]), if(part == "", do: count, else: 0), if(part == "", do: 0, else: count)}]
   end
 
+  # What AI used, as apps record it (OpenTelemetry's `gen_ai.client.token.usage`, and `gen_ai.client.cost` in US dollars).
+  defp metric(%{"name" => "gen_ai.client.token.usage", "attributes" => %{"gen_ai.token.type" => type} = a} = point)
+       when type in ["input", "output"],
+       do: [{:spent, day(ms(point["time"])), a["gen_ai.request.model"] || "", if(type == "input", do: point["sum"], else: 0), if(type == "output", do: point["sum"], else: 0), nil}]
+
+  defp metric(%{"name" => "gen_ai.client.cost", "attributes" => a} = point),
+    do: [{:spent, day(ms(point["time"])), a["gen_ai.request.model"] || "", 0, 0, point["sum"]}]
+
   defp metric(_point), do: []
 
   # The device or server an error was on: a client's, as its request proved it is, a server's machine, or the edge.
@@ -377,7 +387,7 @@ defmodule Telemetry.Alerts do
   # Keeps what the rules need of `signals`. Its first look keeps only the kinds of error there were, as seen, and
   # none is new.
   defp keep(db, signals, true, now) do
-    signals = for {:error, _kind, _device, _place, _message} = error <- signals, do: error
+    signals = for signal <- signals, elem(signal, 0) in [:error, :spent], do: signal
     keep(db, signals, false, now)
     query(db, "update seen set new = 0", [])
   end
@@ -412,6 +422,18 @@ defmodule Telemetry.Alerts do
         db,
         "insert into alerts (kind, key, state, title, text, began, last, ended) values ('server', 'network', 'resolved', ?, ?, ?, ?, ?)",
         ["None of the network's servers answered for #{took(stop - start)}", message, start, stop, stop]
+      )
+    end
+
+    for {:spent, day, model, input, output, cost} <- signals do
+      query(
+        db,
+        """
+        insert into spending (day, model, input, output, cost) values (?, ?, ?, ?, ?)
+        on conflict (day, model) do update set input = input + excluded.input, output = output + excluded.output,
+          cost = case when excluded.cost is null then cost else coalesce(cost, 0) + excluded.cost end
+        """,
+        [day, model, input, output, cost]
       )
     end
 
@@ -562,6 +584,7 @@ defmodule Telemetry.Alerts do
     query(db, "delete from builds where at < ?", [now - @day])
     query(db, "delete from memory where at < ?", [now - @day])
     query(db, "delete from frames where minute < ?", [now - 60 * @minute])
+    query(db, "delete from spending where day < ?", [day(now - Store.days() * @day)])
     query(db, "delete from seen where last < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from servers where max(coalesce(failed, 0), coalesce(started, 0), coalesce(looping, 0)) < ?", [now - Store.days() * 86_400_000])
     query(db, "delete from alerts where ended < ?", [now - 7 * 86_400_000])
@@ -869,6 +892,29 @@ defmodule Telemetry.Alerts do
     end
   end
 
+  ## Spending
+
+  @doc """
+  What AI used per model per day, newest first, over the last `hours`: tokens in and out, and what it cost where the
+  endpoint said. It's added up as it's read each minute, so reading it takes no more of what's kept however far back.
+  """
+  def spending(call, hours) do
+    since = day(System.os_time(:millisecond) - hours * 3_600_000)
+
+    transaction(call, fn db ->
+      for row <- query(db, "select day, nullif(model, '') as model, input, output, cost from spending where day >= ?", [since]) do
+        %{
+          day: row["day"],
+          model: row["model"],
+          input: round(row["input"]),
+          output: round(row["output"]),
+          cost: row["cost"] && Float.round(row["cost"] / 1, 6)
+        }
+      end
+      |> Enum.sort_by(&{&1.day, &1.model}, :desc)
+    end)
+  end
+
   ## The database
 
   @doc "Runs `fun` in a transaction on Telemetry's database, whose tables are this module's `@schema`."
@@ -882,5 +928,6 @@ defmodule Telemetry.Alerts do
 
   defp ms(ns), do: div(ns, 1_000_000)
   defp minute(ns), do: div(ms(ns), @minute) * @minute
+  defp day(ms), do: ms |> DateTime.from_unix!(:millisecond) |> DateTime.to_date() |> Date.to_iso8601()
   defp first_line(text), do: Read.first_line(text)
 end
