@@ -274,11 +274,17 @@ for (const [target, event] of /** @type {const} */ ([[window, "online"], [docume
 
 /// What each open app was answered that only reads, by what it asked: it's answered that at once, as
 /// stale-while-revalidate has it, as the app's client answers a view (`Subscription` in `core/client`). A write has
-/// each tool's answer asked again in the background (`fetching`), and the app is told as one comes back different.
+/// each answer of its app's tools asked again in the background (`fetching`), and the app is told as one comes back
+/// different. One stale (`STALE_TIME`) is asked again as it's read or its user returns to it (`answered`).
 /// Each remembers how many times its app had been told something changed when it last read it (`read`, as `told`
 /// counts): an app told reads again what it shows, so what it didn't read since is no longer shown, and isn't asked
 /// again.
-/** @typedef {{ method: string, params: Record<string, unknown>, response: unknown, invalidated: number, fetched: number, read: number, fetching?: { generation: number, done: Promise<boolean> } }} CachedQuery */
+/** @typedef {{ method: string, params: Record<string, unknown>, response: unknown, invalidated: number, fetched: number, read: number, answered?: number, fetching?: { generation: number, done: Promise<boolean> } }} CachedQuery */
+/// How long a server's answer is fresh, as TanStack Query's `staleTime`, as the app's client has it (`STALE_TIME` in
+/// `core/client/src/cache.rs`): what changes, a server says (`heard`).
+const STALE_TIME = 5 * 60 * 1000
+/** @param {CachedQuery} entry */
+const stale = (entry) => entry.answered === undefined || performance.now() - entry.answered > STALE_TIME
 /** @type {Map<string, Map<string, CachedQuery>>} */
 const views = new Map()
 /** @param {string} view */
@@ -308,6 +314,7 @@ function fetchEntry(view, entry, generation) {
       }
       if (generation < entry.invalidated || generation < entry.fetched) return true
       entry.fetched = generation
+      entry.answered = performance.now()
       ;(kept.reads[view] ??= {})[JSON.stringify([entry.method, entry.params])] = fresh
       keep()
       if (JSON.stringify(fresh) !== JSON.stringify(entry.response)) {
@@ -340,6 +347,7 @@ async function read(view, method, params) {
   if (cached?.fetching && cached.fetched < cached.invalidated) await cached.fetching.done
   if (cached) {
     cached.read = toldViews.get(view) ?? 0
+    if (!cached.fetching && stale(cached)) fetchEntry(view, cached, cached.invalidated)
     return cached.response
   }
   // Answered before this browser last closed it: that at once, and asked again, the app told if it's changed.
@@ -351,7 +359,7 @@ async function read(view, method, params) {
   }
   const response = await mcp(method, params)
   if (unkept(response)) return response
-  if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0, read: toldViews.get(view) ?? 0 })
+  if (!responses(view).has(request)) responses(view).set(request, { method, params, response, invalidated: 0, fetched: 0, read: toldViews.get(view) ?? 0, answered: performance.now() })
   ;(kept.reads[view] ??= {})[request] = response
   keep()
   return /** @type {CachedQuery} */ (responses(view).get(request)).response
@@ -361,7 +369,7 @@ async function read(view, method, params) {
 /// soon as this browser is signed in, as nearly every app's first call waits on it, and for any other subject on its
 /// first call. Those kept from before say it meanwhile, refreshed once in the background, as which tools only read
 /// hardly changes.
-/** @typedef {{ name: string, annotations?: { readOnlyHint?: boolean }, inputSchema?: { properties?: Record<string, { format?: string }> } }} ListedTool */
+/** @typedef {{ name: string, annotations?: { readOnlyHint?: boolean }, inputSchema?: { properties?: Record<string, { format?: string }> }, _meta?: { app?: string, path?: string } }} ListedTool */
 /** @type {Map<string, Promise<ListedTool[]>>} */
 const tools = new Map()
 /** @param {string} [subject] */
@@ -416,12 +424,12 @@ async function reads(method, params) {
   return (await known(subjectOf(params))).some((tool) => tool.name === params.name && tool.annotations?.readOnlyHint === true)
 }
 
-/// Asks again, in the background, for each tool `view` was answered, as its write may have changed what they answer
+/// Asks again, in the background, for each tool `view` was answered that `changed` says its write may have changed
 /// (TanStack Query's `invalidateQueries`). An app's files aren't: what changes them, an install or a deploy, says so.
-/** @param {string} view */
-function invalidate(view) {
+/** @param {string} view @param {Changed} changed */
+function invalidate(view, changed) {
   for (const cached of views.get(view)?.values() ?? []) {
-    if (cached.method !== "tools/call") continue
+    if (cached.method !== "tools/call" || !covers(changed, cached)) continue
     cached.invalidated += 1
     fetchEntry(view, cached, cached.invalidated)
   }
@@ -431,14 +439,15 @@ function invalidate(view) {
 /// changes. One already being asked again, as after this browser's own call, is waited for, not asked twice. What it
 /// hasn't read since it was last told something changed is no longer shown, as a screen it went on from, and is
 /// forgotten rather than asked again, as the app's client does (`refresh` in `core/client/src/cache.rs`).
-/** @param {string} view @param {Changed} [changed] */
-async function refresh(view, changed = {}) {
+/// With `which`, what it asks again is what that says: what's stale, as its user returns to it (`refetchStale`).
+/** @param {string} view @param {Changed} [changed] @param {(entry: CachedQuery) => boolean} [which] */
+async function refresh(view, changed = {}, which = (entry) => covers(changed, entry)) {
   const cached = views.get(view)
   if (!cached) return
   const told = toldViews.get(view) ?? 0
   let dropped = false
   for (const [request, entry] of cached) if (entry.read < told) (cached.delete(request), (dropped = true))
-  await Promise.all([...cached.values()].filter((entry) => covers(changed, entry)).map((entry) => entry.fetching?.done ?? fetchEntry(view, entry, entry.invalidated)))
+  await Promise.all([...cached.values()].filter(which).map((entry) => entry.fetching?.done ?? fetchEntry(view, entry, entry.invalidated)))
   // What it reads that was forgotten as it raced the app reading it after it was told comes back as it's read again.
   if (dropped) tell(view)
 }
@@ -718,17 +727,19 @@ const commands = {
     const response = await mcp(method, params)
     // A failed tool call changed nothing on the server; invalidating on it loops when a view calls an uninstalled tool.
     if (response?.isError) return response
-    const name = typeof params?.name === "string" ? params.name : ""
-    // One Core's own tools (`install`, `apps_update`) may change anything, the tools listed too.
-    const core = !name.includes("_") || name.startsWith("apps_")
+    // What it may have changed, as its server tells every client: an app's tool's app's answers, as its listing says
+    // (`_meta.app`), and One Core's own (`install`, `apps_update`) anything, the tools listed too.
+    const app = method === "tools/call" ? (await known(subjectOf(params)).catch(() => [])).find((tool) => tool.name === params?.name)?._meta?.app : undefined
     // A listing that fails is the connection going out (`answered`), and the call it follows says so itself.
-    if (method === "tools/call" && core) listTools(subjectOf(params)).catch(() => {})
-    // The view that wrote asks again for all it was answered, as the app's client's does (`Subscription::request`);
-    // the others hear what it changed from the server, as every client does (`heard`).
-    invalidate(view)
+    if (method === "tools/call" && !app) listTools(subjectOf(params)).catch(() => {})
+    // The view that wrote asks again for what it was answered of that, as the app's client's does
+    // (`Subscription::request`); the others hear what it changed from the server, as every client does (`heard`).
+    invalidate(view, app ? { app } : {})
     return response
   },
-  refresh: ({ view }) => refresh(view),
+  /// Its user returned to `view`: what's stale is asked again, as TanStack Query's `refetchOnWindowFocus`, and what
+  /// changed while they were away, a server said.
+  refresh: ({ view }) => refresh(view, {}, stale),
   close: ({ view }) => void (views.delete(view), toldViews.delete(view), missed.delete(view)),
   /// The open apps on screen, as the page says (`tellShowing` in clients/app/page/client.js).
   showing({ views }) {

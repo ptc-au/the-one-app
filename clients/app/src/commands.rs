@@ -46,10 +46,11 @@ pub(crate) fn waited(view: String, place: String, ms: u64) {
     waited::waited(&view, &place, ms);
 }
 
-/// Asks again for what a view was answered: its user returned to it.
+/// Asks again for what a view was answered that's stale: its user returned to it, and what changed while they were
+/// away, a server said.
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) async fn refresh(view: String) -> Result<(), String> {
-    views()?.subscription(&view).refresh(&Changed::Anything).await;
+    views()?.subscription(&view).refetch_stale().await;
     Ok(())
 }
 

@@ -42,6 +42,8 @@ const OWN: [&str; 2] = ["device", "device-name"];
 pub(crate) struct Listed {
     fills: HashMap<String, Vec<(String, Value)>>,
     reads: HashSet<String>,
+    /// Each app's tool's app, as its listing says (`_meta.app`): One Core's own have none.
+    apps: HashMap<String, String>,
 }
 
 /// The methods that only read, besides a tool that says it does.
@@ -65,6 +67,7 @@ pub(crate) fn listed(listed: &Value, formats: &[&str]) -> Listed {
     Listed {
         fills: tools.iter().filter_map(filled).collect(),
         reads: reads.filter_map(|tool| Some(tool["name"].as_str()?.to_owned())).collect(),
+        apps: tools.iter().filter_map(|tool| Some((tool["name"].as_str()?.to_owned(), tool["_meta"]["app"].as_str()?.to_owned()))).collect(),
     }
 }
 
@@ -116,6 +119,13 @@ impl Client {
             Some(method) => READS.contains(&method),
             None => false,
         })
+    }
+
+    /// The app whose tool `request` calls, as the server's list of tools says: none for One Core's own, for what
+    /// isn't a tool's call, or where this client can't say.
+    pub(crate) async fn app(&self, request: &Value) -> Option<String> {
+        let tool = request["params"]["name"].as_str().filter(|_| request["method"] == "tools/call")?;
+        self.listed().await.ok()?.apps.get(tool).cloned()
     }
 
     /// Fills in what this device does of a tool's inputs, if `request` calls a tool that has any.

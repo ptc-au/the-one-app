@@ -226,8 +226,8 @@ pub(crate) fn write(file: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// One cached read in a `Subscription`, as stale-while-revalidate has it (SWR, TanStack Query, Apollo): the view is
-/// always answered `response` at once, and a write, or a server saying something changed, asks again behind it
-/// (`fetching`), telling the view when the answer comes back different.
+/// always answered `response` at once, and a write, a server saying something changed, or its answer going stale
+/// (`STALE_TIME`), asks again behind it (`fetching`), telling the view when the answer comes back different.
 struct Query {
     method: String,
     params: Value,
@@ -239,24 +239,32 @@ struct Query {
     fetched: u64,
     /// The refetch a write started, which a refresh joins rather than asking again.
     fetching: Option<(u64, watch::Receiver<bool>)>,
-    /// When a server last answered it.
+    /// When a server last answered it: never, for one shown from what was kept, which is stale.
     answered: Option<Instant>,
     /// How many times the view had been told something changed when it last read it (`Subscription::told`).
     read: u64,
 }
 
-/// How long a server's answer is taken as fresh when the view asks it again, as TanStack Query's `staleTime`: a view
-/// asks everything again whenever one answer changes, and each of those asked the server again, whose answers changed
-/// others, in waves ~200 ms apart until they settled (25 Nov, Settings: 177 `settings_updates` in half an hour). What
-/// is known to have changed, by a write or a server's notice (`invalidate`, `refresh`), is asked again whatever this.
-const FRESH: Duration = Duration::from_secs(2);
+/// How long a server's answer is fresh, as TanStack Query's `staleTime`: read again within it, or as its user returns
+/// to the view (`refetch_stale`), it isn't asked again. A server says what changes (`notifications/one/changed`), which
+/// is asked again whatever this (`invalidate`, `refresh`), so this only bounds what no server said: a view asked the
+/// server again for everything it read each time any answer changed or its window came forward, with an answer trusted
+/// for 2 s, and Sign In and the Home Screen were asked ~100 times for each time they were opened (27 Nov: 100k
+/// `sign-in_people` a week on PTC, the answers the same each time).
+const STALE_TIME: Duration = Duration::from_secs(5 * 60);
+
+/// Whether a read's answer is stale (`STALE_TIME`), or never came from a server.
+fn stale(query: &Query) -> bool {
+    query.answered.is_none_or(|at| at.elapsed() > STALE_TIME)
+}
 
 /// What one view has been answered since it opened. It asks through this, and every view gets the same, with
 /// nothing to write: what only reads is answered at once from what was kept and asked again behind it, as
 /// stale-while-revalidate is, so a view opens as fast while its servers restart as with them up; a write resolves as
-/// soon as its own answer arrives and has the tools the view was answered asked again in the background; and reads
-/// are also asked again when the user returns to the view or a server says something changed. When an answer comes
-/// back different, the view is told to ask again, and is answered at once.
+/// soon as its own answer arrives and has what it may have changed, its app's tools the view was answered, asked again
+/// in the background; reads are asked again as a server says something changed, and those that are stale as they're
+/// read or the user returns to the view. When an answer comes back different, the view is told to ask again, and is
+/// answered at once.
 pub struct Subscription {
     client: Arc<Client>,
     /// What only reads, by what was asked, with the answer the view was last given and when it was asked again.
@@ -266,9 +274,6 @@ pub struct Subscription {
     /// How many times the view has been told something changed: a view told reads again what it shows, so what it
     /// didn't read since is no longer shown, and isn't asked again (`refresh`).
     told: AtomicU64,
-    /// When the view was last told something changed: what it reads again just after is what it shows, read again as
-    /// it was told, not as time passed, so it isn't asked again by its age (`FRESH`).
-    told_at: Mutex<Option<Instant>>,
     /// What it asked with nothing kept, while a server's answer is awaited, by what was asked: the same asked again
     /// meanwhile waits for that answer, as TanStack Query shares a query in flight, where each was asked again (on 25
     /// Nov Settings asked one that took 7 s nine times over as its other answers came in).
@@ -277,7 +282,7 @@ pub struct Subscription {
 
 impl Subscription {
     pub fn new(client: Arc<Client>, changed: impl Fn() + Send + Sync + 'static) -> Arc<Self> {
-        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), told: AtomicU64::new(0), told_at: Mutex::default(), asking: Mutex::default() })
+        Arc::new(Self { client, responses: Mutex::default(), changed: Box::new(changed), told: AtomicU64::new(0), asking: Mutex::default() })
     }
 
     /// Answers what the view asks: the result of `method`. A write resolves as soon as its own answer arrives.
@@ -286,21 +291,27 @@ impl Subscription {
             return self.read(method, params).await;
         }
         let response = self.client.request(method, params.clone()).await?;
-        if changes_tools(method, &params) {
+        // What it may have changed, as its server tells every client (`changed` in `OneCore.MCP`): an app's tool's
+        // app's answers, and One Core's own anything, the tools listed too. A tool that failed changed nothing.
+        let app = self.client.app(&json!({"method": method, "params": params})).await;
+        if method == "tools/call" && app.is_none() {
             self.client.refresh_listed();
         }
-        self.invalidate();
+        if response["isError"] != true {
+            self.invalidate(&app.map_or(Changed::Anything, Changed::App));
+        }
         Ok(response)
     }
 
-    /// Asks again, in the background, for each tool the view was answered, as a write may have changed what they
-    /// answer (TanStack Query's `invalidateQueries`). An app's files aren't asked again for a tool's write: what
-    /// changes them, an install or a deploy, says so (`notifications/one/changed`).
-    fn invalidate(self: &Arc<Self>) {
+    /// Asks again, in the background, for each tool the view was answered that `changed` says a write may have changed
+    /// (TanStack Query's `invalidateQueries`). An app's
+    /// files aren't asked again for a tool's write: what changes them, an install or a deploy, says so
+    /// (`notifications/one/changed`).
+    fn invalidate(self: &Arc<Self>, changed: &Changed) {
         let mut spawned = Vec::new();
         {
             let mut responses = self.responses.lock().expect("no view panics");
-            for (key, query) in responses.iter_mut().filter(|(_, query)| query.method == "tools/call") {
+            for (key, query) in responses.iter_mut().filter(|(_, query)| query.method == "tools/call" && changed.covers(&query.method, &query.params)) {
                 query.invalidated += 1;
                 let generation = query.invalidated;
                 let (tx, rx) = watch::channel(false);
@@ -319,6 +330,18 @@ impl Subscription {
     /// as a screen it went on from, and is forgotten rather than asked again: read again, what was kept is shown at
     /// once and asked again behind it.
     pub async fn refresh(&self, changed: &Changed) {
+        self.refetch(|query| changed.covers(&query.method, &query.params)).await
+    }
+
+    /// Asks the server again for what the view still reads that's stale (`STALE_TIME`), as its user returns to it, as
+    /// TanStack Query's `refetchOnWindowFocus`: what changed while they were away, a server said (`refresh`).
+    pub async fn refetch_stale(&self) {
+        self.refetch(stale).await
+    }
+
+    /// Asks the server again for what the view still reads that `which` says, and tells the view as each answer
+    /// changes, as `refresh` says.
+    async fn refetch(&self, which: impl Fn(&Query) -> bool) {
         let mut asks = Vec::new();
         let mut waiting = Vec::new();
         let dropped;
@@ -329,7 +352,7 @@ impl Subscription {
             responses.retain(|_, query| query.read >= told);
             dropped = before != responses.len();
             for (key, query) in responses.iter() {
-                if !changed.covers(&query.method, &query.params) {
+                if !which(query) {
                     continue;
                 }
                 // A write's refetch is already on its way to the server; join it rather than sending a duplicate
@@ -357,7 +380,6 @@ impl Subscription {
     /// Tells the view that what it was answered changed, so it reads again what it shows.
     fn tell(&self) {
         self.told.fetch_add(1, Ordering::Relaxed);
-        *self.told_at.lock().expect("no view panics") = Some(Instant::now());
         (self.changed)();
     }
 
@@ -373,17 +395,12 @@ impl Subscription {
         if let Some(mut written) = written {
             let _ = written.wait_for(|done| *done).await;
         }
-        // What the view was answered is shown again at once, and asked again behind it unless it's being asked or was
-        // just answered (`FRESH`): a view outlives its window, so one opened again, or a phone's back from behind
-        // another app, would show forever what it was answered before (21 Nov: Sign In & Security reopened without the
-        // passkey just made), and a widget reads again to show what's new. Read again because one answer changed, what
-        // else it reads hasn't, so it isn't asked again by its age: each answer that changed had the view read
-        // everything again, which asked the server again for all it read, as one Virtual Office answer did the Home
-        // Screen's pages, people, groups and sections (26 Nov).
-        let told = self.told_at.lock().expect("no view panics").is_some_and(|at| at.elapsed() < FRESH);
+        // What the view was answered is shown again at once, and asked again behind it if it's stale (`STALE_TIME`)
+        // and isn't being asked: a view outlives its window, and what no server said changed, as a widget's figure, is
+        // asked again by its age.
         if let Some(query) = self.responses.lock().expect("no view panics").get_mut(&key) {
             query.read = self.told.load(Ordering::Relaxed);
-            if query.fetching.is_none() && !told && query.answered.is_none_or(|at| at.elapsed() > FRESH) {
+            if query.fetching.is_none() && stale(query) {
                 let (tx, rx) = watch::channel(false);
                 query.fetching = Some((query.invalidated, rx));
                 let (shown, key, method, params, generation) = (self.clone(), key.clone(), method.to_owned(), params.clone(), query.invalidated);
@@ -404,13 +421,15 @@ impl Subscription {
         if let Some(query) = responses.get(&key) {
             return Ok(query.response.clone());
         }
+        // What was kept is asked again behind it, which a refetch meanwhile joins.
+        let (tx, rx) = watch::channel(false);
         responses.insert(key.clone(), Query {
             method: method.to_owned(),
             params: params.clone(),
             response: response.clone(),
             invalidated: 0,
             fetched: 0,
-            fetching: None,
+            fetching: revalidate.then_some((0, rx)),
             answered: (!revalidate).then(Instant::now),
             read: self.told.load(Ordering::Relaxed),
         });
@@ -418,7 +437,7 @@ impl Subscription {
         if revalidate {
             let shown = self.clone();
             let method = method.to_owned();
-            tokio::spawn(async move { shown.fetch(key, method, params, 0, None).await });
+            tokio::spawn(async move { shown.fetch(key, method, params, 0, Some(tx)).await });
         }
         Ok(response)
     }
@@ -555,12 +574,3 @@ impl Changed {
         }
     }
 }
-
-/// Whether a write call may change the server's `tools/list`: One Core's own tools (no `_`) or `apps_*`.
-fn changes_tools(method: &str, params: &Value) -> bool {
-    method == "tools/call"
-        && params["name"]
-            .as_str()
-            .is_some_and(|name| !name.contains('_') || name.starts_with("apps_"))
-}
-
