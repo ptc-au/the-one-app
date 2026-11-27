@@ -1,6 +1,6 @@
 // An app's page drawn by the renderer (clients/app/renderer), as a computer's and a phone's windows draw it, in this
-// frame of the web client's: the renderer is WebAssembly on the browser's WebGPU, or its WebGL2 where it has none
-// (`renderer::platform::web`), and the page's JS is this frame's own, which draws through it as a native host's
+// frame of the web client's: the renderer is WebAssembly (JavaScript made of it where a frame refuses WebAssembly) on the
+// browser's WebGPU, or its WebGL2 where it has none (`renderer::platform::web`), and the page's JS is this frame's own, which draws through it as a native host's
 // sandbox does (`globalThis.mutations`, the UI library's native build). Its client names the page and the runtime
 // version it needs, and passes what the page and it say to each other (`client`). A classic script, so the import map it
 // writes comes before any module loads; and what it loads is named by its full address, beside this script's, so it
@@ -18,10 +18,14 @@
   const framed = new URLSearchParams(location.search).get("frame")
   const pageHtml = got(page).then((response) => response.text())
   if (framed) return frame(page, pageHtml, framed)
-  // What takes longest starts at once, each beside the others: the renderer, downloaded and compiled as it comes (and
-  // preloaded by index.html), the page's own HTML, and the UI library's tables, which are at the network's root.
+  // What takes longest starts at once, each beside the others: the renderer, downloaded and compiled as it comes, the
+  // page's own HTML, and the UI library's tables, which are at the network's root. The renderer is WebAssembly, or
+  // JavaScript made of the same where a frame refuses WebAssembly (an assistant's chat whose Content Security Policy
+  // has no `'wasm-unsafe-eval'`, as T3's and VS Code's): which is found by compiling a module of a few bytes (the
+  // smallest there is), before either is fetched, so the one that isn't used is never downloaded.
   const here = /** @type {HTMLScriptElement} */ (document.currentScript).src
-  const compiled = WebAssembly.compileStreaming(fetch(new URL("web_renderer_bg.wasm", here)))
+  const javascript = await (async () => WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])))().then(() => false, () => true)
+  const compiled = javascript ? undefined : WebAssembly.compileStreaming(fetch(new URL("web_renderer_bg.wasm", here)))
   const libraryTables = Promise.all(["/ui/client/tokens.json", "/ui/client/styles.json"].map(async (table) => (await got(new URL(table, page))).text()))
   /// How long each step took, from the frame's script, which its first frame tells (`seen`), and each step as it's
   /// done, which its client says a page that doesn't draw waits on (`waitedOn` in clients/app/page/page-machine.js).
@@ -50,10 +54,12 @@
     // Its tables: the UI library's tokens and styles, and its app's styles, which its build writes beside every page.
     const [tables, [renderer, { textInput }, { semantics }, { voices }, { videos }]] = await Promise.all([
       Promise.all([libraryTables, got(new URL("styles.json", base)).then((response) => response.text())]).then(([library, own]) => (step("tables"), [...library, own])),
-      Promise.all([import("./web_renderer.js"), import("./text-input.js"), import("./semantics.js"), import("./voice.js"), import("./video.js")]),
+      Promise.all([import(javascript ? "./web_renderer_js.js" : "./web_renderer.js"), import("./text-input.js"), import("./semantics.js"), import("./voice.js"), import("./video.js")]),
     ])
-    await renderer.default({ module_or_path: await compiled.then((module) => (step("compiled"), module)) })
+    // The JavaScript's `default` has nothing to load: it's compiled as it's imported.
+    await renderer.default({ module_or_path: await Promise.resolve(compiled).then((module) => (step("compiled"), module)) })
     step("renderer")
+    seen("build", javascript ? "javascript" : "wasm")
     // A page built with this renderer's own UI library (check/) names none.
     const needs = client.runtime ?? 0
     if (!(needs <= renderer.runtime_version())) throw new Error(`it needs runtime version ${needs}`)
@@ -151,9 +157,9 @@
       drawn: () => {
         document.documentElement.dataset.drawn = String(Math.round(performance.now()))
         seen("first frame ms", Math.round(performance.now()))
-        const wasm = /** @type {PerformanceResourceTiming | undefined} */ (performance.getEntriesByName(new URL("web_renderer_bg.wasm", here).href)[0])
+        const loaded = /** @type {PerformanceResourceTiming | undefined} */ (performance.getEntriesByName(new URL(javascript ? "web_renderer_js.js" : "web_renderer_bg.wasm", here).href)[0])
         step("drawn")
-        seen("took", { ...took, script: Math.round(started), wasmDownload: wasm && Math.round(wasm.responseEnd - wasm.startTime), wasmBytes: wasm?.transferSize })
+        seen("took", { ...took, script: Math.round(started), rendererDownload: loaded && Math.round(loaded.responseEnd - loaded.startTime), rendererBytes: loaded?.transferSize })
         console.info(`first frame ${Math.round(performance.now() - started)} ms after the frame's script, ${Math.round(performance.now())} ms after it was opened`)
       },
       unopened,

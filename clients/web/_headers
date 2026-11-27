@@ -28,6 +28,9 @@
   Cache-Control: public, max-age=31536000, immutable
 /renderer/web_renderer-*
   Cache-Control: public, max-age=31536000, immutable
+# The same renderer as JavaScript, where a frame refuses WebAssembly (clients/web/renderer/renderer.js).
+/renderer/web_renderer_js-*
+  Cache-Control: public, max-age=31536000, immutable
 /renderer/text-input-*
   Cache-Control: public, max-age=31536000, immutable
 /renderer/semantics-*

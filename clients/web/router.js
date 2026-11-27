@@ -101,15 +101,17 @@ function show(page, whom) {
 
 /// Tells Telemetry what went wrong in this page, as the web client does (`report` in host.js), as a `notifications/one/measured` to
 /// the network, which keeps it for whoever let the assistant in: a page's own error, a call the network refused it, a renderer that
-/// couldn't open it. Sent at once, since the assistant may take the page away; where this can't reach the network there's nowhere
-/// to keep it, and the page says so as it did.
-/** @param {string} name @param {unknown} error @param {Record<string, unknown>} [attributes] */
-function report(name, error, attributes = {}) {
+/// couldn't open it; and what the renderer was made of, WebAssembly or JavaScript. Sent at once, since the assistant may take the
+/// page away; where this can't reach the network there's nowhere to keep it, and the page says so as it did.
+/** @param {{ name: string, error?: string, value?: number }} record @param {Record<string, unknown>} [attributes] */
+function measured(record, attributes = {}) {
   const hostInfo = greeted?.hostInfo?.name
-  const record = { name, error: String(error).slice(0, 500), attributes: { ...attributes, "service.name": "web", "one.app": showing?.split("/")[0], "one.assistant": typeof hostInfo === "string" ? hostInfo : undefined }, time: Date.now() }
+  const body = { ...record, attributes: { ...attributes, "service.name": "web", "one.app": showing?.split("/")[0], "one.assistant": typeof hostInfo === "string" ? hostInfo : undefined }, time: Date.now() }
   // A report that can't reach the network has no other way to be told.
-  fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/measured", params: { records: [record] } }) }).catch(() => {})
+  fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/measured", params: { records: [body] } }) }).catch(() => {})
 }
+/** @param {string} name @param {unknown} error @param {Record<string, unknown>} [attributes] */
+const report = (name, error, attributes = {}) => measured({ name, error: String(error).slice(0, 500) }, attributes)
 addEventListener("error", ({ message, filename, lineno, error }) => report("exception", message, { "code.file.path": URL.canParse(filename) ? new URL(filename).pathname : undefined, "code.line.number": lineno, "exception.stacktrace": error?.stack }))
 addEventListener("unhandledrejection", ({ reason }) => report("exception", reason?.message ?? reason, { "exception.stacktrace": reason?.stack }))
 
@@ -205,6 +207,7 @@ function fromPage(data) {
   // The renderer has drawn its page, which is shown from then; or couldn't open it, and says why, which is said here as
   // a native host's window says it.
   if (data.method === "notifications/one/seen" && "drawn" in (data.params ?? {})) document.body.dataset.drawn = ""
+  if (data.method === "notifications/one/seen" && typeof data.params?.build === "string") measured({ name: "one.client.web.renderer", value: 1 }, { "one.build": data.params.build })
   for (const kind of ["lost", "panicked"]) if (data.method === "notifications/one/seen" && typeof data.params?.[kind] === "string") report(`one.client.web.gpu.${kind}`, data.params[kind])
   if (data.method === "notifications/one/seen" && typeof data.params?.unopened === "string") {
     report("one.page.unopened", data.params.unopened)
@@ -213,12 +216,7 @@ function fromPage(data) {
   toHost(data)
 }
 
-/** What the page says where the renderer couldn't open it, `why`: an assistant whose chat refuses WebAssembly (its
- * Content Security Policy) is named, as what the renderer is can't run there. @param {string} why */
-function unopened(why) {
-  const assistant = greeted?.hostInfo?.name
-  if (/Content Security Policy/i.test(why)) return `${typeof assistant === "string" ? assistant : "This assistant"} doesn't let this chat run the app's code (WebAssembly), so this app can't open here.`
-  return `This app couldn't open here: ${why}`
-}
+/** What the page says where the renderer couldn't open it, `why`. @param {string} why */
+const unopened = (why) => `This app couldn't open here: ${why}`
 
 toHost({ id: GREETING, method: "ui/initialize", params: { protocolVersion: "2026-01-26", appInfo: { name: "one", version: "1" }, appCapabilities: {} } })
