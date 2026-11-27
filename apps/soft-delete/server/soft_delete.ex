@@ -63,7 +63,7 @@ defmodule SoftDelete do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep what you deleted for 30 days"}
+  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep what you deleted for 30 days", "sign-in" => "to tell an agent's delete from yours"}
 
   @impl true
   def hooks, do: ["uninstalled", "superseded", "settings.sections", "renamed"]
@@ -76,7 +76,8 @@ defmodule SoftDelete do
         kind: :collect,
         description:
           "An artifact moved from one state of soft delete to another. It's about the `artifact`'s name and the state it " <>
-            "moved `to`: `deleted`, `purging`, `active` (restored) or `purged`. One restored beside something new at its " <>
+            "moved `to`: `deleted` (with `agent`: true where an agent deleted it, not its person on their screen, nor an " <>
+            "app's own code), `purging`, `active` (restored) or `purged`. One restored beside something new at its " <>
             "name says where, `as`. On `purging` it's at its name again, nothing of it erased yet, and `readable` says so " <>
             "(false only where something new was made at its name since): the app that made it reads it, as one does " <>
             "to revoke a token it holds. An app that keeps a list of what it made keeps it true from it. Each move " <>
@@ -292,6 +293,10 @@ defmodule SoftDelete do
     :ok
   end
 
+  # Whether an agent deleted it: not its person on a screen of theirs, and not an app's own code, which deletes what it
+  # keeps as its person asked.
+  defp agent?(call), do: call.caller == nil and not Call.app(call, "sign-in").screen?(call)
+
   # Takes the artifact `name` aside as one item, whoever's it is: the item's id.
   defp deleted(call, name) do
     record = %{
@@ -299,6 +304,7 @@ defmodule SoftDelete do
       "artifacts" => [name],
       "title" => title(call, app_of(name)),
       "by" => call.actor || call.subject,
+      "agent" => agent?(call),
       "at" => now()
     }
 
@@ -557,7 +563,7 @@ defmodule SoftDelete do
 
     case change(call, id, :moved) do
       {:ok, record} ->
-        notify(call, record, "deleted")
+        notify(call, record, "deleted", %{"agent" => record["agent"] == true})
         record
 
       {:error, why} ->
@@ -725,7 +731,7 @@ defmodule SoftDelete do
 
   # Tells the apps that hook `moved` of each artifact's move, for its owner, and gives why each that couldn't answer
   # couldn't, by its name.
-  defp notify(call, record, to) do
+  defp notify(call, record, to, extra \\ %{}) do
     Enum.reduce(record["artifacts"], %{}, fn name, unheard ->
       about =
         cond do
@@ -733,6 +739,7 @@ defmodule SoftDelete do
           to == "purging" -> %{"readable" => name in record["back"]}
           true -> %{}
         end
+        |> Map.merge(extra)
 
       {:ok, _parts, failed} =
         Hooks.collect("#{call.app}.moved", Map.merge(about, %{"artifact" => name, "to" => to}), {call.actor, record["owner"]})
