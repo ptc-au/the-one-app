@@ -259,12 +259,12 @@
   "Devices error": {
     "answers": {
       "sign-in_devices": {
-        "$error": "Couldn't reach the server"
+        "$error": "The server that runs this isn't answering right now."
       }
     },
     "component": "devices",
     "errors": [
-      "Couldn't reach the server"
+      "The server that runs this isn't answering right now."
     ]
   },
   "Passkeys": {
@@ -298,11 +298,11 @@
     "like": "Passkeys",
     "answers": {
       "sign-in_devices": {
-        "$error": "Couldn't reach it"
+        "$error": "No server is answering. Check this device is online and a server is on, then try again."
       }
     },
     "errors": [
-      "Couldn't reach it"
+      "No server is answering. Check this device is online and a server is on, then try again."
     ]
   },
   "Passkeys, servers waiting": {

@@ -193,12 +193,12 @@
   "Can't Show Backups": {
     "answers": {
       "backups_destinations": {
-        "$error": "Couldn't reach the network"
+        "$error": "Backups isn't answering right now."
       }
     },
     "component": "backups",
     "errors": [
-      "Couldn't reach the network"
+      "Backups isn't answering right now."
     ]
   },
   "A Narrow Backup List": {

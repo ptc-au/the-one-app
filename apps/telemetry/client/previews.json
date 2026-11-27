@@ -320,7 +320,7 @@
   "Can't Show Telemetry": {
     "answers": {
       "telemetry_overview": {
-        "$error": "Couldn't reach the network"
+        "$error": "No server is answering. Check this device is online and a server is on, then try again."
       },
       "telemetry_alerts": {
         "kinds": [],
@@ -329,18 +329,18 @@
       }
     },
     "errors": [
-      "Couldn't reach the network"
+      "No server is answering. Check this device is online and a server is on, then try again."
     ]
   },
   "Alerts Unreachable": {
     "like": "Overview",
     "answers": {
       "telemetry_alerts": {
-        "$error": "Telemetry couldn't be reached just now. Try again in a moment."
+        "$error": "Telemetry isn't answering right now."
       }
     },
     "errors": [
-      "couldn't be reached just now"
+      "isn't answering right now"
     ]
   },
   "A Long Day": {

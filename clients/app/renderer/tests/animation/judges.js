@@ -63,7 +63,7 @@ export function requests(steps, folder, answers = {}) {
     // do, with what changed while it was down on top, the page told each time.
     else if (step.restart !== undefined) {
       const tools = Object.keys(answers).filter((name) => !name.includes("/"))
-      out.push({ request: { op: "changed", answers: Object.fromEntries(tools.map((tool) => [tool, { $error: "Couldn't reach the server" }])) } })
+      out.push({ request: { op: "changed", answers: Object.fromEntries(tools.map((tool) => [tool, { $error: "The server that runs this isn't answering right now." }])) } })
       out.push({ request: { op: "clock", step: step.restart } })
       out.push({ request: { op: "changed", answers: { ...Object.fromEntries(tools.map((tool) => [tool, answers[tool]])), ...step.answers } } })
     } else if (step.answers) out.push({ request: { op: "changed", answers: step.answers } })

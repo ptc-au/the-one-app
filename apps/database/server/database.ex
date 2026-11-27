@@ -191,7 +191,7 @@ defmodule Database do
   # What whoever asked is told of a call whose database couldn't be reached, by the name they know its app by.
   defp unreachable(call) do
     app = OneCore.Apps.version(call.app_artifact)
-    raise "#{(app && app.title) || call.app} couldn't be reached just now. Try again in a moment."
+    raise "#{(app && app.title) || call.app} isn't answering right now."
   end
 
   @doc """

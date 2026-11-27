@@ -109,12 +109,12 @@
   "Can't Show": {
     "answers": {
       "soft-delete_list": {
-        "$error": "Couldn't reach the network"
+        "$error": "Recently Deleted isn't answering right now."
       }
     },
     "component": "deleted",
     "errors": [
-      "Couldn't reach the network"
+      "Recently Deleted isn't answering right now."
     ]
   }
 }

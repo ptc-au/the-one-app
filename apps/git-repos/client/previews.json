@@ -289,14 +289,14 @@
   "Error": {
     "answers": {
       "git-repos_list": {
-        "$error": "Couldn't reach the server"
+        "$error": "Git Repos isn't answering right now."
       },
       "permissions_transfers": {
         "transfers": []
       }
     },
     "errors": [
-      "Couldn't reach the server"
+      "Git Repos isn't answering right now."
     ]
   },
   "Waiting": {

@@ -532,7 +532,7 @@
   "Error": {
     "answers": {
       "vault_security": {
-        "$error": "Couldn't reach the server"
+        "$error": "Vault isn't answering right now."
       },
       "one/client": {
         "device": "Laptop",
@@ -542,7 +542,7 @@
     },
     "component": "accounts",
     "errors": [
-      "Couldn't reach the server"
+      "Vault isn't answering right now."
     ]
   },
   "Chrome Profiles": {

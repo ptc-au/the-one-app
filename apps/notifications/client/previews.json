@@ -54,11 +54,11 @@
     "like": "Inbox, empty",
     "answers": {
       "notifications_inbox": {
-        "$error": "The server didn't answer."
+        "$error": "Notifications isn't answering right now."
       }
     },
     "errors": [
-      "The server didn't answer."
+      "Notifications isn't answering right now."
     ]
   },
   "Inbox, a phone not woken": {

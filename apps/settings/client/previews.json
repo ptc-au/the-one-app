@@ -1055,11 +1055,11 @@
     "like": "Settings",
     "answers": {
       "settings_sections": {
-        "$error": "Couldn't reach your network."
+        "$error": "No server is answering. Check this device is online and a server is on, then try again."
       }
     },
     "errors": [
-      "Couldn't reach your network."
+      "No server is answering. Check this device is online and a server is on, then try again."
     ]
   },
   "Devices": {

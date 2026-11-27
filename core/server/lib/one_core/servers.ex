@@ -88,8 +88,15 @@ defmodule OneCore.Servers do
 
   def off(what, owner, servers),
     do:
-      "#{what} runs on #{owner}'s own servers, and none is on: " <>
+      unanswered() <>
+        "\n\n#{what} runs on #{owner}'s own servers, and none is on: " <>
         Enum.map_join(servers, "; ", &Server.error_message(:unreachable, &1)) <> "."
+
+  @doc """
+  What a person reads of a call no server that runs it answered: the first paragraph of its error, which one about
+  the servers themselves follows for an agent.
+  """
+  def unanswered, do: "The server that runs this isn't answering right now."
 
   @doc "The services the server whose key is `key` has installed: each one's app and its name."
   def installed(key) do

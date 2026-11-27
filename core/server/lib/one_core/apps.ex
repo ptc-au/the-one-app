@@ -81,8 +81,15 @@ defmodule OneCore.Apps do
     kind, reason ->
       Logger.error(OneCore.Redact.format(kind, reason, __STACKTRACE__))
       why = Enum.reduce(versions, why(kind, reason, __STACKTRACE__), &Version.own_names(&2, &1))
-      {:error, if(said?(kind, reason), do: why, else: "Something went wrong.\n\n" <> why)}
+      {:error, if(said?(kind, reason), do: why, else: fault(why))}
   end
+
+  @doc """
+  What whoever called is told of a fault, in an app's code or One Core's, that says `why` only to an agent: a tool
+  error's first paragraph is what a person's screen shows of it (`ui`'s `call`), so theirs is only that something went
+  wrong.
+  """
+  def fault(why), do: "Something went wrong.\n\n" <> why
 
   # Whether what was raised is the app saying why, `raise "..."`, also in a process the call waited on. Anything
   # else is a fault, in its code or in what it waited on: a tool error's first paragraph is what a person's screen

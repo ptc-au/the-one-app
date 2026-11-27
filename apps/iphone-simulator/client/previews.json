@@ -61,11 +61,11 @@
   "Couldn't list simulators": {
     "answers": {
       "iphone-simulator_list": {
-        "$error": "The server isn't answering"
+        "$error": "The server that runs this isn't answering right now."
       }
     },
     "errors": [
-      "The server isn't answering"
+      "The server that runs this isn't answering right now."
     ]
   },
   "A running simulator (no live video)": {

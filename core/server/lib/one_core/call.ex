@@ -29,6 +29,10 @@ defmodule OneCore.Call do
   alias OneCore.Call.State
   alias OneCore.Apps.{Calls, Version}
 
+  # What a person reads of a call refused what it reached: the first paragraph of its error, which why follows for an
+  # agent.
+  @no_access "You don't have access to this."
+
   @enforce_keys [:own, :installed, :folder, :server, :subject, :actor, :app, :app_artifact, :request, :loaded, :forwarded]
   defstruct [
     :own,
@@ -211,7 +215,7 @@ defmodule OneCore.Call do
   """
   def reach(%__MODULE__{subject: subject, actor: actor} = call, name, relation \\ "viewer") do
     name = User.renamed(name)
-    if why = refused(call, name, relation), do: raise(why)
+    if why = refused(call, name, relation), do: raise(@no_access <> "\n\n" <> why)
     # Its blobs are whoever's it is, whom this server may not act for. One that does runs the call.
     owner = User.owner(name) || "network"
     if not OneCore.Apps.here?(owner), do: forward(call, owner)
@@ -427,7 +431,7 @@ defmodule OneCore.Call do
     servers = OneCore.Apps.covering(owner) -- [Server.key()]
     elsewhere(ask, principal, servers)
     why = Enum.map_join(servers, "; ", &Server.error_message(:unreachable, &1))
-    raise "No server acting for #{owner} answered" <> if(why == "", do: "", else: ": " <> why)
+    raise Servers.unanswered() <> "\n\nNo server acting for #{owner} answered" <> if(why == "", do: ".", else: ": " <> why <> ".")
   end
 
   @doc """

@@ -929,7 +929,7 @@
     "like": "Home, one page of apps",
     "answers": {
       "home-screen_pages": {
-        "$error": "Couldn't reach the server"
+        "$error": "Home Screen isn't answering right now."
       },
       "permissions_groups": {
         "groups": [
@@ -941,7 +941,7 @@
       }
     },
     "errors": [
-      "Couldn't reach the server"
+      "Home Screen isn't answering right now."
     ]
   },
   "Launcher on a computer": {

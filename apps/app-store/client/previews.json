@@ -1713,11 +1713,11 @@
   "Can't Show Apps": {
     "answers": {
       "app-store_marketplace": {
-        "$error": "Couldn't reach the network"
+        "$error": "No server is answering. Check this device is online and a server is on, then try again."
       }
     },
     "errors": [
-      "Couldn't reach the network"
+      "No server is answering. Check this device is online and a server is on, then try again."
     ]
   }
 }
