@@ -146,6 +146,15 @@ impl Connection {
     pub fn answers(&self) -> bool {
         matches!(self, Self::Online | Self::Behind(_))
     }
+
+    /// What a window says over its page while its network doesn't answer, in a few words: nothing while it does.
+    pub fn banner(&self) -> Option<&'static str> {
+        match self {
+            Self::Offline => Some(crate::rpc::OFFLINE),
+            Self::Reconnecting => Some("Reconnecting…"),
+            _ => None,
+        }
+    }
 }
 
 impl From<Connection> for &'static str {

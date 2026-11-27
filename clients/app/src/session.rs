@@ -47,7 +47,7 @@ pub(crate) fn state(seq: u64, session: &State) -> Value {
         }),
         _ => None,
     };
-    json!({"seq": seq, "session": session, "link": link, "connection": session.connection()})
+    json!({"seq": seq, "session": session, "link": link, "connection": session.connection(), "banner": session.connection().banner()})
 }
 
 /// Opens the client, gives the window its views, and has the window follow the client's session and connection from

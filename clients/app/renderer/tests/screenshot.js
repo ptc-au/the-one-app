@@ -1,5 +1,5 @@
 // Draws every scene on a native host, and with `--web` on the web too, and compares them: `bun screenshot.js [<folder>…] [--scene <words>]
-// [--out <dir>] [--against <dir>] [--dark] [--connection offline|reconnecting] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --headless <its build of the
+// [--out <dir>] [--against <dir>] [--dark] [--notice <words>] [--glass tinted|blurred] [--size <width>x<height>] [--release] [--web] [--ssh <host> --headless <its build of the
 // headless renderer>]` in clients/app/renderer/tests, after `bun build.js` in core/ui, on the headless renderer it builds, or
 // the one built before from the same (animation.js's `built`; `--release` for a release build's, whose timings are a shipped build's). `--against` compares each scene with an earlier run's too, kept in that
 // `--out`: what a change did to how things look, drawn before it (on main) and after.
@@ -71,9 +71,9 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 // Its own worktree's, never a folder every agent on the machine shares, where one ran with another's UI build.
 const out = resolve(option("--out") ?? join(root, "target", "screenshot"))
 const dark = flag("--dark")
-// Whether its network answers, as its client tells an app's window (`--connection offline` or `reconnecting`): not
-// answering, the window says so over each scene's page, as over every app.
-const connection = option("--connection")
+// What its window says while its network doesn't answer, as its client tells an app's window (`--notice "Can't reach your
+// network"`, `Connection::banner` in core/client): over each scene's page, as over every app.
+const notice = option("--notice")
 // On Chromium's WebGL2, its WebGPU giving no adapter (`--webgl2`), as a phone app's web view without WebGPU draws a page.
 const webgl2 = flag("--webgl2")
 const onTheWeb = flag("--web") || webgl2
@@ -86,7 +86,7 @@ const against = option("--against") && resolve(option("--against"))
 const ssh = option("--ssh")
 // Only the scenes whose names have these words, as animation.js's `--scene`.
 const only = option("--scene")?.toLowerCase()
-const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--headless", "--scene", "--glass", "--jobs", "--connection"].includes(args[at - 1])).map((folder) => resolve(folder))
+const folders = args.filter((arg, at) => !arg.startsWith("--") && !["--out", "--against", "--size", "--ssh", "--headless", "--scene", "--glass", "--jobs", "--notice"].includes(args[at - 1])).map((folder) => resolve(folder))
 const targets = folders.length ? folders : changed([here("gallery"), ...readdirSync(join(root, "apps")).map((app) => join(root, "apps", app)).filter((app) => existsSync(join(app, "client/previews.json")))])
 // The runtime version the UI library needs, and the native host's: a host whose version is older draws nothing of a
 // page written for this one, so there's nothing yet to compare.
@@ -585,7 +585,7 @@ async function native(built, scene, folder, again = false) {
   const steps = [{ op: "clock", step: 1000 }, ...scene.taps.flatMap((tap) => [tap.key ? { op: "key", ...tap } : tap.type ? { op: "type", text: tap.type } : tap.files ? { op: "files", ...tap } : { op: "tap", ...(typeof tap === "object" ? tap : { name: tap }) }, { op: "clock", step: 1000 }]), ...Array.from({ length: Math.ceil(scene.wait / 1000) }, () => ({ op: "clock", step: 1000 })), ...(glass === "tinted" ? [{ op: "profile", at: [0], snap: false }] : []), { op: "query", includeInert: true }, { op: "query", frames: true, includeInert: true }, ...(ssh ? DRAWN : [])]
   const requests = steps.map((request, at) => JSON.stringify({ v: 1, id: at + 1, ...request })).join("\n")
   writeFileSync(join(folder, "requests.jsonl"), requests)
-  const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", ...(again ? [] : ["--measure"]), "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.launching ? ["--icon", join(root, "icons/AppIcon@2x.png")] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...(connection ? ["--connection", connection] : []), ...panel(scene)]
+  const asked = [at, join(folder, "native.png"), join(folder, "native.json"), "--ui", library("client"), "--answers", join(folder, "answers.json"), "--size", `${scene.size[0]}x${scene.size[1]}`, "--scale", "2", ...(again ? [] : ["--measure"]), "--latency", String(LATENCY_MS), "--cached", kept.join(","), ...(dark ? ["--dark"] : []), ...(scene.touch ? ["--touch"] : []), ...(scene.launching ? ["--icon", join(root, "icons/AppIcon@2x.png")] : []), ...(scene.errors ? ["--errors", JSON.stringify(scene.errors)] : []), ...(scene.safeArea ? ["--safe-area", scene.safeArea.join(",")] : []), "--time-zone", scene.timeZone, "--requests", join(folder, "requests.jsonl"), ...(notice ? ["--notice", notice] : []), ...panel(scene)]
   const run = await (again ? headlessRun(asked) : keptRun(asked, [join(folder, "native.png"), join(folder, "native.json")]))
   if (run.exitCode !== 0 || !existsSync(join(folder, "native.json"))) return { missing: stopped(run.exitCode) ?? (run.stderr.trim().split("\n").at(-1) || "the headless renderer drew nothing"), error: true }
   const nodes = JSON.parse(readFileSync(join(folder, "native.json"), "utf8"))

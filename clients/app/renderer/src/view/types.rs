@@ -133,20 +133,6 @@ pub(crate) enum NoticeAt {
     Foot,
 }
 
-impl Notice {
-    /// What the window says over its page while its network doesn't answer, by its client's word for whether it does
-    /// (`Connection` in core/client: `offline`, `reconnecting`), as the window page's banner does: nothing while it
-    /// answers.
-    pub fn connection(connection: &str) -> Option<Notice> {
-        let text = match connection {
-            "offline" => "Can't reach your network",
-            "reconnecting" => "Reconnecting…",
-            _ => return None,
-        };
-        Some(Notice { text: text.into(), action: None })
-    }
-}
-
 /// The rail's tip over an app's page (DESIGN.md, The rail): a callout pointing at its line, "Pull to go home", with
 /// Got it, until its person pulls the line home or taps Got it (`Screen::tipped`), and, where it shows how, its hint's
 /// finger, as opaque and as large as it is, and how far through its pulse the line's ring is, 0 to 1

@@ -519,7 +519,9 @@ pub(super) fn channel(
                     "state" if launcher && payload["connection"] == "behind" => computer::behind(),
                     // Over its page, while its network doesn't answer, as over an app on a phone (DESIGN.md).
                     "state" if framed.is_none() => on(Box::new(move |screen| {
-                        screen.notice = renderer::Notice::connection(payload["connection"].as_str().unwrap_or_default())
+                        screen.notice = payload["banner"]
+                            .as_str()
+                            .map(|text| renderer::Notice { text: text.into(), action: None })
                             .or_else(|| screen.notice.take().filter(|notice| notice.action.is_some()))
                     })),
                     // Its page, or the UI library it runs, was loaded against a version that's gone: it loads again by
