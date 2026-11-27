@@ -308,7 +308,6 @@ defmodule OneCore.Call do
          entrypoints: version.entrypoints,
          widgets: version.widgets,
          settings: version.settings,
-         hooks: version.hooks,
          tools: tools
        })}
     end

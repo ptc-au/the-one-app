@@ -1,7 +1,7 @@
 // Settings: one place where every app brings its settings, laid out as Raycast's Settings: a sidebar with its search,
 // whoever's looking (Sign In & Security under their name), the apps' sections in their groups, then every app they
 // have, A to Z. What's chosen opens beside it on a computer and is pushed over it on a phone. A section is its app's
-// component (`settings.sections`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
+// component (`settings/0`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
 // Vault draws an item type's. Updates and an app's page are Settings' own.
 import { createMemo, createProjection, createSignal, For, Loading, refresh, Show } from "solid-js"
 import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Errored, Frame, History, Image, List, ListStyle, navigate, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, toolInput, View, viewport } from "ui"
@@ -67,13 +67,9 @@ interface Builds {
 
 const json = <T,>(tool: string, inputs?: object, subject?: string): Promise<T> => call(tool, inputs, { subject }).then(JSON.parse)
 
-let keptSections: Added[] = []
 const added = createProjection(async () => {
-  const [{ sections, failed = [] }, here] = await Promise.all([json<{ sections: Added[]; failed?: string[] }>("settings_sections"), client()])
-  const missed = new Set(failed)
-  const merged = [...sections, ...keptSections.filter((one) => missed.has(one.app) && !sections.some((s) => s.id === one.id))]
-  keptSections = merged
-  return { sections: merged.filter((one) => !one.needs || (here as Record<string, unknown>)[one.needs] != null) }
+  const [{ sections }, here] = await Promise.all([json<{ sections: Added[] }>("settings_sections"), client()])
+  return { sections: sections.filter((one) => !one.needs || (here as Record<string, unknown>)[one.needs] != null) }
 })
 const apps = createProjection(async () => {
   const [{ apps: listed }, { apps: installed }] = await Promise.all([json<{ apps: App[] }>("settings_apps"), json<{ apps: App[] }>("apps")])

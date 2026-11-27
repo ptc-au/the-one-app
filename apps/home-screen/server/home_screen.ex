@@ -544,7 +544,6 @@ defmodule HomeScreen do
   defp has_settings?(%{settings: [_ | _] = settings}, admins),
     do: Enum.any?(settings, &(&1[:in] != "device" and (&1[:owner] != true or admins)))
 
-  defp has_settings?(%{hooks: hooks}, _admins), do: "settings.sections" in hooks
   defp has_settings?(_app, _admins), do: false
 
   # Whoever an App Library is for, then each broader owner they're within, narrowest first.

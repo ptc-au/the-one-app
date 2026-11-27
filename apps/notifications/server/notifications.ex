@@ -163,7 +163,7 @@ defmodule Notifications do
             section: %{
               type: "string",
               description:
-                "Where an app notifies, or one of its own sections in Settings a tap opens, by its component (settings.sections), and what follows # there, the section's own arguments: accounts#request=4"
+                "Where an app notifies, or one of its own sections in Settings a tap opens, by its component (settings/0), and what follows # there, the section's own arguments: accounts#request=4"
             },
             app: %{
               type: "string",
@@ -441,7 +441,7 @@ defmodule Notifications do
     end)
   end
 
-  # What a tap opens, as the UI library's `open` takes it: the app's section in Settings (`settings.sections`), with
+  # What a tap opens, as the UI library's `open` takes it: the app's section in Settings (`settings/0`), with
   # what follows # there after the section's own, its page, or its first. A notification opens only its own app's.
   defp opens(nil, _page, _section), do: nil
 

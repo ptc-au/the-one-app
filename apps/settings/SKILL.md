@@ -57,5 +57,3 @@ Add `owner: true` on a section that only the network's owners see (such as Backu
   says where it applies, so no heading shows over nothing: `kinds`, the kinds of device it's for (`app`, `browser`,
   `assistant`, `server`), and `service: true` for only a server where the app's service runs (Stay Awake, on a Mac).
   A group's component draws only its rows (a `List`), never a `Screen`.
-
-An app that can't answer is left out, as one whose answer doesn't say what it must is.

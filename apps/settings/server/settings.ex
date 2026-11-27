@@ -2,12 +2,12 @@ defmodule Settings do
   @moduledoc """
   Settings: one app where every app brings its settings, as macOS's System Settings has its panes and Raycast's
   Settings its extensions. Its own are Updates and an app's page; the rest are other apps' components, which they
-  place by answering the hook it offers, `settings.sections` (SKILL.md): a section in its sidebar, or a group in a
-  page another section offers (a device's), each drawn by the app that brings it.
+  declare in their manifest (`settings/0`, SKILL.md): a section in its sidebar, or a group in a page another section
+  offers (a device's), each drawn by the app that brings it.
   """
   @behaviour OneCore.App
 
-  alias OneCore.{Apps, Call, Hooks}
+  alias OneCore.{Apps, Call}
 
   @impl true
   def icon, do: "client/icon.svg"
@@ -20,29 +20,6 @@ defmodule Settings do
   def requires, do: %{"core" => ">= 0.37.184"}
 
   @impl true
-  def offers do
-    [
-      %{
-        name: "sections",
-        kind: :collect,
-        # An untrusted app's part is only data, drawn by its own page in a frame.
-        untrusted: true,
-        description:
-          "What an app adds to Settings, and where. It's about nothing. An app answers with a list, each a map: " <>
-            "`component`, a Solid component its client exports (client/package.json's `exports`, as ./<component>), " <>
-            "which draws it; and `in`, where: \"settings\", a section of the sidebar, with its `name`, its `icon` (a " <>
-            "file of the app's client/), its `group` (\"you\", \"network\", \"general\", \"system\") and `order` in it, and a " <>
-            "`badge`, a tool of the app's that only reads, whose answer's `count` is the red count on its row and on " <>
-            "Settings' icon, and `needs`, a field of what a client says of itself (`login`) that must not be null there for " <>
-            "the section to be listed, as a device without it has nothing to show in it; or a place a section offers, as a group headed by the app's icon and name: \"device\", " <>
-            "a device's page, given `device`, with the `kinds` of device it's for (app, browser, assistant, server) and " <>
-            "`service: true` where it's only for a server running the app's service; or \"app\", the app's own page " <>
-            "in Settings. SKILL.md says more."
-      }
-    ]
-  end
-
-  @impl true
   def tools do
     count = %{type: "object", properties: %{count: %{type: "integer"}}, required: ["count"]}
 
@@ -53,7 +30,7 @@ defmodule Settings do
         ui: "client/index.html",
         runtime_version: 4,
         description:
-          "What the apps you have add to Settings (`settings.sections`): each with the app that adds it and its " <>
+          "What the apps you have add to Settings (`settings/0`): each with the app that adds it and its " <>
             "title, icon and whether it's trusted, which decides where its component is drawn, and a section's " <>
             "red count where it says one. It's Settings' first screen, its sidebar.",
         inputs: %{type: "object", properties: %{}},
@@ -83,11 +60,6 @@ defmodule Settings do
                 },
                 required: ["id", "app", "title", "trusted", "component", "in", "order"]
               }
-            },
-            failed: %{
-              type: "array",
-              items: %{type: "string"},
-              description: "Apps whose `settings.sections` hook didn't answer"
             }
           },
           required: ["sections"]
@@ -183,15 +155,25 @@ defmodule Settings do
 
   @impl true
   def call("sections", _inputs, call) do
-    {sections, failed_apps, _failed_badges} = sections_with_failures(call)
-    %{sections: sections, failed: failed_apps}
+    sections = declared(call)
+
+    # Each section's red count, as its app's badge tool says it, all at once: one after another, a slow badge held up
+    # every section's.
+    {counts, _failed_badges} =
+      sections
+      |> Enum.flat_map(&if(&1.badge, do: [{&1.app, &1.badge}], else: []))
+      |> Enum.uniq()
+      |> OneCore.Asks.each(fn {app, badge} -> Call.tool(call, app, badge, %{})["count"] end)
+
+    counts = Map.new(counts)
+    items = for section <- sections, do: section |> Map.put(:count, counts[{section.app, section.badge}]) |> Map.delete(:badge)
+    %{sections: items}
   end
 
   def call("section", %{"app" => app} = inputs, call) do
-    {items, _failed} = listed(call)
-
     theirs =
-      items
+      call
+      |> declared()
       |> Enum.filter(&(&1.in == "settings" and &1.app == app))
       |> Enum.map(&(&1 |> Map.put(:count, nil) |> Map.delete(:badge)))
 
@@ -257,56 +239,9 @@ defmodule Settings do
     %{apps: Enum.sort_by(apps, &String.downcase(&1.title))}
   end
 
-  # What every app whoever this runs for has adds, from its manifest (`settings/0`) and any unmigrated `settings.sections`
-  # hook, each with its app's title and icon. Apps whose hook didn't answer are returned in `failed_apps`.
-  defp sections_with_failures(call) do
-    {sections, failed_apps} = listed(call)
-
-    # Each section's red count, as its app's badge tool says it, all at once: one after another, a slow badge held up
-    # every section's.
-    {counts, failed_badges} =
-      sections
-      |> Enum.flat_map(&if(&1.badge, do: [{&1.app, &1.badge}], else: []))
-      |> Enum.uniq()
-      |> OneCore.Asks.each(fn {app, badge} -> Call.tool(call, app, badge, %{})["count"] end)
-
-    counts = Map.new(counts)
-    items = for section <- sections, do: section |> Map.put(:count, counts[{section.app, section.badge}]) |> Map.delete(:badge)
-    {items, failed_apps, failed_badges}
-  end
-
-  defp listed(call) do
-    running = Apps.running(call.subject)
-    from_manifest = declared(call, running)
-    declared_apps = MapSet.new(from_manifest, & &1.app)
-
-    {from_hooks, failed_apps} =
-      case Hooks.hooking("settings.sections", call.subject) do
-        [] ->
-          {[], []}
-
-        _ ->
-          {:ok, parts, failed} = Hooks.collect("settings.sections", %{}, {call.actor, call.subject})
-
-          items =
-            for {app, part} <- Enum.sort(parts),
-                not MapSet.member?(declared_apps, app),
-                version = running[app],
-                version != nil,
-                trusted <- [Map.get(version, :trusted, true)],
-                section <- List.wrap(JSON.decode!(JSON.encode!(part))),
-                section?(section, trusted),
-                do: entry(app, version, trusted, section)
-
-          {items, Map.keys(failed)}
-      end
-
-    {Enum.sort_by(from_manifest ++ from_hooks, &{&1.app, &1.order, &1.component}), failed_apps}
-  end
-
   # Sections declared in each running app's manifest (`settings/0`), read in memory with no hook fan-out.
-  defp declared(call, running \\ nil) do
-    running = running || Apps.running(call.subject)
+  defp declared(call) do
+    running = Apps.running(call.subject)
     needs_owner = Enum.any?(running, fn {_app, v} -> Enum.any?(Map.get(v, :settings, []), &(&1[:owner] == true)) end)
     owns_network = needs_owner and Call.owns?(%{call | subject: "network"})
 
@@ -315,8 +250,10 @@ defmodule Settings do
         section <- Map.get(version, :settings, []),
         section[:owner] != true or owns_network,
         section = Map.new(section, fn {k, v} -> {to_string(k), v} end),
-        section?(section, trusted),
-        do: entry(app, version, trusted, section)
+        section?(section, trusted) do
+      entry(app, version, trusted, section)
+    end
+    |> Enum.sort_by(&{&1.app, &1.order, &1.component})
   end
 
   defp entry(app, version, trusted, section) do

@@ -95,7 +95,7 @@ interface Waiting {
   link: string
 }
 
-/** What Settings draws of what other apps add to a place a section offers: a device's page (`settings.sections`). */
+/** What Settings draws of what other apps add to a place a section offers: a device's page (`settings/0`). */
 type Groups = (props: { in: "device"; device: string; kind: string; server?: string; services?: string[] }) => Element
 
 const json = <T,>(tool: string, inputs?: object, who?: string): Promise<T> => call(tool, inputs, { subject: who }).then(JSON.parse)
