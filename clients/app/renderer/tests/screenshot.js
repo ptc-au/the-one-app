@@ -14,7 +14,7 @@
 // or `meta` held; text typed where the keyboard is, `{ type }`; or files from the computer dragged over what says `text`
 // or is `{ role, name }`, `{ files: "drag", text }`, or dropped there, `{ files: [paths] }`), `size` (`[390, 844]`, a phone's, unless said), `wait` (ms the page runs on after its taps, before it's drawn, for a scene whose end is a state a few seconds on, as a live screen's "couldn't show this screen" is: a native host's clock is stepped by it, the web's runs it out, so both draw that state and not one on the way to it), `touch` (a finger points at it, as on a phone: true for any window narrower than COMPACT unless the scene says `false`, as a narrow computer's window is), `errors` (words of the errors it logs, as a page that can't reach its server does: any other the page logs fails the scene), `timeZone` (the IANA name of the device's, `UTC` unless said: a fixture's instants are said in it, as a person in it reads them), `latency` (ms each tool's answer takes to come on the page's clock, as a server's round trip: for checks of what shows meanwhile), and `like` (another scene's name, as Storybook's args are a
 // component's: this is that scene, with its own taps, and its answers in place of that one's, tool by tool). An answer `{ "$error": "Notes isn't answering right now." }` is a tool's
-// refusal, and `{ "$image": "data:image/png;base64,…" }` a picture, as a server answers one (MCP's `image`: a screenshot), and `{ "$pending": true }` no answer at all, as a tool still running, for what a screen shows while it waits (with `wait` past a spinner's delay). A method of the client's (`ui/initialize`, `one/client`) is answered as it's named too. It's 1 January 2026,
+// refusal (with a `"$code": -32003`, a JSON-RPC error, as a server answers a device that's nobody's), and `{ "$image": "data:image/png;base64,…" }` a picture, as a server answers one (MCP's `image`: a screenshot), and `{ "$pending": true }` no answer at all, as a tool still running, for what a screen shows while it waits (with `wait` past a spinner's delay). A method of the client's (`ui/initialize`, `one/client`) is answered as it's named too. It's 1 January 2026,
 // 00:00 UTC, as a native host's headless renderer has it, so a fixture's times are said from then.
 //
 // Each scene is drawn on a native host by its headless renderer (clients/app/renderer's `headless` example): the check
@@ -161,6 +161,7 @@ addEventListener("message", ({ data, source }) => {
   if (data.method === "tools/call") {
     const answer = own(data.params.name)
     if (answer?.$pending) return
+    if (answer?.$code) return reply({ error: { code: answer.$code, message: answer.$error } })
     if (answer === undefined || answer?.$error) return reply({ result: { isError: true, content: [{ type: "text", text: answer?.$error ?? "No answer for " + data.params.name }] } })
     const [, mimeType, image] = answer?.$image?.match(/^data:(.*?);base64,(.*)$/) ?? []
     return reply({ result: { content: [mimeType ? { type: "image", mimeType, data: image } : { type: "text", text: JSON.stringify(answer) }] } })

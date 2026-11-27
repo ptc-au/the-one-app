@@ -713,7 +713,8 @@
     "like": "Devices",
     "answers": {
       "sign-in_devices": {
-        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours."
+        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours.",
+        "$code": -32003
       }
     },
     "errors": [
@@ -755,7 +756,10 @@
   "People & Groups, cancelling an invitation": {
     "like": "People & Groups",
     "taps": [
-      "More for this invitation",
+      {
+        "name": "More for this invitation",
+        "nth": 0
+      },
       "Cancel Invitation"
     ]
   }

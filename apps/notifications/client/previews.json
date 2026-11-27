@@ -88,7 +88,8 @@
     "like": "Inbox",
     "answers": {
       "notifications_inbox": {
-        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours."
+        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours.",
+        "$code": -32003
       }
     },
     "errors": [

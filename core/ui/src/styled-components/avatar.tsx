@@ -3,6 +3,7 @@
 import { createEffect, createSignal, For, Show, untrack } from "solid-js"
 import { Image, Text, View } from "#primitives"
 import { call } from "#bridge"
+import { kind } from "../words.ts"
 import { styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 
@@ -66,7 +67,7 @@ const wanted = new Map<string, (seen: Seen) => void>()
 /** How many pictures one ask is for, as `sign-in_pictures` takes. */
 const MOST = 100
 
-/** Asks for every picture the avatars drawn in this turn want, together. One that can't be had, as a non-member is refused, is none, kept as an answer is, until `KEPT` has passed or `refreshAvatars`. */
+/** Asks for every picture the avatars drawn in this turn want, together. One that can't be had is none: for a refusal (a non-member's) it's kept as an answer is, until `KEPT` has passed or `refreshAvatars`; for a failure, until the next avatar of it asks again. */
 async function ask() {
   const subjects = [...wanted.keys()]
   const resolve = new Map(wanted)
@@ -84,7 +85,11 @@ async function ask() {
       }
     } catch (error) {
       console.error(`Couldn't ask for the pictures of ${these.join(", ")}: ${(error as Error).message}`)
-      for (const subject of these) resolve.get(subject)!(known.get(subject) ?? { picture: null })
+      // Only a refusal is an answer that's kept: a lost connection is asked again by the next avatar of it.
+      for (const subject of these) {
+        if (kind(error) !== "noAccess") kept.delete(subject)
+        resolve.get(subject)!(known.get(subject) ?? { picture: null })
+      }
     }
   }
 }

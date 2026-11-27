@@ -5450,7 +5450,8 @@
     "like": "Home, two pages",
     "answers": {
       "home-screen_pages": {
-        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours."
+        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours.",
+        "$code": -32003
       }
     },
     "errors": [
@@ -6509,7 +6510,7 @@
     "like": "Home, three groups",
     "answers": {
       "sign-in_pictures": {
-        "$error": "Only a member of the network sees who's in it."
+        "$error": "You don't have access to this.\n\nOnly a member of the network sees who's in it."
       }
     },
     "errors": [

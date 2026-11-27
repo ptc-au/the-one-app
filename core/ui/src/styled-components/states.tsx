@@ -6,7 +6,7 @@ import { Pressable, ScrollView, Text, View } from "#primitives"
 import { client, copy } from "#bridge"
 import { Button, Icon, InProblem, Spinner } from "./button.tsx"
 import { Alone, Blank, Middle, Screen } from "./screen.tsx"
-import { messages, readable, whole } from "../words.ts"
+import { kind, messages, readable, whole } from "../words.ts"
 import { styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
 
@@ -153,8 +153,9 @@ export function Problem(props: { heading: JSX.Element; text?: JSX.Element | Erro
 
 /// `<Errored heading="Can't show your notes" screen={{ heading: "Notes" }}><Notes /></Errored>`: Solid's `<Errored>`
 /// drawing what it caught as a `Problem`: `heading`, what a person reads of the error, the rest under Show Details, and
-/// Try Again, which runs again what threw. Where trying again can't help, as where the page needs a newer One App than
-/// the device has, its action is what does: Update the One App. `screen` is the `Screen` it's drawn in where it takes
+/// Try Again, which runs again what threw. Where trying again can't help its action is what does (`kind`): Update the One
+/// App where the page needs a newer one than the device has, Sign In where the device is nobody's, and where it's
+/// refused what it reached, none: it says who can give it. `screen` is the `Screen` it's drawn in where it takes
 /// a whole screen, as its `Loading`'s fallback is. A `fallback` of its own draws something else, as Solid's does: a
 /// widget's problem in the widget.
 export function Errored(props: { heading?: JSX.Element; screen?: { heading?: JSX.Element; back?: boolean; action?: JSX.Element }; fallback?: (error: () => unknown, reset: () => void) => JSX.Element; children?: JSX.Element }) {
@@ -163,16 +164,23 @@ export function Errored(props: { heading?: JSX.Element; screen?: { heading?: JSX
       fallback={(error, reset) => {
         if (props.fallback) return props.fallback(error, reset)
         // Made where it's drawn, in the screen, whose middle it's in as all there is of it.
+        const what = () => kind(error())
+        const text = () => {
+          const all = whole(error())
+          return what() === "noAccess" ? `${readable(all)} ${messages.askAnOwner}${all.slice(readable(all).length)}` : all
+        }
         const problem = () => (
           <Problem
             heading={props.heading ?? messages.cantShowPage}
-            text={error() instanceof Error ? (error() as Error) : whole(error())}
+            text={text()}
             action={
-              newer(error()) ? (
+              what() === "older" ? (
                 <Button onPress={() => void client({ update: true })}>{messages.updateOneApp}</Button>
-              ) : (
+              ) : what() === "signedOut" ? (
+                <Button onPress={() => void client({ leave: true })}>{messages.signIn}</Button>
+              ) : what() === "again" ? (
                 <Button onPress={reset}>{messages.tryAgain}</Button>
-              )
+              ) : undefined
             }
           />
         )
@@ -189,10 +197,6 @@ export function Errored(props: { heading?: JSX.Element; screen?: { heading?: JSX
     </Boundary>
   )
 }
-
-/** Whether what was thrown says the device's One App is older than the page needs: its client doesn't know what the
- * page asked (JSON-RPC's "method not found"), so asking again can't help. */
-const newer = (error: unknown) => (error as { code?: number } | undefined)?.code === -32601
 
 /// What follows the first paragraph of a tool's error, which is for an agent, and Copy, which takes all of it to
 /// paste to an agent or to support. Under a problem's Show Details, and in what a toast's Details opens.

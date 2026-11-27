@@ -76,7 +76,8 @@ pub(crate) fn asked_of(params: &Value) -> Option<String> {
 }
 
 /// What a page's request is answered with from `answers` (`--answers`, as screenshot.js has them): a tool's answer
-/// as its text, `{ "$error": "…" }` as the tool's refusal, and `{ "$image": "data:image/png;base64,…" }` as a picture,
+/// as its text, `{ "$error": "…" }` as the tool's refusal (with a `$code`, a JSON-RPC error of that code, as a server answers a
+/// device that's nobody's), and `{ "$image": "data:image/png;base64,…" }` as a picture,
 /// as a server answers one (MCP's `image`: Computer Use's screenshot), and `{ "$pending": true }` never, as a tool
 /// still running does, for what a screen shows while it waits; any other method by its result, or not at all.
 pub(crate) fn answered(answers: &Value, id: Value, method: &str, params: &Value) -> Option<Value> {
@@ -84,6 +85,7 @@ pub(crate) fn answered(answers: &Value, id: Value, method: &str, params: &Value)
     Some(match (method, params["name"].as_str()) {
         ("tools/call", Some(tool)) => match asked_of(params).and_then(|asked| answers.get(&asked)).or_else(|| answers.get(tool)) {
             Some(answer) if answer.get("$pending").is_some() => return None,
+            Some(answer) if answer.get("$code").is_some() => json!({"jsonrpc": "2.0", "id": id, "error": {"code": answer["$code"], "message": answer["$error"].as_str().unwrap_or_default()}}),
             Some(answer) if answer.get("$error").is_some() => json!({"jsonrpc": "2.0", "id": id, "result": {"isError": true, "content": [{"type": "text", "text": answer["$error"].as_str().unwrap_or_default()}]}}),
             Some(answer) if answer.get("$image").is_some() => json!({"jsonrpc": "2.0", "id": id, "result": {"content": [answer["$image"].as_str().and_then(picture)]}}),
             Some(answer) => json!({"jsonrpc": "2.0", "id": id, "result": {"content": [{"type": "text", "text": answer.to_string()}]}}),

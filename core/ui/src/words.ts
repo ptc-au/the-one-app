@@ -37,7 +37,9 @@ export const [messages, setMessages] = createStore({
   reorderHint: "Space to pick up, then the arrows to move",
   reordered: (step: "grab" | "move" | "drop" | "cancel", item: string, position: number, of: number) =>
     step === "grab" ? `Picked up ${item}, position ${position} of ${of}.` : step === "move" ? `${item}, position ${position} of ${of}.` : step === "drop" ? `Dropped ${item} at position ${position} of ${of}.` : `Moved ${item} back to position ${position} of ${of}.`,
+  askAnOwner: "Ask an owner to share it with you.",
   showDetails: "Show Details",
+  signIn: "Sign In",
   stepDone: (step: string) => `${step}, done`,
   stepOf: (step: number, of: number) => `Step ${step} of ${of}`,
   tipOf: (tip: number, of: number) => `Tip ${tip} of ${of}`,
@@ -49,6 +51,15 @@ export const [messages, setMessages] = createStore({
 /// What a person reads of a tool's error: its first paragraph. What follows a blank line is for an agent, as MCP's
 /// text is the model's: which tool to call next, or what went wrong inside an app.
 export const readable = (error: string): string => error.split(/\n\s*\n/, 1)[0]
+
+/// What an error is, as what can be done about it. A device told it's nobody's (JSON-RPC's `-32003` from One Core)
+/// signs in; a call refused what it reached (`OneCore.Call.reach`, whose sentence a tool's error carries as text, as MCP
+/// has no code for one) is asked of whoever owns it; a client that doesn't know what the page asked (`-32601`) is
+/// older than the page; any other, a network or a server that isn't answering, may be tried again.
+export const kind = (error: unknown): "signedOut" | "noAccess" | "older" | "again" => {
+  const code = (error as { code?: number } | undefined)?.code
+  return code === -32003 ? "signedOut" : code === -32601 ? "older" : readable(whole(error)) === "You don't have access to this." ? "noAccess" : "again"
+}
 
 /// All of an error a screen shows: what a tool said, whole, where it's an `Error` `call` threw (its `cause`), or
 /// the text itself. What was thrown that says nothing is named, with where it was thrown from, so Show Details always

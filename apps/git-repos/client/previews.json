@@ -377,7 +377,8 @@
     "like": "Repos",
     "answers": {
       "git-repos_list": {
-        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours."
+        "$error": "This device isn't signed in here. Sign in on it, or approve it from a device of yours.",
+        "$code": -32003
       }
     },
     "errors": [
