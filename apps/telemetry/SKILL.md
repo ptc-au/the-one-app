@@ -10,8 +10,8 @@ metadata:
 
 Telemetry keeps what the network's servers, clients and apps did: a span for each tool call, numbers such as how
 long each tool took and what AI used, and warnings, errors and crashes. Each part records it with OpenTelemetry's own
-SDK, and it's kept as OTLP, an hour of each signal a blob (`otlp/<day>/<hour>/` in its artifact), which any
-OpenTelemetry tool reads as it is. It's kept in the network for 14 days, up to 256 MB, and nothing about it leaves. It holds no one's data: names, sizes, durations and outcomes, never what
+SDK, and it's kept as OTLP, an hour of each signal a blob (`otlp/<day>/<hour>/` in its artifact), gzipped, which any
+OpenTelemetry tool reads as OTLP/HTTP's `content-encoding: gzip` has it. It's kept in the network for 14 days, up to 256 MB, and nothing about it leaves. It holds no one's data: names, sizes, durations and outcomes, never what
 anyone wrote, was given or answered. What a server recorded arrives here about a minute later.
 
 The network's edge, where assistants, browsers and sharing links come in over the web, is in it too: a span for

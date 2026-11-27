@@ -8,10 +8,12 @@ defmodule Telemetry.Store do
   - `otlp/<day>/<hour>/<to>-<source>-<bytes>.<signal>` is the exports of `traces`, `metrics` or `logs` that the server
     `source` held until `to`, in nanoseconds since 1970, its own SDK's and its clients' (`Telemetry.Buffer`). A busy
     server writes about two a minute of each, and an idle one none.
-  - `otlp/<day>/<hour>/hour-<to>-<bytes>.<signal>` is all of an hour's exports of a signal, once the hour is over
+  - `otlp/<day>/<hour>/hour-<to>-<bytes>.<signal>.gz` is all of an hour's exports of a signal, once the hour is over
     (`prune/1`): protobuf's messages put one after the other are one message holding all of theirs, so it's still one
-    export request. It holds every export of its hour up to `to`, so one left over by a tidying that stopped partway
-    is let go, not put in again.
+    export request, gzipped as OTLP/HTTP's `content-encoding: gzip` has it (`curl --data-binary @<blob> -H
+    'content-encoding: gzip'`), which is what makes 14 days fit. It holds every export of its hour up to `to`, so one
+    left over by a tidying that stopped partway is let go, not put in again. One kept before it was gzipped has no
+    `.gz` and is read as it is.
   - `otlp/<day>/<hour>/hour-<at>-<bytes>.rollup` is that hour rolled up (`Telemetry.Rollup`) as it was at `at`, naming
     the exports it holds: what a look over hours reads of it, but a trace. Alerts roll up what they read each minute
     (`roll_up/2`), and an hour that's over is rolled up whole before it's put together (`prune/1`).
@@ -112,7 +114,7 @@ defmodule Telemetry.Store do
            [_ | _] = added <- Enum.reject(read, fn {name, _batch} -> name in names end) do
         rollup = Map.put(Rollup.of(List.wrap(held) ++ Enum.map(added, &elem(&1, 1))), "exports", names ++ Enum.map(added, &elem(&1, 0)))
         data = Rollup.encode(rollup)
-        :ok = Artifact.write(own, "#{hour}/hour-#{System.os_time(:nanosecond)}-#{byte_size(data)}.rollup", data)
+        put(own, "#{hour}/hour-#{System.os_time(:nanosecond)}-#{byte_size(data)}.rollup", data)
         if before, do: Artifact.remove(own, before)
       end
     end
@@ -131,7 +133,7 @@ defmodule Telemetry.Store do
   def raw(call, names), do: for({name, {:ok, data, _tag}} <- Enum.zip(names, Artifact.read_all(call.own, names)), do: {name, data})
 
   @doc "The signal an export kept as `name` is of, `traces`, `metrics` or `logs`, or `nil` for one kept before OTLP."
-  def signal("otlp/" <> _ = name), do: String.trim_leading(Path.extname(name), ".")
+  def signal("otlp/" <> _ = name), do: String.trim_leading(extension(name), ".")
   def signal(_name), do: nil
 
   @doc "How much is kept: since when, in milliseconds since 1970, how many bytes, for how many days, and the most."
@@ -164,7 +166,7 @@ defmodule Telemetry.Store do
         # An hour with nothing but its rollup and its blobs put together holds nothing unrolled.
         unrolled = if latest(names) && exports == [], do: [], else: unrolled(names, held_by(own, names))
         roll_up(own, decoded(own, unrolled))
-        for {signal, names} <- Enum.group_by(Enum.reject(names, &rollup?/1), &Path.extname/1), exports != [], do: together(own, hour, signal, names)
+        for {signal, names} <- Enum.group_by(Enum.reject(names, &rollup?/1), &extension/1), exports != [], do: together(own, hour, signal, names)
         {unrolled != [], exports != []}
       end
 
@@ -172,7 +174,7 @@ defmodule Telemetry.Store do
     {old, retained} = Enum.split_with(Enum.sort(hours), fn {hour, _names} -> hour < oldest end)
     {over, _retained} = past_most(Enum.reverse(retained), 0)
     let_go = old ++ over
-    for {_hour, names} <- let_go, name <- names, do: Artifact.remove(own, name)
+    remove(own, for({_hour, names} <- let_go, name <- names, do: name))
 
     %{put_together: Enum.count(ended, &elem(&1, 1)), rolled_up: Enum.count(ended, &elem(&1, 0)), let_go: length(let_go)}
   end
@@ -184,13 +186,23 @@ defmodule Telemetry.Store do
     {added, gone} = Enum.split_with(exports, &(to_of(&1) > held))
 
     if added != [] do
-      data = for({:ok, data, _tag} <- Artifact.read_all(own, hours ++ added), do: data) |> IO.iodata_to_binary()
+      read = Artifact.read_all(own, hours ++ added)
+      data = for({name, {:ok, data, _tag}} <- Enum.zip(hours ++ added, read), do: if(gzipped?(name), do: :zlib.gunzip(data), else: data)) |> IO.iodata_to_binary()
+      zipped = :zlib.gzip(data)
       to = Enum.max(Enum.map(hours ++ added, &to_of/1))
-      :ok = Artifact.write(own, "#{hour}/hour-#{to}-#{byte_size(data)}#{signal}", data)
+      put(own, "#{hour}/hour-#{to}-#{byte_size(zipped)}#{signal}.gz", zipped)
     end
 
-    for name <- if(added == [], do: gone, else: names), do: Artifact.remove(own, name)
+    remove(own, if(added == [], do: gone, else: names))
   end
+
+  # Writes a blob. One that's there already was written by another look at the same hour that ran at the same time, as
+  # this one, from the same exports: it's the same.
+  defp put(own, name, data), do: if(Artifact.write(own, name, data) in [:ok, :exists], do: :ok)
+
+  # Removes blobs, as many at once as the bucket takes: an hour of exports is hundreds of them.
+  defp remove(own, names),
+    do: names |> Task.async_stream(&Artifact.remove(own, &1), max_concurrency: 16, timeout: :infinity) |> Stream.run()
 
   # The newest hours that fit in `most_bytes/0`, and the rest.
   defp past_most([], _bytes), do: {[], []}
@@ -221,7 +233,7 @@ defmodule Telemetry.Store do
 
   @doc "The export kept as `name`, laid flat, or `nil` where it isn't OTLP."
   def export(name, data) do
-    Otlp.decode(signal(name), data)
+    Otlp.decode(signal(name), if(gzipped?(name), do: :zlib.gunzip(data), else: data))
   rescue
     ErlangError ->
       Logger.warning("Telemetry couldn't read #{name}, #{byte_size(data)} bytes starting #{inspect(binary_part(data, 0, min(8, byte_size(data))))}: it isn't OTLP")
@@ -242,11 +254,14 @@ defmodule Telemetry.Store do
     for name <- names, not rollup?(name), not (rolled_up and hour?(name)), not MapSet.member?(held, name), do: name
   end
 
-  defp rollup?(name), do: Path.extname(name) == ".rollup"
+  defp gzipped?(name), do: Path.extname(name) == ".gz"
+  # What a blob is of, `.traces`, `.metrics`, `.logs` or `.rollup`, whether or not it's gzipped.
+  defp extension(name), do: name |> String.replace_suffix(".gz", "") |> Path.extname()
+  defp rollup?(name), do: extension(name) == ".rollup"
   defp folder(name), do: name |> Path.dirname() |> String.replace_prefix("batches/", "otlp/")
   defp hour?(name), do: String.starts_with?(Path.basename(name), "hour-")
   defp to_of(name), do: name |> Path.basename() |> String.trim_leading("hour-") |> String.split("-") |> hd() |> String.to_integer()
-  defp bytes(name), do: name |> Path.rootname() |> String.split("-") |> List.last() |> String.to_integer()
+  defp bytes(name), do: name |> String.replace_suffix(".gz", "") |> Path.rootname() |> String.split("-") |> List.last() |> String.to_integer()
 
   # When the oldest kept is from, in milliseconds since 1970: the start of its hour.
   defp since(name) do
