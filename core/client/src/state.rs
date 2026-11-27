@@ -166,7 +166,7 @@ impl std::fmt::Display for Connection {
             Self::Connecting => "Connecting to your network…",
             Self::Reconnecting => "Reconnecting to your network…",
             Self::Online => "Online.",
-            Self::Offline => "Can't reach your network. Check this device is online, then try again.",
+            Self::Offline => crate::rpc::UNANSWERED,
             Self::Behind(why) => why,
         })
     }

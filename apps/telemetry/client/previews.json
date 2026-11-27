@@ -320,7 +320,7 @@
   "Can't Show Telemetry": {
     "answers": {
       "telemetry_overview": {
-        "$error": "No server is answering. Check this device is online and a server is on, then try again."
+        "$error": "Can't reach your network. Make sure this device is online and one of its servers is on, then try again."
       },
       "telemetry_alerts": {
         "kinds": [],
@@ -329,7 +329,7 @@
       }
     },
     "errors": [
-      "No server is answering. Check this device is online and a server is on, then try again."
+      "Can't reach your network. Make sure this device is online and one of its servers is on, then try again."
     ]
   },
   "Alerts Unreachable": {

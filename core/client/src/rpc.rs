@@ -98,8 +98,10 @@ fn refused(response: &[u8]) -> Option<String> {
     (result["isError"] == true).then(|| result["content"][0]["text"].as_str().unwrap_or("The tool failed").to_owned())
 }
 
-/// What a person is told when no server answered: what went wrong, and what to do about it.
-pub(crate) const UNANSWERED: &str = "No server is answering. Make sure one of this network's servers is on, then try again.";
+/// What a person is told when their network can't be reached, whether this device is offline or none of its servers
+/// answers: what went wrong, and what to do about it. A device can't always tell which (`Client::offline`), so it's one
+/// sentence, which `Connection::Offline` says too.
+pub(crate) const UNANSWERED: &str = "Can't reach your network. Make sure this device is online and one of its servers is on, then try again.";
 
 /// The JSON-RPC error a server answers a device that's nobody's (`OneCore.User`).
 pub(crate) const NOBODY: i64 = -32003;

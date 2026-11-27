@@ -216,7 +216,7 @@ function Waiting() {
   const [waited, setWaited] = createSignal(0)
   const ticking = setInterval(() => setWaited((seconds) => seconds + 1), 1000)
   onCleanup(() => clearInterval(ticking))
-  const said = () => (connection() === "online" ? "Your network hasn't answered yet." : "Can't reach your network. Check this device is online, then try again.")
+  const said = () => (connection() === "online" ? "Your network hasn't answered yet." : "Can't reach your network. Make sure this device is online and one of its servers is on, then try again.")
   return (
     <Show
       when={waited() >= 10}
