@@ -58,8 +58,6 @@ export interface Reported {
   name?: string;
   /** Whether it's installed with `one serve on`, which takes builds: one a developer runs from source never does. */
   installed?: boolean;
-  /** Whether its program is starting, running or stopping, as it last said: one that's gone saying `stopping` stopped on purpose. */
-  server_daemon_status?: string;
   server_update_status?: ServerUpdateStatus;
   next_build?: string | null;
   /** The builds' name of the `one` that runs it (`one-cli/linux-x86_64`), and its build, now and being taken. */
@@ -79,6 +77,8 @@ export interface Presence {
   server_membership?: string;
   server_ready?: boolean;
   version?: string;
+  /** Whether its program is starting, running or stopping, as it last said: one that's gone saying `stopping` stopped on purpose. */
+  said_daemon_status?: string;
 }
 
 /** What it's told. */
@@ -220,7 +220,7 @@ export class NetworkUpdater extends DurableObject<Env> {
     this.step(state, presence, reported);
     // One that's gone saying it was stopping, as the fallback stops until it's needed, missed nothing to say: it takes
     // the build as it starts again, as any that's back does (`step`).
-    state.skipped = state.skipped.filter((key) => presence[key]?.connected || reported[key]?.server_daemon_status !== "stopping");
+    state.skipped = state.skipped.filter((key) => presence[key]?.connected || presence[key]?.said_daemon_status !== "stopping");
     for (const key of this.updateEdge(state, presence, reported)) await this.ctx.storage.put(`reported ${key}`, reported[key]);
 
     await this.ctx.storage.put("state", state);

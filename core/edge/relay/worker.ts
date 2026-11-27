@@ -297,8 +297,15 @@ export class Relay extends DurableObject<RelayEnv> {
    */
   async updated(input: Input): Promise<object | null> {
     const keys = await this.reap([...(await this.ctx.storage.list({ prefix: "version " })).keys()].map((at) => at.slice("version ".length)));
-    const [presence, versions] = await Promise.all([this.presence(keys), this.versions(keys)]);
-    const servers = Object.fromEntries(keys.map((key) => [key, presence[key] && { ...presence[key], version: versions[key] }]));
+    const [presence, versions, said] = await Promise.all([
+      this.presence(keys),
+      this.versions(keys),
+      this.ctx.storage.get<ServerStatus>(keys.map((key) => `presence ${key}`)),
+    ]);
+    // With what each last said of its program, as one that's gone saying it was stopping stopped on purpose.
+    const servers = Object.fromEntries(
+      keys.map((key) => [key, presence[key] && { ...presence[key], version: versions[key], said_daemon_status: said.get(`presence ${key}`)?.server_daemon_status }]),
+    );
     try {
       // Disposed of as it's read, so the updater's call ends as it answers, as Cloudflare's RPC lifecycle has it.
       using answered = await this.env.UPDATER.getByName("network").update(input, servers);

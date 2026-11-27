@@ -62,7 +62,6 @@ const SAID: ServerDaemonStatus[] = ["starting", "running", "stopping"];
 const UPDATE: (keyof Reported)[] = [
   "name",
   "installed",
-  "server_daemon_status",
   "server_update_status",
   "next_build",
   "program_name",
