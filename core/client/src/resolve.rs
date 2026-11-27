@@ -11,7 +11,7 @@ use anyhow::Result;
 use futures_util::future::BoxFuture;
 use serde_json::{Map, Value, json};
 
-use crate::Client;
+use crate::{Changed, Client};
 
 /// What an app's native code fills in on this device: inputs of the formats it names.
 pub trait InputResolver: Send + Sync {
@@ -44,6 +44,8 @@ pub(crate) struct Listed {
     reads: HashSet<String>,
     /// Each app's tool's app, as its listing says (`_meta.app`): One Core's own have none.
     apps: HashMap<String, String>,
+    /// The tools an app's tool says it changes, by its name (`_meta.changes`): those of its app it leaves it out for are all.
+    changes: HashMap<String, Vec<String>>,
 }
 
 /// The methods that only read, besides a tool that says it does.
@@ -68,6 +70,13 @@ pub(crate) fn listed(listed: &Value, formats: &[&str]) -> Listed {
         fills: tools.iter().filter_map(filled).collect(),
         reads: reads.filter_map(|tool| Some(tool["name"].as_str()?.to_owned())).collect(),
         apps: tools.iter().filter_map(|tool| Some((tool["name"].as_str()?.to_owned(), tool["_meta"]["app"].as_str()?.to_owned()))).collect(),
+        changes: tools
+            .iter()
+            .filter_map(|tool| {
+                let changes = tool["_meta"]["changes"].as_array()?;
+                Some((tool["name"].as_str()?.to_owned(), changes.iter().filter_map(Value::as_str).map(str::to_owned).collect()))
+            })
+            .collect(),
     }
 }
 
@@ -121,11 +130,16 @@ impl Client {
         })
     }
 
-    /// The app whose tool `request` calls, as the server's list of tools says: none for One Core's own, for what
-    /// isn't a tool's call, or where this client can't say.
-    pub(crate) async fn app(&self, request: &Value) -> Option<String> {
-        let tool = request["params"]["name"].as_str().filter(|_| request["method"] == "tools/call")?;
-        self.listed().await.ok()?.apps.get(tool).cloned()
+    /// What a write `request` may have changed, as the server's list of tools says: the tools its tool says it changes,
+    /// else its app's, else anything, for One Core's own, what isn't a tool's call, or where this client can't say.
+    pub(crate) async fn changed(&self, request: &Value) -> Changed {
+        let Some(tool) = request["params"]["name"].as_str().filter(|_| request["method"] == "tools/call") else { return Changed::Anything };
+        let Ok(listed) = self.listed().await else { return Changed::Anything };
+        match (listed.changes.get(tool), listed.apps.get(tool)) {
+            (Some(tools), Some(_)) => Changed::Tools(tools.clone()),
+            (None, Some(app)) => Changed::App(app.clone()),
+            _ => Changed::Anything,
+        }
     }
 
     /// Fills in what this device does of a tool's inputs, if `request` calls a tool that has any.

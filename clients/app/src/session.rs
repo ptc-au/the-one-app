@@ -158,7 +158,7 @@ pub(crate) async fn opens() {
                     Some("notifications/one/changed") => {
                         let changed = message["params"].clone();
                         let what = Changed::of(&changed);
-                        let again = !matches!(what, Changed::App(_)) && last.as_ref().is_some_and(|(was, at)| *was == changed && at.elapsed() < AGAIN);
+                        let again = changed["app"].is_null() && last.as_ref().is_some_and(|(was, at)| *was == changed && at.elapsed() < AGAIN);
                         let named = match &what {
                             Changed::Anything => "anything".to_owned(),
                             Changed::App(app) => app.clone(),
@@ -166,7 +166,7 @@ pub(crate) async fn opens() {
                         };
                         said.push(format!("{} {named}{}", &server[..8], if again { " again" } else { "" }));
                         if !again {
-                            if !matches!(what, Changed::App(_)) {
+                            if changed["app"].is_null() {
                                 last = Some((changed.clone(), Instant::now()));
                             }
                             changes.push(changed);

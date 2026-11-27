@@ -33,6 +33,7 @@ defmodule OneCore.Apps.Version.Checks do
     problems =
       Enum.flat_map([:tools, :entrypoints, :widgets, :menu_bar_extra, :offers, :events], &Shape.problems(&1, description[&1], prefix)) ++
         tool_problems(tools, rest, prefix) ++
+        change_problems(tools, prefix) ++
         entrypoint_problems(entrypoints, rest, prefix) ++
         widget_problems(widgets, tools, prefix) ++
         badge_problems(entrypoints, tools, prefix) ++
@@ -75,6 +76,19 @@ defmodule OneCore.Apps.Version.Checks do
   defp tool_problems(tools, rest, prefix) do
     for {%{ui: ui}, at} <- indexed(tools), is_binary(ui), why = page(ui, rest) do
       "#{prefix}tools()[#{at}].ui: got #{Shape.given(ui)}, #{why}"
+    end
+  end
+
+  # What a write says it changes is the app's tools that only read: those are what a client keeps and asks again.
+  defp change_problems(tools, prefix) do
+    all = for {tool, _at} <- indexed(tools), do: tool
+
+    for {tool, at} <- indexed(tools),
+        is_list(tool[:changes]),
+        name <- tool[:changes],
+        is_binary(name),
+        why = reading_tool(name, all) do
+      "#{prefix}tools()[#{at}].changes: got #{Shape.given(name)}, #{why}"
     end
   end
 
@@ -131,7 +145,7 @@ defmodule OneCore.Apps.Version.Checks do
     case Enum.find(tools, &(&1[:name] == name)) do
       nil -> "expected one of this app's tools that only read: #{Enum.join(Enum.map(tools, & &1[:name]), ", ")}"
       %{read_only: true} -> nil
-      _ -> "which doesn't say read_only: true in tools/0, as a tool that only reads does and a Home Screen calls"
+      _ -> "which doesn't say read_only: true in tools/0, as a tool that only reads does"
     end
   end
 

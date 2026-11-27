@@ -30,6 +30,11 @@ defmodule OneCore.Apps.Version.Shape do
         },
         "read_only" => %{"type" => "boolean", "description" => "true for a tool that only reads"},
         "no_store" => %{"type" => "boolean", "description" => "true for a tool whose answers a device mustn't keep: what an encrypted item holds"},
+        "changes" => %{
+          "type" => "array",
+          "items" => @name,
+          "description" => "the tools of this app that only read whose answers this tool may change: a client asks again only those, as TanStack Query's invalidateQueries does; left out, every one of them"
+        },
         "by_link" => %{"type" => "boolean"},
         "ui" => %{"type" => "string", "description" => "a page of client/"},
         "path" => %{

@@ -206,7 +206,10 @@ defmodule OneCore.App do
     `OneCore.Call.ask(call, "Replace the archive's copies?")` gives `%{"action" => "accept"}` when they say yes, and
     takes a `requestedSchema` for more (`%{message: ..., requestedSchema: %{type: "object", properties: ...}}`).
   - A tool that only reads says `read_only: true` beside its name. A client keeps its answers, shows them at
-    once, and asks again behind them. After any other tool is called, every client is told that something changed.
+    once, and asks again behind them. After any other tool is called, every client is told that something changed,
+    and asks again every read of the app. One that changes only some of them says which, `changes: ["building"]`, as
+    TanStack Query's `invalidateQueries` names the queries to ask again, and clients ask only those; `changes: []`
+    says it changes nothing a client shows, and nobody is told it ran.
     One whose answers hold what's kept encrypted (a Vault item's name and fields) says `no_store: true` too, as HTTP's
     `Cache-Control: no-store`: its answers say so (`_meta.noStore`), and no device keeps them, so it opens as fast
     as its server answers.

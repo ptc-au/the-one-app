@@ -815,7 +815,8 @@ defmodule OneCore.Mcp do
           tool <- Enum.uniq_by(Enum.flat_map(copies, &open.(elem(&1, 1).tools)), & &1.name) do
         ui = if tool[:ui] || tool[:widget], do: %{:ui => %{resourceUri: router()}, "openai/outputTemplate" => router()}, else: %{}
         ui = if tool[:ui] && tool[:path], do: Map.put(ui, :path, tool.path), else: ui
-        listed = Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(ui, :app, app))
+        meta = if is_list(tool[:changes]), do: Map.put(ui, :changes, changes(app, tool.changes)), else: ui
+        listed = Map.put(listed.("#{app}_#{tool.name}", tool), :_meta, Map.put(meta, :app, app))
         having = having(copies, tool.name)
         if length(having) > 1 and not takes_for?(elem(hd(having), 1), tool.name), do: with_for(listed, app, having), else: listed
       end
@@ -1032,11 +1033,23 @@ defmodule OneCore.Mcp do
   end
 
   # After a tool that doesn't only read, every client connected here is told that something changed: the tool's
-  # app, or anything for One Core's own.
+  # app, or anything for One Core's own. An app's tool that says which of its reads it changes (`changes`) tells
+  # only those, and one that says none tells nobody.
   defp changed(name, result, {_actor, subject}) do
-    if not Calls.reads?(name, subject), do: Apps.changed([], app(name))
+    tool = Calls.find(name, subject, Tools.Definitions.tools())
+
+    case tool do
+      %{read_only: true} -> :ok
+      %{changes: []} -> :ok
+      %{changes: [_ | _] = reads} -> Apps.changed([], app(name), nil, changes(app(name), reads))
+      _ -> Apps.changed([], app(name))
+    end
+
     {:ok, result}
   end
+
+  # The names a client knows an app's tools by, for the ones its tool says it changes.
+  defp changes(app, reads), do: Enum.map(reads, &"#{app}_#{&1}")
 
   defp app(name) do
     if not Enum.any?(Tools.tools(), &(&1.name == name)), do: hd(String.split(name, "_", parts: 2))

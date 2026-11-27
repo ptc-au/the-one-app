@@ -215,11 +215,11 @@ defmodule OneCore.Apps do
   runs at (`apps`): an app's screen loaded against another of either is stale, and its client loads it again. With
   no server started, nobody is told. The versions are looked up apart from whoever says it, which may be what keeps
   them. Where it's an app's call that changed something, it says that app (`app`), so a client asks only what's that
-  app's again; left out, it may be anything. Where a deploy moved them, it says when each app's deploy began
-  (`deployed`, by the app's name, in milliseconds since the Unix epoch), from which a client measures how long its
-  window took to show it.
+  app's again, or only those of its tools it names (`tools`); left out, it may be anything. Where a deploy moved
+  them, it says when each app's deploy began (`deployed`, by the app's name, in milliseconds since the Unix epoch),
+  from which a client measures how long its window took to show it.
   """
-  def changed(owners \\ [], app \\ nil, deployed \\ nil) do
+  def changed(owners \\ [], app \\ nil, deployed \\ nil, tools \\ nil) do
     telling(fn ->
       apps =
         Map.new(owners, fn owner ->
@@ -229,6 +229,7 @@ defmodule OneCore.Apps do
       params = %{library: OneCore.Entrypoint.library().code, apps: apps}
       params = if app, do: Map.put(params, :app, app), else: params
       params = if deployed, do: Map.put(params, :deployed, deployed), else: params
+      params = if tools, do: Map.put(params, :tools, tools), else: params
       Server.tell("changed", params)
     end)
   end

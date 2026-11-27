@@ -295,14 +295,15 @@ impl Subscription {
             return self.read(method, params).await;
         }
         let response = self.client.request(method, params.clone()).await?;
-        // What it may have changed, as its server tells every client (`changed` in `OneCore.MCP`): an app's tool's
-        // app's answers, and One Core's own anything, the tools listed too. A tool that failed changed nothing.
-        let app = self.client.app(&json!({"method": method, "params": params})).await;
-        if method == "tools/call" && app.is_none() {
+        // What it may have changed, as its server tells every client (`changed` in `OneCore.MCP`): the answers of what
+        // an app's tool says it changes, else of its app's, and One Core's own anything, the tools listed too. A tool
+        // that failed changed nothing.
+        let changed = self.client.changed(&json!({"method": method, "params": params})).await;
+        if method == "tools/call" && changed == Changed::Anything {
             self.client.refresh_listed();
         }
         if response["isError"] != true {
-            self.invalidate(&app.map_or(Changed::Anything, Changed::App));
+            self.invalidate(&changed);
         }
         Ok(response)
     }
@@ -548,9 +549,10 @@ fn asked(method: &str, params: &Value) -> String {
     params["name"].as_str().map_or_else(|| method.to_owned(), |tool| format!("{method} {tool}"))
 }
 
-/// What a server says changed (`notifications/one/changed`): what one app's call did, its tools' answers (`app`); what
-/// only some of One Core's own tools answer, as a server's build or status (`tools`); or with neither, anything, as an
-/// install or a deploy changes what's listed and what every app answers.
+/// What a server says changed (`notifications/one/changed`): the answers of the tools it names (`tools`), as what an
+/// app's tool says it changes, or only some of One Core's own, as a server's build or status; what one app's call did, its
+/// tools' answers (`app`); or with neither, anything, as an install or a deploy changes what's listed and what every
+/// app answers.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Changed {
     Anything,
@@ -561,12 +563,10 @@ pub enum Changed {
 impl Changed {
     /// What a server's notice says changed, by its params.
     pub fn of(params: &Value) -> Self {
-        if let Some(app) = params["app"].as_str() {
-            return Self::App(app.to_owned());
-        }
-        match params["tools"].as_array() {
-            Some(tools) => Self::Tools(tools.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
-            None => Self::Anything,
+        match (params["tools"].as_array(), params["app"].as_str()) {
+            (Some(tools), _) => Self::Tools(tools.iter().filter_map(Value::as_str).map(str::to_owned).collect()),
+            (None, Some(app)) => Self::App(app.to_owned()),
+            (None, None) => Self::Anything,
         }
     }
 

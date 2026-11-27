@@ -461,15 +461,15 @@ async function refresh(view, changed = {}, which = (entry) => covers(changed, en
   if (dropped) tell(view)
 }
 
-/// What a server says changed (`notifications/one/changed`): one app's call's, its tools' answers (`app`); what only
-/// some of One Core's own tools answer, as a server's build or status (`tools`); or with neither, anything, as an
-/// install or a deploy changes. As `Changed` in `core/client/src/cache.rs`.
+/// What a server says changed (`notifications/one/changed`): the answers of the tools it names (`tools`), as what an
+/// app's tool says it changes, or only some of One Core's own, as a server's build or status; one app's call's, its
+/// tools' answers (`app`); or with neither, anything, as an install or a deploy changes. As `Changed` in `core/client/src/cache.rs`.
 /** @typedef {{ app?: unknown, tools?: unknown }} Changed */
 /** @param {Changed} changed @param {CachedQuery} entry */
 function covers({ app, tools }, { method, params }) {
   const tool = method === "tools/call" ? String(params.name) : undefined
-  if (typeof app === "string") return !!tool?.startsWith(`${app}_`)
   if (Array.isArray(tools)) return !!tool && tools.includes(tool)
+  if (typeof app === "string") return !!tool?.startsWith(`${app}_`)
   return true
 }
 
@@ -740,12 +740,13 @@ const commands = {
     if (response?.isError) return response
     // What it may have changed, as its server tells every client: an app's tool's app's answers, as its listing says
     // (`_meta.app`), and One Core's own (`install`, `apps_update`) anything, the tools listed too.
-    const app = method === "tools/call" ? (await known(subjectOf(params)).catch(() => [])).find((tool) => tool.name === params?.name)?._meta?.app : undefined
+    const meta = method === "tools/call" ? (await known(subjectOf(params)).catch(() => [])).find((tool) => tool.name === params?.name)?._meta : undefined
+    const app = meta?.app
     // A listing that fails is the connection going out (`answered`), and the call it follows says so itself.
     if (method === "tools/call" && !app) listTools(subjectOf(params)).catch(() => {})
     // The view that wrote asks again for what it was answered of that, as the app's client's does
     // (`Subscription::request`); the others hear what it changed from the server, as every client does (`heard`).
-    invalidate(view, app ? { app } : {})
+    invalidate(view, app ? { app, tools: meta.changes } : {})
     return response
   },
   /// Its user returned to `view`: what's stale is asked again, as TanStack Query's `refetchOnWindowFocus`, and what
