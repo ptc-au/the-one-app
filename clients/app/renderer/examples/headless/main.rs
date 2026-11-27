@@ -257,6 +257,7 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
         if let (true, Some(tool)) = (method == "tools/call", params["name"].as_str()) {
             calling.borrow_mut().push(asked_of(params).unwrap_or_else(|| tool.to_owned()));
         }
+        let answer = answer?;
         match params["name"].as_str() {
             Some(tool) if method == "tools/call" && latency > 0.0 && !cached.iter().any(|kept| kept == tool) => {
                 sent.borrow_mut().push((renderer::platform::fake_time() + latency, answer));
@@ -406,7 +407,7 @@ fn run(args: &[String], context: &Context, bytecode: Option<&std::path::Path>, o
                 let id = message.get("id")?.clone();
                 let (method, params) = (message["method"].as_str().unwrap_or_default(), &message["params"]);
                 let answers = answers.borrow();
-                let answer = answered(&answers, id, method, params);
+                let answer = answered(&answers, id, method, params)?;
                 if method == "tools/call" && latency > 0.0 {
                     sent.borrow_mut().push((renderer::platform::fake_time() + latency, answer));
                     return None;
