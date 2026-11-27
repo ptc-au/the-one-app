@@ -15,6 +15,9 @@ defmodule OneCore.Otlp do
   require Counter
   require Histogram
 
+  # How many exports are kept while the server has no key.
+  @held 200
+
   @doc """
   The buckets a duration in milliseconds is counted in: a quantile read from them is within its bucket, finer where a
   person tells one from another.
@@ -25,6 +28,9 @@ defmodule OneCore.Otlp do
   # Starts what exports logs: the SDK's `:logger` handler, which takes only what `private/2` lets through. And makes
   # the instruments One Core measures with.
   def start do
+    # What's gathered before this server has its key, kept here (the application's process keeps it) until it has (`export/3`).
+    :ets.new(__MODULE__, [:named_table, :public, :duplicate_bag])
+
     Histogram.create(:"one.tool.duration", %{
       unit: :ms,
       description: "How long a tool call took, where it ran",
@@ -39,13 +45,24 @@ defmodule OneCore.Otlp do
       advisory_params: %{explicit_bucket_boundaries: buckets()}
     })
 
+    # An error is exported within a moment, by a handler of its own, as a server that crashes right after it logs
+    # one has no next batch to carry it.
     :ok =
       :logger.add_handler(:otel, :otel_log_handler, %{
         level: :info,
         filter_default: :log,
-        filters: [private: {&__MODULE__.private/2, nil}],
+        filters: [errors: {&:logger_filters.level/2, {:stop, :gteq, :error}}, private: {&__MODULE__.private/2, nil}],
         exporter: {__MODULE__, :logs},
         scheduled_delay_ms: Application.fetch_env!(:opentelemetry, :processors)[:otel_batch_processor].scheduled_delay_ms
+      })
+
+    :ok =
+      :logger.add_handler(:otel_errors, :otel_log_handler, %{
+        level: :error,
+        filter_default: :log,
+        filters: [private: {&__MODULE__.private/2, nil}],
+        exporter: {__MODULE__, :logs},
+        scheduled_delay_ms: 100
       })
   end
 
@@ -65,6 +82,7 @@ defmodule OneCore.Otlp do
 
       kept = Map.take(meta, [:time, :otel_trace_id, :otel_span_id, :otel_trace_flags])
       attributes = if record, do: meta[:attributes] || %{}, else: %{}
+
       if body, do: %{event | msg: {:string, String.slice(body, 0, 1000)}, meta: Map.merge(attributes, kept)}, else: :stop
     else
       :stop
@@ -95,10 +113,17 @@ defmodule OneCore.Otlp do
   def shutdown(_signal), do: :ok
 
   # A server that hasn't started, as one waiting for the network's edge, has no apps to tell and no key to say it's
-  # by: what the SDK gathered then is let go.
+  # by: what the SDK gathered then is kept, the last `HELD` of it, and told with the first export it has a key for.
   @doc false
   def export(exporting, resource, signal) do
-    if Server.key(), do: export_to_apps(exporting, resource, signal), else: :ok
+    if Server.key() do
+      for {:held, held, held_resource, held_signal} <- :ets.take(__MODULE__, :held), do: export_to_apps(held, held_resource, held_signal)
+
+      export_to_apps(exporting, resource, signal)
+    else
+      if :ets.info(__MODULE__, :size) < @held, do: :ets.insert(__MODULE__, {:held, exporting, resource, signal})
+      :ok
+    end
   end
 
   defp export_to_apps(spans, resource, :traces),
