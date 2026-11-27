@@ -5891,8 +5891,6 @@
             "widget": "software-update/widget",
             "name": "Dev Builds",
             "sizes": [
-              "2x2",
-              "4x2",
               "4x4"
             ],
             "opens": null
@@ -6584,5 +6582,22 @@
         }
       ]
     }
+  },
+  "Home, the widget gallery, Dev Builds": {
+    "like": "Home, the widget gallery",
+    "taps": [
+      {
+        "role": "button",
+        "name": "Notes",
+        "nth": 0,
+        "hold": 600
+      },
+      "Edit Home Screen",
+      {
+        "role": "button",
+        "name": "Add Widget"
+      },
+      "Dev Builds"
+    ]
   }
 }

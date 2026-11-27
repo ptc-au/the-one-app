@@ -12,8 +12,9 @@ import { Card } from "./tiles.tsx"
 
 const SIZES: Record<Size, string> = { "2x2": "Small", "4x2": "Medium", "4x4": "Large" }
 
-/// How large a widget is drawn in the gallery, small, as it would be.
-const PREVIEW: Record<Size, [number, number]> = { "2x2": [120, 120], "4x2": [248, 120], "4x4": [248, 248] }
+/// How large a widget is drawn in the gallery: as large as on a phone's page (widget.tsx's), so its words are as
+/// they'd be there, where a smaller one squeezed them. The row of sizes scrolls.
+const PREVIEW: Record<Size, [number, number]> = { "2x2": [170, 170], "4x2": [352, 170], "4x4": [352, 352] }
 
 /// The widget gallery: each widget the owner's apps have, and once one's picked, its sizes, each drawn as it would be,
 /// with Add Widget, which places it first on the page shown.
