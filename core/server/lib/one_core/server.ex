@@ -261,7 +261,7 @@ defmodule OneCore.Server do
 
   # The network's apps run on every server, a person's own too, for them (`OneCore.Apps.loads?/1`), and anyone else's on
   # the servers acting for them, a group's they're in too (`covering`, handed it as it starts).
-  defp told("network"), do: Servers.up()
+  defp told("network"), do: Servers.all()
   defp told(owner), do: :persistent_term.get({__MODULE__, :covering}).(owner)
 
   @doc "Tells `server` to cancel the call it's running for what this server asked it as `request` (`request/3`)."
@@ -274,7 +274,9 @@ defmodule OneCore.Server do
   @doc "Tells `servers`, by their keys, what `notify_servers/3` tells the servers acting for `owners`."
   def notify(servers, owners, what \\ "reload", params \\ %{}), do: announce(fn -> servers end, owners, what, params)
 
-  # Tells the `servers` it works out, in a process of its own, in this call's trace.
+  # Tells the `servers` it works out that are ready (`OneCore.Servers.ready?/1`), in a process of its own, in this
+  # call's trace. One that isn't, as a fallback stopped until it's needed, or a laptop off, looks at everything as it
+  # comes (`OneCore.Apps.reconnected/0`), and was waited a second for each time.
   defp announce(servers, owners, what, params) do
     params = Map.put(params, :owners, owners)
     notification = JSON.encode!(%{jsonrpc: "2.0", method: "notifications/one/" <> what, params: params})
@@ -282,7 +284,7 @@ defmodule OneCore.Server do
 
     Task.Supervisor.start_child(OneCore.Asks, fn ->
       OpenTelemetry.Ctx.attach(trace)
-      told(servers.() -- [key()], notification)
+      told(Enum.filter(servers.() -- [key()], &(Servers.ready?(&1) == true)), notification)
     end)
 
     :ok
