@@ -1,11 +1,11 @@
 // An empty screen, what's coming, a problem, something under way and something starting: written once on the
 // drawing primitives (#primitives), the same on every host.
-import { createEffect, createSignal, Show, useContext } from "solid-js"
+import { createEffect, createSignal, Errored as Boundary, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
-import { copy } from "#bridge"
+import { client, copy } from "#bridge"
 import { Button, Icon, InProblem, Spinner } from "./button.tsx"
-import { Blank, Middle } from "./screen.tsx"
+import { Alone, Blank, Middle, Screen } from "./screen.tsx"
 import { messages, readable, whole } from "../words.ts"
 import { styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
@@ -85,30 +85,39 @@ const look = styles({
 })
 
 /// `<Empty>No notes yet.</Empty>`: an empty screen or list: one grey line, and a button (`action`) only when
-/// there's an obvious first step.
+/// there's an obvious first step. All there is of a screen, it's in the screen's middle, as iOS's
+/// ContentUnavailableView is; in a part of one, under what's above it.
 export function Empty(props: { children?: JSX.Element; action?: JSX.Element }) {
   const middle = useContext(Middle)
+  const alone = useContext(Alone)
   const blank = useContext(Blank)
   createEffect(() => true, () => (blank(1), () => blank(-1)))
-  return (
-    <View style={[look.state, middle() && look.middle, middle() && look.fill]}>
-      <Text style={[look.grey, middle() && look.body]}>{props.children}</Text>
+  let node: unknown
+  const centred = () => middle() || alone(node)
+  node = (
+    <View style={[look.state, centred() && look.middle, centred() && look.fill]}>
+      <Text style={[look.grey, centred() && look.body]}>{props.children}</Text>
       {props.action}
     </View>
   )
+  return node as JSX.Element
 }
 
-/// `<Problem heading="Couldn't load notes" text="The server didn't answer." action={<Button>Try again</Button>} />`:
-/// a problem, shown on the thing it's about: a symbol, a short `heading`, one sentence of `text`, and the action
-/// that fixes it, a button drawn `outline` whatever it's given. Red, for what needs the user now; `warn` for what can wait. It's what `<Errored fallback>` shows.
-/// A `text` that's an error, as `call` throws it (`<Errored fallback={(error) => <Problem text={error()} />}>`), or a
-/// tool's error as text, shows what a person reads of it (`readable`), and the rest under Show Details, to copy for an
-/// agent or for support.
+/// `<Problem heading="Can't send your note" text="Notes isn't answering right now." action={<Button>Try Again</Button>} />`:
+/// a problem, shown on the thing it's about: a symbol, a short `heading` ("Can't show your notes", no full stop), one
+/// sentence of `text`, and the action that fixes it, a button drawn `outline` whatever it's given. Red, for what needs
+/// the user now; `warn` for what can wait. What a screen couldn't get is `<Errored>`'s, which draws this. A `text`
+/// that's an error, as `call` throws it, or a tool's error as text, shows what a person reads of it (`readable`), and
+/// the rest under Show Details, to copy for an agent or for support.
 export function Problem(props: { heading: JSX.Element; text?: JSX.Element | Error; action?: JSX.Element; warn?: boolean }) {
-  const middle = useContext(Middle)
+  // All there is of a screen, as a screen that couldn't show what it's for is, it's in the screen's middle.
+  const inMiddle = useContext(Middle)
+  const alone = useContext(Alone)
+  let node: unknown
+  const middle = () => inMiddle() || alone(node)
   const all = () => (typeof props.text === "string" || props.text instanceof Error ? whole(props.text) : undefined)
   const [open, setOpen] = createSignal(false)
-  return (
+  node = (
     <View role="alert" style={[look.state, middle() && look.middle, middle() && look.fill]}>
       <View style={[look.problem, middle() && look.centred, props.warn && look.warn]}>
         <View style={[look.symbol, props.warn && look.warnSymbol]}>
@@ -139,7 +148,51 @@ export function Problem(props: { heading: JSX.Element; text?: JSX.Element | Erro
       </View>
     </View>
   )
+  return node as JSX.Element
 }
+
+/// `<Errored heading="Can't show your notes" screen={{ heading: "Notes" }}><Notes /></Errored>`: Solid's `<Errored>`
+/// drawing what it caught as a `Problem`: `heading`, what a person reads of the error, the rest under Show Details, and
+/// Try Again, which runs again what threw. Where trying again can't help, as where the page needs a newer One App than
+/// the device has, its action is what does: Update the One App. `screen` is the `Screen` it's drawn in where it takes
+/// a whole screen, as its `Loading`'s fallback is. A `fallback` of its own draws something else, as Solid's does: a
+/// widget's problem in the widget.
+export function Errored(props: { heading?: JSX.Element; screen?: { heading?: JSX.Element; back?: boolean; action?: JSX.Element }; fallback?: (error: () => unknown, reset: () => void) => JSX.Element; children?: JSX.Element }) {
+  return (
+    <Boundary
+      fallback={(error, reset) => {
+        if (props.fallback) return props.fallback(error, reset)
+        // Made where it's drawn, in the screen, whose middle it's in as all there is of it.
+        const problem = () => (
+          <Problem
+            heading={props.heading ?? messages.cantShowPage}
+            text={error() instanceof Error ? (error() as Error) : whole(error())}
+            action={
+              newer(error()) ? (
+                <Button onPress={() => void client({ update: true })}>{messages.updateOneApp}</Button>
+              ) : (
+                <Button onPress={reset}>{messages.tryAgain}</Button>
+              )
+            }
+          />
+        )
+        return props.screen ? (
+          <Screen heading={props.screen.heading} back={props.screen.back} action={props.screen.action}>
+            {problem()}
+          </Screen>
+        ) : (
+          problem()
+        )
+      }}
+    >
+      {props.children}
+    </Boundary>
+  )
+}
+
+/** Whether what was thrown says the device's One App is older than the page needs: its client doesn't know what the
+ * page asked (JSON-RPC's "method not found"), so asking again can't help. */
+const newer = (error: unknown) => (error as { code?: number } | undefined)?.code === -32601
 
 /// What follows the first paragraph of a tool's error, which is for an agent, and Copy, which takes all of it to
 /// paste to an agent or to support. Under a problem's Show Details, and in what a toast's Details opens.

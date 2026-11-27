@@ -4,7 +4,7 @@ import { children, createContext, createSignal, onCleanup, Show, useContext } fr
 import type { JSX } from "@solidjs/web"
 import { Path, Pressable, Svg, Text, View } from "#primitives"
 import { messages } from "../words.ts"
-import { Middle } from "./screen.tsx"
+import { Alone, Middle } from "./screen.tsx"
 import { createButton } from "../headless-components/button.ts"
 import { negative, styles, type Styles } from "../styles.ts"
 import { tokens } from "../tokens.ts"
@@ -247,6 +247,7 @@ export function Icon(props: { name: IconName; along?: boolean; large?: boolean }
 /// to the client as it goes (`notifications/one/waited`), which tells Telemetry with the tool it waited on.
 export function Spinner(props: { delay?: boolean }) {
   const middle = useContext(Middle)
+  const alone = useContext(Alone)
   const [late, setLate] = createSignal(false)
   if (props.delay) {
     let shown = 0
@@ -256,11 +257,14 @@ export function Spinner(props: { delay?: boolean }) {
       if (shown) (globalThis as { host?: Host }).host?.post({ jsonrpc: "2.0", method: "notifications/one/waited", params: { ms: Date.now() - shown } })
     })
   }
-  return (
-    <View role="status" aria-label={messages.loading} style={[props.delay && look.waiting, props.delay && middle() && look.middle, props.delay && late() && look.late]}>
+  // All there is of a screen, it's in the screen's middle, as an empty screen's line is.
+  let node: unknown
+  node = (
+    <View role="status" aria-label={messages.loading} style={[props.delay && look.waiting, props.delay && (middle() || alone(node)) && look.middle, props.delay && late() && look.late]}>
       <Svg viewBox="0 0 24 24" style={look.spinner}><Path d="M12 3a9 9 0 1 0 9 9" style={look.spinnerArc} /></Svg>
     </View>
   )
+  return node as JSX.Element
 }
 
 /** A `Button`'s props. */

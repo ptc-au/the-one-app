@@ -43,6 +43,7 @@ export const [messages, setMessages] = createStore({
   tipOf: (tip: number, of: number) => `Tip ${tip} of ${of}`,
   tips: "Tips",
   tryAgain: "Try Again",
+  updateOneApp: "Update the One App",
 })
 
 /// What a person reads of a tool's error: its first paragraph. What follows a blank line is for an agent, as MCP's

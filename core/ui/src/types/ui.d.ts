@@ -420,6 +420,7 @@ export declare function Empty(props: { action?: Element; children?: Element }): 
 /** Where files dragged from the computer's own are dropped: tinted, saying "Drop to add", while they're over it, and
  * `onDrop` told those of `accept`'s kinds. Without `children`, a dashed area with `label` and Choose Files…. */
 export declare function DropZone(props: { onDrop: (files: File[]) => void; accept?: string[]; multiple?: boolean; label?: string; children?: Element }): Element
+export declare function Errored(props: { heading?: Element; screen?: { heading?: Element; back?: boolean; action?: Element }; fallback?: (error: () => unknown, reset: () => void) => Element; children?: Element }): Element
 export declare function Problem(props: { heading: Element; text?: Element | Error; action?: Element; warn?: boolean }): Element
 export declare function Status(props: { heading: Element; text?: Element; over?: boolean }): Element
 export declare function Steps(props: { steps: Element[]; at: number; text?: Element }): Element

@@ -8,7 +8,7 @@ import type * as Page from "./types/ui.d.ts"
 import { readable, whole } from "./words.ts"
 
 const host = (globalThis as { host?: Host }).host
-const waiting = new Map<number, (response: { result?: unknown; error?: { message: string } }) => void>()
+const waiting = new Map<number, (response: { result?: unknown; error?: { code?: number; message: string } }) => void>()
 const listeners = new Set<() => void>()
 const warned = new Set<() => void>()
 /** Whether a change came while the page wasn't shown, which it's told of once it is (`changed`). */
@@ -41,7 +41,7 @@ let passing = { press: undefined as number | undefined, used: false }
     }
     if (!passing.used) passing.used = event(told)
   },
-  message(message: { id?: number; method?: string; result?: unknown; error?: { message: string } }) {
+  message(message: { id?: number; method?: string; result?: unknown; error?: { code?: number; message: string } }) {
     if (message.method === "notifications/one/changed") tell()
     else if (message.method === "notifications/one/memory_warning") for (const listener of warned) listener()
     else if (message.method === "ui/notifications/host-context-changed") dress((message as { params?: object }).params)
@@ -76,7 +76,8 @@ function ask<T>(method: string, params: object): Promise<T> {
   const answer = new Promise<T>((done, failed) => {
     waiting.set(id, ({ result, error }) => {
       waiting.delete(id)
-      if (error) failed(new Error(error.message))
+      // What a person reads of it, all of it as its `cause`, as a tool's error is (`call`), and its JSON-RPC `code`.
+      if (error) failed(Object.assign(new Error(readable(error.message), { cause: error.message }), { code: error.code }))
       else done(result as T)
     })
     host?.post({ jsonrpc: "2.0", id, method, params })

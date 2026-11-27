@@ -200,6 +200,8 @@ export const Middle = createContext<() => boolean>(() => true)
 /// Where an `Empty` in a split's list side says it's there, so the split's detail side has nothing to pick: not one in a
 /// `Section`, which is only that section's.
 export const Blank = createContext<(change: number) => void>(() => {})
+/** Whether `node` is all there is in the screen it's in, as an empty screen's `Empty` is: in the middle of it, then. */
+export const Alone = createContext<(node: unknown) => boolean>(() => false)
 
 /** A floating action: an icon, what it's named (`label`, which the trailing one also shows) and what pressing it does. */
 export interface FloatingAction {
@@ -279,11 +281,23 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
   const room = useContext(Room)
   const floating = () => !computer && room() < wide && !!props.floatingActions
   const [typing, setTyping] = createSignal(0)
+  const typed = (on: boolean) => void setTyping((count) => count + (on ? 1 : -1))
   const [leadingHeight, setLeadingHeight] = createSignal(0)
   const [trailingHeight, setTrailingHeight] = createSignal(0)
   // Under a finger, a first screen draws its heading large itself.
   const large = !computer && !props.back && !props.largeTitle
   const action = children(() => props.action)
+  // What's in it, and whether one node is all of it, as a screen with only an `Empty` has.
+  // What's in it is made here, so it's in what the screen provides it (`Typing`) as its bar is.
+  const [whole, setWhole] = createSignal<unknown[]>([])
+  const parts = children(() => (
+    <Typing value={typed}>
+      <Middle value={() => false}>
+        <Alone value={(node) => whole().length === 1 && whole()[0] === node}>{props.children}</Alone>
+      </Middle>
+    </Typing>
+  ))
+  createEffect(() => parts.toArray().filter(Boolean), (all) => void setWhole(all))
   // One or two small buttons sit at the end of a large title's line, vertically centred on it, and the bar has no row
   // of its own above it till the title scrolls under, as Music's, Photos' and the App Store's do; three or more keep
   // their row above it, as UINavigationBar's do.
@@ -335,7 +349,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
   // has no bar; under a finger the bar keeps clear of the status bar.
   const barred = () => !computer || !!props.heading || !!props.action || !!props.floatingActions || !!tips() || backed() || titled() || (computer && !!history())
   return (
-    <Typing value={(on) => setTyping((count) => count + (on ? 1 : -1))}>
+    <Typing value={typed}>
     <View style={look.screen}>
       <Show when={barred()}>
       <View role="banner" style={[look.bar, !computer && look.clear, !computer && look.floating, inline() && look.through]} onLayout={computer ? undefined : (event) => setBarHeight(event.currentTarget.getBoundingClientRect().height)}>
@@ -450,7 +464,7 @@ export function Screen(props: { heading?: JSX.Element; action?: JSX.Element; flo
           </Show>
           <View style={look.parts}>
             <View style={[look.column, props.readable === false && look.filled]}>
-              <Middle value={() => false}>{props.children}</Middle>
+              {parts()}
             </View>
           </View>
           <Show when={floating()}>
