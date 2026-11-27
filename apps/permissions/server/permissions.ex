@@ -62,7 +62,7 @@ defmodule Permissions do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.37.50", "database" => "to keep who may reach what"}
+  def requires, do: %{"core" => ">= 0.37.182", "database" => "to keep who may reach what"}
 
   @impl true
   def offers do
@@ -106,11 +106,18 @@ defmodule Permissions do
     [
       %{
         name: "share",
+        changes: ["shared", "check", "users", "members", "groups"],
         description: "Writes a relation tuple: who has which relation to an artifact",
         inputs: tuple,
         outputs: tuple
       },
-      %{name: "unshare", description: "Removes a relation tuple, if it's there", inputs: tuple, outputs: tuple},
+      %{
+        name: "unshare",
+        changes: ["shared", "check", "users", "members", "groups"],
+        description: "Removes a relation tuple, if it's there",
+        inputs: tuple,
+        outputs: tuple
+      },
       %{
         name: "shared",
         read_only: true,
@@ -177,6 +184,7 @@ defmodule Permissions do
       },
       %{
         name: "group",
+        changes: ["groups", "members", "shared", "check", "users"],
         ui: "client/forms.html",
         runtime_version: 4,
         description: "Makes a group, with you as its owner and its first member",
@@ -221,6 +229,7 @@ defmodule Permissions do
       },
       %{
         name: "forget",
+        changes: ["shared", "check", "users", "members", "groups"],
         description:
           "Removes every tuple naming someone removed from the network as subject: the groups they were in, and what " <>
             "was shared with them. Taking someone out calls it",
@@ -237,6 +246,7 @@ defmodule Permissions do
       },
       %{
         name: "transfer",
+        changes: ["transfers", "moved", "shared", "check", "users"],
         description:
           "Moves something an app made to another owner, a person, a group or the network, who it's then " <>
             "`<owner>/made/<app>/<name>` of: its history, its other shares and its links go with it, and its old " <>
@@ -277,18 +287,21 @@ defmodule Permissions do
       },
       %{
         name: "accept",
+        changes: ["transfers", "moved", "shared", "check", "users"],
         description: "Accepts a transfer waiting for you, or a group you own: it's moved to them now",
         inputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]},
         outputs: transfer
       },
       %{
         name: "decline",
+        changes: ["transfers"],
         description: "Declines a transfer waiting for you or a group you own, or takes back one you asked for",
         inputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]},
         outputs: %{type: "object", properties: %{artifact: artifact}, required: ["artifact"]}
       },
       %{
         name: "link",
+        changes: ["shared", "check"],
         description: "Makes a sharing link to an artifact. Whoever holds it reaches the artifact without signing in",
         inputs: %{
           type: "object",
