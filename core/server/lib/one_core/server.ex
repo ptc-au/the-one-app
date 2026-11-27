@@ -220,11 +220,16 @@ defmodule OneCore.Server do
   as if it were off, so whoever asks it asks another.
   """
   def aside(on) do
+    :persistent_term.put({__MODULE__, :aside}, on)
+
     case endpoint() do
       {nif, endpoint} -> nif.aside(endpoint, on)
       nil -> :ok
     end
   end
+
+  @doc "Whether this server has stepped aside (`aside/1`)."
+  def aside?, do: :persistent_term.get({__MODULE__, :aside}, false)
 
   @doc "What whoever asked is told of the server `server` that didn't answer `request/3`, by its machine's name."
   def error_message(:unreachable, server) do
@@ -237,6 +242,11 @@ defmodule OneCore.Server do
       presence["last_seen"] ->
         "#{named(server)} was last seen #{Servers.ago(presence["last_seen"])}"
 
+      # One that's ready on an older build than this one has stepped aside, or is restarting on the newer
+      # (`OneCore.Servers.Aside`).
+      presence["server_ready"] && Builds.count(Servers.build(server)) < Builds.count(Builds.build()) ->
+        error_message(:updating, server)
+
       why = presence["server_ready_reason"] ->
         "#{named(server)} isn't ready: it's #{why}"
 
@@ -244,6 +254,8 @@ defmodule OneCore.Server do
         "#{named(server)} isn't answering"
     end
   end
+
+  def error_message(:updating, server), do: "#{named(server)} is updating to the network's build"
 
   def error_message(:stopped, server),
     do: "#{named(server)} went away before it answered, as a server does while it restarts, so this may or may not have been done. Look before trying again"

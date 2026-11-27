@@ -25,9 +25,6 @@ defmodule OneCore.Servers.Aside do
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
-  @doc "Whether this server has stepped aside."
-  def aside?, do: :persistent_term.get(__MODULE__, false)
-
   @doc """
   `child`'s child spec, as it starts only while this server isn't aside: one that's aside as it starts has it
   started once it's back.
@@ -38,7 +35,7 @@ defmodule OneCore.Servers.Aside do
   end
 
   @doc false
-  def start({module, function, arguments}), do: if(aside?(), do: :ignore, else: apply(module, function, arguments))
+  def start({module, function, arguments}), do: if(Server.aside?(), do: :ignore, else: apply(module, function, arguments))
 
   @impl true
   def init(nil) do
@@ -56,7 +53,7 @@ defmodule OneCore.Servers.Aside do
   end
 
   defp look(started) do
-    was = aside?()
+    was = Server.aside?()
     prepared = Release.status()["server_update_status"] in ["checked", "verifying"]
     aside = Servers.behind?() and (was or not prepared)
     # Said each time, as the endpoint it's said to may have opened since.
@@ -67,8 +64,6 @@ defmodule OneCore.Servers.Aside do
         :ok
 
       aside ->
-        :persistent_term.put(__MODULE__, true)
-
         Logger.info(
           "This server steps aside while it's behind the network's build, on #{Builds.build()}: it takes no calls and runs no services or jobs until it's updated"
         )
@@ -76,7 +71,6 @@ defmodule OneCore.Servers.Aside do
         if started, do: for(id <- @work, do: Supervisor.terminate_child(OneCore.Supervisor, id))
 
       true ->
-        :persistent_term.put(__MODULE__, false)
         Logger.info("This server is back: no ready server runs a newer build than its #{Builds.build()}")
         for id <- @work, do: Supervisor.restart_child(OneCore.Supervisor, id)
     end

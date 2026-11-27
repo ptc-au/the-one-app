@@ -25,6 +25,18 @@ defmodule OneCore.Services do
   # installed by someone, at any time, and nothing tells this server.
   @recheck 60_000
 
+  defmodule NotRunning do
+    @moduledoc """
+    Services aren't running on this server, as on one that has stepped aside to be updated (`OneCore.Servers.Aside`),
+    or one starting or stopping, so what was asked of them is refused, saying which.
+    """
+    defexception []
+
+    @impl true
+    def message(_),
+      do: if(Server.aside?(), do: Server.error_message(:updating, Server.key()), else: "This server's services aren't running just now: it's starting or stopping")
+  end
+
   def child_spec(_), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [nil]}}
   def start_link(nil), do: :gen_statem.start_link({:local, __MODULE__}, __MODULE__, nil, [])
 
@@ -98,7 +110,9 @@ defmodule OneCore.Services do
   (`OneCore.Servers.Aside`), there's nothing to tell: they start what's installed here as they start again.
   """
   def start(app) do
-    if Process.whereis(__MODULE__), do: started(app), else: :ok
+    started(app)
+  rescue
+    NotRunning -> :ok
   end
 
   defp started(app) do
@@ -361,6 +375,8 @@ defmodule OneCore.Services do
       {:unreachable, unreachable} -> raise unreachable
       answer -> answer
     end
+  catch
+    :exit, {:noproc, _} -> raise NotRunning
   end
 
   # The services of `app` that run by themselves on each server that has what they need.
