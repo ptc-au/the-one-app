@@ -851,10 +851,7 @@ defmodule SignIn do
     if users -- [call.actor] != [] and not Call.member?(call, "network"),
       do: raise("Only a member of the network sees who's in it.")
 
-    pictures = kept(call, users)
-    people = for user <- users, do: stored(call, user) |> Map.put("who", user) |> Map.put("picture", source(pictures[user]))
-
-    %{people: people}
+    %{people: people(call, users)}
   end
 
   # Whoever may see who's in the network sees how each is shown, as `people` has it: a member of it, and everyone sees themselves.
@@ -938,6 +935,22 @@ defmodule SignIn do
   def call("remove_passkey", %{"passkey" => passkey}, call) do
     %{"removed" => name} = ask(%{ask: "remove_passkey", who: person(call), passkey: passkey})
     %{removed: name}
+  end
+
+  # Who each of `users` is, as `people` says, from one read of the bucket: each one's record and both their pictures at
+  # once, where each record was read after the one before, and Google's pictures after their own (a median 150-220 ms
+  # on 27 Nov, for 92 bytes). Their own picture is the one they're shown by, before Google's.
+  defp people(call, users) do
+    pictures = for user <- users, {source, blob} <- picture_blobs(user), do: {user, source, blob}
+    records = Enum.map(users, fn "users/" <> name -> "people/" <> name end)
+    {read, pictured} = Enum.split(Artifact.read_all(call.own, records ++ Enum.map(pictures, &elem(&1, 2))), length(users))
+    found = for {{user, source, _blob}, {:ok, _picture, _tag}} <- Enum.zip(pictures, pictured), do: {user, source}
+
+    for {user, record} <- Enum.zip(users, read) do
+      stored = with {:ok, stored, _tag} <- record, do: JSON.decode!(stored), else: (:absent -> %{})
+      picture = Enum.find(["own", "google"], &({user, &1} in found))
+      %{"called" => nil, "email" => nil} |> Map.merge(stored) |> Map.put("who", user) |> Map.put("picture", picture)
+    end
   end
 
   # What the network keeps as each subject's picture, as `{source, blob}`, a person's own before Google's, and nil for none: a
