@@ -116,7 +116,7 @@ defmodule Encryption do
         if others != [], do: :no_response = Call.forward(call, others)
         waiting(call, should, held)
         # Nothing failed: it can't run until a passkey hands the key over, so it isn't an error to Telemetry.
-        raise Call.Refused, unopened(name, should, held)
+        raise Call.Refused, unopened(call, name, should, held)
     end
   end
 
@@ -131,8 +131,10 @@ defmodule Encryption do
   defp waiting(_call, _should, _held), do: nil
 
   # Why nothing opens an encrypted artifact for a call: which servers that act for whose it is lack its keys, and which
-  # hold them but don't act for them, so can't run the call.
-  defp unopened(name, should, held) do
+  # hold them but don't act for them, so can't run the call. Where no server has someone's own key, their passkey is what
+  # hands it over, so what they read (the first paragraph, which `kind` in the UI library knows by its words) says to set
+  # it up, and what follows is for an agent: what it is and where it's done.
+  defp unopened(call, name, should, held) do
     owner = User.owner(name)
     open = Enum.filter(held, &(&1 in should))
 
@@ -143,7 +145,11 @@ defmodule Encryption do
         true -> "#{name} is encrypted, and no server that may open it is up: #{named(open)}."
       end
 
-    Enum.join([said | gaps(owner, should -- held, held -- should)], " ")
+    said = Enum.join([said | gaps(owner, should -- held, held -- should)], " ")
+
+    if owner == call.actor and open == [],
+      do: "Your key isn't set up on a server yet.\n\n#{said} Your passkey hands it to the servers, on the network's sign-in page: sign-in_unlock_with_passkey gives the link to open.",
+      else: said
   end
 
   # What's missing of an owner's servers holding an artifact's keys, as a person reads it, a sentence each: `missing`

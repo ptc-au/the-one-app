@@ -3,7 +3,7 @@
 import { createEffect, createSignal, Errored as Boundary, Show, useContext } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { Pressable, ScrollView, Text, View } from "#primitives"
-import { client, copy } from "#bridge"
+import { call, client, copy, open as opening } from "#bridge"
 import { Button, Icon, InProblem, Spinner } from "./button.tsx"
 import { Alone, Blank, Middle, Screen } from "./screen.tsx"
 import { kind, messages, readable, whole } from "../words.ts"
@@ -151,11 +151,15 @@ export function Problem(props: { heading: JSX.Element; text?: JSX.Element | Erro
   return node as JSX.Element
 }
 
+/// Opens where the person's passkey hands their key to the servers, which is how a key first gets onto one.
+const setUp = async () => opening(JSON.parse(await call("sign-in_unlock_with_passkey")).link)
+
 /// `<Errored heading="Can't show your notes" screen={{ heading: "Notes" }}><Notes /></Errored>`: Solid's `<Errored>`
 /// drawing what it caught as a `Problem`: `heading`, what a person reads of the error, the rest under Show Details, and
 /// Try Again, which runs again what threw. Where trying again can't help its action is what does (`kind`): Update the One
-/// App where the page needs a newer one than the device has, Sign In where the device is nobody's, and where it's
-/// refused what it reached, none: it says who can give it. `screen` is the `Screen` it's drawn in where it takes
+/// App where the page needs a newer one than the device has, Sign In where the device is nobody's, Set Up with Passkey
+/// where the person's own key isn't on any server yet, and where it's refused what it reached, none: it says who can
+/// give it. `screen` is the `Screen` it's drawn in where it takes
 /// a whole screen, as its `Loading`'s fallback is. A `fallback` of its own draws something else, as Solid's does: a
 /// widget's problem in the widget.
 export function Errored(props: { heading?: JSX.Element; screen?: { heading?: JSX.Element; back?: boolean; action?: JSX.Element }; fallback?: (error: () => unknown, reset: () => void) => JSX.Element; children?: JSX.Element }) {
@@ -178,6 +182,8 @@ export function Errored(props: { heading?: JSX.Element; screen?: { heading?: JSX
                 <Button onPress={() => void client({ update: true })}>{messages.updateOneApp}</Button>
               ) : what() === "signedOut" ? (
                 <Button onPress={() => void client({ leave: true })}>{messages.signIn}</Button>
+              ) : what() === "noKey" ? (
+                <Button onPress={() => void setUp()}>{messages.setUpWithPasskey}</Button>
               ) : what() === "again" ? (
                 <Button onPress={reset}>{messages.tryAgain}</Button>
               ) : undefined

@@ -758,6 +758,17 @@
       "You don't have access to this"
     ]
   },
+  "No key": {
+    "like": "Accounts",
+    "answers": {
+      "vault_security": {
+        "$error": "Your key isn't set up on a server yet.\n\nusers/alex/made/vault/items is encrypted, and no server holds alex's key for it yet. Home Server is waiting for alex's key. Your passkey hands it to the servers, on the network's sign-in page: sign-in_unlock_with_passkey gives the link to open."
+      }
+    },
+    "errors": [
+      "Your key isn't set up on a server yet"
+    ]
+  },
   "Sign-in ended": {
     "like": "Accounts",
     "answers": {

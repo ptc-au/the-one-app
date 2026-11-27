@@ -39,6 +39,7 @@ export const [messages, setMessages] = createStore({
     step === "grab" ? `Picked up ${item}, position ${position} of ${of}.` : step === "move" ? `${item}, position ${position} of ${of}.` : step === "drop" ? `Dropped ${item} at position ${position} of ${of}.` : `Moved ${item} back to position ${position} of ${of}.`,
   askAnOwner: "Ask an owner to share it with you.",
   showDetails: "Show Details",
+  setUpWithPasskey: "Set Up with Passkey",
   signIn: "Sign In",
   stepDone: (step: string) => `${step}, done`,
   stepOf: (step: number, of: number) => `Step ${step} of ${of}`,
@@ -54,11 +55,14 @@ export const readable = (error: string): string => error.split(/\n\s*\n/, 1)[0]
 
 /// What an error is, as what can be done about it. A device told it's nobody's (JSON-RPC's `-32003` from One Core)
 /// signs in; a call refused what it reached (`OneCore.Call.reach`, whose sentence a tool's error carries as text, as MCP
-/// has no code for one) is asked of whoever owns it; a client that doesn't know what the page asked (`-32601`) is
-/// older than the page; any other, a network or a server that isn't answering, may be tried again.
-export const kind = (error: unknown): "signedOut" | "noAccess" | "older" | "again" => {
+/// has no code for one) is asked of whoever owns it; a call that needs the person's own key, which no server holds
+/// until their passkey hands it over (`Encryption`'s sentence, as text too), sets it up with their passkey; a client
+/// that doesn't know what the page asked (`-32601`) is older than the page; any other, a network or a server that isn't
+/// answering, may be tried again.
+export const kind = (error: unknown): "signedOut" | "noAccess" | "noKey" | "older" | "again" => {
   const code = (error as { code?: number } | undefined)?.code
-  return code === -32003 ? "signedOut" : code === -32601 ? "older" : readable(whole(error)) === "You don't have access to this." ? "noAccess" : "again"
+  const said = readable(whole(error))
+  return code === -32003 ? "signedOut" : code === -32601 ? "older" : said === "You don't have access to this." ? "noAccess" : said === "Your key isn't set up on a server yet." ? "noKey" : "again"
 }
 
 /// All of an error a screen shows: what a tool said, whole, where it's an `Error` `call` threw (its `cause`), or
