@@ -67,8 +67,8 @@ defmodule Telemetry.Cache do
   end
 
   @impl true
-  def code_change(_version, table, _extra) do
-    :ets.delete_all_objects(table)
-    {:ok, table}
+  def code_change(_version, kept, _extra) do
+    if is_reference(kept) or is_integer(kept), do: :ets.delete(kept)
+    {:ok, :ets.new(__MODULE__, [:set, :public, read_concurrency: true])}
   end
 end
