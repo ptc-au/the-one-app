@@ -83,6 +83,7 @@ defmodule OneCore.Tasks do
           end
 
         row = State.get(id)
+
         if row.task do
           ended(row, outcome)
           Writes.answered(write, outcome)
@@ -303,7 +304,8 @@ defmodule OneCore.Tasks do
   defp record(subject, name, actor) do
     with true <- is_binary(actor) and not User.link?(actor),
          {:ok, data, _tag} <- Artifact.read(artifact(subject), name),
-         %{"actor" => ^actor} = record <- JSON.decode!(data) do
+         %{"actor" => started_by} = record <- JSON.decode!(data),
+         true <- same?(actor, started_by) do
       if expired?(record) do
         Artifact.remove(artifact(subject), name)
         {:error, -32602, "Failed to retrieve task: Task has expired"}
@@ -336,9 +338,9 @@ defmodule OneCore.Tasks do
   # `{:ok, record}`, or `nil` for one it isn't, as one that has just ended, whose end is in the bucket.
   defp runs_here(id, actor) do
     case State.task(id) do
-      {_call, %{principal: {^actor, _subject}, tool: tool, created: created, state: state}}
+      {_call, %{principal: {started_by, _subject}, tool: tool, created: created, state: state}}
       when state in [:routing, :waiting, :running, :input_required] ->
-        {:ok, record(id, actor, tool, created)}
+        if same?(actor, started_by), do: {:ok, record(id, started_by, tool, created)}
 
       _ ->
         nil
@@ -396,7 +398,10 @@ defmodule OneCore.Tasks do
       end
 
     polled = (System.system_time(:millisecond) - row.created) |> div(4) |> max(@poll_first) |> min(@poll)
-    shown = Map.merge(shown(record), %{"status" => status, "lastUpdatedAt" => at(row.updated), "pollIntervalMs" => polled})
+
+    shown =
+      Map.merge(shown(record), %{"status" => status, "lastUpdatedAt" => at(row.updated), "pollIntervalMs" => polled})
+
     shown = if message = State.message(row), do: Map.put(shown, "statusMessage", message), else: shown
 
     if status == "input_required",
@@ -437,7 +442,11 @@ defmodule OneCore.Tasks do
     end
   end
 
-  defp artifact(subject), do: %Artifact{prefix: "#{subject}/tasks/"}
+  # A task of a user who is renamed while it runs (`username`) is kept under their name now, where what was theirs
+  # moved to, as its id and its caller's name, which are the name they had, lead to it (`OneCore.User.renamed/1`).
+  defp artifact(subject), do: %Artifact{prefix: "#{User.renamed(subject)}/tasks/"}
+
+  defp same?(actor, other), do: is_binary(actor) and User.renamed(actor) == User.renamed(other)
 
   defp at(millisecond), do: millisecond |> DateTime.from_unix!(:millisecond) |> DateTime.to_iso8601()
 

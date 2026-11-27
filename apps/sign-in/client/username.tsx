@@ -2,7 +2,7 @@
 // for anyone, by the network's owners. It says what changes before it's saved, as GitHub warns, and the tool says
 // whether the name is free.
 import { createSignal } from "solid-js"
-import { Button, call, Field, Input, Sheet, styles, Text, tokens, View } from "ui"
+import { Button, call, Field, Input, Sheet, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   form: { gap: tokens.length.gutter },
@@ -24,9 +24,11 @@ export function Username(props: { who: string; you: boolean; username?: string; 
     setWorking(true)
     setError()
     try {
-      const { who } = JSON.parse(await call("sign-in_username", props.you ? { username } : { username, who: props.who }))
+      const { who, unheard } = JSON.parse(await call("sign-in_username", props.you ? { username } : { username, who: props.who })) as { who: string; unheard: { app: string; why: string }[] }
       props.onChanged(who)
       props.onClose()
+      // Renamed, though an app didn't hear it: it isn't an error, so it's said once the sheet is gone.
+      if (unheard.length) toast(`Renamed, but ${unheard.map(({ app }) => app).join(", ")} didn't hear it, so what it keeps is still under ${was()}.`)
     } catch (thrown) {
       setError((thrown as Error).message)
     } finally {

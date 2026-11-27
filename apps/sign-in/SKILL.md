@@ -47,7 +47,8 @@ that one question for it, and a new device when they also say the code it shows 
 - `username` changes your person's username, which their addresses are under (`users/<username>`,
   `/git-repos/<username>/notes`), when they ask, or with `--who` someone else's, which only the network's owners do:
   lowercase letters, digits, dots and hyphens. Everything of theirs moves with it, and their old addresses, sharing
-  links, webhooks and git remotes lead to the new one, as GitHub's do; nobody else is given an old one.
+  links, webhooks and git remotes lead to the new one, as GitHub's do; nobody else is given an old one. It's a task
+  that says each stage and is done once they're renamed: an app that didn't hear of it is under `unheard`, never an error.
 - `people` says who people are: the name each goes by, chosen as they joined, their email where signing in
   has one, and whose picture they're shown by (`picture`: the one they set, `own`, or Google's, `google`, or none). `name` changes the name your person goes by, when they ask. `picture` sets the picture they go by, which wins over Google's (`--upload-from photo.jpg`: any picture up to 10 MB, made square and small from its middle), and with none takes it away. Signing in with Google gives
   their Google picture, taken again each time. `pictures` gives those of people (`users/<name>`) and the network (`network`, its icon, or the One App's) as `data:` addresses, which
