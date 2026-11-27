@@ -81,8 +81,13 @@ const go = (tip: string) => {
   refresh(vaultNeed)
   call("home-screen_tip", { name: tip, seen: true }).catch((error) => toast(error as Error))
 }
-/// Whether they've been through onboarding, so the Home Screen's tips offer it again (pills.tsx).
-export const onboarded = () => tips.seen !== undefined && !step()
+/// The step shown, and whether they've been through onboarding, so the Home Screen's tips offer it again (pills.tsx), as
+/// what decides them has answered, and until then none: the Home Screen draws at once and onboarding comes over it, as the
+/// tips, the devices and the Vault, which no device keeps, may each take long to answer (on PTC, 25 Nov, the Home Screen
+/// waited 15 s on them and didn't open).
+const [onboarding, setOnboarding] = createSignal<{ step?: Step; seen: boolean }>({ seen: false })
+createEffect(() => ({ step: step(), seen: tips.seen !== undefined && !step() }), (now) => void setOnboarding(now))
+export const onboarded = () => onboarding().seen
 /// Shows onboarding again from its first step, through every step this device has, done or not.
 export const showOnboarding = () => {
   setContinued({})
@@ -122,7 +127,7 @@ function HomeScreen(props: { owners: Owner[] }) {
       <View
         style={[looks.root, looks.sized(windowWidth(), viewport().height)]}
       >
-        <Show when={step()} keyed fallback={<HomeScreenShown owners={props.owners} layout={layout} paging={paging} launching={launching} carrying={carrying} />}>
+        <Show when={onboarding().step} keyed fallback={<HomeScreenShown owners={props.owners} layout={layout} paging={paging} launching={launching} carrying={carrying} />}>
           {(shown) => (
             <Show when={launcher()} fallback={<Onboarding step={shown} width={viewport().width} height={viewport().height} />}>
               <View style={[looks.surface, looks.at(cardRect().x, cardRect().y, cardRect().width, cardRect().height)]}>

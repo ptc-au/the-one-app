@@ -55,7 +55,9 @@ export const answered = createMemo(async (was?: Owner[]) => {
         ),
     )
   })
-  const you = json<{ people: { who: string }[] }>("sign-in_people").then(({ people }) => pages({ name: "You", avatar: people[0].who }))
+  // Asked beside their pages, which don't wait on it: it's only whose picture is theirs.
+  const people = json<{ people: { who: string }[] }>("sign-in_people")
+  const you = Promise.all([people, pages({ name: "You", avatar: "" })]).then(([{ people }, yours]) => ({ ...yours, avatar: people[0].who }))
   const all = Promise.all([you, pages({ subject: "network", name: "Everyone", avatar: "network" }), theirs])
   return all.then(([yours, everyone, groupsPages]) => [yours, everyone, ...groupsPages.filter((owner) => owner !== undefined)], (error) => was ?? Promise.reject(error))
 })
