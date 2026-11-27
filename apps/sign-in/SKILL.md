@@ -22,8 +22,8 @@ that one question for it, and a new device when they also say the code it shows 
   network's owner makes it, a new one for them ends the one before, and never for an owner, who adds a passkey on a
   device they're signed in on.
 - `domains` says which Google Workspace domains' people join by signing in with Google, with no invitation, and
-  sets them for whoever invites. They're `users/<their email's name before the @>`, and go by their Google name.
-- `network` says the network's name, icon and logo, and sets them for whoever invites: null is the One App's. Its icon,
+  `set_domains` sets them, for whoever invites. They're `users/<their email's name before the @>`, and go by their Google name.
+- `network` says the network's name, icon and logo, and `set_network` sets them, for whoever invites: null is the One App's. Its icon,
   on a tile of its own, is its web app's tab, Home Screen icon and manifest, and its own apps' icon; its logo, its mark
   alone, is what its sign-in page draws, one for a light page and one for a dark, either alone shown on both (`--name
   "the PTC App" --icon-from icon.b64 --logo-from logo/`, square PNGs as base64, `logo/` holding `light` and `dark`). A

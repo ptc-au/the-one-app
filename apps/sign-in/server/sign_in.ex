@@ -38,6 +38,28 @@ defmodule SignIn do
   def tools do
     none = %{type: "object", properties: %{}}
     picture_source = %{type: ["string", "null"], enum: ["own", "google", nil], description: "Whose picture they're shown by: the one they set, Google's, or none (initials)"}
+    domains = %{type: "object", properties: %{domains: %{type: "array", items: %{type: "string"}}}, required: ["domains"]}
+
+    network = %{
+      type: "object",
+      properties: %{
+        name: %{type: ["string", "null"]},
+        icon: %{type: ["string", "null"], description: "Where its icon is, if it has one of its own"},
+        logo: %{
+          type: ["object", "null"],
+          description: "Where its logo is, for a light page and a dark, if it has one of its own",
+          properties: %{light: %{type: "string"}, dark: %{type: "string"}}
+        },
+        mark: %{
+          type: ["object", "null"],
+          description: "Its logo as a page draws it where only an app's own files load, as `data:` addresses",
+          properties: %{light: %{type: "string"}, dark: %{type: "string"}}
+        },
+        android_package: %{type: ["string", "null"]},
+        apple_app: %{type: ["string", "null"]}
+      },
+      required: ["name", "icon"]
+    }
 
     [
       %{
@@ -111,27 +133,47 @@ defmodule SignIn do
       },
       %{
         name: "domains",
+        read_only: true,
         description: """
-        Says which Google Workspace domains' people join the network by signing in with Google, with no invitation,
-        or, given `domains`, makes those the ones. Google signs people in only where the network's edge has a Google
-        client. Everyone else joins by an invitation
+        Says which Google Workspace domains' people join the network by signing in with Google, with no invitation
+        (`set_domains`). Everyone else joins by an invitation
+        """,
+        inputs: none,
+        outputs: domains
+      },
+      %{
+        name: "set_domains",
+        description: """
+        Makes these the Google Workspace domains whose people join the network by signing in with Google, with no
+        invitation. Google signs people in only where the network's edge has a Google client
         """,
         inputs: %{
           type: "object",
           properties: %{
             domains: %{type: "array", items: %{type: "string"}, description: "Its domains, like example.org: none lets nobody in this way"}
-          }
+          },
+          required: ["domains"]
         },
-        outputs: %{type: "object", properties: %{domains: %{type: "array", items: %{type: "string"}}}, required: ["domains"]}
+        outputs: domains
       },
       %{
         name: "network",
+        read_only: true,
         description: """
         Says the network's name, icon and logo, as its sign-in page and its web app show them and as its own apps are
         finished with, and its own iPhone app's ID and Android app's package name, which its passkeys and links are
-        trusted to, or, given `name`, `icon`, `logo`, `apple_app` or `android_package`, makes them those. Its icon is on a tile of its own, as a Home
-        Screen, a tab and its apps show it; its logo is its mark alone, as its sign-in page draws it, one for a light
-        page and one for a dark (either alone shows on both). Without them, it's the One App's
+        trusted to (`set_network`). Without them, it's the One App's
+        """,
+        inputs: none,
+        outputs: network
+      },
+      %{
+        name: "set_network",
+        description: """
+        Sets the network's name, icon and logo, its own iPhone app's ID or its Android app's package name, each that's
+        given, as `network` says them. Its icon is on a tile of its own, as a Home Screen, a tab and its apps show it;
+        its logo is its mark alone, as its sign-in page draws it, one for a light page and one for a dark (either alone
+        shows on both)
         """,
         inputs: %{
           type: "object",
@@ -157,26 +199,7 @@ defmodule SignIn do
             }
           }
         },
-        outputs: %{
-          type: "object",
-          properties: %{
-            name: %{type: ["string", "null"]},
-            icon: %{type: ["string", "null"], description: "Where its icon is, if it has one of its own"},
-            logo: %{
-              type: ["object", "null"],
-              description: "Where its logo is, for a light page and a dark, if it has one of its own",
-              properties: %{light: %{type: "string"}, dark: %{type: "string"}}
-            },
-            mark: %{
-              type: ["object", "null"],
-              description: "Its logo as a page draws it where only an app's own files load, as `data:` addresses",
-              properties: %{light: %{type: "string"}, dark: %{type: "string"}}
-            },
-            android_package: %{type: ["string", "null"]},
-            apple_app: %{type: ["string", "null"]}
-          },
-          required: ["name", "icon"]
-        }
+        outputs: network
       },
       %{
         name: "remove_person",
@@ -673,7 +696,7 @@ defmodule SignIn do
   end
 
   # Whoever invites says who joins with no invitation, and any member sees it.
-  def call("domains", %{"domains" => domains}, call) do
+  def call("set_domains", %{"domains" => domains}, call) do
     Call.reach(call, Artifact.name(call.own), "editor")
     %{domains: ask(%{ask: "domains", domains: domains})["domains"]}
   end
@@ -684,16 +707,14 @@ defmodule SignIn do
   end
 
   # Whoever invites names the network, and any member sees what it's called.
-  def call("network", inputs, call) do
-    given = Map.take(inputs, ["name", "icon", "logo", "android_package", "apple_app"])
+  def call("network", _inputs, call) do
+    if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
+    network(%{})
+  end
 
-    if given == %{} do
-      if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
-    else
-      Call.reach(call, Artifact.name(call.own), "editor")
-    end
-
-    Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo", "mark", "android_package", "apple_app"])
+  def call("set_network", inputs, call) do
+    Call.reach(call, Artifact.name(call.own), "editor")
+    network(Map.take(inputs, ["name", "icon", "logo", "android_package", "apple_app"]))
   end
 
   # Whoever invites takes out, and nobody takes themselves out. Only an owner takes out an owner, as only a super
@@ -1087,6 +1108,9 @@ defmodule SignIn do
       _ -> "the network's owner"
     end
   end
+
+  # The network's name, icon and logo, and its own apps, as the edge keeps them, with `given` set first.
+  defp network(given), do: Map.take(ask(Map.put(given, :ask, "network")), ["name", "icon", "logo", "mark", "android_package", "apple_app"])
 
   defp person(%Call{actor: "users/" <> _ = by}), do: by
   defp person(_call), do: raise("This is a person's to ask, and nobody is asking.")
