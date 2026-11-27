@@ -4,7 +4,7 @@
 // chosen, which stays. On a computer the four are rows beside a large picture, the one shown with its line and a line
 // filling under it as it plays; on a phone, the one shown is over the picture, with a dot for each under it. Continue
 // goes on to onboarding's next step for this device (home.tsx), or the Home Screen.
-import { createProjection, createSignal, For, onCleanup, Show } from "solid-js"
+import { createProjection, createSignal, For, onCleanup, runWithOwner, Show } from "solid-js"
 import { Button, call, defineVars, type Element, Image, Pressable, safeArea, styles, Text, tokens, View } from "ui"
 import { Panel } from "./art.tsx"
 import { Automate, Devices, Multiplayer, Secure } from "./slides.tsx"
@@ -84,17 +84,23 @@ const look = styles({
 })
 
 /// The network as Welcome shows it: its name ("the PTC App") and its logo, light and dark, as data where it has one
-/// of its own, which a native window draws (only an app's own files load there), or else the One App's.
-export const networkAnswer = createProjection(() =>
-  call("sign-in_network").then(
-    (answer): { name: string; light: string; dark: string } => {
-      const { name, mark } = JSON.parse(answer) as { name?: string | null; mark?: { light?: string; dark?: string } | null }
-      return { name: name ?? "the One App", light: mark?.light ?? "one-app.png", dark: mark?.dark ?? "one-app.png" }
-    },
-    () => ({ name: "the One App", light: "one-app.png", dark: "one-app.png" }),
-  ),
-)
-export const network = () => networkAnswer
+/// of its own, which a native window draws (only an app's own files load there), or else the One App's. It's asked as
+/// an onboarding step first draws it, not as the Home Screen opens, which only onboarding's steps need it for; and once
+/// asked it stays, as nothing owns it.
+const ask = () =>
+  runWithOwner(null, () =>
+    createProjection(() =>
+      call("sign-in_network").then(
+        (answer): { name: string; light: string; dark: string } => {
+          const { name, mark } = JSON.parse(answer) as { name?: string | null; mark?: { light?: string; dark?: string } | null }
+          return { name: name ?? "the One App", light: mark?.light ?? "one-app.png", dark: mark?.dark ?? "one-app.png" }
+        },
+        () => ({ name: "the One App", light: "one-app.png", dark: "one-app.png" }),
+      ),
+    ),
+  )
+let answer: ReturnType<typeof ask> | undefined
+export const network = () => (answer ??= ask())
 
 /// Welcome, in `width` by `height`, with `inset` kept clear at its top and bottom (a phone's status bar and home
 /// indicator). `onContinue` goes on. `progress` is where it is among onboarding's steps, over its title where it's narrow.
