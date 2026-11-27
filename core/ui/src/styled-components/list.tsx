@@ -271,7 +271,10 @@ export function List<T>(props: { listbox?: Listbox; label?: string; each?: reado
     )
   }
   return (
-    <Show when={slots().length}>
+    // Its rows are read here too, not only by the effect that makes its slots, so what's still coming in them, or what
+    // threw making them, is its `Loading`'s and its `Errored`'s, as it would be with no list around it: an effect
+    // keeps both to itself.
+    <Show when={(values(), slots().length)}>
       <View role={props.listbox ? "listbox" : "list"} id={props.listbox?.id} aria-label={props.label} onKeyDown={keys?.keys.keydown} style={[look.list, flat() && look.flat, grouped() && look.groupedList]}>
         <Show
           when={each}
