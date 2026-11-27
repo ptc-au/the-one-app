@@ -150,6 +150,12 @@ export class Network extends WorkerEntrypoint<Env> {
     return got.json();
   }
 
+  /** Where the bucket is, as R2 says (`oc`, `apac`, `wnam`, ...), or `null` where it's up to R2. */
+  async location(): Promise<string | null> {
+    const got = await bucket(this.env).fetch(`${this.env.BUCKET}?location`);
+    return (got.ok && /<LocationConstraint[^>]*>([^<]+)</.exec(await got.text())?.[1]) || null;
+  }
+
   /** The key that signed what was asked at `url` with `body`, by the `one-` headers it came with, or null. */
   verifiedKey(url: string, headers: HeadersInit, body: string): Promise<string | null> {
     return verifiedKey(new Request(url, { headers }), body);
