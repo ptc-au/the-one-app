@@ -129,7 +129,7 @@ type Stage =
   | { stage: "created"; by?: string; on?: string[] }
   | { stage: "unlocking"; doing: string }
   | { stage: "unlocked"; handed: [whose: string, names: string[]][] }
-  | { stage: "failed"; why: string; ended?: boolean }
+  | { stage: "failed"; why: string; ended?: boolean; server?: boolean }
 
 const [stage, setStage] = createSignal<Stage>({ stage: "checking" })
 /// How the app's own window lets its device in: by a passkey with the device's code, or with the link and the code to
@@ -210,8 +210,8 @@ async function begin() {
       const { data } = await auth.getSession()
       if (data) return claim()
       // A code that ended says so, rather than asking them to sign in for nothing.
-      const { state } = await (await fetch(`/sign-in/auth/device/state?user_code=${encodeURIComponent(flow.code)}`)).json()
-      return setStage(state === "waiting" ? { stage: "needsSignIn" } : { stage: "failed", why: ended[state as keyof typeof ended] ?? ended.unknown, ended: true })
+      const { state, server } = await (await fetch(`/sign-in/auth/device/state?user_code=${encodeURIComponent(flow.code)}`)).json()
+      return setStage(state === "waiting" ? { stage: "needsSignIn" } : { stage: "failed", why: ended[state as keyof typeof ended] ?? ended.unknown, ended: true, server })
     }
   } catch (error) {
     setStage({ stage: "failed", why: (error as Error).message })
@@ -601,7 +601,7 @@ function shows(): Shows {
           return { heading: `${now.name} wasn't approved`, done: "You can close this page." }
         // A code that has ended is started again only on its device, so there's nothing to try again here.
         default:
-          return { heading: "Approve a device", problem: failed, ...(now.stage === "failed" && now.ended ? {} : { button: "Try Again", onSignIn: begin }) }
+          return { heading: now.stage === "failed" && now.server ? "Add a server" : "Approve a device", problem: failed, ...(now.stage === "failed" && now.ended ? {} : { button: "Try Again", onSignIn: begin }) }
       }
     case "assistant":
       switch (now.stage) {

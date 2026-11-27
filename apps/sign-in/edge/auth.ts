@@ -440,11 +440,11 @@ const devices = () => ({
   endpoints: {
     /**
      * Where a device's code is (`RequestState`), or `unknown` for one Better Auth has forgotten or never made, so the
-     * sign-in page says a code has ended before it asks anyone to sign in for it.
+     * sign-in page says a code has ended before it asks anyone to sign in for it, and whether it's a server's.
      */
     deviceState: createAuthEndpoint("/device/state", { method: "GET", query: z.object({ user_code: z.string() }) }, async (ctx) => {
       const code = await ctx.context.adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.query.user_code) }] });
-      return ctx.json({ state: code ? state(code) : "unknown" });
+      return ctx.json({ state: code ? state(code) : "unknown", server: code?.scope === "server" });
     }),
     /** The ways besides a passkey someone signs in here, which the sign-in page offers: Google, where it's set up. */
     socialProviders: createAuthEndpoint("/social-providers", { method: "GET" }, async (ctx) =>
