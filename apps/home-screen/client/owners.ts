@@ -128,7 +128,8 @@ export function reorder(order: string[]) {
 }
 
 /// The red count on an app's icon, by who it's for and its badge tool (`badge`): what its app says waits for whoever's
-/// looking, asked again with everything else as anything changes. One that couldn't be asked has none.
+/// looking, asked again with everything else as anything changes. While a read fails, its last known count stays (and
+/// never invents 0 when none was known yet).
 const [badges, setBadges] = createSignal<Record<string, number>>({})
 
 /// Who an app is opened for, as `launch` opens it, and so who its badge is asked for.
@@ -136,16 +137,24 @@ const opensFor = (entrypoint: Entrypoint, owner: Owner) => (entrypoint.subject =
 
 export const badgeOf = (entrypoint: Entrypoint, owner: Owner) => (entrypoint.badge ? badges()[`${opensFor(entrypoint, owner) ?? ""} ${entrypoint.badge}`] : undefined)
 createEffect(owners, (all) => {
-  const asked = new Map<string, Promise<number>>()
+  const asked = new Map<string, Promise<number | undefined>>()
   for (const owner of all)
     for (const item of [...owner.pages.flatMap((page) => page.items), ...owner.library.flatMap((category) => category.entrypoints)]) {
       const entrypoint = item as Entrypoint
       if (!entrypoint.badge) continue
       const subject = opensFor(entrypoint, owner)
       const key = `${subject ?? ""} ${entrypoint.badge}`
-      if (!asked.has(key)) asked.set(key, json<{ count?: number }>(entrypoint.badge, {}, subject).then(({ count }) => count ?? 0, () => 0))
+      if (!asked.has(key)) asked.set(key, json<{ count?: number }>(entrypoint.badge, {}, subject).then(({ count }) => count ?? 0, () => undefined))
     }
-  Promise.all([...asked].map(async ([key, count]) => [key, await count] as const)).then((counted) => setBadges(Object.fromEntries(counted)))
+  Promise.all([...asked].map(async ([key, count]) => [key, await count] as const)).then((counted) => {
+    const was = untrack(badges)
+    const next: Record<string, number> = {}
+    for (const [key, count] of counted) {
+      if (count !== undefined) next[key] = count
+      else if (key in was) next[key] = was[key]
+    }
+    setBadges(next)
+  })
 })
 
 /// The apps of an App Library whose names have `words` in them: with a screen of their own, or `background`. Those
