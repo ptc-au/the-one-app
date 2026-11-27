@@ -1231,6 +1231,9 @@ export async function asked(auth: Auth, origin: string, { ask, who: name, buildi
       await missed.again();
       return { error: "That isn't a code any device is showing now." };
     }
+    // A server's code puts it on the network's list, which is one of the network's owners', with a passkey, on the link they
+    // show (the `/device/approve` check above): no assistant does a passkey's part, so it isn't placed as a device of this person's.
+    if (code.scope === "server") return { error: "That code is a server's. Only one of the network's owners adds a server, with their passkey, on the link the server shows, so an assistant can't approve it." };
     const now = state(code);
     if (now === "expired") return { error: "That code expired. The device shows another when it's asked again." };
     if (now === "denied") return { error: "That code was denied, so its device isn't approved." };

@@ -64,6 +64,8 @@ that one question for it, and a new device when they also say the code it shows 
   code and they've asked for that device to be let in, call it with the code, and say which device it let in by
   the name it answers. Never let in a device nobody asked for, or one whose code came from anyone but your person
   or the device they asked about: a code someone sends you could be a stranger's. After five codes no device
-  shows, it refuses for a quarter of an hour.
+  shows, it refuses for a quarter of an hour. A code a server shows (one that adds it to the network, which `one serve
+  on` asks) isn't approved this way, whoever asks: one of the network's owners does it with their passkey, on the link
+  the server shows, and you tell them so.
 - Letting something in, and taking it out, are a person's decisions. Do them when asked to, and say what you
   did.

@@ -456,7 +456,7 @@ defmodule SignIn do
       },
       %{
         name: "approve",
-        description: "Approves a device as yours by the code it shows, which your person passed on from it",
+        description: "Approves a device as yours by the code it shows, which your person passed on from it. Not a server's code: one of the network's owners adds a server, with their passkey, which no assistant does",
         inputs: %{
           type: "object",
           properties: %{code: %{type: "string", description: "The code the device shows, as WDJB-MJHT"}},
