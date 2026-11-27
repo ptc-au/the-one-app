@@ -40,7 +40,9 @@ defmodule Vault.Store do
       id text primary key, item text, field text, site text, value text, by text,
       at integer not null, expires integer not null, used integer, used_by text
     ) without rowid
-    """
+    """,
+    # The item a request was answered with, which its asker finds it by.
+    "alter table requests add column item text"
   ]
 
   # Someone's Vault is theirs alone: no relation tuple has anyone else ask for a user, the network's owner included.
@@ -157,6 +159,15 @@ defmodule Vault.Store do
 
   @doc "A short-lived link to one blob of an item's, as what's handed on takes it: JSON's keys."
   def link(db, blob, mode), do: %{root(db) | codec: nil} |> Artifact.link(blob, mode) |> JSON.encode!() |> JSON.decode!()
+
+  @doc """
+  Tells their person, on their devices and in their inbox, and opens the Vault where `section` says (`accounts#request=4`)
+  when it's tapped. Only a user's own Vault has someone to tell: a group's or the network's has owners, whom this doesn't know.
+  """
+  def notify(call, title, text, section) do
+    if String.starts_with?(call.subject, "users/"),
+      do: Call.app(call, "notifications").send(call, %{"title" => String.slice(title, 0, 120), "text" => text, "section" => section})
+  end
 
   def random(bytes), do: Base.url_encode64(:crypto.strong_rand_bytes(bytes), padding: false)
   def now, do: System.os_time(:second)

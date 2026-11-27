@@ -90,6 +90,8 @@ interface Request {
   app: { name: string; title: string } | null
   by: string | null
   why: string | null
+  /** The item it was allowed with. */
+  item: string | null
   hosts: string[]
   fields: { name: string; secret?: boolean; value?: string }[]
 }
@@ -673,12 +675,15 @@ function RequestAlert(props: Shown) {
     },
   )
   const answer = async (inputs: object) => {
+    const title = request()!.title
     setBusy(true)
     setProblem()
     try {
-      await call("vault_answer", { id: request()!.id, ...inputs }, { subject: whose() })
+      const answered = JSON.parse(await call("vault_answer", { id: request()!.id, ...inputs }, { subject: whose() })) as { item?: string }
       again()
       shut()
+      // New values make a new item, which says so where its name isn't the request's: the title was taken.
+      if (answered.item && !("item" in inputs) && answered.item !== title) toast(`Saved as ${answered.item}, as ${title} is already one of your items.`)
     } catch (error) {
       setProblem((error as Error).message)
     } finally {

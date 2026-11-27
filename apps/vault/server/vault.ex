@@ -82,7 +82,7 @@ defmodule Vault do
   # The Vault is a section of Settings: your accounts, passwords and keys, and what apps keep here.
   @impl true
   def hook("settings.sections", _about, _call),
-    do: [%{in: "settings", name: "Vault", component: "accounts", icon: "client/icon.svg", group: "network", order: 3}]
+    do: [%{in: "settings", name: "Vault", component: "accounts", icon: "client/icon.svg", group: "network", order: 3, badge: "badge"}]
 
   # What the network's privacy page says of it, where it says what's kept.
   def hook("privacy.sections", _about, _call),
@@ -178,9 +178,10 @@ defmodule Vault do
                     properties: %{name: %{type: "string"}, title: %{type: "string"}}
                   },
                   by: %{type: ["string", "null"], description: "The agent that asked, by its name, where one did"},
-                  why: %{type: ["string", "null"]}
+                  why: %{type: ["string", "null"]},
+                  item: %{type: ["string", "null"], description: "The item it was allowed with, once it is: the one its person chose, or the one their new values made, named as the request is, or with a number after it where that name was taken"}
                 },
-                required: ["id", "title", "state", "fields", "hosts", "app", "by", "why"]
+                required: ["id", "title", "state", "fields", "hosts", "app", "by", "why", "item"]
               }
             },
             handles: %{
@@ -234,6 +235,13 @@ defmodule Vault do
           },
           required: ["items", "requests", "handles", "apps", "types"]
         }
+      },
+      %{
+        name: "badge",
+        read_only: true,
+        description: "How many requests wait for their person, the red count on Vault in Settings",
+        inputs: %{type: "object", properties: %{}},
+        outputs: %{type: "object", properties: %{count: %{type: "integer"}}, required: ["count"]}
       },
       %{
         name: "set",
@@ -428,7 +436,11 @@ defmodule Vault do
           },
           required: ["id"]
         },
-        outputs: %{type: "object", properties: %{state: %{type: "string", enum: ~w(allowed declined)}}, required: ["state"]}
+        outputs: %{
+          type: "object",
+          properties: %{state: %{type: "string", enum: ~w(allowed declined)}, item: Map.put(item, :description, "The item it was allowed with")},
+          required: ["state"]
+        }
       },
       %{
         name: "fetch",
@@ -911,6 +923,9 @@ defmodule Vault do
   @apps ~w(fetch items sign_in state access redeem)
 
   @impl true
+  # Settings asks it for whoever opens it, as it does every app's badge.
+  def call("badge", _inputs, call), do: %{count: Requests.waiting(call, Store.own(call))}
+
   def call(tool, _inputs, %Call{caller: caller}) when caller != nil and tool not in @apps,
     do: raise("vault_#{tool} is its person's, not an app's. An app calls #{Enum.join(@apps, ", ")}.")
 
@@ -1138,6 +1153,10 @@ defmodule Vault do
     by = with %{agent: agent} <- SignIns.began(call), do: agent, else: (_ -> nil)
     id = Requests.create(call, db, title, fields, Map.get(inputs, "hosts", []), app, by, inputs["why"])
     timed(call, db)
+    Call.changed(call)
+    asked = Requests.asker(call, app, by)
+    Store.notify(call, "#{asked} asks for #{title}", inputs["why"] || "Open Vault to allow it or not.", "accounts#request=#{id}&owner=#{URI.encode_www_form(call.subject)}")
+
     # Whose Vault it waits in, so the link opens it there: the person's, a group's or the network's.
     link = if address = Application.get_env(:one_core, :address), do: "#{address}/vault/request?id=#{id}&owner=#{URI.encode_www_form(call.subject)}"
     where = if link, do: "Give them this link: #{link}. It", else: "Ask them to open Vault on a device of theirs: it"
@@ -1163,8 +1182,14 @@ defmodule Vault do
     Handles.expire(call, db)
     expired = Requests.expire(call, db)
     timed(call, db)
-    if expired > 0, do: Call.changed(call)
-    %{expired: expired}
+    if expired != [], do: Call.changed(call)
+
+    for request <- expired do
+      asked = Requests.asker(call, request["app"], request["by"])
+      Store.notify(call, "#{asked}'s request for #{request["title"]} expired", "Nobody answered it in a week. #{asked} can ask again.", "accounts")
+    end
+
+    %{expired: length(expired)}
   end
 
   def call("fetch", %{"item" => item, "url" => url} = inputs, call) do

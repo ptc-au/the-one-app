@@ -83,7 +83,8 @@
               {
                 "name": "api_key"
               }
-            ]
+            ],
+            "item": null
           }
         ],
         "apps": [
@@ -366,7 +367,8 @@
               {
                 "name": "api_key"
               }
-            ]
+            ],
+            "item": null
           }
         ],
         "apps": [],
@@ -413,7 +415,8 @@
               {
                 "name": "client_secret"
               }
-            ]
+            ],
+            "item": null
           }
         ],
         "apps": [],

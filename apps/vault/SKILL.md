@@ -34,8 +34,11 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   their Vault, made as that type, as ClickUp's key is.
   Give the person the link it answers with: it opens Vault on their device, where it asks as an alert, "<you> wants
   to use a key", with Don't Allow and Allow, and waits under Requests too. A request moves once, from `waiting` to
-  `allowed`, `declined` or, after a week, `expired`, which `list` says by its `id`. Allowing it gives whoever asked
-  access to the item, and lets its secrets go to the request's `hosts` too; new values typed for it make a new item.
+  `allowed`, `declined` or, after a week, `expired`, which `list` says by its `id`: that is how an asker finds out,
+  once its person says they've answered. Its person is notified as it's made and again as it expires, and Vault in
+  Settings shows a count while any wait. Allowing it gives whoever asked access to the item, and lets its secrets go to the
+  request's `hosts` too; new values typed for it make a new item, named as the request is or, where that name is taken,
+  with a number after it. `list` says which item an allowed request was allowed with (`item`).
 - `save_from_browser` is how a secret you set up on a website gets in, as a password manager's Save does: an
   OAuth client's secret, an API key, a key file. It takes it from a Chrome or Chrome Profiles `session` of yours,
   straight from the browser, so it never reaches you: from elements on the page (`fields`, each with its `target`,

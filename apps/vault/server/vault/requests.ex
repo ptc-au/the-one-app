@@ -7,8 +7,12 @@ defmodule Vault.Requests do
       waiting --Don't Allow----------------------------> declined
       waiting --a week with no answer (the timer)------> expired
 
-  Each move is written only from `waiting`, so a request ends once. `expire/2`, called by the Vault's timer when the
-  next request waits too long or ended a month ago (`next/2`), writes `expired` and lets go of what ended then.
+  Each move is written only from `waiting`, so a request ends once. One that's allowed keeps the item it was allowed
+  with, which its asker finds it by (`all/3`): the person's own, or the new one their values made, named as the request
+  is where that name is free, else with a number after it. `expire/2`, called by the Vault's timer when the
+  next request waits too long or ended a month ago (`next/2`), writes `expired` and lets go of what ended then. Its
+  person is told of a request as it's made and as it expires, and `list` says each one's state, which is how its asker
+  finds out.
   """
 
   alias Vault.{Access, Items, Store}
@@ -51,10 +55,16 @@ defmodule Vault.Requests do
     end
   end
 
+  @doc "Who asks, as a person reads it: the app's title, the agent's name, or an agent."
+  def asker(call, app, by), do: (app && Items.title(call, app)) || by || "An agent"
+
+  @doc "How many are waiting for their person."
+  def waiting(call, db), do: Store.transaction(call, db, &(Store.query(&1, "select count(*) as n from requests where state = 'waiting'") |> hd() |> Map.fetch!("n")))
+
   @doc "The requests kept, newest last: those waiting, and those that ended in the last month, each with its state."
   def all(call, db, names) do
     Store.transaction(call, db, fn d ->
-      for request <- Store.query(d, "select id, title, fields, hosts, app, by, why, state from requests order by at") do
+      for request <- Store.query(d, "select id, title, fields, hosts, app, by, why, state, item from requests order by at") do
         %{
           id: request["id"],
           title: request["title"],
@@ -63,7 +73,8 @@ defmodule Vault.Requests do
           hosts: JSON.decode!(request["hosts"]),
           app: request["app"] && %{name: Items.named(names, request["app"]), title: Items.title(call, request["app"])},
           by: request["by"],
-          why: request["why"]
+          why: request["why"],
+          item: request["item"]
         }
       end
     end)
@@ -91,7 +102,7 @@ defmodule Vault.Requests do
         end
 
       allow!(call, db, request, item)
-      move!(call, db, id, "allowed")
+      move!(call, db, id, "allowed", item["name"])
     end
   end
 
@@ -122,11 +133,11 @@ defmodule Vault.Requests do
   end
 
   # Moves a request from waiting, once (`@moves`).
-  defp move!(call, db, id, to) do
+  defp move!(call, db, id, to, item \\ nil) do
     if to not in @moves["waiting"], do: raise("A request doesn't go from waiting to #{to}.")
 
-    case Store.transaction(call, db, &Store.query(&1, "update requests set state = ? where id = ? and state = 'waiting' returning id", [to, id])) do
-      [_moved] -> %{state: to}
+    case Store.transaction(call, db, &Store.query(&1, "update requests set state = ?, item = ? where id = ? and state = 'waiting' returning id", [to, item, id])) do
+      [_moved] -> Map.merge(%{state: to}, if(item, do: %{item: item}, else: %{}))
       [] -> raise "That request isn't waiting any more."
     end
   end
@@ -142,14 +153,14 @@ defmodule Vault.Requests do
     end)
   end
 
-  @doc "What waited a week is `expired`, and what ended a month ago is let go."
+  @doc "What waited a week is `expired`, and what ended a month ago is let go. Gives what expired."
   def expire(call, db) do
     now = Store.now()
 
     Store.transaction(call, db, fn d ->
-      expired = Store.query(d, "update requests set state = 'expired' where state = 'waiting' and at < ? returning id", [now - @waits])
+      expired = Store.query(d, "update requests set state = 'expired' where state = 'waiting' and at < ? returning title, app, by", [now - @waits])
       Store.query(d, "delete from requests where state != 'waiting' and at < ?", [now - @kept])
-      length(expired)
+      expired
     end)
   end
 end
