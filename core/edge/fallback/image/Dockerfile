@@ -7,6 +7,8 @@ FROM ubuntu:24.04
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl jq git bubblewrap util-linux tzdata \
  && rm -rf /var/lib/apt/lists/*
+# What it's called where its owner approves it and among the network's servers, where `one` reads a Linux machine's name.
+RUN echo 'PRETTY_HOSTNAME="Cloudflare fallback"' >/etc/machine-info
 ENV ONE_HOME=/data/home ONE_PROGRAM=/data/bin/one ONE_SUBJECT=network
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
