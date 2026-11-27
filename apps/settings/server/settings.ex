@@ -83,6 +83,11 @@ defmodule Settings do
                 },
                 required: ["id", "app", "title", "trusted", "component", "in", "order"]
               }
+            },
+            failed: %{
+              type: "array",
+              items: %{type: "string"},
+              description: "Apps whose `settings.sections` hook didn't answer"
             }
           },
           required: ["sections"]
@@ -177,7 +182,10 @@ defmodule Settings do
   end
 
   @impl true
-  def call("sections", _inputs, call), do: %{sections: sections(call)}
+  def call("sections", _inputs, call) do
+    {sections, failed_apps, _failed_badges} = sections_with_failures(call)
+    %{sections: sections, failed: failed_apps}
+  end
 
   def call("section", %{"app" => app} = inputs, call) do
     theirs = Enum.filter(sections(call), &(&1.in == "settings" and &1.app == app))
@@ -202,8 +210,16 @@ defmodule Settings do
     end
   end
 
-  def call("badge", _inputs, call),
-    do: %{count: sections(call) |> Enum.map(&(&1.count || 0)) |> Enum.sum()}
+  def call("badge", _inputs, call) do
+    {sections, failed_apps, failed_badges} = sections_with_failures(call)
+
+    if failed_apps != [] or failed_badges != %{} do
+      names = Enum.uniq(failed_apps ++ for({{app, _badge}, _why} <- failed_badges, do: app))
+      raise "Couldn't read every section's badge (#{Enum.join(names, ", ")})."
+    end
+
+    %{count: sections |> Enum.map(&(&1.count || 0)) |> Enum.sum()}
+  end
 
   def call("apps", _inputs, call) do
     listed = Call.apps(call)
@@ -229,51 +245,57 @@ defmodule Settings do
     %{apps: Enum.sort_by(apps, &String.downcase(&1.title))}
   end
 
+  defp sections(call), do: elem(sections_with_failures(call), 0)
+
   # What every app whoever this runs for has adds, as each app answered `settings.sections`, each with its app's title
-  # and icon. One that doesn't say what it must is left out, as one that couldn't answer is.
-  defp sections(call) do
-    sections = listed(call)
+  # and icon. One that doesn't say what it must is left out; apps whose hook didn't answer are returned in `failed_apps`.
+  defp sections_with_failures(call) do
+    {sections, failed_apps} = listed(call)
 
     # Each section's red count, as its app's badge tool says it, all at once: one after another, a slow badge held up
-    # every section's. A badge that failed or didn't answer in time is no count, as a section with none.
-    {counts, _failed} =
+    # every section's.
+    {counts, failed_badges} =
       sections
       |> Enum.flat_map(&if(&1.badge, do: [{&1.app, &1.badge}], else: []))
       |> Enum.uniq()
       |> OneCore.Asks.each(fn {app, badge} -> Call.tool(call, app, badge, %{})["count"] end)
 
     counts = Map.new(counts)
-    for section <- sections, do: section |> Map.put(:count, counts[{section.app, section.badge}]) |> Map.delete(:badge)
+    items = for section <- sections, do: section |> Map.put(:count, counts[{section.app, section.badge}]) |> Map.delete(:badge)
+    {items, failed_apps, failed_badges}
   end
 
   defp listed(call) do
-    {:ok, parts, _failed} = Hooks.collect("settings.sections", %{}, {call.actor, call.subject})
+    {:ok, parts, failed} = Hooks.collect("settings.sections", %{}, {call.actor, call.subject})
     running = Apps.running(call.subject)
 
-    for {app, part} <- Enum.sort(parts),
-        version = running[app],
-        version != nil,
-        trusted <- [Map.get(version, :trusted, true)],
-        section <- List.wrap(JSON.decode!(JSON.encode!(part))),
-        section?(section, trusted) do
-      %{
-        id: "#{app}/#{section["component"]}",
-        app: app,
-        title: version.title || app,
-        icon: if(section["icon"], do: "ui://#{app}/#{version.code}/#{section["icon"]}"),
-        app_icon: Apps.Icons.address(version.icon),
-        trusted: trusted,
-        component: section["component"],
-        in: section["in"],
-        name: section["name"],
-        group: section["group"],
-        order: section["order"] || 0,
-        kinds: section["kinds"],
-        service: section["service"] == true,
-        needs: section["needs"],
-        badge: section["badge"]
-      }
-    end
+    items =
+      for {app, part} <- Enum.sort(parts),
+          version = running[app],
+          version != nil,
+          trusted <- [Map.get(version, :trusted, true)],
+          section <- List.wrap(JSON.decode!(JSON.encode!(part))),
+          section?(section, trusted) do
+        %{
+          id: "#{app}/#{section["component"]}",
+          app: app,
+          title: version.title || app,
+          icon: if(section["icon"], do: "ui://#{app}/#{version.code}/#{section["icon"]}"),
+          app_icon: Apps.Icons.address(version.icon),
+          trusted: trusted,
+          component: section["component"],
+          in: section["in"],
+          name: section["name"],
+          group: section["group"],
+          order: section["order"] || 0,
+          kinds: section["kinds"],
+          service: section["service"] == true,
+          needs: section["needs"],
+          badge: section["badge"]
+        }
+      end
+
+    {items, Map.keys(failed)}
   end
 
   # A section of the sidebar is the network's own apps', which are trusted; any app adds a group to a page, an untrusted

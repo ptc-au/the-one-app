@@ -67,9 +67,13 @@ interface Builds {
 
 const json = <T,>(tool: string, inputs?: object, subject?: string): Promise<T> => call(tool, inputs, { subject }).then(JSON.parse)
 
+let keptSections: Added[] = []
 const added = createProjection(async () => {
-  const [{ sections }, here] = await Promise.all([json<{ sections: Added[] }>("settings_sections"), client()])
-  return { sections: sections.filter((one) => !one.needs || (here as Record<string, unknown>)[one.needs] != null) }
+  const [{ sections, failed = [] }, here] = await Promise.all([json<{ sections: Added[]; failed?: string[] }>("settings_sections"), client()])
+  const missed = new Set(failed)
+  const merged = [...sections, ...keptSections.filter((one) => missed.has(one.app) && !sections.some((s) => s.id === one.id))]
+  keptSections = merged
+  return { sections: merged.filter((one) => !one.needs || (here as Record<string, unknown>)[one.needs] != null) }
 })
 const apps = createProjection(async () => {
   const [{ apps: listed }, { apps: installed }] = await Promise.all([json<{ apps: App[] }>("settings_apps"), json<{ apps: App[] }>("apps")])
@@ -156,17 +160,24 @@ function Sidebar(props: { shown?: string }) {
   const wanted = (name: string) => name.toLowerCase().includes(words().trim().toLowerCase())
   const of = (group: Added["group"]) => sidebar(added.sections).filter((one) => one.group === group && wanted(one.name!))
   const person = () => sidebar(added.sections).find((one) => one.group === "you")
+  // Where a section drops out of a refresh, its row's effects run a tick before `<For>` or `<Show>` disposes it: keep what it was until it does.
+  let lastPerson: Added | undefined
+  const shownPerson = () => (lastPerson = person() ?? lastPerson)!
   const choose = (id: string) => choosing(id)
-  const row = (section: () => Added) => (
-    <Row
-      start={<Tile icon={section().icon ?? section().app_icon} />}
-      heading={section().name!}
-      text={words() ? "Settings" : undefined}
-      end={<Show when={section().count}><Badge variant="destructive">{section().count}</Badge></Show>}
-      current={props.shown === section().id}
-      onPress={() => choose(section().id)}
-    />
-  )
+  const row = (section: () => Added) => {
+    let last = section()
+    const one = () => (last = section() ?? last)
+    return (
+      <Row
+        start={<Tile icon={one().icon ?? one().app_icon} />}
+        heading={one().name!}
+        text={words() ? "Settings" : undefined}
+        end={<Show when={one().count}><Badge variant="destructive">{one().count}</Badge></Show>}
+        current={props.shown === one().id}
+        onPress={() => choose(one().id)}
+      />
+    )
+  }
   const own = () => wanted("Updates")
   // What a search found: sections, Updates or apps.
   const found = () => groups.slice(1).some((group) => of(group).length) || own() || apps.apps.some((app) => wanted(app.title))
@@ -176,11 +187,11 @@ function Sidebar(props: { shown?: string }) {
       <Show when={person() && !words()}>
         <List>
           <Row
-            start={<Show when={me.people[0]}>{(you) => <Avatar subject={you().who} name={you().called ?? undefined} />}</Show>}
+            start={<Show when={me.people[0]}>{(p) => <Avatar subject={p().who} name={p().called ?? undefined} />}</Show>}
             heading={<Text style={look.personName}>{me.people[0]?.called ?? "You"}</Text>}
-            text={person()!.name!}
-            current={props.shown === person()!.id}
-            onPress={() => choose(person()!.id)}
+            text={shownPerson().name!}
+            current={props.shown === shownPerson().id}
+            onPress={() => choose(shownPerson().id)}
           />
         </List>
       </Show>
