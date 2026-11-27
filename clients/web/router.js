@@ -9,6 +9,7 @@
 // tool's page what the tool was given and answered, as an MCP App's page is told. A `one:` link to the place in the page
 // shown takes it there; one to any other page opens it at the network's address, as the page's JS is the view's own.
 import { named, opens, pagesOf, pathOf } from "../app/page/path.js"
+import { UNANSWERED } from "./offline.js"
 
 /** What the edge says of where it is, read for whoever let the assistant in: the network's address, where their apps'
  * files are, the apps listed for them, the device the assistant is to the network, and the renderer's script.
@@ -119,7 +120,7 @@ addEventListener("unhandledrejection", ({ reason }) => report("exception", reaso
 const request = (id, method, params) =>
   fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then(
     async (response) => (response.ok ? response.json() : { error: { code: -32000, message: response.status === 401 ? "This page's sign-in ended. Ask your assistant to show it again." : await response.text() } }),
-    () => ({ error: { code: -32000, message: "Can't reach your network. Check this device is online." } }),
+    () => ({ error: { code: -32000, message: UNANSWERED } }),
   )
 /// The tools that only read, by name, as the network lists them for each subject (`""` whoever let the assistant in):
 /// a call to any other may change what the page shows.

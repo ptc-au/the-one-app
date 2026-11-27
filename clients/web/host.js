@@ -5,6 +5,7 @@
 
 import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping"
 import * as path from "../app/page/path.js"
+import { OFFLINE, UNANSWERED } from "./offline.js"
 import { setVoiceReporter, voice } from "./voice.js"
 
 /** @import { Commands } from "../app/page/host.js" */
@@ -122,8 +123,8 @@ async function mcp(method, params = {}) {
     response = await fetch("/mcp", { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: said }) })
   } catch {
     answered(false)
-    ended("Can't reach your network")
-    throw new Error("Can't reach your network. Check this device is online.")
+    ended(OFFLINE)
+    throw new Error(UNANSWERED)
   }
   if (response.status === 401) {
     forget()
@@ -556,8 +557,10 @@ function outdated(subject, resources) {
 /** @type {Omit<import("../app/page/host.js").Told, "seq">} */
 let session = { session: { state: "opening" } }
 let told = 0
+/// What the window says over its page while this browser's network doesn't answer, none while it does.
+const banner = () => (connection === "offline" ? OFFLINE : connection === "reconnecting" ? "Reconnecting…" : undefined)
 /** @returns {import("../app/page/host.js").State} */
-const state = () => ({ seq: told, ...session, connection })
+const state = () => ({ seq: told, ...session, connection, banner: banner() })
 /// Moves its session to `now`, which the page hears.
 /** @param {Omit<import("../app/page/host.js").Told, "seq">} now */
 function moved(now) {

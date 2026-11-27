@@ -33,8 +33,10 @@ const COMPUTER = [800, 560]
 const launcher = { uri: "ui://home-screen/1/client/index.html", mimeType: "text/html;profile=mcp-app", name: "Home Screen", _meta: { category: "launcher", trusted: true, runtimeVersion: 1 } }
 const notes = { uri: "ui://notes/1/client/index.html", mimeType: "text/html;profile=mcp-app", name: "Notes", _meta: { trusted: true, runtimeVersion: 1 } }
 const appStore = { uri: "ui://app-store/1/client/index.html", mimeType: "text/html;profile=mcp-app", name: "App Store", _meta: { category: "app-store", trusted: true, runtimeVersion: 1 } }
-const signedIn = (connection) => ({ seq: 0, session: { state: "signedIn" }, connection })
-const opening = (connection) => ({ seq: 0, session: { state: "opening" }, connection })
+/// What the client says over the page while its network doesn't answer (`Connection::banner` in core/client).
+const BANNER = { offline: "Can't reach your network", reconnecting: "Reconnecting…" }
+const signedIn = (connection) => ({ seq: 0, session: { state: "signedIn" }, connection, banner: BANNER[connection] })
+const opening = (connection) => ({ seq: 0, session: { state: "opening" }, connection, banner: BANNER[connection] })
 /// What never answers, as a server that hasn't yet.
 const PENDING = { pending: true }
 

@@ -12,11 +12,11 @@ import { machine } from "./window-machine.js"
 /// network answers. With a launcher kept from before, it's starting that alone. Its network not answering, that step
 /// has stopped, with no spinner, until it's tried again (`reconnecting`).
 /** @param {Context} context @returns {{ steps: string[], at: number, text?: string, stopped: boolean }} */
-function steps({ connection, starting }) {
+function steps({ connection, banner, starting }) {
   if (starting && connection !== "online") return { steps: [`Opening ${baseName()}`], at: 0, stopped: false }
-  const reached = connection === "offline" || connection === "reconnecting" ? "Can't reach your network" : "Connecting to your network"
+  const reached = banner ?? "Connecting to your network"
   const at = starting || connection === "online" ? 1 : 0
-  const text = at === 0 && reached !== "Connecting to your network" ? "Check this device is online." : undefined
+  const text = at === 0 && connection === "offline" ? "Check this device is online." : undefined
   return { steps: [reached, `Opening ${baseName()}`], at, text, stopped: at === 0 && connection === "offline" }
 }
 
@@ -115,13 +115,13 @@ export function draw() {
   rail()
   // Over its apps once it has opened, the launcher and every app over it, as over an app on a phone (DESIGN.md): its
   // network not answering, and trying again once it has lost it. Answering, nothing.
-  const banner = now.hasTag("pages") && !opening && (context.connection === "offline" || context.connection === "reconnecting")
+  const banner = now.hasTag("pages") && !opening && Boolean(context.banner)
   if (byId("banner").hidden === banner) {
     byId("banner").hidden = !banner
     placed()
   }
   byId("banner-spinner").hidden = context.connection !== "reconnecting"
-  byId("banner-text").textContent = context.connection === "reconnecting" ? "Reconnecting…" : "Can't reach your network"
+  byId("banner-text").textContent = context.banner ?? ""
   byId("banner-retry").hidden = context.connection !== "offline"
 }
 

@@ -64,7 +64,7 @@ export const machine = setup({
     connection: assign(({ event }) => {
       if (event.type !== "connection") return {}
       for (const view of open.values()) post(view, { method: "ui/notifications/host-context-changed", params: { connection: event.connection } })
-      return { connection: event.connection }
+      return { connection: event.connection, banner: event.banner }
     }),
     updateReady: assign(({ event, context }) => {
       if (event.type !== "updateReady" || event.ready === context.updateReady) return {}

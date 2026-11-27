@@ -108,6 +108,8 @@ export interface Told {
 /** Where the device is with its network, as the window hears it (`State` in core/client): its session, as it's told, and whether its network answers, or its servers say it's behind them. */
 export interface State extends Told {
   connection: Connection | "behind"
+  /** What the window says over its page while its network doesn't answer, in a few words, none while it does (`Connection::banner` in core/client). */
+  banner?: string | null
 }
 
 /** What the window knows as it moves (`window-machine.js`): the device's session and whether its network answers, as they
@@ -116,6 +118,8 @@ export interface State extends Told {
 export interface Context {
   told?: Told
   connection: Connection
+  /** What the window says over its page while its network doesn't answer, as the client says it. */
+  banner?: string
   starting: boolean
   updateReady: boolean
   /** What a `one:` link opens once the launcher has drawn: `<app>[/<page>][#<fragment>]`. */
@@ -158,7 +162,7 @@ export type Shown =
 export type Moved =
   | Extract<Shown, { type: "show" | "popped" | "grab" | "drag" | "release" }>
   | { type: "session"; told: Told }
-  | { type: "connection"; connection: Connection }
+  | { type: "connection"; connection: Connection; banner?: string }
   | { type: "listed" }
   | { type: "none"; only?: string }
   | { type: "tooOld" }

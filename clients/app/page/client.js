@@ -592,7 +592,7 @@ function hear(state) {
   sendKept()
   const { connection } = state
   const behind = connection === "behind"
-  if (connection !== "behind" && connection !== shown.getSnapshot().context.connection) on({ type: "connection", connection })
+  if (connection !== "behind" && connection !== shown.getSnapshot().context.connection) on({ type: "connection", connection, banner: state.banner ?? undefined })
   if (state.seq > heard) {
     heard = state.seq
     on({ type: "session", told: state })
