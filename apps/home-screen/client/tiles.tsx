@@ -1,7 +1,7 @@
 // The Home Screen's apps and widgets as each is drawn wherever it is: a widget, an icon with its name and its red count,
 // and the ⊖ that takes one off.
-import { createEffect, createProjection, createSignal, Errored, Loading, onSettled, refresh, Show, untrack } from "solid-js"
-import { Badge, call, changed, Icon, Image, type Laid, type Layout, type Located, Pressable, type Rect, type Styles, Text, View, visible, Widget } from "ui"
+import { createEffect, createProjection, createSignal, Loading, onSettled, refresh, Show, untrack } from "solid-js"
+import { Badge, call, changed, Errored, Icon, Image, type Laid, type Layout, type Located, Pressable, type Rect, type Styles, Text, View, visible, Widget } from "ui"
 import { type Widget as WidgetItem, src } from "./types.ts"
 import { corner } from "./layout.ts"
 import { looks } from "./looks.ts"

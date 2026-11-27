@@ -2,9 +2,9 @@
 // a row for each owner, with where its install is for them and what to do about it: managing what's installed is
 // otherwise the App Library's. An app's page is a screen of its own, `app-store_app { name }` at /app-store/notes, as
 // GitHub's repos are, which a link, reload and Back open.
-import { createMemo, createProjection, createSignal, Errored, For, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { createMemo, createProjection, createSignal, For, Loading, Match, refresh, Show, Switch } from "solid-js"
 import type { Element } from "solid-js"
-import { Button, call, changed, confirm, Empty, go, Icon, Image, List, Menu, navigate, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
+import { Button, call, changed, confirm, Empty, Errored, go, Icon, Image, List, Menu, navigate, open, Pressable, Problem, Row, Screen, Search, Section, Shelf, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -534,7 +534,7 @@ const installed = (market: Market, all: Owners, name: string) => {
 /// The App Store.
 export default function Store() {
   return (
-    <Errored fallback={(error) => <Screen heading="App Store"><Problem heading="Can't show apps" text={error() as Error} /></Screen>}>
+    <Errored heading="Can't show apps" screen={{ heading: "App Store" }}>
       <Loading fallback={<Screen heading="App Store"><Spinner delay /></Screen>}>
         <AppStore market={market} all={owners()} />
       </Loading>

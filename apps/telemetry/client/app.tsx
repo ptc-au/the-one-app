@@ -2,8 +2,8 @@
 // metrics viewer is, cut down. The alerts first, then calls over time, what's failing,
 // what's slowest and what AI cost, over the range picked above them, and last what's kept. An alert opens beside the list, saying when it fired and cleared; a failure opens its trace, as a
 // waterfall; a slow tool opens how long it took over time. What's fine is silent: with nothing failing, there's no Failing.
-import { createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { call, changed, Empty, Icon, List, navigate, plural, Problem, render, Row, Screen, Section, since, size, Spinner, Split, styles, Tabs, Text, tokens, toolInput, View } from "ui"
+import { createProjection, createSignal, For, Loading, refresh, Show } from "solid-js"
+import { call, changed, Empty, Errored, Icon, List, navigate, plural, render, Row, Screen, Section, since, size, Spinner, Split, styles, Tabs, Text, tokens, toolInput, View } from "ui"
 import { sizes } from "./sizes.ts"
 
 const look = styles({
@@ -231,7 +231,7 @@ function Trace(props: { id: string; names: Record<string, string> }) {
   // A client's span is no server: the app or the CLI that asked.
   const servers = () => new Set(trace().spans.filter((s) => !s.client).map((s) => s.server)).size
   return (
-    <Errored fallback={(error) => <Problem heading="Can't show this trace" text={error() as Error} />}>
+    <Errored heading="Can't show this trace">
       <Loading fallback={<Spinner delay />}>
         <Text style={look.readableNote}>
           {took(total())}
@@ -436,7 +436,7 @@ function Telemetry(props: { all: Overview }) {
 // on their own, so what's kept shows while that server is away, and they say so if they can't be read.
 function Alerted() {
   return (
-    <Errored fallback={(error) => <Problem heading="Can't show alerts" text={error() as Error} />}>
+    <Errored heading="Can't show alerts">
       <Loading fallback={<Spinner delay />}>
         <Show when={alerts().alerts.length}>
           <Section heading="Alerts">
@@ -461,7 +461,7 @@ function Alerted() {
 }
 
 render(() => (
-  <Errored fallback={(error) => <Screen heading="Telemetry"><Problem heading="Can't show Telemetry" text={error() as Error} /></Screen>}>
+  <Errored heading="Can't show Telemetry" screen={{ heading: "Telemetry" }}>
     <Loading fallback={<Screen heading="Telemetry"><Spinner delay /></Screen>}>
       <Telemetry all={overview()} />
     </Loading>

@@ -1,8 +1,8 @@
 // Notifications: what you've been told, newest first. Tapping one marks it read and opens the app it's from. A phone or
 // a browser that isn't woken by them says so first, and why, and a browser turns them on here. Which apps may notify you
 // is in Settings (settings.tsx). Its one screen is `notifications_inbox` (`toolInput`).
-import { createProjection, Errored, Loading, refresh, Show } from "solid-js"
-import { call, changed, client, confirm, Empty, List, ListStyle, Menu, open, Problem, render, Row, Screen, Section, since, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
+import { createProjection, Loading, refresh, Show } from "solid-js"
+import { call, changed, client, confirm, Empty, Errored, List, ListStyle, Menu, open, render, Row, Screen, Section, since, Spinner, styles, Text, toast, tokens, toolInput, View } from "ui"
 import { type Push, PushState } from "./push.tsx"
 
 /** What hasn't been read has a blue dot before it, as Mail's rows do, and a heavier weight. */
@@ -100,7 +100,7 @@ function Inbox(props: { inbox: Inbox }) {
 
 render(
   () => (
-    <Errored fallback={(error) => <Screen heading="Notifications"><Problem heading="Can't show your notifications" text={error() as Error} /></Screen>}>
+    <Errored heading="Can't show your notifications" screen={{ heading: "Notifications" }}>
       <Loading fallback={<Screen heading="Notifications"><Spinner delay /></Screen>}>
         <Inbox inbox={inbox()} />
       </Loading>

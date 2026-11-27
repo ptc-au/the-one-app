@@ -6,8 +6,8 @@
 // soft delete's. Security is everything about the key that keeps it. What's missing before the Vault works shows as
 // one box atop the list, with the one thing that fixes it. A request is an alert, as a system's permission prompt is.
 // It's written as the UI library's skill says, so it runs on a native host as it does on the DOM.
-import { createEffect, createMemo, createProjection, createSignal, Errored, For, Loading, Match, refresh, Show, Switch as Choose } from "solid-js"
-import { Alert, Button, call, changed, Checkbox, client, component, confirm, Empty, Field, Frame, illustration, Image, inChat, Input, List, open as opening, OwnDevice, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
+import { createEffect, createMemo, createProjection, createSignal, For, Loading, Match, refresh, Show, Switch as Choose } from "solid-js"
+import { Alert, Button, call, changed, Checkbox, client, component, confirm, Empty, Errored, Field, Frame, illustration, Image, inChat, Input, List, open as opening, OwnDevice, Problem, Row, Screen, Section, Select, Sheet, showRecoveryKey, Spinner, Split, styles, Switch, Text, toast, tokens, useRecoveryKey, View } from "ui"
 
 const look = styles({
   fill: { flexGrow: 1, alignSelf: "stretch" },
@@ -349,7 +349,7 @@ function Summary(props: { item: Item }) {
     return props.item.added ? `Added by an agent from ${props.item.added.from}` : "No website"
   }
   return (
-    <Errored fallback={plain()}>
+    <Errored fallback={() => plain()}>
       <Loading fallback={plain()}>
         <Show when={drawn()} keyed fallback={plain()}>
           {(Drawn) => <Drawn item={shown(props.item)} subject={whose()} />}
@@ -376,7 +376,7 @@ function Detail(props: { item: Item } & Shown) {
   return (
     <Show when={drawn()} keyed fallback={<Show when={framed()} keyed fallback={<ItemScreen item={props.item} inputs={props.inputs} show={props.show} />}>{(src) => <Frame src={src} subject={whose()} title={shown(props.item)} style={look.fill} />}</Show>}>
       {(type) => (
-        <Errored fallback={(error) => <Problem heading={`Can't show ${shown(props.item)}`} text={error() as Error} />}>
+        <Errored heading={`Can't show ${shown(props.item)}`}>
           <Loading fallback={<Spinner delay />}>
             <Drawn type={type} item={props.item} inputs={props.inputs} show={props.show} />
           </Loading>
@@ -897,7 +897,7 @@ export default function Accounts(props: Shown) {
   setWhose(props.inputs.owner)
   createEffect(() => props.inputs.owner, (owner) => void setWhose(owner))
   return (
-    <Errored fallback={(error) => <Screen heading="Vault" back><Problem heading="Can't show the Vault" text={error() as Error} /></Screen>}>
+    <Errored heading="Can't show the Vault" screen={{ heading: "Vault", back: true }}>
       <Vault inputs={props.inputs} show={props.show} />
     </Errored>
   )

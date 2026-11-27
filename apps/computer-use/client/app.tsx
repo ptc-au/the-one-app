@@ -1,6 +1,6 @@
 // Computer Use: the screens your agents can use, and one of them as it is now, with who last used it and for what.
-import { createEffect, createMemo, createProjection, Errored, Loading, refresh, Show } from "solid-js"
-import { Button, call, changed, client, Empty, List, LiveScreen, navigate, Problem, render, Row, Screen, Section, since, Spinner, Split, styles, Text, tokens, toolInput, visible } from "ui"
+import { createEffect, createMemo, createProjection, Loading, refresh, Show } from "solid-js"
+import { Button, call, changed, client, Empty, Errored, List, LiveScreen, navigate, Problem, render, Row, Screen, Section, since, Spinner, Split, styles, Text, tokens, toolInput, visible } from "ui"
 
 /** A screen agents can use, as `computer-use_screens` answers it. */
 interface AgentScreen {
@@ -126,7 +126,7 @@ function App() {
 }
 
 render(() => (
-  <Errored fallback={(error, reset) => <Screen heading="Computer Use"><Problem heading="Couldn't list your screens" text={error() as Error} action={<Button onPress={() => (refresh(screensAnswer), reset())}>Try Again</Button>} /></Screen>}>
+  <Errored heading="Can't show your screens" screen={{ heading: "Computer Use" }}>
     <Loading fallback={<Screen heading="Computer Use"><Spinner delay /></Screen>}>
       <App />
     </Loading>

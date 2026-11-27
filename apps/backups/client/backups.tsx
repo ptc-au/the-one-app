@@ -1,8 +1,8 @@
 // Backups: the destinations backups go, each saying when it was last backed up and how big it is, or
 // what's wrong; how often they're made and which are kept. A destination opens beside the list with its backups,
 // Restore, Check and Stop Backing Up Here. Backups are the network's, so every call is for the network.
-import { createProjection, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, date, Empty, Field, Icon, Input, List, plural, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
+import { createProjection, createSignal, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { Button, call, changed, confirm, date, Empty, Errored, Field, Icon, Input, List, plural, Problem, RadioGroup, Row, Screen, Section, Select, Sheet, since, size, Spinner, Split, Status, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   note: { color: tokens.colour.secondaryLabel },
@@ -372,7 +372,7 @@ function Backups(props: { all: All } & Shown) {
 /// Backups, as Settings draws it, told its screen (`Open`).
 export default function BackupsSection(props: Shown) {
   return (
-  <Errored fallback={(error) => <Screen heading="Backups" back><Problem heading="Can't show backups" text={error() as Error} /></Screen>}>
+  <Errored heading="Can't show backups" screen={{ heading: "Backups", back: true }}>
     <Loading fallback={<Screen heading="Backups" back><Spinner delay /></Screen>}>
       <Backups all={backups()} inputs={props.inputs} show={props.show} />
     </Loading>

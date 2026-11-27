@@ -1,9 +1,9 @@
 // Git Repos: the repos someone may read, and each one opening beside them as GitHub shows a repo: its files at a branch
 // with the newest commit and its README, its history, and its pull requests, which whoever pushes merges or
 // closes. A file and a commit open in the repo's place, with Back.
-import { createMemo, createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createMemo, createProjection, createSignal, For, Loading, refresh, Show } from "solid-js"
 import { marked, type Token, type Tokens } from "marked"
-import { Avatar, Badge, Button, call, changed, confirm, Empty, Field, go, Icon, Input, List, Menu, navigate, Path, plural, Pressable, Problem, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Spinner, Split, styles, Svg, Tabs, Text, toast, tokens, toolInput, View, viewport } from "ui"
+import { Avatar, Badge, Button, call, changed, confirm, Empty, Errored, Field, go, Icon, Input, List, Menu, navigate, Path, plural, Pressable, render, Row, ScrollView, Screen, Search, Section, Select, share, Shelf, Sheet, since, size, Spinner, Split, styles, Svg, Tabs, Text, toast, tokens, toolInput, View, viewport } from "ui"
 
 /** A commit, as the tools answer it. */
 interface Commit {
@@ -837,7 +837,7 @@ function App() {
         detail={
           <Show when={open()}>
             {(repo) => (
-              <Errored fallback={(error) => <Problem heading="Can't show this repo" text={error() as Error} />}>
+              <Errored heading="Can't show this repo">
                 <Loading fallback={<Spinner delay />}>
                   <Repo repo={repo()} />
                 </Loading>
@@ -855,7 +855,7 @@ function App() {
 }
 
 render(() => (
-  <Errored fallback={(error) => <Screen heading="Git Repos"><Problem heading="Can't show your repos" text={error() as Error} /></Screen>}>
+  <Errored heading="Can't show your repos" screen={{ heading: "Git Repos" }}>
     <Loading fallback={<Spinner delay />}>
       <App />
     </Loading>

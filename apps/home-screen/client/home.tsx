@@ -12,8 +12,8 @@
 // Home Screen, or hold it a while longer, or touch and hold a page's empty space. An app held in the App Library is
 // carried onto any owner's pages. Where it is, what's open over it and the editing are one state machine (machine.ts),
 // whose snapshot is one signal here. It's written on the UI library's primitives, so a native host draws it as the DOM does.
-import { createEffect, createMemo, createProjection, createSignal, Errored, Loading, onCleanup, refresh, Show } from "solid-js"
-import { Button, call, client, connection, covers, type Element, haptic, keydown, PresentationContext, Problem, render, whole, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
+import { createEffect, createMemo, createProjection, createSignal, Loading, onCleanup, refresh, Show } from "solid-js"
+import { Button, call, client, connection, covers, type Element, Errored, haptic, keydown, PresentationContext, Problem, render, Screen, Status, Stepper, styles, toast, tokens, View, viewport } from "ui"
 import { looks } from "./looks.ts"
 import { home, state, at, editing, launcher, windowWidth, device } from "./store.ts"
 import { answered, json, type Owner, owners } from "./owners.ts"
@@ -209,21 +209,6 @@ function HomeScreenShown(props: { owners: Owner[]; layout: ReturnType<typeof cre
   )
 }
 
-/// The Home Screen didn't draw: what DESIGN.md says of a launcher that doesn't, with Try Again, which asks for it
-/// again, and what went wrong under it. Its client loads it again by itself once a newer version is out, as the older
-/// one meeting what's new is the likeliest cause.
-function Broken(props: { error: unknown }) {
-  return (
-    <Screen heading="Home Screen">
-      <Problem
-        heading="Home Screen didn't open."
-        text={new Error(`Try again in a moment.\n\n${whole(props.error)}`)}
-        action={<Button onPress={() => refresh(answered)}>Try Again</Button>}
-      />
-    </Screen>
-  )
-}
-
 /// The Home Screen while what it shows hasn't come: nothing for a moment, as most of the time it's there at once, then
 /// that it's opening, and once that lasts, its problem box with Try Again, as DESIGN.md has one, never a blank screen,
 /// which a phone that asked as a server restarted showed until its person closed the app (20 Nov).
@@ -231,7 +216,7 @@ function Waiting() {
   const [waited, setWaited] = createSignal(0)
   const ticking = setInterval(() => setWaited((seconds) => seconds + 1), 1000)
   onCleanup(() => clearInterval(ticking))
-  const said = () => (connection() === "online" ? "Your network hasn't answered yet." : "This device isn't reaching your network.")
+  const said = () => (connection() === "online" ? "Your network hasn't answered yet." : "Can't reach your network. Check this device is online, then try again.")
   return (
     <Show
       when={waited() >= 10}
@@ -244,14 +229,14 @@ function Waiting() {
       }
     >
       <Screen heading="Home Screen">
-        <Problem heading="Home Screen didn't open." text={said()} action={<Button onPress={() => (setWaited(0), refresh(answered))}>Try Again</Button>} />
+        <Problem heading="Home Screen didn't open" text={said()} action={<Button onPress={() => (setWaited(0), refresh(answered))}>Try Again</Button>} />
       </Screen>
     </Show>
   )
 }
 
 render(() => (
-  <Errored fallback={(error) => <Broken error={error()} />}>
+  <Errored heading="Home Screen didn't open">
     <Loading fallback={<Waiting />}>
       <HomeScreen owners={owners()} />
     </Loading>

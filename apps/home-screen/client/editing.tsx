@@ -1,7 +1,7 @@
 // What editing a Home Screen opens over it: the widget gallery, the sheets that ask to install or say no, and + and
 // Done.
-import { createMemo, createSignal, Errored, For, Loading, refresh, Show, untrack } from "solid-js"
-import { Button, ScrollView, call, Empty, Icon, Image, List, Pressable, Problem, type Rect, Row, Sheet, Text, toast, View } from "ui"
+import { createMemo, createSignal, For, Loading, refresh, Show, untrack } from "solid-js"
+import { Button, ScrollView, call, Empty, Errored, Icon, Image, List, Pressable, type Rect, Row, Sheet, Text, toast, View } from "ui"
 import { PILLS, TOP_ROW } from "./layout.ts"
 import { type Held } from "./machine.ts"
 import { type Entrypoint, type Size, type Widget as WidgetItem, src } from "./types.ts"
@@ -125,7 +125,7 @@ export function Refused(props: { owner: Owner; held: Held }) {
   return (
     <Sheet heading={`You can't add apps for ${props.owner.name}`} open={state().matches({ editing: "refused" })} onClose={dismiss}>
       <View style={looks.ask}>
-        <Errored fallback={(error) => <Problem heading="Can't show who can" text={error() as Error} />}>
+        <Errored heading="Can't show who can">
           <Loading fallback={<Text> </Text>}>
             <Text style={looks.askWhy}>{who() ? `Only ${who()} can. Ask them to add ${title()}.` : `Ask one of its owners to add ${title()}.`}</Text>
           </Loading>

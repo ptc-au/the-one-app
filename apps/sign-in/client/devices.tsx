@@ -7,8 +7,8 @@
 // taken out, or this one signs out. Each server says whether it's ready, active and running, or why not, and an
 // update it's taking as it moves on (`OneCore.Release`). This device becoming a server, or stopping being one, says
 // each stage.
-import { createMemo, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Badge, Button, call, changed, client, confirm, date, type Element, Empty, Icon, List, open as visit, Problem, Row, Screen, Section, seen, since, Spinner, Split, Steps, styles, Switch, Text, toast, tokens, View } from "ui"
+import { createMemo, createSignal, For, Loading, refresh, Show } from "solid-js"
+import { Badge, Button, call, changed, client, confirm, date, type Element, Empty, Errored, Icon, List, open as visit, Problem, Row, Screen, Section, seen, since, Spinner, Split, Steps, styles, Switch, Text, toast, tokens, View } from "ui"
 
 /** A build a machine is on, as `builds` answers it. */
 interface Built {
@@ -457,7 +457,7 @@ function Things(props: { all: All; groups?: Groups } & Shown) {
 /// Devices, as Settings draws it, with what other apps add to a device's page (`groups`).
 export default function Devices(props: { groups?: Groups } & Shown) {
   return (
-  <Errored fallback={(error) => <Screen heading="Devices" back><Problem heading="Can't show your devices" text={error() as Error} /></Screen>}>
+  <Errored heading="Can't show your devices" screen={{ heading: "Devices", back: true }}>
     <Loading fallback={<Screen heading="Devices" back><Spinner delay /></Screen>}>
       <Things all={mine()} groups={props.groups} inputs={props.inputs} show={props.show} />
     </Loading>

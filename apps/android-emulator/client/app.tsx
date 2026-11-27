@@ -1,6 +1,6 @@
 // Android Emulator: your emulators on every machine, and one of them live, to use as a phone, start, stop or remove.
-import { createProjection, createSignal, Errored, Loading, Match, refresh, Show, Switch } from "solid-js"
-import { Button, call, changed, confirm, Empty, List, LiveScreen, Menu, navigate, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast, toolInput } from "ui"
+import { createProjection, createSignal, Loading, Match, refresh, Show, Switch } from "solid-js"
+import { Button, call, changed, confirm, Empty, Errored, List, LiveScreen, Menu, navigate, Problem, render, Row, Screen, since, Spinner, Split, Status, Steps, toast, toolInput } from "ui"
 
 /** An emulator, as `android-emulator_list` answers it. */
 interface Emulator {
@@ -108,7 +108,7 @@ function App() {
   changed(() => refresh(emulatorsAnswer))
   const opened = () => emulators().find((e) => e.name === open())
   return (
-    <Errored fallback={(error, reset) => <Screen heading="Android Emulator"><Problem heading="Couldn't list your emulators" text={error() as Error} action={<Button onPress={reset}>Try Again</Button>} /></Screen>}>
+    <Errored heading="Can't show your emulators" screen={{ heading: "Android Emulator" }}>
       <Loading fallback={<Spinner delay />}>
         <Split open={!!opened()} onClose={() => setOpen()} pick="Pick an emulator to use it." detail={<Show when={opened()}><Detail emulator={opened()!} /></Show>}>
           <Screen heading="Android Emulator">

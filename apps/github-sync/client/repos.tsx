@@ -1,6 +1,6 @@
 // GitHub Sync's group in its page in Settings: which GitHub repos sync with the network, and when each last did.
-import { createProjection, Errored, For, Loading, refresh, Show } from "solid-js"
-import { call, changed, List, Problem, Row, since, Spinner } from "ui"
+import { createProjection, For, Loading, refresh, Show } from "solid-js"
+import { call, changed, Errored, List, Row, since, Spinner } from "ui"
 
 /** What `github-sync_repos` answers. */
 interface Synced {
@@ -16,7 +16,7 @@ export default function Repos() {
   const text = (repo: Synced["repos"][number]) =>
     repo.error ? `Couldn't sync: ${repo.error}` : repo.synced ? `Synced ${since(repo.synced)}` : "Not synced yet"
   return (
-    <Errored fallback={(error) => <Problem heading="Can't say what syncs" text={error() as Error} />}>
+    <Errored heading="Can't say what syncs">
       <Loading fallback={<Spinner delay />}>
         <List>
           <Show when={synced().app} fallback={<Row heading="Not connected to GitHub" text="The network's owner connects its GitHub App." />}>

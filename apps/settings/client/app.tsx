@@ -3,8 +3,8 @@
 // have, A to Z. What's chosen opens beside it on a computer and is pushed over it on a phone. A section is its app's
 // component (`settings.sections`), drawn here if the app is trusted and by its page in a frame if it isn't, as the
 // Vault draws an item type's. Updates and an app's page are Settings' own.
-import { createMemo, createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
-import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Frame, History, Image, List, ListStyle, navigate, Problem, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, toolInput, View, viewport } from "ui"
+import { createMemo, createProjection, createSignal, For, Loading, refresh, Show } from "solid-js"
+import { Avatar, Badge, Button, call, changed, client, component, confirm, Empty, Errored, Frame, History, Image, List, ListStyle, navigate, render, Row, Screen, Search, Section, Spinner, Split, styles, Switch, Text, toast, tokens, toolInput, View, viewport } from "ui"
 
 /** What an app adds to Settings, as `settings_sections` answers it. */
 interface Added {
@@ -246,7 +246,7 @@ function Drawn(props: { section: Added }) {
   const drawn = createMemo(() => component(props.section.app, props.section.component).then((module) => module.default))
   const heading = () => props.section.name ?? props.section.title
   return (
-    <Errored fallback={(error) => <Screen heading={heading()} back><Problem heading={`Can't show ${heading()}`} text={error() as Error} /></Screen>}>
+    <Errored heading={`Can't show ${heading()}`} screen={{ heading: heading(), back: true }}>
       <Loading fallback={<Screen heading={heading()} back><Spinner delay /></Screen>}>
         <Show when={drawn()} keyed>
           {(Drawn) => <Drawn groups={Groups} inputs={sectionInputs()} show={(inputs?: object, options?: { replace?: boolean }) => navigate("settings_section", { app: props.section.app, section: props.section.component, ...inputs }, options)} />}
@@ -295,7 +295,7 @@ function Group(props: { added: Added; device?: string; server?: string; inputs?:
   const comp = createMemo(() => props.added.component)
   const drawn = createMemo(() => component(app(), comp()).then((module) => module.default))
   return (
-    <Errored fallback={(error) => <Problem heading={`Can't show ${props.added.title}`} text={error() as Error} />}>
+    <Errored heading={`Can't show ${props.added.title}`}>
       <Loading fallback={<Spinner delay />}>
         <Show when={drawn()} keyed>
           {(Drawn) => <Drawn device={props.device} server={props.server} inputs={props.inputs} show={props.show} />}
@@ -343,7 +343,7 @@ function Updates() {
   const ready = () => waiting.apps
   return (
     <Screen heading="Updates" back>
-      <Errored fallback={(error) => <Problem heading="Can't show what's waiting to update" text={error() as Error} />}>
+      <Errored heading="Can't show what's waiting to update">
         <Loading fallback={<Spinner delay />}>
           <List>
             <Row
@@ -510,7 +510,7 @@ function Settings() {
 let choosing = (id: string) => void setOpen(id)
 
 render(() => (
-  <Errored fallback={(error, retry) => <Screen heading="Settings"><Problem heading="Can't show Settings" text={error() as Error} action={<Button onPress={() => ([added, apps].forEach(refresh), retry())}>Try Again</Button>} /></Screen>}>
+  <Errored heading="Can't show Settings" screen={{ heading: "Settings" }}>
     <Loading fallback={<Screen heading="Settings"><Spinner delay /></Screen>}>
       <Settings />
     </Loading>

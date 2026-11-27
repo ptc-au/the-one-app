@@ -1,8 +1,8 @@
 // An app's widget in an assistant's chat, under the call of the tool it's drawn from, as it is on a Home Screen page: at
 // the size the call asked for or the widget's first, with its buttons and switches calling their tools, and asked again
 // as its app says something changed, and as often as its layout says while it's shown. The assistant is told how tall it is.
-import { createEffect, createProjection, Errored, Loading, onSettled, refresh, Show, untrack } from "solid-js"
-import { call, changed, type Layout, render, sizeChanged, styles, toolInput, toolResult, View, visible, Widget } from "ui"
+import { createEffect, createProjection, Loading, onSettled, refresh, Show, untrack } from "solid-js"
+import { call, changed, Errored, type Layout, render, sizeChanged, styles, toolInput, toolResult, View, visible, Widget } from "ui"
 import { type Size } from "./types.ts"
 
 /// A widget's size on a phone's Home Screen, in points, as the cells of its page have it.

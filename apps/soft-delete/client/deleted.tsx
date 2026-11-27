@@ -2,8 +2,8 @@
 // its app's icon and what it is) and how long until it's deleted for good, as iOS's Photos and Files show theirs. A
 // press shows an item beside the list (pushed over it on a phone), where Restore and Delete Now are rows of their own;
 // the same two are in its row's menu, and Delete All is for everything.
-import { createProjection, Errored, Loading, refresh, Show } from "solid-js"
-import { call, changed, confirm, Empty, Image, List, Menu, Problem, Row, Screen, Spinner, Split, styles, Text, toast, tokens, View } from "ui"
+import { createProjection, Loading, refresh, Show } from "solid-js"
+import { call, changed, confirm, Empty, Errored, Image, List, Menu, Row, Screen, Spinner, Split, styles, Text, toast, tokens, View } from "ui"
 
 const look = styles({
   note: { color: tokens.colour.secondaryLabel, maxWidth: tokens.length.readable },
@@ -189,7 +189,7 @@ function Deleted(props: { items: Item[]; open?: string; show: (inputs?: { item: 
 /// Recently Deleted, as Settings draws it: an item open beside the list is its screen, `item` (`settings_section`'s own argument).
 export default function RecentlyDeleted(props: { inputs: { item?: string }; show: (inputs?: { item: string }) => void }) {
   return (
-    <Errored fallback={(error) => <Screen heading="Recently Deleted" back><Problem heading="Can't show what's deleted" text={error() as Error} /></Screen>}>
+    <Errored heading="Can't show what's deleted" screen={{ heading: "Recently Deleted", back: true }}>
       <Loading fallback={<Screen heading="Recently Deleted" back><Spinner delay /></Screen>}>
         <Deleted items={items()} open={props.inputs.item} show={props.show} />
       </Loading>

@@ -5,8 +5,8 @@
 // person says it may. Whoever uses it has their key from then on, so a passkey nobody here allowed never does. Above
 // them are the servers waiting for a key that a passkey hands over, their person's own or a group's or the
 // network's they own, each with Use Passkey, which opens the sign-in page to do it (`unlock_with_passkey`).
-import { createEffect, createMemo, createProjection, Errored, Loading, refresh, Show } from "solid-js"
-import { Avatar, Button, call, changed, client, confirm, date, List, open, pickFiles, Problem, refreshAvatars, Row, Screen, Section, Spinner, toast, upload, visible } from "ui"
+import { createEffect, createMemo, createProjection, Loading, refresh, Show } from "solid-js"
+import { Avatar, Button, call, changed, client, confirm, date, Errored, List, open, pickFiles, refreshAvatars, Row, Screen, Section, Spinner, toast, upload, visible } from "ui"
 import { Remove } from "./mine.tsx"
 import { Username } from "./username.tsx"
 
@@ -217,17 +217,7 @@ const opening = () => <Button onPress={opens("sign-in_add_passkey")}>Add Passkey
 /// Sign In & Security, as Settings draws it: a section of its own, which Back leaves on a phone.
 export default function SignInAndSecurity(props: Shown) {
   return (
-  <Errored
-    fallback={(error, retry) => (
-      <Screen heading="Sign In & Security" back action={opening()}>
-        <Problem
-          heading="Can't show your passkeys"
-          text={error() as Error}
-          action={<Button onPress={() => (refresh(mineAnswer), retry())}>Try Again</Button>}
-        />
-      </Screen>
-    )}
-  >
+  <Errored heading="Can't show your passkeys" screen={{ heading: "Sign In & Security", back: true, action: opening() }}>
     <Loading fallback={<Screen heading="Sign In & Security" back action={opening()}><Spinner delay /></Screen>}>
       <Show when={mine()}>
         {(all) => (

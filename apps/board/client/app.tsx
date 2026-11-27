@@ -1,7 +1,7 @@
 // Board: shared message board and task queue for people and agents. Channels and threads sit beside the open thread
 // where there's room (`Split`), and push on a phone. Its screens are tools: the list `board_read { channel, state }` and a
 // thread `board_thread { id }`, which keeps the list's filters beside it (`toolInput("board_read")`).
-import { createEffect, createProjection, createSignal, Errored, For, Loading, refresh, Show } from "solid-js"
+import { createEffect, createProjection, createSignal, For, Loading, refresh, Show } from "solid-js"
 import {
   Badge,
   Button,
@@ -9,6 +9,7 @@ import {
   changed,
   confirm,
   Empty,
+  Errored,
   Field,
   Input,
   List,
@@ -352,7 +353,7 @@ function ThreadDetail(props: { id: string }) {
   }
 
   return (
-    <Errored fallback={(error) => <Screen heading="Thread"><Problem heading="Can't open thread" text={error() as Error} /></Screen>}>
+    <Errored heading="Can't show this thread" screen={{ heading: "Thread" }}>
       <Loading fallback={<Screen heading="Thread"><Spinner delay /></Screen>}>
         <Show when={detailData()}>
           {(data) => {
@@ -527,7 +528,7 @@ function BoardApp() {
 }
 
 render(() => (
-  <Errored fallback={(error) => <Screen heading="Board"><Problem heading="Can't open Board" text={error() as Error} /></Screen>}>
+  <Errored heading="Can't show Board" screen={{ heading: "Board" }}>
     <Loading fallback={<Screen heading="Board"><Spinner delay /></Screen>}>
       <BoardApp />
     </Loading>

@@ -4,8 +4,8 @@
 // their own row. Anyone makes a group, which has a Home Screen of its own that its members see, and its owners add
 // someone in the network to it, take members out, and make them owners too. Groups are each person's own, so they're
 // asked for as the person, wherever the app was opened.
-import { createMemo, createSignal, Errored, Loading, refresh, Show } from "solid-js"
-import { Avatar, Button, call, changed, confirm, Empty, Field, Icon, Input, List, Menu, Problem, Row, Screen, Section, share, Sheet, Spinner, Split, styles, toast, tokens, View } from "ui"
+import { createMemo, createSignal, Loading, refresh, Show } from "solid-js"
+import { Avatar, Button, call, changed, confirm, Empty, Errored, Field, Icon, Input, List, Menu, Row, Screen, Section, share, Sheet, Spinner, Split, styles, toast, tokens, View } from "ui"
 import { RULE, Username } from "./username.tsx"
 
 const look = styles({
@@ -359,7 +359,7 @@ function UsersAndGroups(props: { all: All } & Shown) {
 /// People & Groups, as Settings draws it, told its screen (`Open`).
 export default function PeopleAndGroups(props: Shown) {
   return (
-  <Errored fallback={(error) => <Screen heading="People & Groups" back><Problem heading="Can't show who's in your network" text={error() as Error} /></Screen>}>
+  <Errored heading="Can't show who's in your network" screen={{ heading: "People & Groups", back: true }}>
     <Loading fallback={<Screen heading="People & Groups" back><Spinner delay /></Screen>}>
       <UsersAndGroups all={all()} inputs={props.inputs} show={props.show} />
     </Loading>
