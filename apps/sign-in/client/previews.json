@@ -422,6 +422,18 @@
             "joined": false,
             "picture": null
           }
+        ],
+        "invitations": [
+          {
+            "id": "a1",
+            "email": null,
+            "expires": "2026-01-06T00:00:00Z"
+          },
+          {
+            "id": "b2",
+            "email": "jo@example.com",
+            "expires": "2026-01-04T00:00:00Z"
+          }
         ]
       },
       "sign-in_people": {
@@ -535,7 +547,8 @@
             "joined": true,
             "first_owner": true
           }
-        ]
+        ],
+        "invitations": []
       },
       "permissions_shared": {
         "tuples": [
@@ -689,6 +702,34 @@
     },
     "errors": [
       "You don't have access to this"
+    ]
+  },
+  "Invite, link made": {
+    "like": "Group",
+    "answers": {
+      "sign-in_invite": {
+        "link": "https://network.example.com/sign-in/#invite=0f3a9c1d5b7e2a64"
+      }
+    },
+    "taps": [
+      "Invite",
+      "Create Link"
+    ]
+  },
+  "Invite, for an email": {
+    "like": "Group",
+    "taps": [
+      "Invite",
+      {
+        "type": "jo@example.com"
+      }
+    ]
+  },
+  "People & Groups, cancelling an invitation": {
+    "like": "People & Groups",
+    "taps": [
+      "More for this invitation",
+      "Cancel Invitation"
     ]
   }
 }

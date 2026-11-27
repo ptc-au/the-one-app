@@ -296,7 +296,7 @@ async function ask(request: Request, auth: Auth, url: URL) {
     if (!(await env.NETWORK.admits(server, request.headers.get("one-token")))) return Response.json({ error: "Only a server of the network asks this" }, { status: 403 });
     return Response.json(await asked(auth, url.origin, what));
   }
-  const ofNetwork = ["invite", "owner", "everyone", "remove_person", "domains", "network"].includes(what.ask ?? "");
+  const ofNetwork = ["invite", "cancel_invite", "owner", "everyone", "remove_person", "domains", "network"].includes(what.ask ?? "");
   const theirs = `${what.who}/`;
   // A server of a group they're in acts for them by the network's word, a token it shows with every ask, as it does
   // the presigner (`OneCore.Edge.token/2`).

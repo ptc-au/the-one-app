@@ -42,28 +42,35 @@ defmodule SignIn do
         ui: "client/forms.html",
         runtime_version: 4,
         description: """
-        Makes a link someone joins the network by, as the user you name. It ends the one made for them before. Only the
-        network's owner invites someone who has joined again, and never an owner
+        Makes a link someone new joins the network by, which you send them however you like: nothing is sent for you.
+        Their username comes from how they sign in, so you name none. With `email` only the Google account with that
+        email joins by it. With `who`, a link for someone who has joined, as a way back when they've lost every passkey:
+        it ends the one made for them before, only the network's owner makes it, and never for an owner
         """,
         inputs: %{
           type: "object",
-          properties: %{name: %{type: "string", description: "Their username: lowercase letters, digits, dots and hyphens, as their email's name before the @"}},
-          required: ["name"]
+          properties: %{
+            email: %{type: "string", description: "The email of the only Google account that may join by the link"},
+            who: %{type: "string", pattern: "^users/[a-z0-9][a-z0-9.-]*$", description: "Someone who has joined, to get back in: users/<name>"}
+          }
         },
         outputs: %{
           type: "object",
-          properties: %{
-            who: %{type: "string", description: "users/<name>"},
-            link: %{type: "string", description: "Where they join, within a week. It's shown once, so pass it on now"}
-          },
-          required: ["who", "link"]
+          properties: %{link: %{type: "string", description: "Where they join, within a week. It's shown once, so pass it on now"}},
+          required: ["link"]
         }
+      },
+      %{
+        name: "cancel_invite",
+        description: "Ends a link made for someone new, which nobody has joined by yet",
+        inputs: %{type: "object", properties: %{id: %{type: "string", description: "The invitation, as `everyone` says"}}, required: ["id"]},
+        outputs: %{type: "object", properties: %{id: %{type: "string"}}, required: ["id"]}
       },
       %{
         name: "everyone",
         read_only: true,
         description:
-          "Lists everyone in the network and everyone invited to it: the name each goes by, and whether they've joined",
+          "Lists everyone in the network and everyone invited to it: the name each goes by, and whether they've joined, and the links made for someone new that nobody has joined by yet",
         inputs: none,
         outputs: %{
           type: "object",
@@ -82,9 +89,21 @@ defmodule SignIn do
                 },
                 required: ["who", "called", "email", "joined", "first_owner", "picture"]
               }
+            },
+            invitations: %{
+              type: "array",
+              items: %{
+                type: "object",
+                properties: %{
+                  id: %{type: "string"},
+                  email: %{type: ["string", "null"], description: "The Google account it's only for"},
+                  expires: %{type: "string", description: "When it ends, as ISO 8601"}
+                },
+                required: ["id", "email", "expires"]
+              }
             }
           },
-          required: ["people"]
+          required: ["people", "invitations"]
         }
       },
       %{
@@ -564,29 +583,37 @@ defmodule SignIn do
 
   @impl true
   # Who invites is whoever may change what this app keeps for the network: its owners, and whoever they made
-  # an editor of it. Whoever joins by an invitation is that user, so someone who has joined is invited again only by
-  # the network's owner, and an owner never: they add a passkey on a device they're signed in on, as Apple and
-  # Google have it. The edge knows who has joined, and is told whether this may be that (`again`). A name someone was
-  # taken out of while what they made is kept is theirs still, since all of it is reached by that name, so nobody
-  # else is invited by it, as GitHub retires the name of an account that still has repos.
-  def call("invite", %{"name" => name}, call) do
+  # an editor of it. Someone new gets a link nobody names them in. Whoever joins by a link for a user is that user, so
+  # someone who has joined is invited again only by the network's owner, and an owner never: they add a passkey on a
+  # device they're signed in on, as Apple and Google have it. The edge knows who has joined, and is told whether this
+  # may be that (`again`).
+  def call("invite", inputs, call) do
     Call.reach(call, Artifact.name(call.own), "editor")
-    who = "users/#{name}"
 
-    if not Enum.any?(ask(%{ask: "everyone"})["people"], &(&1["who"] == who)) and OneCore.Bucket.list(who <> "/") != [],
-      do: raise("#{who} was taken out of the network, and what they made is kept under that name, so nobody else is given it. Invite them by another name.")
+    case inputs["who"] do
+      nil ->
+        %{"link" => link} = ask(%{ask: "invite", email: inputs["email"]})
+        %{link: link}
 
-    again = owns_network?(call, call.actor) and not owns_network?(call, who)
-    %{"link" => link} = ask(%{ask: "invite", who: name, again: again})
-    %{who: "users/#{name}", link: link}
+      "users/" <> name = who ->
+        again = owns_network?(call, call.actor) and not owns_network?(call, who)
+        %{"link" => link} = ask(%{ask: "invite", who: name, again: again})
+        %{link: link}
+    end
+  end
+
+  def call("cancel_invite", %{"id" => id}, call) do
+    Call.reach(call, Artifact.name(call.own), "editor")
+    ask(%{ask: "cancel_invite", id: id})
+    %{id: id}
   end
 
   def call("everyone", _inputs, call) do
     if not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
     first = OneCore.User.first_owner()
-    people = ask(%{ask: "everyone"})["people"]
+    %{"people" => people, "invitations" => invitations} = ask(%{ask: "everyone"})
     pictures = kept(call, Enum.map(people, & &1["who"]))
-    %{people: for(person <- people, do: person |> Map.put("first_owner", person["who"] == first) |> Map.put("picture", source(pictures[person["who"]])))}
+    %{people: for(person <- people, do: person |> Map.put("first_owner", person["who"] == first) |> Map.put("picture", source(pictures[person["who"]]))), invitations: invitations}
   end
 
   # Whoever invites says who joins with no invitation, and any member sees it.

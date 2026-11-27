@@ -6,7 +6,7 @@
 // asked for as the person, wherever the app was opened.
 import { createMemo, createSignal, Loading, refresh, Show } from "solid-js"
 import { Avatar, Button, call, changed, confirm, Empty, Errored, Field, Icon, Input, List, Menu, Row, Screen, Section, share, Sheet, Spinner, Split, styles, toast, tokens, View } from "ui"
-import { RULE, Username } from "./username.tsx"
+import { Username } from "./username.tsx"
 
 const look = styles({
   form: { gap: tokens.length.gutter },
@@ -22,6 +22,14 @@ interface Person {
   first_owner?: boolean
 }
 
+/** A link made for someone new, as `sign-in_everyone` answers it: no one yet, until they join by it. */
+interface Invitation {
+  id: string
+  /** The Google account it's only for. */
+  email: string | null
+  expires: string
+}
+
 /** A group, as `permissions_groups` answers it. */
 interface Group {
   group: string
@@ -33,9 +41,9 @@ interface Group {
 const json = <T,>(tool: string, inputs?: object, subject?: string): Promise<T> => call(tool, inputs, { subject }).then(JSON.parse)
 
 const all = createMemo(async () => {
-  const [everyone, [me], owners] = await Promise.all([
+  const [{ people: everyone, invitations }, [me], owners] = await Promise.all([
     // A network being built has nobody signing in, so nobody to list.
-    json<{ people: Person[] }>("sign-in_everyone").then(({ people }) => people, (): Person[] => []),
+    json<{ people: Person[]; invitations: Invitation[] }>("sign-in_everyone").catch(() => ({ people: [] as Person[], invitations: [] as Invitation[] })),
     json<{ people: Person[] }>("sign-in_people").then(({ people }) => people),
     // The network's owners invite and take out, and are said to be its owners.
     json<{ tuples: { relation: string; who: string }[] }>("permissions_shared", { artifact: "network" }).then(({ tuples }): string[] => tuples.filter(({ relation }) => relation === "owner").map(({ who }) => who), (): string[] => []),
@@ -43,7 +51,7 @@ const all = createMemo(async () => {
   const groups = await json<{ groups: Group[] }>("permissions_groups", {}, me.who).then(({ groups }) => groups)
   const named = (who: string) => everyone.find((person) => person.who === who)?.called ?? who.replace("users/", "")
   const sorted = everyone.toSorted((a, b) => Number(b.who === me.who) - Number(a.who === me.who) || named(a.who).localeCompare(named(b.who)))
-  return { me: me.who, owners, invites: owners.includes(me.who), joined: sorted.filter((person) => person.joined), invited: sorted.filter((person) => !person.joined), groups, named }
+  return { me: me.who, owners, invites: owners.includes(me.who), joined: sorted.filter((person) => person.joined), invited: sorted.filter((person) => !person.joined), invitations, groups, named }
 })
 changed(() => refresh(all))
 
@@ -91,14 +99,20 @@ async function remove(person: Person, all: All) {
   if (await confirm({ ...question, destructive: true })) change("sign-in_remove_person", { who: person.who })
 }
 
+/// Ends a link made for someone new, once whoever's looking has said so.
+async function cancel(invitation: Invitation) {
+  if (await confirm({ heading: "Cancel This Invitation?", text: "The link stops working.", action: "Cancel Invitation", destructive: true })) change("sign-in_cancel_invite", { id: invitation.id })
+}
+
 /// What's open, as the section's screen says it (`settings_section`'s own arguments): a group beside the list, `group`,
 /// or a form over it, `form`: `invite`, `name` (whoever's looking, to change theirs), `new-group`, `member` (to add to
 /// the group open) or `username` (of `who`). Each is a step Back goes back from. A form is filled in with what its
-/// tool would be given, where it's said: `name` (the invited's, or the new group's), `called` or `username`.
+/// tool would be given, where it's said: `email` (the invited's), `name` (the new group's), `called` or `username`.
 interface Open {
   group?: string
   form?: "invite" | "name" | "new-group" | "member" | "username"
   who?: string
+  email?: string
   name?: string
   called?: string
   username?: string
@@ -138,20 +152,21 @@ function Name(props: { open: boolean; onClose: () => void; called?: string }) {
   )
 }
 
-/// Someone new: their name in the network, then the link they join by, to send them.
-function Invite(props: { open: boolean; name?: string; onClose: () => void }) {
+/// Someone new: the link they join by, to send them however you like. Who joins by it is who signs in with it, and
+/// their username comes from how they do: nobody makes one up for them. With an email, only the Google account with
+/// it joins by the link.
+function Invite(props: { open: boolean; email?: string; onClose: () => void }) {
   const [link, setLink] = createSignal<string>()
   const [error, setError] = createSignal<string>()
   const [working, setWorking] = createSignal(false)
-  const [name, setName] = createSignal(() => props.name ?? "")
-  const close = () => (props.onClose(), setLink(), setError(), setName(""))
+  const [email, setEmail] = createSignal(() => props.email ?? "")
+  const close = () => (props.onClose(), setLink(), setError(), setEmail(""))
   const make = async () => {
-    const who = name().trim().toLowerCase()
+    const only = email().trim()
     setWorking(true)
     setError()
     try {
-      // The tool says who joins where, and the link is its last word.
-      setLink(JSON.parse(await call("sign-in_invite", { name: who })).link)
+      setLink(JSON.parse(await call("sign-in_invite", only ? { email: only } : {})).link)
       refresh(all)
     } catch (thrown) {
       setError((thrown as Error).message)
@@ -172,15 +187,15 @@ function Invite(props: { open: boolean; name?: string; onClose: () => void }) {
         when={link()}
         fallback={
           <View style={look.form}>
-            <Field label="Username" hint={`Their addresses are under it. ${RULE}`} error={error()}>
-              <Input name="name" required autoFocus autoCapitalize="none" spellCheck={false} value={name()} onChangeText={setName} onSubmitEditing={make} />
+            <Field label="Email" hint="Optional. Only the Google account with this email can join by the link. Nothing is emailed." error={error()}>
+              <Input name="email" inputMode="email" autoFocus autoCapitalize="none" autoComplete="off" spellCheck={false} value={email()} onChangeText={setEmail} onSubmitEditing={make} />
             </Field>
             <Button loading={working()} onPress={make}>Create Link</Button>
           </View>
         }
       >
         <View style={look.form}>
-          <Field label="Link" hint="It works once, for a week.">
+          <Field label="Link" hint={email().trim() ? `It works once, for a week, for ${email().trim()}.` : "It works once, for a week."}>
             <Input readOnly value={link()} />
           </Field>
           <Button onPress={send}>Share Link</Button>
@@ -242,6 +257,31 @@ function PersonRow(props: { person: Person; all: All; show: Shown["show"] }) {
                     {props.person.joined ? `Remove ${name()}` : "Cancel Invitation"}
                   </Menu.Item>
                 </Show>
+              </Menu.Content>
+            </Menu.Positioner>
+          </Menu.Root>
+        </Show>
+      }
+    />
+  )
+}
+
+/// A link made for someone new that nobody has joined by yet: the email it's for, if it names one, and when it ends.
+function InvitationRow(props: { invitation: Invitation; all: All }) {
+  return (
+    <Row
+      start={<Icon name={props.invitation.email ? "envelope-simple" : "link"} />}
+      heading={props.invitation.email ?? "Link for anyone"}
+      text={`Ends ${new Date(props.invitation.expires).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`}
+      end={
+        <Show when={props.all.invites}>
+          <Menu.Root onSelect={() => cancel(props.invitation)}>
+            <Menu.Trigger aria-label="More for this invitation" />
+            <Menu.Positioner>
+              <Menu.Content>
+                <Menu.Item value="cancel" destructive>
+                  Cancel Invitation
+                </Menu.Item>
               </Menu.Content>
             </Menu.Positioner>
           </Menu.Root>
@@ -326,10 +366,13 @@ function UsersAndGroups(props: { all: All } & Shown) {
               </List>
             </Section>
           </Show>
-          <Show when={props.all.invited.length}>
+          <Show when={props.all.invited.length || props.all.invitations.length}>
             <Section heading="Invited">
               <List each={props.all.invited} keyed={(person) => person.who}>
                 {(person) => <PersonRow person={person()} all={props.all} show={props.show} />}
+              </List>
+              <List each={props.all.invitations} keyed={(invitation) => invitation.id}>
+                {(invitation) => <InvitationRow invitation={invitation()} all={props.all} />}
               </List>
             </Section>
           </Show>
@@ -345,7 +388,7 @@ function UsersAndGroups(props: { all: All } & Shown) {
           </Section>
         </Screen>
       </Split>
-      <Invite open={form("invite")} name={form("invite") ? props.inputs.name : undefined} onClose={() => props.show()} />
+      <Invite open={form("invite")} email={form("invite") ? props.inputs.email : undefined} onClose={() => props.show()} />
       <Name open={form("name")} onClose={() => props.show()} called={(form("name") && props.inputs.called) || props.all.joined.find((person) => person.who === props.all.me)?.called} />
       <Show when={form("username") ? props.inputs.who : undefined} keyed>
         {(who) => <Username who={who} you={who === props.all.me} username={props.inputs.username} open onClose={() => props.show()} onChanged={() => refresh(all)} />}

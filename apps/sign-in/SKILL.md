@@ -12,12 +12,15 @@ Sign-in is how people get into a network, and what acts as each of them: their d
 let in. A person signs in with a passkey at the network's address, or with Google where its edge has a Google client. An assistant becomes theirs when they answer
 that one question for it, and a new device when they also say the code it shows matches.
 
-- `invite` makes a link someone joins by: they open it and make a passkey, or continue with Google, and are that
-  user from then on. The
-  network's owners invite, and whoever they made an editor of `network/own/sign-in`. The link works once, for a
-  week, and a new one for them ends it, so pass on the newest. Whoever joins by it is that user, so only the network's
-  owner invites someone who's already in, as a way back when they've lost every passkey, and never an owner: an owner
-  adds a passkey on a device they're signed in on.
+- `invite` makes a link someone new joins by, which you send them however you like (nothing is emailed for you): they
+  open it and make a passkey, typing their own name, or continue with Google. You name no username: it's made of the
+  name they typed, or of their Google email, as `james.woollett`, and they change it later (`username`). The network's
+  owners invite, and whoever they made an editor of `network/own/sign-in`. A link works once, for a week. With `email`,
+  only the Google account with that email joins by it, as Google Drive's sharing does with "Notify people" off.
+  `cancel_invite` ends a link nobody has joined by (`everyone` lists them as `invitations`). With `who`, a link for
+  someone already in, as a way back when they've lost every passkey: whoever joins by it is them, so only the
+  network's owner makes it, a new one for them ends the one before, and never for an owner, who adds a passkey on a
+  device they're signed in on.
 - `domains` says which Google Workspace domains' people join by signing in with Google, with no invitation, and
   sets them for whoever invites. They're `users/<their email's name before the @>`, and go by their Google name.
 - `network` says the network's name, icon and logo, and sets them for whoever invites: null is the One App's. Its icon,
@@ -49,8 +52,9 @@ that one question for it, and a new device when they also say the code it shows 
   has one, and whose picture they're shown by (`picture`: the one they set, `own`, or Google's, `google`, or none). `name` changes the name your person goes by, when they ask. `picture` sets the picture they go by, which wins over Google's (`--upload-from photo.jpg`: any picture up to 10 MB, made square and small from its middle), and with none takes it away. Signing in with Google gives
   their Google picture, taken again each time. `pictures` gives those of people (`users/<name>`) and the network (`network`, its icon, or the One App's) as `data:` addresses, which
   the UI library's `Avatar` draws, with a person's initials where they have none. A group (`groups/<name>`) has none: it gives up to four of its members, those with a picture first, and their pictures, which `Avatar` draws together. `everyone` lists everyone in the network
-  and everyone invited who hasn't joined yet. `remove_person` takes someone out, or ends an invitation: their
-  devices, assistants and passkeys stop working, they're in no group and shared nothing, and what they made stays. Whoever invites does it.
+  and everyone invited who hasn't joined yet. `remove_person` takes someone out: their
+  devices, assistants and passkeys stop working, they're in no group and shared nothing, and what they made stays,
+  under a username nobody else is given. Whoever invites does it.
 - A device that isn't in yet shows a code and a link at the network's address. Its person opens the link where
   they sign in, with a passkey or Google, on the device or any device of theirs, and says whether the code there
   matches. Pass both on as they are: the code is what keeps a stranger's device out. A device signed in reaches

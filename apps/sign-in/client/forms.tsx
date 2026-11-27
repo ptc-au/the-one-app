@@ -11,12 +11,12 @@ const ran = () => !!toolResult()
 /** The section and its form for the tool, filled in from what it was given: someone else's username is changed in
  * People & Groups, your own in Sign In & Security. */
 const shown = () => {
-  const { name, called, username, who } = given()
+  const { email, called, username, who } = given()
   if (asked().name === "sign-in_username" && !who) return { section: "passkeys", inputs: ran() ? {} : { form: "username", username } }
   if (ran()) return { section: "people", inputs: {} }
   if (asked().name === "sign-in_name") return { section: "people", inputs: { form: "name", called } }
   if (asked().name === "sign-in_username") return { section: "people", inputs: { form: "username", who, username } }
-  return { section: "people", inputs: { form: "invite", name } }
+  return { section: "people", inputs: { form: "invite", email } }
 }
 // Drawn as Settings draws a section (`Drawn` in its page), in its grouped lists.
 const Section = createMemo(() => component("sign-in", shown().section).then((module) => module.default))

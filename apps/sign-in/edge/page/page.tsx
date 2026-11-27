@@ -126,6 +126,7 @@ type Stage =
   | { stage: "denied"; name: string }
   | { stage: "ready"; app: App }
   | { stage: "confirm" }
+  | { stage: "invited"; email: string | null }
   | { stage: "created"; by?: string; on?: string[] }
   | { stage: "unlocking"; doing: string }
   | { stage: "unlocked"; handed: [whose: string, names: string[]][] }
@@ -182,8 +183,9 @@ const ended = {
   unknown: "No device is showing that code. Start again on the device.",
 }
 
-/// Starts answering what the page was opened for, or does so again after it failed: an assistant is named, and a
-/// device's code is claimed once this person is signed in here.
+/// Starts answering what the page was opened for, or does so again after it failed: an invitation is checked, which
+/// may be only for one Google account, an assistant is named, and a device's code is claimed once this person is
+/// signed in here.
 async function begin() {
   setStage({ stage: "checking" })
   try {
@@ -205,6 +207,12 @@ async function begin() {
           person: user && (user.called || user.name),
         },
       })
+    }
+    if (flow.flow === "join") {
+      const response = await fetch(`/sign-in/auth/invite/state?invite=${encodeURIComponent(flow.invite)}`)
+      const state = await response.json()
+      if (!response.ok) throw new Error(state.message ?? "That didn't work. Try again.")
+      return setStage({ stage: "invited", email: state.email })
     }
     if (flow.flow === "device") {
       const { data } = await auth.getSession()
@@ -490,10 +498,10 @@ async function signIn() {
   if (flow.flow === "join") {
     if (!called().trim()) throw new Error("Say your name first.")
     await auth.signOut()
-    const result = await auth.passkey.addPasskey({ context: flow.invite, createSession: true, extensions: PRF, returnWebAuthnResponse: true })
+    // Their username is made of the name they typed, as their passkey is made.
+    const result = await auth.passkey.addPasskey({ context: `${flow.invite}:${called().trim()}`, createSession: true, extensions: PRF, returnWebAuthnResponse: true })
     if (result.error) throw await plainly("make", result.error)
     await made(result as Answered, false)
-    await ask("/update-user", { called: called().trim() })
   } else if (flow.flow === "assistant" && (await signedInJustNow())) {
     // Signed in just now, with Google or a passkey: Allow needs nothing more.
   } else if (flow.flow === "assistant" && google() && !((await auth.getSession()).data?.session as { passkey?: string | null } | undefined)?.passkey) {
@@ -565,7 +573,7 @@ async function share() {
 }
 
 /// What a stage shows, as `SignIn` takes it, whether it asks for a name, and the assistant it asks about.
-type Shows = Parameters<typeof SignIn>[0] & { asksName?: boolean; app?: App; elsewhere?: boolean }
+type Shows = Parameters<typeof SignIn>[0] & { asksName?: boolean; only?: string; app?: App; elsewhere?: boolean }
 
 /// What each stage shows: its heading, the spinner's line while something's under way, the code, the warning, the
 /// problem, the button and what it does, and the one line left once it's answered.
@@ -665,6 +673,10 @@ function shows(): Shows {
       }
     }
     case "join":
+      if (now.stage === "failed") return { heading: "Join", problem: now.why, button: "Try Again", onSignIn: begin }
+      if (now.stage !== "invited") return { heading: "Join", status: "Checking your invitation…" }
+      // Only Google can say whose email it is.
+      if (now.email) return { heading: "Join", only: now.email, problem: refused, button: "Continue with Google", onSignIn: withGoogle }
       return google() ? { heading: "Join", problem: refused, ...withGoogleFirst("Create a Passkey"), asksName: true } : { heading: "Join", problem: refused, button: "Create a passkey", onSignIn: signIn, asksName: true }
     case "signIn":
       return google() ? { heading: "Sign in", problem: refused, ...withGoogleFirst("Use a Passkey") } : { heading: "Sign in", problem: refused, button: "Sign in", onSignIn: signIn }
@@ -772,6 +784,7 @@ render(
           <Text style={look.shown}>{shown}</Text>
         </View>
       )}
+      {shows().only && <Text style={look.account}>This invitation is for {shows().only}</Text>}
       {shows().asksName && !shows().done && (
         <Field>
           <Input name="name" aria-label="Your name" autoFocus autoComplete="name" placeholder="Your name" required value={called()} onChangeText={setCalled} />
