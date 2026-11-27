@@ -190,7 +190,13 @@ defmodule OneCore.Servers do
   end
 
   @doc "The build the server whose key is `key` says it runs (`OneCore.Builds.say/1`), `nil` where it says none."
-  def build(key), do: cached({:build, key}, fn -> read("servers/#{key}/build", %{})["build"] end)
+  def build(key), do: said(key)["build"]
+
+  @doc "Whether the machine of the server whose key is `key` sleeps, as a laptop does, as it says (`OneCore.Builds.sleeps?/0`)."
+  def sleeps?(key), do: said(key)["sleeps"] == true
+
+  # What the server whose key is `key` says of itself (`OneCore.Builds.say/1`).
+  defp said(key), do: cached({:build, key}, fn -> read("servers/#{key}/build", %{}) end)
 
   @doc """
   Whether this server is the one to do `what` (a JSON value, such as the build or the commit it's for), of all the

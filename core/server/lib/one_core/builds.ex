@@ -63,13 +63,14 @@ defmodule OneCore.Builds do
 
   @doc """
   What this server says of itself, as it starts and as what it is changes: its build, the runtime it runs on, its kind
-  of machine, the device it's on, if any, whether it was installed with `one serve on`, which is what takes the latest builds when it's
+  of machine, whether that sleeps (`sleeps?/0`), the device it's on, if any, whether it was installed with `one serve on`, which is what takes the latest builds when it's
   asked to update, and what the program keeping it running says of it (`OneCore.Release.status/0`).
   """
   def say(key) do
     info = %{
       build: build(),
       target: target(),
+      sleeps: sleeps?(),
       device: Application.get_env(:one_core, :device),
       installed: Application.get_env(:one_core, :installed, false),
       runtime: runtime(),
@@ -77,6 +78,36 @@ defmodule OneCore.Builds do
     }
 
     Servers.say("servers/#{key}/build", JSON.encode!(Map.merge(info, OneCore.Release.status())))
+  end
+
+  @doc """
+  Whether this server's machine sleeps: it runs on a battery, as a laptop or a tablet does, which sleeps once its lid
+  shuts or it's left a while, where a desktop or a server in a rack is always on. Looked at once.
+  """
+  def sleeps? do
+    case :persistent_term.get({__MODULE__, :sleeps}, nil) do
+      nil -> tap(battery?(), &:persistent_term.put({__MODULE__, :sleeps}, &1))
+      sleeps -> sleeps
+    end
+  end
+
+  # Whether the machine has a battery of its own, not a mouse's (Linux's `scope` of `Device`), as each system says.
+  defp battery? do
+    case :os.type() do
+      {:unix, :darwin} ->
+        elem(System.cmd("pmset", ["-g", "batt"]), 0) =~ "InternalBattery"
+
+      {:unix, _} ->
+        Enum.any?(Path.wildcard("/sys/class/power_supply/*"), fn supply ->
+          File.read(Path.join(supply, "type")) == {:ok, "Battery\n"} and File.read(Path.join(supply, "scope")) != {:ok, "Device\n"}
+        end)
+
+      {:win32, _} ->
+        String.trim(elem(System.cmd("powershell", ["-NoProfile", "-Command", "@(Get-CimInstance Win32_Battery).Count"]), 0)) not in ["", "0"]
+    end
+  rescue
+    # A system without the command, as a container's may be, has no battery to say of.
+    ErlangError -> false
   end
 
   @doc """
