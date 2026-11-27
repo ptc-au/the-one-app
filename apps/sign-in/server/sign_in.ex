@@ -1106,6 +1106,21 @@ defmodule SignIn do
     end
   end
 
+  @doc """
+  Whether a call comes from the `one` CLI (`one-cli`) on a device of its person's, rather than an assistant or an MCP
+  client (`one mcp` never goes by `one-*`, and its `service.name` is `mcp`, not `cli`). Over the web, only a device
+  whose proved kind is `app` counts, never an assistant or a sharing link, whatever it says.
+
+      Call.app(call, "sign-in").cli?(call)
+  """
+  def cli?(call) do
+    case Call.client(call) do
+      %{"web" => false, "name" => "one-cli"} -> true
+      %{"web" => true, "name" => "one-cli"} -> match?(%{"kind" => "app"}, device(call))
+      _ -> false
+    end
+  end
+
   # The device a browser's session is, as the edge names it (`browserDevice`, `edge/auth.ts`).
   defp browser(session) when is_binary(session),
     do: Base.encode16(:crypto.hash(:sha256, "browser\n" <> session), case: :lower)
