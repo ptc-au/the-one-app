@@ -31,7 +31,7 @@ defmodule Board do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.37.0",
+      "core" => ">= 0.37.182",
       "database" => "to keep channels, threads, tasks, schemas, and schedules",
       "notifications" => "to alert people when a task is blocked"
     }
