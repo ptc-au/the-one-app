@@ -249,7 +249,7 @@ export async function copied() {
   const reached = await env.RELAY.forward(await env.NETWORK.servers(), JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: call }));
   const { result, error }: { result?: { isError?: boolean; content?: { text?: string }[] }; error?: { message?: string } } = JSON.parse(reached?.answer ?? "{}");
   if (!reached || error || result?.isError)
-    console.error(`No server copied whose each device is just now: ${reached ? (error?.message ?? result?.content?.[0]?.text) : "none answered"}`);
+    console.log(JSON.stringify({ telemetry: { error: `No server copied whose each device is just now: ${reached ? (error?.message ?? result?.content?.[0]?.text) : "none answered"}` } }));
 }
 
 /**
@@ -317,13 +317,13 @@ async function fromGoogle(account: { userId: string; providerId: string; idToken
   if (account.providerId !== "google") return;
   const user = await env.DB.prepare('select name from "user" where id = ?').bind(account.userId).first<{ name: string }>();
   // Someone not made yet has theirs taken at the next ten minutes (`pictures`), as does one Google didn't answer for, as signing in doesn't wait for it.
-  if (user) await keepGoogle(user.name, pictureOf(account.idToken)).catch((error) => console.error(`Couldn't take ${user.name}'s picture from Google: ${error.message}`));
+  if (user) await keepGoogle(user.name, pictureOf(account.idToken)).catch((error) => console.log(JSON.stringify({ telemetry: { error: `Couldn't take ${user.name}'s picture from Google: ${error.message}` } })));
 }
 
 /** Takes Google's picture for everyone who signed in with it and has none kept, and the network's, which the edge calls every ten minutes (`wrangler.jsonc`), as a network made before pictures was has none. */
 export async function pictures() {
   const { results } = await env.DB.prepare(`select "user".name as name, account.idToken as token from account join "user" on "user".id = account.userId where account.providerId = 'google'`).all<{ name: string; token: string | null }>();
-  await Promise.all(results.map(({ name, token }) => keepGoogle(name, pictureOf(token)).catch((error) => console.error(`Couldn't take ${name}'s picture from Google: ${error.message}`))));
+  await Promise.all(results.map(({ name, token }) => keepGoogle(name, pictureOf(token)).catch((error) => console.log(JSON.stringify({ telemetry: { error: `Couldn't take ${name}'s picture from Google: ${error.message}` } })))));
   await keepNetwork((await network()).icon?.png ?? null, false);
 }
 

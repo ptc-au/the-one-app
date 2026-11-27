@@ -201,6 +201,7 @@ async function listen(request: Request, env: Env) {
   const send = (event: string) => stream.write(encoder.encode(event)).catch(() => relay.close(1000, "Its listener left"));
   const keeping = setInterval(() => send(": still here\n\n"), KEEP);
   relay.addEventListener("message", ({ data }) => send(`event: message\ndata: ${data}\n\n`));
+  // The stream is already closed where its client left first.
   relay.addEventListener("close", () => (clearInterval(keeping), stream.close().catch(() => {})));
   request.signal.addEventListener("abort", () => (clearInterval(keeping), relay.close(1000, "Its listener left")));
   send(": listening\n\n");
@@ -364,7 +365,7 @@ async function webhook(request: Request, env: Env, url: URL, ctx: ExecutionConte
   const gaveUp = new Promise<null>((done) => signal.addEventListener("abort", () => done(null), { once: true }));
   const answering = forward(env, message, { webhook: at }, [of, NETWORK], undefined, undefined, { signal, ctx }).catch((error) => {
     // Never log the token: it's the secret in the webhook's address.
-    console.error(JSON.stringify({ webhook: `${of}${app}`, error: String(error) }));
+    console.log(JSON.stringify({ telemetry: { attributes: { "one.webhook": `${of}${app}` }, error: String(error) } }));
     return null;
   });
   const answer = await Promise.race([answering, gaveUp]);

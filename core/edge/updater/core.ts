@@ -74,7 +74,7 @@ async function installers(env: Env): Promise<Installers> {
   } catch (error) {
     // The core's builds reach the network's servers regardless, and its own app's is the platform's until its
     // installers can be read.
-    console.error(`The network's installers couldn't be read: ${error}`);
+    console.log(JSON.stringify({ telemetry: { error: `The network's installers couldn't be read: ${error}` } }));
     return {};
   }
 }

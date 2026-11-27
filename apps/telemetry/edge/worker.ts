@@ -119,8 +119,12 @@ function span(item: TraceItem): Reach | undefined {
     (status !== undefined && status >= 500 && `It answered ${status}`) ||
     undefined;
   // As OpenTelemetry names an HTTP server's span, and a call between Workers by the Worker and its method.
+  // What ran with no request, call or trace (a cron trigger, a Durable Object's alarm, a queue) is named by its Worker and
+  // the kind of event it was, so what it threw isn't lost with it.
+  const kind = event && "cron" in event ? "scheduled" : event && "scheduledTime" in event ? "alarm" : item.executionModel;
   const name =
-    record.name ?? (request ? `${request.method} ${path}` : event?.rpcMethod ? [worker, event.rpcMethod].filter(Boolean).join(" ") : record.traceparent ? worker : null);
+    record.name ??
+    (request ? `${request.method} ${path}` : event?.rpcMethod ? [worker, event.rpcMethod].filter(Boolean).join(" ") : record.traceparent ? worker : error ? [worker, kind].filter(Boolean).join(" ") : null);
   // What carried a trace on to a server, as the relay's Durable Object does as it passes a call on, is that trace's.
   const routine = !record.name && !record.traceparent && (item.executionModel === "durableObject" || (path ? ROUTINE.test(path) : event?.rpcMethod !== "forward"));
   // Cloudflare's times for a request that ended `unknown` aren't to be believed (one dated 9 days ahead): nothing here
