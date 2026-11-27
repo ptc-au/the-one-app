@@ -294,7 +294,8 @@ function parse(body: string): Ask | null {
 async function sign(env: Env, by: string, token: string | null, tokens: string[], body: string) {
   const ask = parse(body);
   if (!ask) return refuse(400, "An ask is JSON that names one blob's key, to read, write, replace, list or remove");
-  if (!(await allowed(env, by, token, tokens, ask))) return refuse(403, "You aren't on its list of servers");
+  const refused = await allowed(env, by, token, tokens, ask);
+  if (refused) return refuse(403, refused);
   // Said before it's signed, so no list read from now on is believed until what's signed has had its time to land.
   if (LIST.test(ask.key)) await changes(env).hold(ask.operation === "write" ? "absent" : "any");
   if (LOG.test(ask.key)) await changes(env).writing(ask.key);
@@ -329,9 +330,10 @@ async function read(env: Env, by: string, token: string | null, tokens: string[]
   const permitted = allowed(env, by, token, tokens, ask, lists);
   const asked = logged ? await lists.asked! : undefined;
   const response = asked?.absent ? undefined : fetched();
-  if (!(await permitted)) {
+  const refused = await permitted;
+  if (refused) {
     stop.abort();
-    return refuse(403, "You aren't on its list of servers");
+    return refuse(403, refused);
   }
   if (!response) return new Response(null, { status: 404, headers: { "content-type": "application/octet-stream" } });
   const got = await response;
@@ -345,7 +347,8 @@ async function read(env: Env, by: string, token: string | null, tokens: string[]
 /**
  * Whether the server `by`, which shows `token`, and `tokens`, other servers' word that it acts for someone too, may
  * send the request to the bucket that `ask` is: one acting for the network, or for whoever the key is under, or with
- * a token that says it acts for them.
+ * a token that says it acts for them. Gives `null` where it may, and otherwise why not, naming the lists it isn't
+ * acting by and why, so a refusal says what was missing (9 on PTC on 26 and 27 Nov said only that it was refused).
  */
 async function allowed(env: Env, by: string, token: string | null, tokens: string[], { operation, key }: Ask, lists = reader(env)) {
   const server = SERVER.exec(key)?.[1];
@@ -374,7 +377,20 @@ async function allowed(env: Env, by: string, token: string | null, tokens: strin
     installer ? servers(lists, installer + "/") : null,
     ...vouched.map((shown) => admits(lists, by, shown)),
   ]);
-  return Boolean(network.includes(by) || owners.includes(by) || first || open || installed?.includes(by) || words.some(Boolean));
+  if (network.includes(by) || owners.includes(by) || first || open || installed?.includes(by) || words.some(Boolean)) return null;
+  const of = [NETWORK, owner(key), installer ? installer + "/" : undefined].filter((list): list is string => !!list);
+  const lacking = await Promise.all([...new Set(of)].map((list) => notActing(lists, by, list)));
+  const vouching = vouched.length ? `; the word of other servers it showed, for ${vouched.map((word) => claims(word.split(".")[0]).list).join(", ")}, doesn't admit it` : "";
+  return `You aren't on its list of servers: to ${operation} ${key}, ${lacking.join("; ")}${vouching}`;
+}
+
+/** Why the server `by` doesn't act by the list of servers under `of`: it isn't on it, or it's on it but didn't choose them (`servers/2`). */
+async function notActing(lists: Lists, by: string, of: string) {
+  const { list } = await lists(of);
+  const name = `${by.slice(0, 8)}…`;
+  if (list === null) return `${of}servers doesn't exist yet`;
+  if (!list.includes(by)) return `${name} isn't on ${of}servers`;
+  return `${name} is on ${of}servers, but its servers/${name}/members doesn't name ${of === NETWORK ? "the network" : of.slice(0, -1)}`;
 }
 
 /** The request to the bucket that `ask` is, unsigned: its method, URL and headers. */
