@@ -81,8 +81,8 @@ defmodule SoftDelete do
         kind: :collect,
         description:
           "An artifact moved from one state of soft delete to another. It's about the `artifact`'s name and the state it " <>
-            "moved `to`: `deleted` (with `agent`: true where an agent deleted it, not its person on their screen, nor an " <>
-            "app's own code), `purging`, `active` (restored) or `purged`. One restored beside something new at its " <>
+            "moved `to`: `deleted` (with `item`, its id in Recently Deleted, and `agent`: true where an agent deleted it, " <>
+            "not its person on their screen or their own device's CLI, nor an app's own code), `purging`, `active` (restored) or `purged`. One restored beside something new at its " <>
             "name says where, `as`. On `purging` it's at its name again, nothing of it erased yet, and `readable` says so " <>
             "(false only where something new was made at its name since): the app that made it reads it, as one does " <>
             "to revoke a token it holds. An app that keeps a list of what it made keeps it true from it. Each move " <>
@@ -294,9 +294,12 @@ defmodule SoftDelete do
     :ok
   end
 
-  # Whether an agent deleted it: not its person on a screen of theirs, and not an app's own code, which deletes what it
-  # keeps as its person asked.
-  defp agent?(call), do: call.caller == nil and not Call.app(call, "sign-in").screen?(call)
+  # Whether an agent deleted it: not its person on a screen of theirs or their own device's CLI, and not an app's own
+  # code, which deletes what it keeps as its person asked.
+  defp agent?(call) do
+    sign_in = Call.app(call, "sign-in")
+    call.caller == nil and not sign_in.screen?(call) and not sign_in.cli?(call)
+  end
 
   # Takes the artifact `name` aside as one item, whoever's it is: the item's id.
   defp deleted(call, name) do
@@ -564,7 +567,7 @@ defmodule SoftDelete do
 
     case change(call, id, :moved) do
       {:ok, record} ->
-        notify(call, record, "deleted", %{"agent" => record["agent"] == true})
+        notify(call, record, "deleted", %{"item" => id, "agent" => record["agent"] == true})
         record
 
       {:error, why} ->
