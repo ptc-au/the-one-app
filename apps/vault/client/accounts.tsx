@@ -898,7 +898,9 @@ export default function Accounts(props: Shown) {
   createEffect(() => props.inputs.owner, (owner) => void setWhose(owner))
   return (
     <Errored heading="Can't show the Vault" screen={{ heading: "Vault", back: true }}>
-      <Vault inputs={props.inputs} show={props.show} />
+      <Loading fallback={<Screen heading="Vault" back><Spinner delay /></Screen>}>
+        <Vault inputs={props.inputs} show={props.show} />
+      </Loading>
     </Errored>
   )
 }
