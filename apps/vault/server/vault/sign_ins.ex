@@ -88,8 +88,8 @@ defmodule Vault.SignIns do
   @doc """
   Where a sign-in began, which says how its page ends: on an agent, named as its person let it in (an assistant
   somewhere else, which comes in over the web, among their devices as `sign-in` lists them) or as it says it's
-  called (an MCP client on a device of theirs, through `one mcp`); in a terminal, by `one`; or on an app's screen,
-  the Vault's.
+  called (an MCP client on a device of theirs, through `one mcp`), or "your assistant" where it says nothing; in a
+  terminal, by `one`; or on an app's screen, the Vault's.
   """
   def began(call) do
     client = Call.client(call) || %{}
@@ -102,6 +102,7 @@ defmodule Vault.SignIns do
       client["name"] == "one-cli" -> %{cli: true}
       sign_in.screen?(call) -> %{screen: "settings#section&app=vault&section=accounts"}
       said -> %{agent: said}
+      is_binary(client["device"]) -> %{agent: "your assistant"}
       true -> %{screen: "settings#section&app=vault&section=accounts"}
     end
   end
