@@ -6,8 +6,8 @@ defmodule Vault.Access do
 
   An app with access to any item reaches its person's Vault as an editor, which a relation tuple says; this module is
   the one place that list changes, so the tuple is shared with an app as it gets access to its first item, and
-  taken back as it loses access to its last. An app that's no longer installed loses its access where an item is read
-  (`prune/4`), so the list never names one that isn't there.
+  taken back as it loses access to its last. Reading an item never changes it: one server not having loaded an app
+  yet doesn't mean it's gone, so a list may name an app that isn't running here, which is only its person's to take away.
   """
 
   alias OneCore.{Apps, Artifact}
@@ -75,25 +75,10 @@ defmodule Vault.Access do
     Store.change!(db, item, &Map.update!(&1, "access", fn access -> if on, do: Enum.uniq(access ++ [who]), else: access -- [who] end))
   end
 
-  @doc """
-  The item without access for an app that's no longer installed (`names`, by artifact, as `Vault.Items.names/1`), kept
-  so, and its tuple on the Vault taken back: where an item is read, as it's found.
-  """
-  def prune(call, db, item, names) do
-    gone = for who <- item["access"], who not in @own, not is_map_key(names, who), do: who
-
-    if gone == [] do
-      item
-    else
-      for who <- gone, do: unshare_unless_used(call, db, item, who)
-      Store.change!(db, item, &Map.update!(&1, "access", fn access -> access -- gone end))
-    end
-  end
-
   @doc "Shares someone's Vault with an app as it gets access to an item: the tuple it reaches it by."
   def in_step(call, db, app, true), do: share(call, "share", Artifact.name(db), app)
 
-  # An app's tuple is taken back with its access to its last item, by the records as kept, which `prune/4` reads in turn.
+  # An app's tuple is taken back with its access to its last item, by the records as kept.
   defp unshare_unless_used(call, db, item, app) do
     others = Enum.filter(Store.everything(call, db), &(&1["id"] != item["id"]))
     if not Enum.any?(others, &(app in &1["access"])), do: share(call, "unshare", Artifact.name(db), app)

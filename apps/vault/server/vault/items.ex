@@ -39,7 +39,7 @@ defmodule Vault.Items do
 
     item =
       cond do
-        found -> Vault.Access.may!(Vault.Access.prune(call, db, found, names(call)), by)
+        found -> Vault.Access.may!(found, by)
         made -> Store.create(call, db, name, made)
         true -> raise "There's no item named #{name} in the Vault."
       end
@@ -79,18 +79,13 @@ defmodule Vault.Items do
     }
   end
 
-  @doc "The item named `name`, as it's kept now (`Vault.Access.prune/4`), or nil."
-  def find(call, db, name) do
-    if found = Store.find(call, db, name), do: Vault.Access.prune(call, db, found, names(call))
-  end
+  @doc "The item named `name`, or nil."
+  def find(call, db, name), do: Store.find(call, db, name)
 
   def find!(call, db, name), do: find(call, db, name) || raise("There's no item named #{name} in the Vault.")
 
-  @doc "Every item, as each is kept now."
-  def all(call, db) do
-    names = names(call)
-    for item <- Store.everything(call, db), do: Vault.Access.prune(call, db, item, names)
-  end
+  @doc "Every item."
+  def all(call, db), do: Store.everything(call, db)
 
   @doc "An item's fields' values, by name."
   def fields(item), do: Map.new(item["fields"], &{&1["name"], &1["value"]})
