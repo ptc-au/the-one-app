@@ -5,6 +5,7 @@ import { invoke } from "./host.js"
 /// this page showed its person, an error of its own or of an app's page, an app that never drew. Names, files and
 /// what was shown only, never what anyone typed.
 /** @param {string} name @param {string} error @param {Record<string, unknown>} [attributes] */
+// A report that couldn't be made has no other way to be told: the client isn't open until the app reaches its network's address.
 export const report = (name, error, attributes = {}) => invoke("report", { record: { name, error, attributes } }).catch(() => {})
 /// An error as OpenTelemetry's `exception` says one: its message, and the file and line it was thrown at, by its
 /// path alone, which leaves out anything a query had in it, and its stack, which a browser's client puts in the

@@ -56,6 +56,7 @@ fn public(keys: ResourceArc<Keys>) -> Result<String, String> {
 /// Lets go of keys: whatever holds them opens nothing with them from now on.
 #[rustler::nif]
 fn forget(keys: ResourceArc<Keys>) -> Atom {
+    // A lock whose holder panicked is poisoned, and that panic is what was reported: the keys go with the resource.
     keys.0.write().map(|mut keys| keys.clear()).ok();
     atoms::ok()
 }

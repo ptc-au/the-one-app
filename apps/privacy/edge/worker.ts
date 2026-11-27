@@ -74,10 +74,12 @@ async function words(ctx: ExecutionContext): Promise<string> {
   };
   const cached = await caches.default.match(kept);
   if (cached) {
+    // A server that's slow or gone changes nothing: what's kept is answered, as stale-if-error has it (above).
     if (!(Date.now() - Date.parse(cached.headers.get("date") ?? "") < FRESH * 1000)) ctx.waitUntil(refresh().catch(() => {}));
     return cached.text();
   }
   const asked = refresh();
+  // The request below gets this rejection itself.
   ctx.waitUntil(asked.catch(() => {}));
   const slow = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`No server answered within ${WAIT} seconds.`)), WAIT * 1000));
   return Promise.race([asked, slow]);

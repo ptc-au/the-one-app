@@ -45,6 +45,7 @@ function started(took) {
 /// they'd go.
 /** @param {object[]} records */
 async function send(records) {
+  // A check that can't be sent says so on the page: it's the person's to send again.
   const sent = await fetch("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/measured", params: { records } }) }).catch(() => undefined)
   if (sent?.status === 401) said.textContent = "Sign in to your network in this browser first (open its address and sign in), then come back: nothing you answer here can be sent until then."
   return sent

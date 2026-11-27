@@ -153,6 +153,7 @@ export function ShortcutControl(props: { onChanged?: (keys: string) => void }) {
   const idle = () => (os() === "mac" ? "Works in every app, even full screen." : "Works in every app.")
   const keys = () => kept()?.keys ?? null
 
+  // A browser, or an assistant's chat, has no shortcut to pause and says so as an error.
   const pause = (paused: boolean) => void client({ shortcutPaused: paused }).catch(() => {})
   const start = () => {
     setRecording(true)

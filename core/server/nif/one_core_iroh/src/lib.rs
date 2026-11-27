@@ -205,6 +205,7 @@ fn start(
         let asks = Asks::default();
         tokio::spawn(accept(endpoint.clone(), handler, clients.clone(), asks.clone(), aside.clone()));
         let watching = Path::new(&key_file).with_file_name("watching");
+        // A server that has watched no one has no file, and one that can't be read or parsed watches no one again until its clients say so.
         let stored = std::fs::read(&watching).ok();
         let stored: HashMap<String, serde_json::Value> =
             stored.and_then(|stored| serde_json::from_slice(&stored).ok()).unwrap_or_default();

@@ -72,7 +72,7 @@ const [google, setGoogle] = createSignal(false)
 fetch("/sign-in/auth/social-providers")
   .then((response) => response.json())
   .then(({ providers }) => setGoogle(providers.includes("google")))
-  .catch(() => {})
+  .catch((error) => report("sign_in.page.providers", error))
 /// Why someone is here again: Google's sign-in didn't let them in, as Better Auth sends them back, or the web client
 /// was signed in but its servers didn't know it as anyone's (`clients/web/host.js`).
 const refused = params.get("error_description") ?? params.get("error") ?? undefined
@@ -313,7 +313,7 @@ async function made(result: Answered, again: boolean) {
 async function created() {
   type Mine = { devices: { id: string; name: string }[]; passkeys: { credential: string; from: string | null }[] }
   type Holders = { devices: { device: string; name: string }[] }
-  const found = await Promise.all([tool<Mine>("sign-in_devices", {}), tool<Holders>("encryption_key", {})]).catch(() => undefined)
+  const found = await Promise.all([tool<Mine>("sign-in_devices", {}), tool<Holders>("encryption_key", {})]).catch((error) => (report("sign_in.page.devices", error), undefined))
   // Where it can't tell which devices hold the key, it says to allow it on one that does, with the code.
   if (!found) return setStage({ stage: "created" })
   const [{ devices: mine, passkeys }, { devices }] = found
@@ -322,6 +322,10 @@ async function created() {
   const from = passkeys.find((passkey) => passkey.credential === used?.credential)?.from
   setStage({ stage: "created", by: named.find((device) => device.device === from)?.name, on: named.map((device) => device.name) })
 }
+
+/// Tells Telemetry what went wrong here. A report that can't be made has no other way to be told.
+const report = (name: string, error: unknown, attributes: Record<string, string> = {}) =>
+  tool("telemetry_record", { records: [{ name, attributes, error: error instanceof Error ? error.message : String(error) }] }).catch(() => {})
 
 /// Names as a sentence says them: "A", "A and B", "A, B and C".
 const listed = (names: string[]) => (names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`)
@@ -334,7 +338,7 @@ async function plainly(as: "make" | "use", error: { code?: string; message?: str
   if (!browser) return new Error(error.message ?? "That didn't work. Try again.")
   const record = { name: "sign_in.page.passkey", attributes: { as, code: error.code ?? "" }, error: error.message ?? "" }
   console.error("passkey", record)
-  await tool("telemetry_record", { records: [record] }).catch(() => {})
+  await report(record.name, record.error, record.attributes)
   return new Error(as === "make" ? "Not saved. Create a passkey to try again." : "No passkey was used. Try again.")
 }
 
@@ -391,7 +395,7 @@ async function ownKey(): Promise<{ owner: string; who: string; key: Uint8Array<A
 async function sealedTo(who: string): Promise<[string, Held][]> {
   const { groups } = await tool<{ groups: { group: string; owners: string[] }[] }>("permissions_groups", {})
   const scopes = ["network", ...groups.filter((group) => group.owners.includes(who)).map((group) => group.group)]
-  const held = await Promise.all(scopes.map((scope) => tool<Held>("encryption_key", {}, scope).catch(() => null)))
+  const held = await Promise.all(scopes.map((scope) => tool<Held>("encryption_key", {}, scope).catch(() => null) /* a scope they've no key for is refused */))
   return scopes.flatMap((scope, at) => (held[at]?.wrapped ? [[scope, held[at]!] as [string, Held]] : []))
 }
 

@@ -28,7 +28,9 @@ const unfold = (open: boolean) => {
   setUnfolded(open)
   try {
     localStorage.setItem(BACKGROUND, open ? "open" : "closed")
-  } catch {}
+  } catch {
+    // A web view may refuse its storage: it opens as it did.
+  }
 }
 
 /// An App Library's categories, each only its apps with an entrypoint, or under Background Apps (`background`), only

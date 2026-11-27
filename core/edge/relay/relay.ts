@@ -126,6 +126,7 @@ export async function forward(env: Env, servers: string[], message: string): Pro
     return null;
   }
   const tries = servers.map((server) => reach(relay(env, (relay) => relay.fetch(`https://relay/call?to=${server}`, { headers: { upgrade: "websocket" } })), server));
+  // With none reached, `error` below says why each try failed.
   const reached = await Promise.any(tries).catch(() => null);
   for (const tried of tries) tried.then((other) => other !== reached && other.close(), () => {});
   const answer = reached && (await reached.ask(message));

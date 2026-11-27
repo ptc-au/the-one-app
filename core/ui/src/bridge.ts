@@ -303,6 +303,7 @@ export const idle: typeof Page.idle = () => away()
 /// `false` puts it away. Any page of the app changes it. Where there's none (a phone, a browser), it does nothing.
 export const menuBarExtra: typeof Page.menuBarExtra = async (change) => {
   await greeted
+  // A device with no menu bar answers as an error, which is how a page finds that out: it does nothing there, as said above.
   await ask("one/menu-bar-extra", change).catch(() => {})
 }
 /// `sizeChanged({ height: 420 })`: tells the client how large the page's content is, in CSS pixels, as an MCP App tells
@@ -435,7 +436,7 @@ export const share: typeof Page.share = async (text) => (await greeted, (await a
 /// `"soft"`) for something physical, a lift, a snap, a landing; `"selection"` as a value changes step by step; or an
 /// outcome (`"success"`, `"warning"`, `"error"`). An iPhone and Android's app play it, as does Chrome on Android, where
 /// the device has them on; elsewhere it does nothing.
-export const haptic: typeof Page.haptic = (kind) => void greeted.then(() => ask("one/haptic", { kind })).catch(() => {})
+export const haptic: typeof Page.haptic = (kind) => void greeted.then(() => ask("one/haptic", { kind })).catch(() => {}) // A device with none answers as an error: it does nothing there, as said above.
 
 /// `await play("knock.wav")`: plays a short sound, a WAV or an MP3 file of the app's, named as an image is by an address
 /// from the page's, on its device's speakers, as the device plays any other: quietly when its volume is low, and not at
@@ -492,7 +493,9 @@ const typed = (said: string): unknown => {
   if (/^(-?\d|["[{]|true$|false$|null$)/.test(said))
     try {
       return JSON.parse(said)
-    } catch {}
+    } catch {
+      // A string that only looks like JSON (`"4x"`) is the string.
+    }
   return said
 }
 /** The link to `name` (`my-week_week`) with `inputs`: its tool by its app's own name, then its arguments (`week&start=2026-11-23`). */

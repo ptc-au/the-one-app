@@ -325,7 +325,7 @@ changed(() => refresh(waiting))
 /// What's waiting to update: this device and each app with a newer version ready. The network's servers' is Software
 /// Update's, at the top of Servers (Devices).
 const updates = createProjection(async () => {
-  const [mine, network, here] = await Promise.all([json<Builds>("builds"), json<Builds>("builds", {}, "network").catch(() => undefined), client()])
+  const [mine, network, here] = await Promise.all([json<Builds>("builds"), json<Builds>("builds", {}, "network").catch(() => undefined) /* whoever isn't one of the network's owners isn't let read its builds */, client()])
   const latest = { ...network?.latest, ...mine.latest }
   const target = mine.devices.find((device) => device.device === here.device)?.target
   const newest = target && latest[`one/${target}`]?.build

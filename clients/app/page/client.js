@@ -314,6 +314,7 @@ export function tellShowing() {
     more = false
     for (const one of nested.values()) if (views.has(one.in) && !views.has(one)) (views.add(one), (more = true))
   }
+  // The client isn't open yet while the app starts, and the page says what it shows again as it changes.
   invoke("showing", { views: [...views].map((view) => view.key) }).catch(() => {})
 }
 
@@ -488,8 +489,10 @@ addEventListener("popstate", (event) => {
 
 // Back online, or back in front, its network is tried again now if it didn't answer.
 for (const [target, event] of /** @type {const} */ ([[window, "online"], [document, "visibilitychange"]]))
+  // Asked again each time the window is seen: the client isn't open yet while the app starts.
   target.addEventListener(event, () => document.visibilityState === "visible" && invoke("reconnect").catch(() => {}))
 // Its network is tried again now, rather than when it next would be.
+// A retry that fails says so in the banner, from the connection it's about (`state`).
 for (const retry of ["reconnect", "banner-retry"]) byId(retry).addEventListener("click", () => invoke("retry").catch(() => {}))
 byId("try-again-button").addEventListener("click", () => on({ type: "retry" }))
 byId("problem-button").addEventListener("click", () => on({ type: shown.getSnapshot().matches("needs_updating") ? "update" : "retry" }))
@@ -606,5 +609,6 @@ heardTheme(kept)
 hear(state)
 if (link) on({ type: "link", link })
 if (unnative) on({ type: "unnative", why: unnative })
+// The client isn't open yet while the app starts, and is told again as the window is shown or hidden.
 invoke("visible", { onScreen: !document.hidden }).catch(() => {})
 if (taps) hearTaps()

@@ -42,6 +42,7 @@ fn query<'a>(
 /// Closes the database file now, so its files can be removed.
 #[rustler::nif(schedule = "DirtyIo")]
 fn close(database: ResourceArc<Database>) -> Atom {
+    // A lock whose holder panicked is poisoned, and that holder's panic is what was reported: the file is closed with the resource.
     database.0.lock().map(|mut connection| connection.take()).ok();
     atoms::ok()
 }

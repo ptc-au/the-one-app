@@ -43,6 +43,7 @@ console.log(`Deploying to ${zone.account.name}, the account of ${zone.name}`);
  */
 const built = await Bun.file(`${here}/workers.json`).json();
 /** The build the edge says it is, from the window page's `update.json` (`edge.js` writes it), or `null` where nothing answers. */
+// A network whose edge isn't answering (a first deploy, one that's down) has none yet, which is what a deploy finds out.
 const said = () => fetch(new URL("/page/update.json", at), { cache: "no-store" }).then((answer) => (answer.ok ? answer.json() : null), () => null).catch(() => null);
 /** Whether `a` is a newer build than `b`: the count of commits in its `+<count>.`, as the network update reads them. */
 const newer = (a, b) => Number(/\+(\d+)/.exec(a)?.[1] ?? 0) > Number(/\+(\d+)/.exec(b)?.[1] ?? 0);

@@ -54,7 +54,9 @@ const kept = (() => {
   try {
     const stored = JSON.parse(localStorage.getItem(KEPT) ?? "null")
     if (shaped(stored) && shaped(stored.lists) && shaped(stored.tools) && shaped(stored.reads)) return stored
-  } catch {}
+  } catch {
+    // A browser may refuse its storage, or hold what isn't JSON: nothing was kept.
+  }
   return { lists: {}, tools: {}, reads: {} }
 })()
 /// It's written a moment after it changes, once for each run of changes; a browser out of room keeps what it had.
@@ -65,7 +67,9 @@ const keep = () =>
     keeping = undefined
     try {
       localStorage.setItem(KEPT, JSON.stringify(kept))
-    } catch {}
+    } catch {
+      // A browser may refuse its storage (a private window, a full disk): what's kept here is asked for again.
+    }
   }, 500))
 const forget = () => {
   clearTimeout(keeping)
@@ -210,6 +214,7 @@ async function send() {
   if (!stored.length) return
   localStorage.removeItem(REPORTS)
   const notification = { jsonrpc: "2.0", method: "notifications/one/measured", params: { records: stored } }
+  // A report that can't be told is kept for the next try below, as it can't be reported another way.
   const sent = await fetch("/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(notification) }).catch(() => undefined)
   if (!sent?.ok) localStorage.setItem(REPORTS, JSON.stringify([...stored, ...reports()].slice(0, 300)))
 }
@@ -240,6 +245,7 @@ function answered(now) {
   connected(now ? "online" : "offline")
   if (was === connection) return
   if (now && lost) {
+    // A listing that fails is the connection going out again (`answered`), which is reported as `one.client.unanswered` once it's back.
     for (const subject of new Set(["", ...tools.keys()])) listTools(subject || undefined).catch(() => {})
     heard({})
   }
@@ -257,6 +263,7 @@ function tryAgain(now = false) {
     () => {
       again = Math.min(again * 2, MOST)
       connected("reconnecting")
+      // A ping that fails is the connection still out (`answered`), reported once it's back.
       if (apps) mcp("ping").catch(() => {})
       else opened()
     },
@@ -379,6 +386,7 @@ function listTools(subject) {
 function known(subject) {
   const at = subject ?? ""
   if (kept.tools[at]) {
+    // Listed again behind what was kept: one that fails is the connection going out (`answered`), and what was kept answers.
     if (!tools.has(at)) listTools(subject).catch(() => {})
     return Promise.resolve(kept.tools[at])
   }
@@ -567,6 +575,7 @@ async function opened() {
   keep()
   if (session.session.state !== "signedIn") moved({ session: { state: "signedIn" } })
   answered(true)
+  // A listing that fails is the connection going out again (`answered`).
   listTools().catch(() => {})
   subscribe()
   // Its person may have turned its notifications on or off in the browser's settings since.
@@ -713,6 +722,7 @@ const commands = {
     const name = typeof params?.name === "string" ? params.name : ""
     // One Core's own tools (`install`, `apps_update`) may change anything, the tools listed too.
     const core = !name.includes("_") || name.startsWith("apps_")
+    // A listing that fails is the connection going out (`answered`), and the call it follows says so itself.
     if (method === "tools/call" && core) listTools(subjectOf(params)).catch(() => {})
     // The view that wrote asks again for all it was answered, as the app's client's does (`Subscription::request`);
     // the others hear what it changed from the server, as every client does (`heard`).

@@ -41,7 +41,9 @@
     try {
       const tag = native.canonicalize(navigator.language)
       if (known(tag)) return tag
-    } catch {}
+    } catch {
+      // `Intl.getCanonicalLocales` throws for a language the device says that isn't a tag: it's English then.
+    }
     return "en-US"
   })()
   const unicode = (tag) => {

@@ -10,7 +10,9 @@ const RECENT = 8
 let recent = []
 try {
   recent = JSON.parse(localStorage.getItem("recent") ?? "[]")
-} catch {}
+} catch {
+  // A web view may refuse its storage, and then none was kept.
+}
 /// The apps shown since they were opened, which coming in front again doesn't move.
 /** @type {WeakSet<View>} */
 const fronted = new WeakSet()
@@ -22,7 +24,9 @@ export function used(view) {
   recent = [view.key, ...recent.filter((was) => was !== view.key)].slice(0, RECENT)
   try {
     localStorage.setItem("recent", JSON.stringify(recent))
-  } catch {}
+  } catch {
+    // A web view may refuse its storage: the apps used lately are the next run's to learn again.
+  }
   shortcuts()
 }
 /// The apps used lately that are still this user's, the open ones first.

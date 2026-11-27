@@ -90,6 +90,7 @@ async function manifest() {
 async function logo(auth: Auth, url: URL) {
   const asked = Object.fromEntries(url.searchParams);
   const prelogin = new Request(new URL("/sign-in/auth/oauth2/public-client-prelogin", url), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ client_id: asked.client_id, oauth_query: asked.oauth_query }) });
+  // A client that isn't registered has no logo, and a logo's site that doesn't answer is its owner's: both are a 404 here.
   const { logo_uri } = await (await auth.handler(prelogin)).json<{ logo_uri?: string }>().catch(() => ({ logo_uri: undefined }));
   const image = logo_uri?.startsWith("https://") ? await fetch(logo_uri).catch(() => null) : null;
   const kind = image?.ok ? image.headers.get("content-type") ?? "" : "";
