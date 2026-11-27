@@ -26,16 +26,19 @@ defmodule Telemetry.Otlp do
   @doc "The signals there are."
   def signals, do: Map.keys(@messages)
 
-  @doc "An export request of `signal`, as its resource's spans, logs and data points, laid flat."
-  def decode(signal, otlp) do
+  @doc """
+  An export request of `signal`, as its resource's spans, logs and data points, laid flat: of the trace `id`, 32
+  hexadecimal digits, only, where it's given.
+  """
+  def decode(signal, otlp, id \\ nil) do
     {module, message} = @messages[signal]
     request = module.decode_msg(otlp, message)
     empty = %{"spans" => [], "logs" => [], "metrics" => []}
 
     batch =
       case signal do
-        "traces" -> %{empty | "spans" => for(r <- request[:resource_spans] || [], s <- spans(r), do: s)}
-        "logs" -> %{empty | "logs" => for(r <- request[:resource_logs] || [], l <- logs(r), do: l)}
+        "traces" -> %{empty | "spans" => for(r <- request[:resource_spans] || [], s <- spans(r, id), do: s)}
+        "logs" -> %{empty | "logs" => for(r <- request[:resource_logs] || [], l <- logs(r, id), do: l)}
         "metrics" -> %{empty | "metrics" => for(r <- request[:resource_metrics] || [], p <- points(r), do: p)}
       end
 
@@ -80,10 +83,10 @@ defmodule Telemetry.Otlp do
     |> module.encode_msg(message)
   end
 
-  defp spans(%{resource: resource, scope_spans: scopes}) do
+  defp spans(%{resource: resource, scope_spans: scopes}, id) do
     under = attributes(resource)
 
-    for scope <- scopes, span <- scope.spans do
+    for scope <- scopes, span <- scope.spans, id == nil or hex(span.trace_id) == id do
       %{
         "traceId" => hex(span.trace_id),
         "spanId" => hex(span.span_id),
@@ -103,10 +106,10 @@ defmodule Telemetry.Otlp do
     end
   end
 
-  defp logs(%{resource: resource, scope_logs: scopes}) do
+  defp logs(%{resource: resource, scope_logs: scopes}, id) do
     under = attributes(resource)
 
-    for scope <- scopes, log <- scope.log_records do
+    for scope <- scopes, log <- scope.log_records, id == nil or (log[:trace_id] not in [nil, ""] and hex(log.trace_id) == id) do
       attributes = Map.merge(under, attributes(log[:attributes]))
       time = if log[:time_unix_nano] in [nil, 0], do: log[:observed_time_unix_nano], else: log.time_unix_nano
       # A log line the SDK made of what was logged here says when it was logged as when it was seen.

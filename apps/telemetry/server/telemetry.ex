@@ -448,16 +448,17 @@ defmodule Telemetry do
       %{
         name: "prune",
         description:
-          "Puts each hour that's over into one blob, and rolls it up, and lets go of what's older than #{Store.days()} days or past #{div(Store.most_bytes(), 1024 * 1024)} MB. The clock calls it every hour",
+          "Rolls up each hour that's over and puts it into one blob of each signal, puts the hours of a day older than two into one rollup, and lets go of what's older than #{Store.days()} days or past #{div(Store.most_bytes(), 1024 * 1024)} MB. The clock calls it every hour",
         inputs: %{type: "object", properties: %{}},
         outputs: %{
           type: "object",
           properties: %{
             put_together: %{type: "integer", description: "How many hours were put into one blob each"},
-            rolled_up: %{type: "integer", description: "How many hours were rolled up, for looks over hours to read"},
+            rolled_up: %{type: "integer", description: "How many hours were rolled up whole, for looks over hours to read"},
+            compacted: %{type: "integer", description: "How many days of hours were put into one rollup, an hour a data point"},
             let_go: %{type: "integer", description: "How many hours were let go"}
           },
-          required: ["put_together", "rolled_up", "let_go"]
+          required: ["put_together", "rolled_up", "compacted", "let_go"]
         }
       }
     ]
@@ -491,17 +492,17 @@ defmodule Telemetry do
     retention = meanwhile(fn -> Tracer.with_span("telemetry retention", do: Store.retention(call.own)) end)
     shown = meanwhile(fn -> shown(call) end)
     spending = meanwhile(fn -> Alerts.spending(call, inputs["hours"] || 24) end)
-    {batches, from, to} = read(call, inputs["hours"] || 24)
+    {scan, from, to} = scan(call, inputs["hours"] || 24)
     {shown, names} = {shown(shown), names(call)}
 
     Tracer.with_span "telemetry aggregate" do
       %{
         from: div(from, 1_000_000),
         to: div(to, 1_000_000),
-        failing: Read.errors(batches, shown) |> Enum.take(20) |> Enum.map(&Map.delete(&1, :minutes)),
-        slowest: Read.slowest(batches, from, to, names) |> Enum.take(12),
+        failing: scan.errors |> Read.errors(shown) |> Enum.take(20) |> Enum.map(&Map.delete(&1, :minutes)),
+        slowest: scan |> Read.slowest(names) |> Enum.take(12),
         spending: Task.await(spending),
-        calls: Read.calls(batches, from, to),
+        calls: Read.calls(scan),
         names: names
       }
     end
@@ -510,13 +511,13 @@ defmodule Telemetry do
 
   def call("errors", inputs, call) do
     shown = meanwhile(fn -> shown(call) end)
-    {batches, _from, _to} = read(call, inputs["hours"] || 24)
-    %{errors: Read.errors(batches, shown(shown))}
+    {scan, _from, _to} = scan(call, inputs["hours"] || 24)
+    %{errors: Read.errors(scan.errors, shown(shown))}
   end
 
   def call("slowest", inputs, call) do
-    {batches, from, to} = read(call, inputs["hours"] || 24)
-    %{slowest: Read.slowest(batches, from, to, names(call))}
+    {scan, _from, _to} = scan(call, inputs["hours"] || 24)
+    %{slowest: Read.slowest(scan, names(call))}
   end
 
   def call("trace", %{"id" => id} = inputs, call) do
@@ -532,11 +533,17 @@ defmodule Telemetry do
   end
 
   def call("metric", inputs, call) do
-    {batches, from, to} = read(call, inputs["hours"] || 24)
+    {from, to} = window(inputs["hours"] || 24)
 
     case inputs["name"] do
-      nil -> %{metrics: Read.metrics(batches)}
-      name -> Read.series(batches, name, inputs["attributes"] || %{}, from, to, inputs["step"], inputs["by"] || [])
+      nil ->
+        %{metrics: call |> Store.read(from, &Read.metrics_rollup/1) |> Read.metrics()}
+
+      name ->
+        grid = Read.series_grid(from, to, inputs["step"])
+        by = inputs["by"] || []
+        asked = inputs["attributes"] || %{}
+        call |> Store.read(from, &Read.series_rollup(&1, name, asked, by, grid)) |> Read.series(name, grid, to, by)
     end
   end
 
@@ -570,11 +577,17 @@ defmodule Telemetry do
     %{}
   end
 
-  # What was kept over the last `hours`, and when that is, in nanoseconds since 1970.
-  defp read(call, hours) do
+  # When the last `hours` began and end, in nanoseconds since 1970.
+  defp window(hours) do
     to = System.os_time(:nanosecond)
-    from = to - hours * 3_600_000_000_000
-    {Store.read(call, from), from, to}
+    {to - hours * 3_600_000_000_000, to}
+  end
+
+  # What tools took and what failed over the last `hours`, from what was kept (`Telemetry.Read.scan/3`), and when that is.
+  defp scan(call, hours) do
+    {from, to} = window(hours)
+    grids = Read.grids(from, to)
+    {call |> Store.read(from, &Read.scan_rollup(&1, grids)) |> Read.scan(grids, to), from, to}
   end
 
   # Does `fun` while the call goes on, in its trace, for the call to await: asking who owns the network may be asked

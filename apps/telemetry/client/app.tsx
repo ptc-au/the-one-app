@@ -78,7 +78,7 @@ interface Overview {
   slowest: Slowest[]
   spending: Spent[]
   names: Record<string, string>
-  retention: { days: number; bytes: number; most_bytes: number }
+  retention: { since: number | null; days: number; bytes: number; most_bytes: number }
 }
 
 /** A span of a trace, as `telemetry_trace` answers it. */
@@ -224,8 +224,10 @@ function Calls(props: { steps: Overview["calls"] }) {
 }
 
 /// A trace whole, as a waterfall: each span under the one it's in, where it started and how long it took.
-function Trace(props: { id: string; names: Record<string, string> }) {
-  const traceAnswer = createProjection(() => call("telemetry_trace", { id: props.id, hours: 336 }).then((text): { spans: Span[] } => JSON.parse(text)))
+/// `at` is when it happened, in milliseconds since 1970, where that's known: only the hours since are looked in.
+function Trace(props: { id: string; at?: number; names: Record<string, string> }) {
+  const hours = () => (props.at ? Math.min(336, Math.ceil((Date.now() - props.at) / 3_600_000) + 2) : 336)
+  const traceAnswer = createProjection(() => call("telemetry_trace", { id: props.id, hours: hours() }).then((text): { spans: Span[] } => JSON.parse(text)))
   const trace = () => traceAnswer
   const total = () => Math.max(...trace().spans.map((s) => s.start + s.took), 0.001)
   // A client's span is no server: the app or the CLI that asked.
@@ -278,7 +280,7 @@ function Failed(props: { failure: Failure; names: Record<string, string> }) {
       <Show when={failure().trace}>
         {(id) => (
           <Section heading="Trace">
-            <Trace id={id()} names={props.names} />
+            <Trace id={id()} at={failure().at || undefined} names={props.names} />
           </Section>
         )}
       </Show>
@@ -425,7 +427,7 @@ function Telemetry(props: { all: Overview }) {
         </Show>
         <Spending days={all().spending} />
         <Text style={look.readableNote}>
-          {`Kept for ${plural(all().retention.days, "day")}, up to ${size(all().retention.most_bytes)}. ${size(all().retention.bytes)} now.`}
+          {`Kept up to ${plural(all().retention.days, "day")} and ${size(all().retention.most_bytes)}: ${size(all().retention.bytes)} now${all().retention.since ? `, from ${new Date(all().retention.since!).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}.`}
         </Text>
       </Screen>
     </Split>

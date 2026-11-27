@@ -217,9 +217,7 @@ defmodule Telemetry.Alerts do
     asked = %{presence: Map.new(failing, &{&1, presence(&1)}), update: update(), latest: latest(), names: Map.new(Call.apps(call), &{&1.name, &1.title})}
 
     {names, exports} = if looked, do: Store.since(call, (now - @gap) * 1_000_000, read), else: {[], []}
-    batches = if looked, do: Enum.map(exports, &elem(&1, 1)), else: Store.read(call, (now - Store.days() * 86_400_000) * 1_000_000)
-
-    signals = signals(batches)
+    signals = if looked, do: signals(Enum.map(exports, &elem(&1, 1))), else: first_look(call, (now - Store.days() * 86_400_000) * 1_000_000)
 
     fresh =
       transaction(call, fn db ->
@@ -238,8 +236,8 @@ defmodule Telemetry.Alerts do
         end
       end)
 
-    # What's newly kept is rolled up, for looks over hours to read, and sent where its owner said, if they did.
-    Store.roll_up(call.own, for({name, _batch} = export <- exports, name in fresh, do: export))
+    # What's newly kept is rolled up into a piece, for looks over hours to read, and sent where its owner said, if they did.
+    Store.piece(call.own, for({name, _batch} = export <- exports, name in fresh, do: export))
     Telemetry.Forward.send(call, fresh)
   end
 
@@ -286,6 +284,24 @@ defmodule Telemetry.Alerts do
   end
 
   ## Signals
+
+  # What its first look needs of the last 14 days, from their rollups: each kind of error there was, and what AI used.
+  defp first_look(call, from) do
+    call
+    |> Store.read(from, fn rollup ->
+      spent = for point <- Telemetry.Rollup.points(rollup, fn name, _attributes -> String.starts_with?(name, "gen_ai.client.") end), signal <- metric(point), do: signal
+      for({kind, device, place, message} <- rollup["seen"], do: {:error, kind, device, place, message}) ++ spent
+    end)
+    |> Enum.concat()
+  end
+
+  @doc "Each kind of error in `batches`, exports laid flat, as it's told of when it's new: `{kind, device, place, message}`."
+  def seen(batches) do
+    for batch <- batches,
+        {:error, kind, device, place, message} <- Enum.flat_map(batch["spans"], &span/1) ++ Enum.flat_map(batch["logs"], &log/1),
+        uniq: true,
+        do: {kind, device, place, message}
+  end
 
   # What the rules need of what was recorded, as one list of tuples, from the batches' spans, logs and metrics.
   defp signals(batches) do

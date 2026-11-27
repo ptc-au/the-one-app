@@ -11,7 +11,7 @@ metadata:
 Telemetry keeps what the network's servers, clients and apps did: a span for each tool call, numbers such as how
 long each tool took and what AI used, and warnings, errors and crashes. Each part records it with OpenTelemetry's own
 SDK, and it's kept as OTLP, an hour of each signal a blob (`otlp/<day>/<hour>/` in its artifact), gzipped, which any
-OpenTelemetry tool reads as OTLP/HTTP's `content-encoding: gzip` has it. It's kept in the network for 14 days, up to 256 MB, and nothing about it leaves. It holds no one's data: names, sizes, durations and outcomes, never what
+OpenTelemetry tool reads as OTLP/HTTP's `content-encoding: gzip` has it. It's kept in the network for up to 14 days and up to 256 MB, whichever is less (the screen says since when), and nothing about it leaves. It holds no one's data: names, sizes, durations and outcomes, never what
 anyone wrote, was given or answered. What a server recorded arrives here about a minute later.
 
 The network's edge, where assistants, browsers and sharing links come in over the web, is in it too: a span for
@@ -43,7 +43,8 @@ nothing on a server saw is in `errors` and in `alerts` (a resolved `server` aler
   milliseconds, then how long each app took to open, from a tap to its first drawing.
 - `metric` gives one metric over time, per step, as its count, sum and quantiles, of the data with the
   `attributes` given: `one.tool.duration` with `{"one.app": "backups", "one.tool": "now"}`, say. With no
-  `name` it lists every metric there is, with its attributes.
+  `name` it lists every metric there is, with its attributes. A metric is kept for each minute for today and the 2 days before, and each hour before them, so
+  steps shorter than an hour are only for those.
 - `spending` gives the tokens AI models took in and gave out, as apps record them, per model per day, and what they cost where the endpoint says
   (OpenRouter does). It has no prices of its own.
 - Each server's machine reports its server's life, through `one serve run`, even while the server can't start, and

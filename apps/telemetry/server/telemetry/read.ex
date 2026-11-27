@@ -5,14 +5,43 @@ defmodule Telemetry.Read do
   """
 
   @doc """
-  The errors among `batches`, each kind once (`kind/1`), most recent first: failed spans by their name, and
+  The errors in `records`, each kind once (`kind/1`), most recent first: failed spans by their name, and
   warnings and errors that were logged (`span: false`), whichever server logged them. A span another server ran is
   that one's. Each is `from` the client that asked, or where none did, the server or the edge it happened on. A call refused for what it was given or who asked is the caller's mistake, not an error. `shown` says
-  whether whose a call was may be shown.
+  whether whose a call was may be shown. `records` are those of `error_events/1`, folded by the hour they happened in
+  (`folded/2`), as `Telemetry.Rollup` keeps them.
   """
-  def errors(batches, shown) do
+  def errors(records, shown) do
+    records
+    |> folded(&{&1["span"], &1["where"], &1["kind"]})
+    |> Enum.map(fn record ->
+      %{
+        where: if(record["span"] or record["servers"] == [], do: record["where"], else: "#{record["where"]} on #{Enum.join(record["servers"], ", ")}"),
+        message: record["message"],
+        count: record["count"],
+        first: record["first"],
+        minutes: record["minutes"] |> Enum.sort() |> Enum.map(fn {at, count} -> %{at: at, count: count} end),
+        at: record["at"],
+        took: record["took"],
+        trace: record["trace"],
+        server: record["server"],
+        from: record["from"],
+        whose: if(record["whose"] != nil and shown.(record["whose"]), do: record["whose"]),
+        span: record["span"],
+        code: record["code"],
+        stack: record["stack"]
+      }
+    end)
+    |> Enum.sort_by(& &1.at, :desc)
+  end
+
+  @doc """
+  What of `batches` is an error, one record for each occurrence: a failed span, or a warning or error logged outside
+  a call (what was logged during a call is that call's, read in its trace: what failed of it is its span). A client's
+  request that a server answered with an error is that server's span, said to be from the client.
+  """
+  def error_events(batches) do
     all = Enum.flat_map(batches, & &1["spans"])
-    # A client's request that a server answered with an error is that server's span, said to be from the client.
     clients = for %{"kind" => "client"} = span <- all, into: %{}, do: {span["traceId"], from(span)}
     failed_traces = for span <- all, span["kind"] == "server", failed?(span) or refused?(span), into: MapSet.new(), do: span["traceId"]
 
@@ -21,76 +50,191 @@ defmodule Telemetry.Read do
           failed?(span),
           span["attributes"]["one.forwarded"] != true,
           span["kind"] != "client" or not MapSet.member?(failed_traces, span["traceId"]) do
-        %{
-          where: span["name"],
-          message: span["status"]["message"],
-          at: ms(span["end"]),
-          took: took(span),
-          trace: span["traceId"],
-          whose: whose(span, shown),
-          server: span["server"],
-          from: from(span) || clients[span["traceId"]] || span["server"],
-          span: true,
-          code: nil,
-          stack: nil
-        }
+        event(%{
+          "span" => true,
+          "where" => span["name"],
+          "message" => message(span["status"]["message"]),
+          "at" => ms(span["end"]),
+          "took" => took(span),
+          "trace" => span["traceId"],
+          "whose" => span["attributes"]["one.for"],
+          "server" => span["server"],
+          "from" => from(span) || clients[span["traceId"]] || span["server"],
+          "code" => nil,
+          "stack" => nil
+        })
       end
 
-    # What was logged during a call is that call's, read in its trace: what failed of it is its span.
-    # A caller's mistake (`refused`) isn't an error.
     logs =
       for log <- Enum.flat_map(batches, & &1["logs"]),
           log["severity"] in ["WARN", "ERROR"],
           log["spanId"] == nil,
           log["attributes"]["one.outcome"] != "refused" do
-        %{
-          where: logged(log),
-          message: log["body"],
-          at: ms(log["time"]),
-          took: nil,
-          trace: log["traceId"],
-          whose: nil,
-          server: log["server"],
-          from: from(log) || log["server"],
-          span: false,
-          code: code(log["attributes"]),
-          stack: log["attributes"]["exception.stacktrace"]
-        }
+        event(%{
+          "span" => false,
+          "where" => logged(log),
+          "message" => message(log["body"]),
+          "at" => ms(log["time"]),
+          "took" => nil,
+          "trace" => log["traceId"],
+          "whose" => nil,
+          "server" => log["server"],
+          "from" => from(log) || log["server"],
+          "code" => code(log["attributes"]),
+          "stack" => log["attributes"]["exception.stacktrace"]
+        })
       end
 
-    (spans ++ logs)
-    |> Enum.group_by(&{&1.span, &1.where, kind(&1.message)})
-    |> Enum.map(fn {{span, where, _kind}, all} ->
-      latest = Enum.max_by(all, & &1.at)
-      servers = all |> Enum.map(& &1.server) |> Enum.reject(&is_nil/1) |> Enum.uniq() |> Enum.sort()
-
-      %{
-        where: if(span or servers == [], do: where, else: "#{where} on #{Enum.join(servers, ", ")}"),
-        message: message(latest.message),
-        count: length(all),
-        first: all |> Enum.map(& &1.at) |> Enum.min(),
-        minutes: minutes(all),
-        at: latest.at,
-        took: latest.took,
-        trace: latest.trace,
-        server: latest.server,
-        from: latest.from,
-        whose: latest.whose,
-        span: latest.span,
-        code: latest.code,
-        stack: latest.stack
-      }
-    end)
-    |> Enum.sort_by(& &1.at, :desc)
+    spans ++ logs
   end
 
-  # How often it happened in each minute it did, oldest first, where each of its occurrences was kept: the failed spans
-  # and logged errors of a rollup keep their times.
-  defp minutes(all) do
-    all
-    |> Enum.frequencies_by(&(div(&1.at, 60_000) * 60_000))
-    |> Enum.sort()
-    |> Enum.map(fn {at, count} -> %{at: at, count: count} end)
+  # One occurrence as a record that more fold into (`folded/2`).
+  defp event(record) do
+    Map.merge(record, %{
+      "kind" => kind(record["message"]),
+      "hour" => div(record["at"], 3_600_000),
+      "count" => 1,
+      "first" => record["at"],
+      "minutes" => %{div(record["at"], 60_000) * 60_000 => 1},
+      "servers" => if(record["server"], do: [record["server"]], else: [])
+    })
+  end
+
+  @doc """
+  `records` as one for each hour and kind that has some, or by `key`: the newest one's, with how often they were, when
+  the first was, how often in each minute, and which servers.
+  """
+  def folded(records, key \\ &{&1["hour"], &1["span"], &1["where"], &1["kind"]}) do
+    for {_key, all} <- Enum.group_by(records, key) do
+      %{
+        Enum.max_by(all, & &1["at"])
+        | "count" => Enum.sum_by(all, & &1["count"]),
+          "first" => all |> Enum.map(& &1["first"]) |> Enum.min(),
+          "minutes" => Enum.reduce(all, %{}, fn record, minutes -> Map.merge(minutes, record["minutes"], fn _minute, a, b -> a + b end) end),
+          "servers" => all |> Enum.flat_map(& &1["servers"]) |> Enum.uniq() |> Enum.sort()
+      }
+    end
+  end
+
+  @minute 60_000_000_000
+  @hour 60 * @minute
+
+  @doc """
+  What each of the rollups says of how long tools took and how many calls failed, and of the errors there were, as the
+  step grids `grids/2` says: each rollup's partial answer, which `scan/1` puts together. They're made one rollup at a
+  time, as it's read (`Telemetry.Store.read/3`), so what a look over days holds is the answers, not the rollups.
+  """
+  def scan_rollup(rollup, {slow, calls}) do
+    acc = %{errors: [rollup["errors"]], tools: %{}, opens: %{}, calls: %{}}
+    Enum.reduce(rollup["series"], acc, &tally(&1, &2, slow, calls))
+  end
+
+  @doc """
+  The step grids of a look from `from` to `to`: where each starts and how long each step is, of about 24 steps for how
+  long tools took and about 48 for calls.
+  """
+  def grids(from, to), do: {grid(from, max(div(to - from, 24), @minute)), grid(from, max(div(to - from, 48), @minute))}
+
+  @doc """
+  The partial answers of `scan_rollup/2` put together, oldest first, with the grids they were made with: the errors, the
+  tools by their histograms for all of `from` to `to` and for each step, how long each app took to open the same, and
+  each step's calls and failed calls (`slowest/2`, `calls/1`).
+  """
+  def scan(partials, {slow, calls}, to) do
+    empty = %{errors: [], tools: %{}, opens: %{}, calls: %{}}
+
+    all =
+      Enum.reduce(partials, empty, fn partial, all ->
+        %{
+          errors: partial.errors ++ all.errors,
+          tools:
+            Map.merge(all.tools, partial.tools, fn _key, a, b ->
+              %{failed: a.failed + b.failed, task: a.task or b.task, total: plus(a.total, b.total), steps: merge_steps(a.steps, b.steps)}
+            end),
+          opens: Map.merge(all.opens, partial.opens, fn _key, a, b -> %{total: plus(a.total, b.total), steps: merge_steps(a.steps, b.steps)} end),
+          calls: Map.merge(all.calls, partial.calls, fn _index, {n, f}, {n2, f2} -> {n + n2, f + f2} end)
+        }
+      end)
+
+    %{all | errors: Enum.concat(all.errors)} |> Map.merge(%{slow: slow, steps: calls, to: to})
+  end
+
+  defp merge_steps(a, b), do: Map.merge(a, b, fn _index, x, y -> plus(x, y) end)
+
+  # A step's grid from `from` to `to`: where its first starts and how long each is. Steps start on a whole minute and are
+  # whole minutes, as a rollup adds a metric's points up by the minute they end in (`Telemetry.Rollup`), so none is
+  # split. Where a step is an hour or more they're whole hours, as a rollup of a day has a point for each hour.
+  defp grid(from, step) do
+    unit = if step >= @hour, do: @hour, else: @minute
+    {from - rem(from, unit), step + rem(unit - rem(step, unit), unit)}
+  end
+
+  # The step a point is in, after the grid's start, up to its end, or `nil` for one before it.
+  defp step_of({time, _count, _sum, _min, _max, _buckets}, {from, step}) do
+    time = time * 1_000_000
+    if time > from, do: div(time - from - 1, step)
+  end
+
+  defp histogram({_time, count, sum, min, max, buckets}, series),
+    do: %{"count" => count, "sum" => sum, "buckets" => for(<<n::32 <- buckets>>, do: n), "min" => min, "max" => max, "bounds" => Telemetry.Rollup.bounds_of(series)}
+
+  defp tally(%{"name" => "one.tool.duration", "attributes" => a} = series, acc, slow, calls) do
+    key = {a["one.app"], a["one.tool"]}
+    tool = Map.get(acc.tools, key, %{failed: 0, task: false, total: nil, steps: %{}})
+    failed? = a["one.outcome"] == "error"
+
+    tool =
+      Enum.reduce(series["points"], %{tool | task: tool.task or a["one.task"] == true}, fn {_time, count, _sum, _min, _max, _buckets} = point, tool ->
+        hist = histogram(point, series)
+
+        %{
+          tool
+          | failed: tool.failed + if(failed?, do: count, else: 0),
+            total: plus(tool.total, hist),
+            steps: add_step(tool.steps, point, slow, hist)
+        }
+      end)
+
+    called =
+      Enum.reduce(series["points"], acc.calls, fn {_time, count, _sum, _min, _max, _buckets} = point, called ->
+        failed = if failed?, do: count, else: 0
+        if index = step_of(point, calls), do: Map.update(called, index, {count, failed}, fn {n, f} -> {n + count, f + failed} end), else: called
+      end)
+
+    %{acc | tools: Map.put(acc.tools, key, tool), calls: called}
+  end
+
+  defp tally(%{"name" => "one.client.open.duration", "attributes" => a} = series, acc, slow, _calls) do
+    view = Map.get(acc.opens, a["one.view"], %{total: nil, steps: %{}})
+
+    view =
+      Enum.reduce(series["points"], view, fn point, view ->
+        hist = histogram(point, series)
+        %{view | total: plus(view.total, hist), steps: add_step(view.steps, point, slow, hist)}
+      end)
+
+    %{acc | opens: Map.put(acc.opens, a["one.view"], view)}
+  end
+
+  defp tally(_series, acc, _slow, _calls), do: acc
+
+  defp add_step(steps, point, grid, hist) do
+    if index = step_of(point, grid), do: Map.update(steps, index, hist, &plus(&1, hist)), else: steps
+  end
+
+  # Two histograms counted in the same buckets, added up.
+  defp plus(nil, hist), do: hist
+  defp plus(hist, nil), do: hist
+
+  defp plus(a, b) do
+    %{
+      "count" => a["count"] + b["count"],
+      "sum" => a["sum"] + b["sum"],
+      "buckets" => Enum.zip_with(a["buckets"], b["buckets"], &(&1 + &2)),
+      "min" => Enum.min(Enum.reject([a["min"], b["min"]], &is_nil/1), fn -> nil end),
+      "max" => Enum.max(Enum.reject([a["max"], b["max"]], &is_nil/1), fn -> nil end),
+      "bounds" => a["bounds"]
+    }
   end
 
   @doc """
@@ -98,69 +242,40 @@ defmodule Telemetry.Read do
   its failures, its 50th, 95th and 99th percentiles in milliseconds, and its 95th over time, about 24 steps from
   `from` to `to`. `names` is what a person calls each app.
   """
-  def slowest(batches, from, to, names) do
-    points = Enum.flat_map(batches, & &1["metrics"])
-    step = max(div(to - from, 24), 60_000_000_000)
+  def slowest(%{slow: {from, step}, to: to} = scan, names) do
+    count = count_steps(from, to, step)
 
     tools =
-      for {{app, tool}, points} <- Enum.group_by(Enum.filter(points, &(&1["name"] == "one.tool.duration")), &tool/1) do
-        failed = for p <- points, p["attributes"]["one.outcome"] == "error", reduce: 0, do: (sum -> sum + p["count"])
-
-        quantiles = quantiles(added(points))
+      for {{app, tool}, tool_read} <- scan.tools do
+        quantiles = quantiles(tool_read.total)
 
         Map.merge(quantiles, %{
           app: app,
           tool: tool,
           called: Map.get(names, app, app),
-          failed: failed,
+          failed: tool_read.failed,
           # A tool that keeps its caller waiting this long should let them carry on meanwhile.
-          should_be_task: quantiles.p95 > 10_000 and not Enum.any?(points, &(&1["attributes"]["one.task"] == true)),
-          over_time: over_time(points, from, to, step)
+          should_be_task: quantiles.p95 > 10_000 and not tool_read.task,
+          over_time: over_time(tool_read.steps, count)
         })
       end
 
     opens =
-      for {view, points} <-
-            Enum.group_by(
-              Enum.filter(points, &(&1["name"] == "one.client.open.duration")),
-              & &1["attributes"]["one.view"]
-            ) do
-        Map.merge(quantiles(added(points)), %{
-          view: view,
-          called: Map.get(names, view, view),
-          failed: 0,
-          over_time: over_time(points, from, to, step)
-        })
+      for {view, opened} <- scan.opens do
+        Map.merge(quantiles(opened.total), %{view: view, called: Map.get(names, view, view), failed: 0, over_time: over_time(opened.steps, count)})
       end
 
     Enum.sort_by(tools, & &1.p95, :desc) ++ Enum.sort_by(opens, & &1.p95, :desc)
   end
 
-  @minute 60_000_000_000
-
-  defp tool(point), do: {point["attributes"]["one.app"], point["attributes"]["one.tool"]}
-
-  defp over_time(points, from, to, step) do
-    for {_at, within} <- steps(points, from, to, step), do: if(within == [], do: nil, else: quantiles(added(within)).p95)
-  end
-
-  # Each step's start from `from` to `to`, and the points in it: those after its start, up to its end. Steps start on
-  # a whole minute and are whole minutes, as a rollup adds a metric's points up by the minute they end
-  # (`Telemetry.Rollup`), so none is split.
-  defp steps(points, from, to, step) do
-    {from, step} = {from - rem(from, @minute), step + rem(@minute - rem(step, @minute), @minute)}
-    within = Enum.group_by(for(p <- points, p["time"] > from, do: p), &div(&1["time"] - from - 1, step))
-    for {at, index} <- Enum.with_index(from..to//step), do: {at, Map.get(within, index, [])}
-  end
+  defp count_steps(from, to, step), do: if(to < from, do: 0, else: div(to - from, step) + 1)
+  defp over_time(steps, count), do: for(index <- 0..(count - 1)//1, do: if(hist = steps[index], do: quantiles(hist).p95))
 
   @doc "Calls and failed calls in about 48 steps from `from` to `to`: each step's start in milliseconds and its counts."
-  def calls(batches, from, to) do
-    step = max(div(to - from, 48), 60_000_000_000)
-    points = for b <- batches, p <- b["metrics"], p["name"] == "one.tool.duration", do: p
-
-    for {at, within} <- steps(points, from, to, step) do
-      failed = for p <- within, p["attributes"]["one.outcome"] == "error", reduce: 0, do: (sum -> sum + p["count"])
-      %{at: ms(at), calls: Enum.sum_by(within, & &1["count"]), failed: failed}
+  def calls(%{steps: {from, step}, to: to, calls: called}) do
+    for index <- 0..(count_steps(from, to, step) - 1)//1 do
+      {calls, failed} = Map.get(called, index, {0, 0})
+      %{at: ms(from + index * step), calls: calls, failed: failed}
     end
   end
 
@@ -169,8 +284,8 @@ defmodule Telemetry.Read do
   trace's and its duration in milliseconds, its outcome and its events.
   """
   def trace(batches, id, shown) do
-    spans = for b <- batches, s <- b["spans"], s["traceId"] == id, do: s
-    logs = for b <- batches, l <- b["logs"], l["traceId"] == id, do: l
+    spans = for b <- batches, s <- b["spans"], s["traceId"] == id, uniq: true, do: s
+    logs = for b <- batches, l <- b["logs"], l["traceId"] == id, uniq: true, do: l
 
     case spans do
       [] ->
@@ -213,51 +328,69 @@ defmodule Telemetry.Read do
   defp depth(parents, parent, depth) when is_map_key(parents, parent), do: depth(parents, parents[parent], depth + 1)
   defp depth(_parents, _parent, depth), do: depth
 
-  @doc "Every metric there is, with the names of its attributes and how many it counted."
-  def metrics(batches) do
-    for {name, points} <- Enum.group_by(Enum.flat_map(batches, & &1["metrics"]), & &1["name"]) do
-      %{
-        name: name,
-        attributes: points |> Enum.flat_map(&Map.keys(&1["attributes"])) |> Enum.uniq() |> Enum.sort(),
-        count: Enum.sum_by(points, & &1["count"])
-      }
-    end
+  @doc "Every metric there is in a rollup, with the names of its attributes and how many it counted: `metrics/1` puts them together."
+  def metrics_rollup(rollup) do
+    Enum.reduce(rollup["series"], %{}, fn series, all ->
+      {keys, count} = Map.get(all, series["name"], {MapSet.new(), 0})
+      keys = Enum.reduce(Map.keys(series["attributes"]), keys, &MapSet.put(&2, &1))
+      Map.put(all, series["name"], {keys, count + Enum.sum_by(series["points"], &elem(&1, 1))})
+    end)
+  end
+
+  @doc "Every metric there is, with the names of its attributes and how many it counted, of the answers of `metrics_rollup/1`."
+  def metrics(partials) do
+    partials
+    |> Enum.reduce(%{}, fn partial, all -> Map.merge(all, partial, fn _name, {keys, count}, {keys2, count2} -> {MapSet.union(keys, keys2), count + count2} end) end)
+    |> Enum.map(fn {name, {keys, count}} -> %{name: name, attributes: Enum.sort(keys), count: count} end)
     |> Enum.sort_by(& &1.name)
   end
 
   @doc """
-  The metric `name`, of the data with all of `attributes`, in steps of `step` minutes (about 48 steps if `nil`) from
-  `from` to `to`: each step's start in milliseconds, its count, its sum and its quantiles. Split by the attributes
-  named in `by`, as `one.device` and `service.version`, it's `groups`: each with its values of them, which client it's
-  from where it's one's, and its own steps.
+  What a rollup says of the metric `name`, of the data with all of `attributes`, split by `by`, in steps of the grid: each
+  group by its values of them, with which client it's from and its histogram for each step. `series/6` puts them
+  together.
   """
-  def series(batches, name, attributes, from, to, step, by \\ []) do
-    step = if step, do: step * 60_000_000_000, else: max(div(to - from, 48), 60_000_000_000)
+  def series_rollup(rollup, name, attributes, by, grid) do
+    for series <- rollup["series"],
+        series["name"] == name,
+        Enum.all?(attributes, fn {k, v} -> series["attributes"][k] == v end),
+        reduce: %{} do
+      groups ->
+        values = Map.new(by, &{&1, series["attributes"][&1]})
+        group = Map.get(groups, values, %{from: from(%{"attributes" => series["attributes"]}), steps: %{}})
+        steps = Enum.reduce(series["points"], group.steps, fn point, steps -> add_step(steps, point, grid, histogram(point, series)) end)
+        Map.put(groups, values, %{group | steps: steps})
+    end
+  end
 
-    points =
-      for b <- batches,
-          p <- b["metrics"],
-          p["name"] == name,
-          Enum.all?(attributes, fn {k, v} -> p["attributes"][k] == v end),
-          do: p
+  @doc "The grid of the steps of a metric from `from` to `to`, of `step` minutes, or about 48 steps if `nil`."
+  def series_grid(from, to, step), do: grid(from, if(step, do: step * @minute, else: max(div(to - from, 48), @minute)))
 
-    if points == [],
+  @doc """
+  The metric `name` in steps from the grid's start to `to`, by the answers of `series_rollup/5`: each step's start in
+  milliseconds, its count, its sum and its quantiles. Split by the attributes named in `by`, as `one.device` and
+  `service.version`, it's `groups`: each with its values of them, which client it's from where it's one's, and its own
+  steps.
+  """
+  def series(partials, name, {from, step}, to, by \\ []) do
+    groups =
+      Enum.reduce(partials, %{}, fn partial, all ->
+        Map.merge(all, partial, fn _values, a, b -> %{from: a.from || b.from, steps: merge_steps(a.steps, b.steps)} end)
+      end)
+
+    if groups == %{},
       do: raise(OneCore.Call.Refused, "Nothing's recorded of #{name} with those attributes then. `metric` with no name lists what is.")
 
-    steps = fn points ->
-      for {at, within} <- steps(points, from, to, step) do
-        Map.put(if(within == [], do: %{count: 0}, else: quantiles(added(within))), :at, ms(at))
+    steps = fn group ->
+      for index <- 0..(count_steps(from, to, step) - 1)//1 do
+        Map.put(if(hist = group.steps[index], do: quantiles(hist), else: %{count: 0}), :at, ms(from + index * step))
       end
     end
 
     if by == [] do
-      %{name: name, steps: steps.(points)}
+      %{name: name, steps: steps.(groups[%{}])}
     else
-      groups =
-        for {values, points} <- Enum.group_by(points, fn p -> Map.new(by, &{&1, p["attributes"][&1]}) end) do
-          %{by: values, from: Enum.find_value(points, &from/1), steps: steps.(points)}
-        end
-
+      groups = for {values, group} <- groups, do: %{by: values, from: group.from, steps: steps.(group)}
       %{name: name, groups: Enum.sort_by(groups, & &1.by)}
     end
   end
@@ -381,7 +514,6 @@ defmodule Telemetry.Read do
   defp failed?(span), do: span["status"]["code"] == "error"
   defp refused?(span), do: span["attributes"]["one.outcome"] == "refused"
   defp took(span), do: Float.round((span["end"] - span["start"]) / 1_000_000, 3)
-  defp whose(span, shown), do: if(shown.(span["attributes"]["one.for"]), do: span["attributes"]["one.for"])
 
   @doc """
   The first line of an error's message. Where that's the plain "Something went wrong." a person's screen shows of a
