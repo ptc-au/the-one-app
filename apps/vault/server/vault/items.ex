@@ -90,6 +90,10 @@ defmodule Vault.Items do
   @doc "An item's fields' values, by name."
   def fields(item), do: Map.new(item["fields"], &{&1["name"], &1["value"]})
 
+  @doc "Whether the item has the field as given already, with all its websites: a write of it would change nothing."
+  def holds?(item, field, value, secret, hosts),
+    do: Enum.any?(item["fields"], &(&1["name"] == field and &1["value"] == value and &1["secret"] == (secret == true))) and hosts!(hosts) -- item["hosts"] == []
+
   @doc "Puts a field in a record, in place of one by its name or after the rest."
   def put_field(item, name, value, secret) do
     field = %{"name" => field!(name), "value" => value, "secret" => secret == true}

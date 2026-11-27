@@ -1,33 +1,51 @@
 #!/usr/bin/env bash
 # 1Password is the source of truth for every secret. Build and signing secrets are read from it where they're used;
-# what a network's apps use at runtime is put into that network's Vault from it by this, one way, 1Password winning.
-# An item tagged `vault/<the network's host>` is the network Vault's item of the same title, and `vault/<host>/groups/
+# what a network's apps use at runtime is put into that network's Vault from it by this, one way. An item tagged
+# `vault/<the network's host>` is the network Vault's item of the same title, and `vault/<host>/groups/
 # <name>` the group's. Each field of it is the Vault field of the same label (letters, digits and _), secret where
 # 1Password conceals it, with the item's websites as the sites its secrets go to. A field's value is piped from
 # 1Password into `one vault set`, which encrypts it on this machine, so it's never printed. The Vault keeps what
 # 1Password doesn't name: an item's other fields, which apps it's switched on for, and every person's own items.
 # Setting a value it has already changes nothing, so it's safe to run any time: run it after changing a secret in 1Password.
 #
+# Whichever changed last wins: a Vault item changed after its 1Password item was (a secret rotated in the Vault, which
+# `one vault set --if_unmodified_since` refuses to replace) is left as it is and reported as a conflict, for whoever
+# rotated it to put the new value in 1Password. A Vault item's change time is the whole item's, so a field that
+# changed in 1Password before the Vault item was last touched for any other reason is reported the same way: save the
+# item again in 1Password to make it the newer. Each refusal is reported at the end, and the exit status is 1.
+#
 #     tooling/vault-sync [<the network's repo>...]     (each of `tooling/networks` without one)
-set -euo pipefail
+set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 if (($#)); then networks=("$@"); else mapfile -t networks < <("$root/tooling/networks"); fi
-items=$(op item list --format json)
+items=$(op item list --format json) || exit 1
+refused=()
 for network in "${networks[@]}"; do
   host=$(git -C "$network" show origin/main:app/address) host=${host#https://}
   ONE_HOME=$("$root/tooling/client-home" "$network") && export ONE_HOME
-  jq -r --arg tag "vault/$host" '.[] | . as $item | .tags[]? | select(. == $tag or startswith($tag + "/"))
-    | [$item.id, $item.vault.id, (ltrimstr($tag) | ltrimstr("/") | if . == "" then "network" else . end)] | @tsv' <<<"$items" |
-    while IFS=$'\t' read -r id vault subject; do
-      item=$(op item get "$id" --vault "$vault" --format json </dev/null)
-      title=$(jq -r .title <<<"$item")
-      mapfile -t hosts < <(jq -r '.urls[]?.href | sub("^[a-z]+://"; "") | sub("/.*"; "")' <<<"$item")
-      # The item's notes are 1Password's own, not a field.
-      while IFS=$'\t' read -r field label secret <&3; do
-        jq -j --arg id "$field" '.fields[] | select(.id == $id) | .value' <<<"$item" |
-          ONE_SUBJECT=$subject one vault set --item "$title" --field "$label" --secret "$secret" \
-            ${hosts[0]:+--hosts "${hosts[@]}"} --value-from /dev/stdin >/dev/null
+  while IFS=$'\t' read -r id vault subject; do
+    if ! item=$(op item get "$id" --vault "$vault" --format json </dev/null); then
+      refused+=("$host $subject: 1Password item $id couldn't be read")
+      continue
+    fi
+    title=$(jq -r .title <<<"$item")
+    since=$(date -d "$(jq -r .updated_at <<<"$item")" +%s)
+    mapfile -t hosts < <(jq -r '.urls[]?.href | sub("^[a-z]+://"; "") | sub("/.*"; "")' <<<"$item")
+    # The item's notes are 1Password's own, not a field.
+    while IFS=$'\t' read -r field label secret <&3; do
+      if why=$(jq -j --arg id "$field" '.fields[] | select(.id == $id) | .value' <<<"$item" |
+        ONE_SUBJECT=$subject one vault set --item "$title" --field "$label" --secret "$secret" --if_unmodified_since "$since" \
+          ${hosts[0]:+--hosts "${hosts[@]}"} --value-from /dev/stdin 2>&1 >/dev/null); then
         echo "$host $subject: $title $label"
-      done 3< <(jq -r '.fields[] | select(.purpose != "NOTES" and (.value // "") != "") | [.id, .label, .type == "CONCEALED"] | @tsv' <<<"$item")
-    done
+      else
+        refused+=("$host $subject: $title $label: ${why//$'\n'/ }")
+      fi
+    done 3< <(jq -r '.fields[] | select(.purpose != "NOTES" and (.value // "") != "") | [.id, .label, .type == "CONCEALED"] | @tsv' <<<"$item")
+  done < <(jq -r --arg tag "vault/$host" '.[] | . as $item | .tags[]? | select(. == $tag or startswith($tag + "/"))
+    | [$item.id, $item.vault.id, (ltrimstr($tag) | ltrimstr("/") | if . == "" then "network" else . end)] | @tsv' <<<"$items")
 done
+if ((${#refused[@]})); then
+  printf 'Refused:\n' >&2
+  printf '  %s\n' "${refused[@]}" >&2
+  exit 1
+fi

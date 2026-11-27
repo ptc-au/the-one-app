@@ -245,6 +245,7 @@ defmodule Vault do
         instead: never ask them to paste it into the chat. A secret is kept only as a plain tool on a device, which
         encrypts it: in code mode, or over the web, use `request` for one they pasted too. `hosts` are added to a
         new item's; adding sites to one that's there is its person's, in the Vault, or by allowing a `request`.
+        Giving the value it has already changes nothing.
         """,
         inputs: %{
           type: "object",
@@ -253,7 +254,11 @@ defmodule Vault do
             field: %{type: "string", description: "The field's name, like token or password"},
             value: Map.put(secret, :description, "The field's value. Your device encrypts it before it's sent"),
             secret: %{type: "boolean", description: "Never shown again. True if left out: say false for a username"},
-            hosts: hosts
+            hosts: hosts,
+            if_unmodified_since: %{
+              type: "integer",
+              description: "Seconds since 1970: refuses, as HTTP's If-Unmodified-Since does, where the item changed after it and its value isn't the one given"
+            }
           },
           required: ["item", "field", "value"]
         },
@@ -977,11 +982,22 @@ defmodule Vault do
     Store.quietly("Keeping #{field}", fn ->
       value = Store.encryption(call).secret(call, value)
       hosts = Map.get(inputs, "hosts", [])
-      new_hosts!(call, Items.find(call, db, name), hosts)
+      secret = Map.get(inputs, "secret", true)
+      found = Items.find(call, db, name)
+      new_hosts!(call, found, hosts)
 
-      Items.write!(call, db, name, Items.password(hosts), :person, fn record ->
-        record |> Items.add_hosts(hosts) |> Items.put_field(field, value, Map.get(inputs, "secret", true))
-      end)
+      cond do
+        found && Items.holds?(found, field, value, secret, hosts) ->
+          :ok
+
+        found && is_integer(inputs["if_unmodified_since"]) && found["changed"] > inputs["if_unmodified_since"] ->
+          raise "#{name} was changed in the Vault after #{inputs["if_unmodified_since"]}, so #{field} isn't replaced."
+
+        true ->
+          Items.write!(call, db, name, Items.password(hosts), :person, fn record ->
+            record |> Items.add_hosts(hosts) |> Items.put_field(field, value, secret)
+          end)
+      end
 
       %{item: name, field: field}
     end)

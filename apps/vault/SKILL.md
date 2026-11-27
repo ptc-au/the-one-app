@@ -65,6 +65,8 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   run on before it's sent, so `set` is for `one` or MCP on a device, as a plain tool. A script or `call` in code
   mode runs on a server, where nothing encrypts it, so a secret given there is refused: in code mode, and over the
   web, ask with `request` instead.
+  Giving the value an item has already changes nothing, and `if_unmodified_since` (seconds since 1970) refuses
+  to replace one where the item changed after it, as HTTP's If-Unmodified-Since does.
 - `access` gives an app (`who`, by its name) access to an item, or with `on: false` takes it away. An app with
   access uses it through the Vault's tools without seeing it, or, one with a service, is handed the secret itself,
   which trusts its code with it. `who: "agents"` lets agents use it with `fetch`, and `who: "commands"` hand it to a command (`handle`). Giving access, to an app or to
