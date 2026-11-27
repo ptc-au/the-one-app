@@ -140,11 +140,13 @@ export class Network extends WorkerEntrypoint<Env> {
 
   /**
    * The network's owners now, `users/<name>`, as its permissions app keeps them in `network/owners` as they change
-   * (`Permissions`), since no server need be on for the edge to say who they are.
+   * (`Permissions`), since no server need be on for the edge to say who they are. It throws what's wrong in words
+   * for a person to read, which the sign-in page shows.
    */
   async owners(): Promise<string[]> {
     const got = await bucket(this.env).fetch(blob(this.env, `${NETWORK}owners`));
-    if (!got.ok) throw new Error(`The bucket answered ${got.status} for ${NETWORK}owners`);
+    if (got.status === 404) throw new Error("This network has no list of owners yet, so no one can add a server to it. An owner on one of its servers makes the list: `one permissions share --artifact network --relation owner --who users/<name>`.");
+    if (!got.ok) throw new Error(`The network's bucket answered ${got.status} when asked who its owners are.`);
     return got.json();
   }
 

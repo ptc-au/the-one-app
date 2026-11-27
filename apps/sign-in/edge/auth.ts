@@ -546,7 +546,11 @@ const devices = () => ({
           const code = await ctx.context.adapter.findOne<DeviceCode>({ model: "deviceCode", where: [{ field: "userCode", value: plain(ctx.body?.userCode) }] });
           if (code?.scope !== "server") return signedInJustNow(ctx);
           const { user } = await passkeyJustNow(ctx);
-          if (!(await env.NETWORK.owners()).includes(who(user))) throw new APIError("FORBIDDEN", { message: "Only one of the network's owners adds a server this way." });
+          // Said as it is, since a thrown Error is an empty 500, which the page reads as "Unexpected end of JSON input".
+          const owners = await env.NETWORK.owners().catch((error: Error) => {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: error.message });
+          });
+          if (!owners.includes(who(user))) throw new APIError("FORBIDDEN", { message: "Only one of the network's owners adds a server this way." });
           if (code.status !== "pending" || code.userId !== user.id || new Date(code.expiresAt).getTime() < Date.now()) return;
           await env.SERVERS.add(code.clientId);
         }),
