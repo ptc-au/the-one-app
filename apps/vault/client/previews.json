@@ -42,7 +42,8 @@
             ],
             "access": [
               "agents"
-            ]
+            ],
+            "versions": []
           },
           {
             "name": "Example Mail",
@@ -65,7 +66,8 @@
               "mail.example.com"
             ],
             "access": [],
-            "sign_in": true
+            "sign_in": true,
+            "versions": []
           }
         ],
         "requests": [
@@ -139,7 +141,8 @@
             ],
             "access": [
               "agents"
-            ]
+            ],
+            "versions": []
           },
           {
             "name": "Example Mail",
@@ -162,7 +165,8 @@
               "mail.example.com"
             ],
             "access": [],
-            "sign_in": true
+            "sign_in": true,
+            "versions": []
           },
           {
             "name": "Cloud Console",
@@ -182,7 +186,8 @@
               "by": "Alex's Laptop",
               "from": "console.example.com",
               "at": 1767225000
-            }
+            },
+            "versions": []
           }
         ],
         "requests": [],
@@ -240,6 +245,84 @@
               "agents",
               "commands",
               "backups"
+            ],
+            "versions": []
+          }
+        ],
+        "requests": [],
+        "apps": [
+          {
+            "name": "backups",
+            "title": "Backups"
+          },
+          {
+            "name": "git-repos",
+            "title": "Git Repos"
+          }
+        ],
+        "types": []
+      }
+    }
+  },
+  "Earlier versions": {
+    "like": "Empty",
+    "taps": [
+      "GitHub"
+    ],
+    "answers": {
+      "vault_list": {
+        "items": [
+          {
+            "name": "GitHub",
+            "artifact": "vault/github",
+            "kind": "password",
+            "type": null,
+            "status": null,
+            "fields": [
+              {
+                "name": "username",
+                "secret": false,
+                "value": "sam-example"
+              },
+              {
+                "name": "token",
+                "secret": true
+              }
+            ],
+            "hosts": [
+              "api.github.com",
+              "github.com"
+            ],
+            "access": [
+              "agents",
+              "commands",
+              "backups"
+            ],
+            "versions": [
+              {
+                "id": 3,
+                "field": "username",
+                "secret": false,
+                "kind": "removed",
+                "at": 1767225000,
+                "by": "agent"
+              },
+              {
+                "id": 2,
+                "field": "token",
+                "secret": true,
+                "kind": "replaced",
+                "at": 1766000000,
+                "by": "agent"
+              },
+              {
+                "id": 1,
+                "field": "token",
+                "secret": true,
+                "kind": "replaced",
+                "at": 1765000000,
+                "by": "person"
+              }
             ]
           }
         ],
@@ -288,7 +371,8 @@
               "agents",
               "backups",
               "git-repos"
-            ]
+            ],
+            "versions": []
           }
         ],
         "requests": [],
@@ -349,7 +433,8 @@
             "hosts": [
               "api.example.com"
             ],
-            "access": []
+            "access": [],
+            "versions": []
           }
         ],
         "requests": [
@@ -596,7 +681,8 @@
             "status": null,
             "fields": [],
             "hosts": [],
-            "access": []
+            "access": [],
+            "versions": []
           }
         ],
         "requests": [],
@@ -645,7 +731,8 @@
             "status": null,
             "fields": [],
             "hosts": [],
-            "access": []
+            "access": [],
+            "versions": []
           }
         ],
         "requests": [],
@@ -806,7 +893,8 @@
             "access": [
               "google-account"
             ],
-            "sign_in": true
+            "sign_in": true,
+            "versions": []
           },
           {
             "name": "GitHub",
@@ -825,7 +913,8 @@
             ],
             "access": [
               "agents"
-            ]
+            ],
+            "versions": []
           }
         ],
         "requests": [],

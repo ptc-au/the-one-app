@@ -23,7 +23,7 @@ defmodule Vault do
   def sensitive, do: true
 
   alias OneCore.{Artifact, Call}
-  alias Vault.{Access, Fetch, Handles, Items, Requests, SignIns, Store}
+  alias Vault.{Access, Fetch, Handles, Items, Requests, SignIns, Store, Versions}
 
   # How ready someone's Vault is, which `security` says and its screen shows, worked out each time from their key and
   # the servers they chose, never kept. Each state is the first thing missing, in the order they're done:
@@ -77,12 +77,27 @@ defmodule Vault do
 
 
   @impl true
-  def hooks, do: ["settings.sections", "privacy.sections"]
+  def hooks, do: ["settings.sections", "privacy.sections", "soft-delete.moved"]
 
   # The Vault is a section of Settings: your accounts, passwords and keys, and what apps keep here.
   @impl true
   def hook("settings.sections", _about, _call),
     do: [%{in: "settings", name: "Vault", component: "accounts", icon: "client/icon.svg", group: "network", order: 3, badge: "badge"}]
+
+  # An item an agent deleted, which its person is told of, as of an agent's other changes (`told/4`): soft delete says
+  # whether it was an agent (`agent`), and it's in Recently Deleted for 30 days.
+  def hook("soft-delete.moved", %{"artifact" => artifact, "to" => "deleted", "agent" => true}, call) do
+    Store.quietly("Telling of a deleted item", fn ->
+      name = Enum.find_value(Store.names(call, Store.own(call)), fn {id, name} -> id == artifact && name end)
+      if name, do: Store.notify(call, "An agent deleted #{name}", "It's in Recently Deleted for 30 days. Restore it there if you want it back.", "accounts")
+    end)
+
+    nil
+  rescue
+    _ -> nil
+  end
+
+  def hook("soft-delete.moved", _about, _call), do: nil
 
   # What the network's privacy page says of it, where it says what's kept.
   def hook("privacy.sections", _about, _call),
@@ -156,7 +171,12 @@ defmodule Vault do
                     type: ["object", "null"],
                     description: "If a save from a browser made it: `by`, the device of the agent that saved it, `from`, the site, and `at`, when"
                   },
-                  changed: %{type: ["integer", "null"], description: "When it last changed, in milliseconds since 1970"}
+                  changed: %{type: ["integer", "null"], description: "When it last changed, in seconds since 1970"},
+                  versions: %{
+                    type: "array",
+                    description: "What it held before a field was replaced or removed, kept 30 days, newest first, never a value: `id` (for `restore_version`), `field`, `secret`, `kind` (replaced or removed), `at` and `by` (agent or person)",
+                    items: %{type: "object"}
+                  }
                 },
                 required: ["name", "artifact", "kind", "type", "status", "fields", "hosts", "access", "sign_in"]
               }
@@ -253,7 +273,8 @@ defmodule Vault do
         instead: never ask them to paste it into the chat. A secret is kept only as a plain tool on a device, which
         encrypts it: in code mode, or over the web, use `request` for one they pasted too. `hosts` are added to a
         new item's; adding sites to one that's there is its person's, in the Vault, or by allowing a `request`.
-        Giving the value it has already changes nothing.
+        Giving the value it has already changes nothing. Replacing one it has keeps the earlier value for 30 days,
+        which its person is told, and brings back from the Vault.
         """,
         inputs: %{
           type: "object",
@@ -648,12 +669,19 @@ defmodule Vault do
       %{
         name: "remove_field",
         description:
-          "Removes a field from an item. Deleting a whole item is soft delete's, as for anything an app made: `soft-delete_delete` with the item's artifact, as `list` gives it, so it can be restored for 30 days.",
+          "Removes a field from an item, which its person is told, and keeps it 30 days to bring back (`restore_version`). Deleting a whole item is soft delete's, as for anything an app made: `soft-delete_delete` with the item's artifact, as `list` gives it, so it can be restored for 30 days.",
         inputs: %{
           type: "object",
           properties: %{item: item, field: %{type: "string", description: "The field to remove"}},
           required: ["item", "field"]
         },
+        outputs: %{type: "object", properties: %{item: item, field: %{type: "string"}}, required: ["item", "field"]}
+      },
+      %{
+        name: "restore_version",
+        description:
+          "Brings back a field an agent or its person replaced or removed, by the `id` in an item's `versions` (`list`), without showing it. What it replaces is kept in its place. It's its person's, on their own device: an agent can't, and tells them to open the item",
+        inputs: %{type: "object", properties: %{id: %{type: "integer", description: "The version's id"}}, required: ["id"]},
         outputs: %{type: "object", properties: %{item: item, field: %{type: "string"}}, required: ["item", "field"]}
       },
       %{
@@ -916,6 +944,25 @@ defmodule Vault do
     end
   end
 
+  # An item's field is about to be replaced or removed: keeps it as it was for 30 days, and where an agent does it, tells its
+  # person once, in words that never say the value.
+  defp replaced!(call, db, item, field, kind) do
+    agent = not Access.screen?(call)
+    Versions.keep(call, db, item, field, kind, if(agent, do: "agent", else: "person"))
+    timed(call, db)
+
+    if agent do
+      what = if kind == "removed", do: "removed", else: "replaced"
+
+      Store.notify(
+        call,
+        "An agent changed #{item["name"]}",
+        "It #{what} #{field["name"]}. The earlier one is kept for 30 days: open the item to bring it back.",
+        "accounts#item=#{URI.encode_www_form(item["name"])}&owner=#{URI.encode_www_form(call.subject)}"
+      )
+    end
+  end
+
   # Deletes an item as anything an app made is deleted: by soft delete, which keeps it for 30 days.
   defp delete!(call, db, item), do: Call.tool(call, "soft-delete", "delete", %{"artifact" => Store.artifact(db, item["id"])})
 
@@ -985,7 +1032,8 @@ defmodule Vault do
       for({name, version} <- running, is_map_key(version.requires, "vault"), do: %{name: name, title: version.title || name, icon: OneCore.Apps.Icons.address(version.icon)})
       |> Enum.sort_by(&String.downcase(&1.title))
 
-    items = for item <- Enum.sort_by(Items.all(call, db), &String.downcase(&1["name"])), do: Items.listed(item, db, names, types, running)
+    versions = Versions.all(call, db)
+    items = for item <- Enum.sort_by(Items.all(call, db), &String.downcase(&1["name"])), do: Items.listed(item, db, names, types, running, versions)
     %{items: items, requests: Requests.all(call, db, names), handles: Handles.all(call, db), apps: use_it, types: Enum.map(types, &Map.delete(&1, :artifact))}
   end
 
@@ -1009,6 +1057,9 @@ defmodule Vault do
           raise "#{name} was changed in the Vault after #{inputs["if_unmodified_since"]}, so #{field} isn't replaced."
 
         true ->
+          old = found && Items.field(found, field)
+          if old && (old["value"] != value or old["secret"] != (secret == true)), do: replaced!(call, db, found, old, "replaced")
+
           Items.write!(call, db, name, Items.password(hosts), :person, fn record ->
             record |> Items.add_hosts(hosts) |> Items.put_field(field, value, secret)
           end)
@@ -1118,9 +1169,20 @@ defmodule Vault do
   def call("remove_field", %{"item" => name, "field" => field}, call) do
     db = Store.own(call)
     found = Items.find!(call, db, name)
-    if Items.fields(found)[field] == nil, do: raise("#{name} has no field named #{field}.")
+    old = Items.field(found, field) || raise("#{name} has no field named #{field}.")
+    replaced!(call, db, found, old, "removed")
     Store.change!(db, found, &Map.update!(&1, "fields", fn fields -> Enum.reject(fields, fn kept -> kept["name"] == field end) end))
     %{item: name, field: field}
+  end
+
+  # Brings back what an item held: a field replaced or removed, by its `id` in the item's `versions`, without showing it.
+  # It's its person's, on their own screen, where they see what they're restoring.
+  def call("restore_version", %{"id" => id}, call) do
+    Access.person!(call, "Restoring an earlier version")
+    db = Store.own(call)
+    restored = Store.quietly("Restoring the version", fn -> Versions.restore!(call, db, id, "person") end)
+    timed(call, db)
+    restored
   end
 
   # An app's own code may only take its own access away.
@@ -1180,6 +1242,7 @@ defmodule Vault do
   def call("expire", _inputs, call) do
     db = Store.own(call)
     Handles.expire(call, db)
+    Versions.expire(call, db)
     expired = Requests.expire(call, db)
     timed(call, db)
     if expired != [], do: Call.changed(call)
@@ -1291,10 +1354,10 @@ defmodule Vault do
 
   defp opened(_sealed, _key), do: raise("What the browser sent isn't whole.")
 
-  # Has the Vault's timer go off when a request next waits a week or ended a month ago, or a handle's time is over or
-  # it's a month old (`Database.timer/5`), kept in its own database, where One Core's clock finds it.
+  # Has the Vault's timer go off when a request next waits a week or ended a month ago, a handle's time is over or
+  # it's a month old, or a version of an item is (`Database.timer/5`), kept in its own database, where One Core's clock finds it.
   defp timed(call, db) do
-    next = Enum.reject([Requests.next(call, db), Handles.next(call, db)], &is_nil/1)
+    next = Enum.reject([Requests.next(call, db), Handles.next(call, db), Versions.next(call, db)], &is_nil/1)
     Call.app(call, "database").timer(call, "expire", %{}, Enum.min(next, fn -> nil end))
   end
 end

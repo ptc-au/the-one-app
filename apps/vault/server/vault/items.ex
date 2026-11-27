@@ -98,6 +98,9 @@ defmodule Vault.Items do
   @doc "Every item."
   def all(call, db), do: Store.everything(call, db)
 
+  @doc "An item's field by its name, as it's kept, or nil."
+  def field(item, name), do: Enum.find(item["fields"], &(&1["name"] == name))
+
   @doc "An item's fields' values, by name."
   def fields(item), do: Map.new(item["fields"], &{&1["name"], &1["value"]})
 
@@ -235,7 +238,7 @@ defmodule Vault.Items do
   defp screen(status, _running), do: status
 
   @doc "An item as `list` gives it: never a secret field's value."
-  def listed(item, db, names, types, running) do
+  def listed(item, db, names, types, running, versions) do
     fields =
       for field <- item["fields"] do
         if field["secret"],
@@ -257,7 +260,8 @@ defmodule Vault.Items do
       access: Enum.filter(Vault.Access.own(), &(&1 in item["access"])) ++ Enum.sort(apps),
       sign_in: item["oauth"] != nil,
       added: item["added"],
-      changed: item["changed"]
+      changed: item["changed"],
+      versions: Map.get(versions, item["id"], [])
     }
   end
 end

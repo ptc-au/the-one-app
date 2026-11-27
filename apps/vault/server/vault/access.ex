@@ -54,9 +54,11 @@ defmodule Vault.Access do
   call says of itself alone (`SignIn.screen?/1`).
   """
   def person!(call, what) do
-    on_screen = call.caller == nil and OneCore.Call.app(call, "sign-in").screen?(call)
-    on_screen || raise "#{what} is its person's to do, in Vault on their device, where an agent's vault_request asks them."
+    screen?(call) || raise "#{what} is its person's to do, in Vault on their device, where an agent's vault_request asks them."
   end
+
+  @doc "Whether the call is its person's own, made on a screen of theirs (`person!/2`), and not an agent's or an app's."
+  def screen?(call), do: call.caller == nil and OneCore.Call.app(call, "sign-in").screen?(call)
 
   @doc "Whoever an app is called by its name, as its person picks it: its artifact, or one of `@own`."
   def who!(_call, own) when own in @own, do: own

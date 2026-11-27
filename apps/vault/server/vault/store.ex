@@ -42,7 +42,14 @@ defmodule Vault.Store do
     ) without rowid
     """,
     # The item a request was answered with, which its asker finds it by.
-    "alter table requests add column item text"
+    "alter table requests add column item text",
+    # What an item held before a field was replaced or removed, for a month (`Vault.Versions`).
+    """
+    create table versions (
+      id integer primary key, item text not null, field text not null, value text not null, secret integer not null,
+      kind text not null, at integer not null, by text not null
+    )
+    """
   ]
 
   # Someone's Vault is theirs alone: no relation tuple has anyone else ask for a user, the network's owner included.

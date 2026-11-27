@@ -82,6 +82,10 @@ with `request`; only as a plain tool on a device (`one mcp`, `one vault set`) ke
   or the network's is its members' to use (`ONE_SUBJECT=groups/family`), and its owners' to hand to its servers.
 - Deleting an item is soft delete's, as for anything an app made: `soft-delete delete --artifact` with its
   `artifact`, as `list` gives it, and it can be restored for 30 days. `remove_field` takes one field out of an item.
+- Nothing an agent changes is lost, and its person is told: deleting an item notifies them once, and so does replacing
+  a field (`set` with another value) or removing one. What a field held is kept 30 days, each in the item's `versions`
+  (`list` says its field, whether it was replaced or removed, by whom and when, never its value), and its person
+  brings one back in the Vault with `restore_version`, which no agent can, and which shows nothing.
 - Deleting an item is a person's decision. Do it when asked to, and say what you did.
   Giving access, adding an item's sites and answering a request are theirs to do on their device, never yours.
 

@@ -46,8 +46,20 @@ interface Item {
   /** Who may use it: "agents", "commands", and the apps switched on for it, by name. */
   access: string[]
   sign_in?: boolean
+  /** What it held before a field was replaced or removed, kept 30 days, newest first: never a value. */
+  versions: Version[]
   /** If a save from a browser made it: the device of the agent that saved it, the site, and when. */
   added?: { by: string | null; from: string; at: number } | null
+}
+
+/** A field an item held, replaced or removed by an agent or by its person, which `vault_restore_version` brings back. */
+interface Version {
+  id: number
+  field: string
+  secret: boolean
+  kind: "replaced" | "removed"
+  at: number
+  by: "agent" | "person"
 }
 
 /** What an app says its item needs of its person, or what adds one of a type: a tool of the app's, called as its
@@ -216,6 +228,8 @@ const label = (name: string) =>
     .split(/[_-]+/)
     .map((word, at) => (/^(api|url|id|ssh|aws|ip)$/i.test(word) ? word.toUpperCase() : at ? word.toLowerCase() : word[0].toUpperCase() + word.slice(1).toLowerCase()))
     .join(" ")
+/// When something happened, as a date: "12 Nov".
+const day = (seconds: number) => new Intl.DateTimeFormat("en", { day: "numeric", month: "short" }).format(new Date(seconds * 1000))
 /// A few things in a sentence: "api.github.com and github.com".
 const listed = (things: string[]) => new Intl.ListFormat("en", { type: "conjunction" }).format(things)
 /// The websites typed, which are any case: a phone may have started one with a capital.
@@ -463,6 +477,23 @@ function ItemScreen(props: { item: Item } & Shown) {
           Add Field
         </Button>
       </Section>
+      <Show when={item().versions.length}>
+        <Section heading="Earlier Versions">
+          <List each={item().versions} keyed={(version) => version.id}>
+            {(version) => (
+              <Row
+                heading={label(version().field)}
+                text={`${version().kind === "removed" ? "Removed" : "Replaced"} by ${version().by === "agent" ? "an agent" : "you"} on ${day(version().at)}`}
+                action={
+                  <Button variant="outline" onPress={() => void does("vault_restore_version", { id: version().id })}>
+                    Restore
+                  </Button>
+                }
+              />
+            )}
+          </List>
+        </Section>
+      </Show>
       <Section heading={item().hosts.length === 1 ? "Website" : "Websites"}>
         <Show when={item().hosts.length} fallback={<Empty>None: its secrets go nowhere.</Empty>}>
           <List each={item().hosts}>{(host) => <Row heading={host()} />}</List>
@@ -548,7 +579,7 @@ function FieldSheet(props: Shown) {
   }
   const remove = async () => {
     const { item, field } = at() as { item: Item; field: ItemField }
-    if (!(await confirm({ heading: `Delete ${label(field.name)}?`, text: "It can't be brought back.", action: "Delete", destructive: true }))) return
+    if (!(await confirm({ heading: `Delete ${label(field.name)}?`, text: "It's kept for 30 days, under Earlier Versions.", action: "Delete", destructive: true }))) return
     if (await does("vault_remove_field", { item: item.name, field: field.name })) shut()
   }
   /** Return saves what's ready, as Save does. */
