@@ -103,13 +103,15 @@ defmodule OneCore.Tools.Builds do
 
   defp asleep(server), do: server
 
-  # The network's update, as its updater says it, with the servers that take builds and aren't on its build and `one`
-  # yet.
+  # The network's update, as its updater says it, with the servers here that take builds and aren't on its build and
+  # `one` yet. One that isn't connected, as a fallback stopped until it's needed or a laptop off, takes it as it comes,
+  # and the updater says which it missed (`skipped`).
   defp network(update, servers) do
     with {:ok, %{} = network} <- update do
       behind =
         for server <- servers,
             server["installed"],
+            server["connected"] != false,
             not Release.on?(Release.target(network, server), server),
             do: server["name"]
 

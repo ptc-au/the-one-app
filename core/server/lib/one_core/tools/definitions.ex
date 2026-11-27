@@ -785,9 +785,9 @@ defmodule OneCore.Tools.Definitions do
               "The network's update, as its updater says, if its edge has one: `network_update_status` (up_to_date, " <>
                 "preparing or restarting), the `build` it takes every server to, how many " <>
                 "are `done` `of` those taking part, what it's `waiting_for` (quiet: a lone server waits " <>
-                "for no calls a while, or Update Now), the servers that `went_back` from it and why, which the rest go on without, the servers `skipped` as asleep or gone, " <>
+                "for no calls a while, or Update Now), the servers that `went_back` from it and why, which the rest go on without, the servers `skipped` as asleep or gone (not one stopped on purpose), " <>
                 "the newest build of each name (`latest`) and what servers take of each (`serving`, which an app's `one` that changed nothing a server runs leaves behind), " <>
-                "those `behind` its build, and when each step was reached, in ms after the build was published (`timings`)"
+                "those connected and `behind` its build, and when each step was reached, in ms after the build was published (`timings`)"
           },
           edge: %{type: ["string", "null"], description: "The build the network's edge is, if it says"},
           edge_protocol: %{

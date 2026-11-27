@@ -29,8 +29,8 @@
 //     deploying ──the deploy went back, or 10 min passed──► failed, said once
 //     any ──a newer build──► (none), and servers first
 //
-// A server that's asleep or gone as an update begins, or goes while it's under way, is skipped, and caught up under
-// the same rules once it's back: here again and ready, which the next thing the updater hears finds. One that's here
+// A server that's asleep or gone as an update begins, or goes while it's under way, is skipped (but one that stopped
+// on purpose, saying so, as the fallback does until it's needed), and caught up under the same rules once it's back: here again and ready, which the next thing the updater hears finds. One that's here
 // but doesn't say it began within a minute of being told (`ANSWER`), as one that can't take a build, or whose list of
 // builds is older than the network's, is behind, and tries again as any does (`RETRIES`): a server that's here says
 // so at once, and one that has gone but is held by the relay never does. Each server prepares and goes as it's told
@@ -58,6 +58,8 @@ export interface Reported {
   name?: string;
   /** Whether it's installed with `one serve on`, which takes builds: one a developer runs from source never does. */
   installed?: boolean;
+  /** Whether its program is starting, running or stopping, as it last said: one that's gone saying `stopping` stopped on purpose. */
+  server_daemon_status?: string;
   server_update_status?: ServerUpdateStatus;
   next_build?: string | null;
   /** The builds' name of the `one` that runs it (`one-cli/linux-x86_64`), and its build, now and being taken. */
@@ -216,6 +218,9 @@ export class NetworkUpdater extends DurableObject<Env> {
     }
     // A server coming or going, or saying what it is, moves it on as anything does, and then the edge's.
     this.step(state, presence, reported);
+    // One that's gone saying it was stopping, as the fallback stops until it's needed, missed nothing to say: it takes
+    // the build as it starts again, as any that's back does (`step`).
+    state.skipped = state.skipped.filter((key) => presence[key]?.connected || reported[key]?.server_daemon_status !== "stopping");
     for (const key of this.updateEdge(state, presence, reported)) await this.ctx.storage.put(`reported ${key}`, reported[key]);
 
     await this.ctx.storage.put("state", state);
