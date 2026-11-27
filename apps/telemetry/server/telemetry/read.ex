@@ -37,8 +37,12 @@ defmodule Telemetry.Read do
       end
 
     # What was logged during a call is that call's, read in its trace: what failed of it is its span.
+    # A caller's mistake (`refused`) isn't an error.
     logs =
-      for log <- Enum.flat_map(batches, & &1["logs"]), log["severity"] in ["WARN", "ERROR"], log["spanId"] == nil do
+      for log <- Enum.flat_map(batches, & &1["logs"]),
+          log["severity"] in ["WARN", "ERROR"],
+          log["spanId"] == nil,
+          log["attributes"]["one.outcome"] != "refused" do
         %{
           where: logged(log),
           message: log["body"],
@@ -281,6 +285,9 @@ defmodule Telemetry.Read do
     |> message()
     |> String.replace(~r/, (\([\w]+ [^)]*\) )?[^,]*\.exs?:\d+:.*$/, "")
     |> String.replace(~r/#PID<[^>]*>/, "#PID<…>")
+    |> String.replace(~r/\breference\s*=\s*[\w-]+/i, "reference = …")
+    |> String.replace(~r/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i, "…")
+    |> String.replace(~r/\b(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]{12,}\b/i, "…")
     |> String.replace(~r/[0-9a-f]{8,}/i, "…")
     |> String.replace(~r/\d+/, "#")
     |> String.slice(0, 300)

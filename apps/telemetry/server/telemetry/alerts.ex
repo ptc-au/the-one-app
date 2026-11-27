@@ -14,7 +14,7 @@ defmodule Telemetry.Alerts do
   | `deploy` | An app's deploy took over its 500 ms budget to show in a window, from when it began (`one.client.deploy.window`), in 2 or more of the last 10 minutes: a server release building every app again is one | 10 min without |
   | `open` | The median of an app's last 5 opens on a device (at least 3) took over its 300 ms budget, from being asked to open to its page's first frame (`one.client.native.open`, which a client says of each open, with each step's time; one that lasted across the device's sleep isn't told) | Its median is within its budget there, or it hasn't opened there for a day |
   | `backup` | A destination's last backup is older than its schedule and a day, or its last backup failed, as Backups last said (`one.backup`, which it says each hour and as each backup ends) | Backups says it's backed up, or that the destination is gone |
-  | `behind` | A server or a desktop client has last said, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), which has been the latest for over an hour, while the network isn't updating its servers, and something of it arrived in the last day | It says it's on the latest, a newer build comes out (its hour begins again), or nothing of it arrives for a day |
+  | `behind` | A server or a desktop app has last said, by when what it said arrived, that it's on an older build than the latest of its kind (`OneCore.Builds.latest/0`, as `builds` says), which has been the latest for over an hour, while the network isn't updating its servers, and something of it arrived in the last day | It says it's on the latest, a newer build comes out (its hour begins again), or nothing of it arrives for a day |
   | `memory` | A device's app held more than its budget in a state (`background`, `launcher`, `windows`) the last time it measured it there (`one.client.memory.over`, which the app says as it measures over budget, beside `one.client.memory` each time) | It measures that state within its budget there, or nothing of it arrives for a day |
   | `frames` | A device's share of long frames (shown twice or more, `one.client.native.frames.long` of `one.client.native.frames`, which a client says of each motion) passed 5% of at least 600 frames over the last hour of real use: those it drew while its system wasn't busy (`one.system.busy`) | The share is back under 5%, or under 600 frames: the hour moves on |
   | `access` | A server that acts for someone lacks the keys of something encrypted for them, or one that doesn't act for them has them, as Encryption last said (`one.encryption.access`, which it says every 10 minutes) | Encryption says every server that should hold its keys does, and no other |
@@ -103,7 +103,37 @@ defmodule Telemetry.Alerts do
     "alter table builds drop column behind",
     "create table newest (name text primary key, build text not null, since integer not null) without rowid",
     # What AI used each day, per model, added up as it's read (`spending/2`): '' is a model not said.
-    "create table spending (day text not null, model text not null, input real not null default 0, output real not null default 0, cost real, primary key (day, model)) without rowid"
+    "create table spending (day text not null, model text not null, input real not null default 0, output real not null default 0, cost real, primary key (day, model)) without rowid",
+    # Clear duplicate alerts from unstripped `reference = ...` ids (keeping the first), mistyped `one` CLI commands,
+    # and `behind` alerts for clients that don't update themselves.
+    "delete from alerts where kind = 'error' and title like '%reference = %' and id != coalesce((select min(id) from alerts where kind = 'error' and title like '%reference = %'), -1)",
+    "delete from seen where kind like '%reference = %'",
+    """
+    delete from alerts where kind = 'error' and text like 'one.cli.failed,%' and (
+      title like 'New error: There''s no tool, app or skill named %'
+      or title like 'New error: It has no input named %'
+      or title like 'New error: A request is for a user, a group or the network:%'
+      or title like 'New error: % isn''t an input: write --name value%'
+      or title like 'New error: --% needs %'
+      or title like 'New error: --% takes %'
+      or title like 'New error: --% can''t be nothing.%'
+      or title like 'New error: name is needed.%'
+    )
+    """,
+    """
+    delete from seen where place like 'one.cli.failed,%' and (
+      message like 'There''s no tool, app or skill named %'
+      or message like 'It has no input named %'
+      or message like 'A request is for a user, a group or the network:%'
+      or message like '% isn''t an input: write --name value%'
+      or message like '--% needs %'
+      or message like '--% takes %'
+      or message like '--% can''t be nothing.%'
+      or message like 'name is needed.%'
+    )
+    """,
+    "delete from builds where key not like 'server|%' and key not like '%|app'",
+    "delete from alerts where kind = 'behind' and key not like 'server|%' and key not like '%|app'"
   ]
 
   @kinds %{
@@ -116,7 +146,7 @@ defmodule Telemetry.Alerts do
     "backup" => "A backup isn't made within its schedule and a day, or the last one failed",
     "open" => "The median of an app's last 5 opens on a device took over 300 ms to show its page",
     "access" => "A server that acts for someone can't open what's encrypted for them, or one that doesn't can",
-    "behind" => "A server or a desktop client is on an older build than the latest, which has been out for over an hour",
+    "behind" => "A server or a desktop app is on an older build than the latest, which has been out for over an hour",
     "memory" => "A device's app held more memory than its budget the last time it measured it",
     "frames" => "Over 5% of the frames a device drew in the last hour were long"
   }
@@ -268,14 +298,15 @@ defmodule Telemetry.Alerts do
     end) ++ Map.values(builds)
   end
 
-  # Which build a server or a desktop client says it is, as each of its spans and log lines does: a server's is the
-  # same code whatever its machine (`server-code`), and a client's is its system's `one`. A phone's has no latest.
+  # Which build a server or a desktop app says it is, as each of its spans and log lines does: only parts that update
+  # themselves alert when behind. A server's is the same code whatever its machine (`server-code`), and a desktop app's
+  # is its system's `one`. Browsers, CLIs, MCP assistants and phones don't update themselves.
   defp build(%{"attributes" => %{"service.version" => build, "service.name" => "one-server"}} = record),
     do: {:build, "server|#{record["server"]}", "#{record["server"]}'s server", build, "server-code"}
 
-  defp build(%{"attributes" => %{"service.version" => build, "one.device" => device, "service.name" => service, "os.type" => os}} = record)
+  defp build(%{"attributes" => %{"service.version" => build, "one.device" => device, "service.name" => "app", "os.type" => os}} = record)
        when os in ["macos", "linux", "windows"],
-       do: {:build, "#{device}|#{service}", Read.from(record), build, "one/#{os}"}
+       do: {:build, "#{device}|app", Read.from(record), build, "one/#{os}"}
 
   defp build(_record), do: nil
 
@@ -330,6 +361,9 @@ defmodule Telemetry.Alerts do
 
   # What a server's own program says of it is its alert's, not a new kind of error.
   defp log(%{"eventName" => "one.server." <> _}), do: []
+
+  # A caller's mistake (`refused`) isn't an error.
+  defp log(%{"attributes" => %{"one.outcome" => "refused"}}), do: []
 
   # What's logged during a call is its span's, which is the error where it failed.
   defp log(%{"severity" => "ERROR", "body" => body, "spanId" => nil} = log) when is_binary(body),
