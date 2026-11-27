@@ -189,18 +189,13 @@ pub async fn listen(client: Arc<Client>, identifier: &str, tapped: impl Fn(Strin
                 }
             }
         }
-        // Until a server says something of Notifications' changed, or something it doesn't name: another app's
-        // change is never a new notification, as sending one says so itself. Or until the device's session moves,
-        // whose inbox is another's, or none.
+        // Until a server says the inbox may have changed: another app's change, a deploy or a server restart is never
+        // a new notification, as sending one says so itself. Or until the device's session moves, whose inbox is
+        // another's, or none.
         loop {
             tokio::select! {
                 heard = notifications.recv() => match heard {
-                    Ok((_, message))
-                        if message["method"] == "notifications/one/changed"
-                            && matches!(message["params"]["app"].as_str(), None | Some("notifications")) =>
-                    {
-                        break;
-                    }
+                    Ok((_, message)) if covers_inbox(&message) => break,
                     Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(_) => return,
                 },
@@ -215,6 +210,19 @@ pub async fn listen(client: Arc<Client>, identifier: &str, tapped: impl Fn(Strin
             }
         }
     }
+}
+
+/// Whether a server's notice says the inbox may have changed: a notice naming Notifications or `notifications_inbox`,
+/// never one that names no app (a server restart, deploy or `builds` notice) or another of Notifications' tools
+/// (`register`, `allow`).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn covers_inbox(message: &Value) -> bool {
+    if message["method"] != "notifications/one/changed" {
+        return false;
+    }
+    let changed = client::Changed::of(&message["params"]);
+    changed != client::Changed::Anything
+        && changed.covers("tools/call", &json!({"name": "notifications_inbox"}))
 }
 
 /// Shows one notification, as the system's own, and hears it clicked: a Linux desktop's default action, a Mac's
