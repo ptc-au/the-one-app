@@ -320,6 +320,8 @@ pub(crate) fn settings() -> Result<(), String> {
 /// Has this device hear its person's notifications, once their home is on screen: a phone asks them then whether
 /// it may show any, over what they came for and not over signing in. Each time after, as its home is back in front,
 /// a phone looks again at whether it may (`notifications::Push`), as its person may have allowed them in its Settings.
+/// It hears them once for as long as the app runs: what hears them follows the device's session, so someone signed in
+/// after hears their own (`notifications::listen`).
 #[cfg_attr(mobile, tauri::command)]
 pub(crate) fn listen() -> Result<(), String> {
     let views = views()?;

@@ -143,7 +143,9 @@ pub fn plugin<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 /// Shows each notification that reaches the inbox after the app started, as a server says something changed. One
 /// already read, on another device, isn't shown. A click on one opens the app it's from (`tapped`, with its app's
-/// name). `identifier` is the app's, which a Mac and Windows show its notifications as.
+/// name). `identifier` is the app's, which a Mac and Windows show its notifications as. It follows the device's
+/// session for as long as the app runs, as a phone's does: signed in again, as someone else or not, what's new is
+/// what reaches that person's inbox from then on.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub async fn listen(client: Arc<Client>, identifier: &str, tapped: impl Fn(String) + Clone + Send + 'static) {
     #[cfg(target_os = "macos")]
@@ -151,7 +153,9 @@ pub async fn listen(client: Arc<Client>, identifier: &str, tapped: impl Fn(Strin
         eprintln!("this Mac shows notifications as another app's: {error}");
     }
     let mut notifications = client.notifications();
-    // The newest notification there was, once the inbox has answered: what's after it is new.
+    let mut state = client.state();
+    let mut session = state.borrow_and_update().clone();
+    // The newest notification there was in this session's inbox, once it has answered: what's after it is new.
     let mut latest = None;
     loop {
         // Behind its servers, it's refused for asking, so it stops asking until they talk with it again
@@ -186,17 +190,28 @@ pub async fn listen(client: Arc<Client>, identifier: &str, tapped: impl Fn(Strin
             }
         }
         // Until a server says something of Notifications' changed, or something it doesn't name: another app's
-        // change is never a new notification, as sending one says so itself.
+        // change is never a new notification, as sending one says so itself. Or until the device's session moves,
+        // whose inbox is another's, or none.
         loop {
-            match notifications.recv().await {
-                Ok((_, message))
-                    if message["method"] == "notifications/one/changed"
-                        && matches!(message["params"]["app"].as_str(), None | Some("notifications")) =>
-                {
-                    break;
+            tokio::select! {
+                heard = notifications.recv() => match heard {
+                    Ok((_, message))
+                        if message["method"] == "notifications/one/changed"
+                            && matches!(message["params"]["app"].as_str(), None | Some("notifications")) =>
+                    {
+                        break;
+                    }
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => return,
+                },
+                changed = state.changed() => {
+                    let Ok(()) = changed else { return };
+                    let now = state.borrow_and_update().clone();
+                    if !now.same_session(&session) {
+                        (session, latest) = (now, None);
+                        break;
+                    }
                 }
-                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(_) => return,
             }
         }
     }

@@ -318,7 +318,7 @@ pub fn run() {
         if let Ok(views) = crate::views() {
             views.client.report(json!({"name": "one.client.native.gpu.hang", "error": said, "attributes": {}}));
         }
-        restart(false);
+        let _ = restart(false);
     });
     // Linux and Windows open a `one:` link with this program, by giving it as the only argument; a Mac tells the
     // program running (`Event::Opened`).
@@ -631,9 +631,12 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
                 }
             }
             // There's no launcher, nor any window: the system's alert says why, and the app ends.
+            // Tried again, it starts again, and this one ends once that one's up (`Told::Ending`), as after an update.
             Event::UserEvent(Told::Unnative(why)) => {
-                alert(&format!("{} can't open its windows on this device: {why}", ::client::app_name()));
-                *flow = ControlFlow::Exit;
+                let said = format!("{} can't open its windows on this device: {why}\n\nRestarting this computer, or updating its graphics driver, may fix it.", ::client::app_name());
+                if !(alert(&said) && restart(true)) {
+                    *flow = ControlFlow::Exit;
+                }
             }
             Event::UserEvent(Told::Toggle(asked, key)) if native.is_some() => {
                 let id = native.expect("it's open");
@@ -692,8 +695,12 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
             Event::UserEvent(Told::Open(link)) if native.is_some() && shows == Shows::Home => crate::spawn(crate::native::go(link, None)),
             Event::UserEvent(Told::Open(link)) => *OPENED.lock().expect("nothing panics holding it") = Some(link),
             Event::UserEvent(Told::Restart) => match native {
-                Some(id) => on_native(move |windows| restart(windows.showing(id))),
-                None => restart(false),
+                Some(id) => on_native(move |windows| {
+                    let _ = restart(windows.showing(id));
+                }),
+                None => {
+                    let _ = restart(false);
+                }
             },
             Event::UserEvent(Told::Quit) => closing(|| tell(Told::Closed)),
             Event::UserEvent(Told::Closed) => {
@@ -755,18 +762,33 @@ fn launcher(home: std::path::PathBuf, restarted: bool, link: Option<String>, sta
     })
 }
 
-/// The system's own alert, as an app shows what it can't go on from: rfd's (NSAlert, Windows' message box), and
-/// GTK's on Linux, as rfd's GTK is another GTK's than the one tao runs.
-fn alert(said: &str) {
+/// The system's own alert, as an app shows what it can't go on from, with Try Again and Quit: rfd's (NSAlert,
+/// Windows' message box), and GTK's on Linux, as rfd's GTK is another GTK's than the one tao runs. → whether its
+/// person pressed Try Again.
+fn alert(said: &str) -> bool {
+    // Windows' message box, without common controls v6 (rfd's feature), has OK and Cancel for them, and says Ok.
     #[cfg(any(target_os = "macos", windows))]
-    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title(::client::app_name()).set_description(said).show();
+    return match rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title(::client::app_name())
+        .set_description(said)
+        .set_buttons(rfd::MessageButtons::OkCancelCustom("Try Again".into(), "Quit".into()))
+        .show()
+    {
+        rfd::MessageDialogResult::Ok => true,
+        rfd::MessageDialogResult::Custom(pressed) => pressed == "Try Again",
+        _ => false,
+    };
     #[cfg(target_os = "linux")]
     {
         use gtk::prelude::*;
-        let alert = gtk::MessageDialog::new(None::<&gtk::Window>, gtk::DialogFlags::MODAL, gtk::MessageType::Error, gtk::ButtonsType::Ok, said);
+        let alert = gtk::MessageDialog::new(None::<&gtk::Window>, gtk::DialogFlags::MODAL, gtk::MessageType::Error, gtk::ButtonsType::None, said);
+        alert.add_buttons(&[("Quit", gtk::ResponseType::Cancel), ("Try Again", gtk::ResponseType::Accept)]);
+        alert.set_default_response(gtk::ResponseType::Accept);
         alert.set_title(::client::app_name());
-        alert.run();
+        let again = alert.run() == gtk::ResponseType::Accept;
         alert.close();
+        again
     }
 }
 
@@ -777,20 +799,21 @@ static RESTARTED: AtomicBool = AtomicBool::new(false);
 /// launcher shows again if it was showing. This program ends only once the new one says it's up (`opened`), on its
 /// standard output, and the new one is the app once this one has ended (`handed`). One that ends before it's up
 /// leaves this one running, Telemetry hearing why, and the next update tries again: so a build that can't start never
-/// leaves the device with no app (20 Nov).
-fn restart(shown: bool) {
+/// leaves the device with no app (20 Nov). → whether it started one.
+fn restart(shown: bool) -> bool {
     use std::io::BufRead;
     // Asked again before the new one's up, it starts one program, not two (two did, 19 Nov).
     static STARTED: AtomicBool = AtomicBool::new(false);
     if STARTED.swap(true, Ordering::Relaxed) {
-        return;
+        return true;
     }
     let reopen = serde_json::to_string(&hosts::open_now()).unwrap_or_default();
     let mut command = match cli::serving::program() {
         Ok(program) => std::process::Command::new(program),
         Err(error) => {
             STARTED.store(false, Ordering::Relaxed);
-            return eprintln!("couldn't start again: {error}");
+            eprintln!("couldn't start again: {error}");
+            return false;
         }
     };
     command.env("ONE_RESTARTED", "1").env("ONE_REOPEN", reopen).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped());
@@ -814,7 +837,8 @@ fn restart(shown: bool) {
         Ok(started) => started,
         Err(error) => {
             STARTED.store(false, Ordering::Relaxed);
-            return eprintln!("couldn't start again: {error}");
+            eprintln!("couldn't start again: {error}");
+            return false;
         }
     };
     let said = started.stdout.take();
@@ -828,6 +852,7 @@ fn restart(shown: bool) {
         crate::updater::report("one.client.update.failed", json!({"error": format!("its new build ended before it was up: {ended}")}));
         STARTED.store(false, Ordering::Relaxed);
     });
+    true
 }
 
 /// The app is up: its window made and its client opened. Started by the program before it as it updated (`restart`),
