@@ -88,9 +88,14 @@ defmodule GitHubSync.GitHub do
 
       %{status: status, body: answer} ->
         message = with {:ok, %{"message" => message}} <- JSON.decode(answer), do: message, else: (_ -> answer)
-        raise "GitHub answered #{method} #{String.replace(path, ~r/\?.*/, "")} with #{status}: #{message}"
+        raise "#{trouble(status)}\n\nGitHub answered #{method} #{String.replace(path, ~r/\?.*/, "")} with #{status}: #{message}"
     end
   end
+
+  # What a person reads where GitHub answered no, before the HTTP line, which is for agents.
+  defp trouble(status) when status in [401, 403], do: "GitHub refused the network's GitHub App."
+  defp trouble(404), do: "GitHub can't find it, or the network's GitHub App isn't installed there."
+  defp trouble(_status), do: "GitHub couldn't answer."
 
   @doc """
   Runs `fun` with the mirror of `full` on this server, fetched from GitHub first, and nothing else using it
@@ -123,7 +128,7 @@ defmodule GitHubSync.GitHub do
   def advertised(call, token, full) do
     case Call.fetch(call, %{url: url(full) <> "/info/refs?service=git-receive-pack", headers: git_headers(token)}) do
       %{status: 200, body: body} -> advertisement(body)
-      %{status: status} -> raise "GitHub answered #{status} for #{full}'s refs"
+      %{status: status} -> raise "#{trouble(status)}\n\nGitHub answered #{status} for #{full}'s refs"
     end
   end
 

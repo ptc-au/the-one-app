@@ -16,7 +16,7 @@
             "github": "ptc-au/the-ptc-app",
             "repo": "network/made/git-repos/the-ptc-app",
             "synced": 1767221940000,
-            "error": "GitHub answered GET /orgs/ptc-au/installation with 404: Not Found"
+            "error": "GitHub can't find it, or the network's GitHub App isn't installed there.\n\nGitHub answered GET /orgs/ptc-au/installation with 404: Not Found"
           }
         ]
       }

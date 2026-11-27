@@ -14,7 +14,7 @@ export default function Repos() {
   const synced = () => syncedAnswer
   changed(() => refresh(syncedAnswer))
   const text = (repo: Synced["repos"][number]) =>
-    repo.error ? `Couldn't sync: ${repo.error}` : repo.synced ? `Synced ${since(repo.synced)}` : "Not synced yet"
+    repo.error ? `Couldn't sync: ${repo.error.split("\n\n")[0]}` : repo.synced ? `Synced ${since(repo.synced)}` : "Not synced yet"
   return (
     <Errored heading="Can't say what syncs">
       <Loading fallback={<Spinner delay />}>
