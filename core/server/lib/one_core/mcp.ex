@@ -445,7 +445,7 @@ defmodule OneCore.Mcp do
 
       run = fn ->
         inputs = Map.get(params, "arguments", %{})
-        unkept(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found, principal), found)
+        unkept(aged(paged(rendered(name, call(name, inputs, principal, forwarded, caller, request), principal), name, found, principal), found), found)
       end
 
       # A write asked again isn't run again, and what it answered is kept for when it is (`OneCore.Writes`).
@@ -966,6 +966,13 @@ defmodule OneCore.Mcp do
     refresh = is_map(layout) && (Map.get(layout, "refresh") || Map.get(layout, :refresh))
     if is_number(refresh) and refresh > 0, do: %{maxAge: refresh}, else: %{}
   end
+
+  # What a tool that says `max_age` answered says how long it's fresh, in seconds (`_meta.maxAge`), as it does for a
+  # widget's, which a client then asks again by its age (`stale` in `core/client/src/cache.rs`).
+  defp aged({:ok, %{} = result}, %{max_age: seconds}) when is_number(seconds),
+    do: {:ok, with_meta(result, %{maxAge: seconds})}
+
+  defp aged(outcome, _tool), do: outcome
 
   # What a tool that says `no_store` answered says no device may keep it (`_meta.noStore`), as HTTP's
   # `Cache-Control: no-store` does: what an encrypted item holds.

@@ -30,6 +30,11 @@ defmodule OneCore.Apps.Version.Shape do
         },
         "read_only" => %{"type" => "boolean", "description" => "true for a tool that only reads"},
         "no_store" => %{"type" => "boolean", "description" => "true for a tool whose answers a device mustn't keep: what an encrypted item holds"},
+        "max_age" => %{
+          "type" => "number",
+          "exclusiveMinimum" => 0,
+          "description" => "for a tool that only reads: how many seconds a client takes its answer as fresh, as HTTP's Cache-Control max-age, where what it shows changes with time and no write says so"
+        },
         "changes" => %{
           "type" => "array",
           "items" => @name,

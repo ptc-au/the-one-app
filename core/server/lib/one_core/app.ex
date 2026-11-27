@@ -210,6 +210,9 @@ defmodule OneCore.App do
     and asks again every read of the app. One that changes only some of them says which, `changes: ["building"]`, as
     TanStack Query's `invalidateQueries` names the queries to ask again, and clients ask only those; `changes: []`
     says it changes nothing a client shows, and nobody is told it ran.
+    One whose answer changes with time, and not for a write, says `max_age: 40`, the seconds a client takes its
+    answer as fresh, as HTTP's `Cache-Control: max-age`: a screen that reads it again after that is answered at once,
+    and shown what the server then says.
     One whose answers hold what's kept encrypted (a Vault item's name and fields) says `no_store: true` too, as HTTP's
     `Cache-Control: no-store`: its answers say so (`_meta.noStore`), and no device keeps them, so it opens as fast
     as its server answers.
