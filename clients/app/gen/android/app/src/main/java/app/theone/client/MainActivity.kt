@@ -42,6 +42,7 @@ class MainActivity : TauriActivity() {
   private var theme = ""
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    Crashes.install(this)
     dress()
     super.onCreate(savedInstanceState)
     // The web view keeps clear of the bars and the keyboard; a native window draws under them, told where they are
@@ -65,6 +66,7 @@ class MainActivity : TauriActivity() {
    * Android 11). A person swiping it away or Android stopping it for an update isn't one.
    */
   private fun exited() {
+    Crashes.told(this)?.let { Notifications.exited("the app crashed: $it") }
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
     val kept = getSharedPreferences("exits", MODE_PRIVATE)
     val told = kept.getLong("told", 0)

@@ -21,6 +21,11 @@ import org.json.JSONObject
  * token, which the app registers.
  */
 class Notifications : FirebaseMessagingService() {
+  override fun onCreate() {
+    Crashes.install(this)
+    super.onCreate()
+  }
+
   override fun onNewToken(token: String) {
     NotificationPlugin.instance?.handleNewToken(token)
   }
