@@ -326,23 +326,21 @@ defmodule Board.Store do
     end
   end
 
-  @doc "Checks whether every prerequisite of `task_id` is completed."
-  def deps_satisfied?(db, task_id) do
-    case query(
-           db,
-           """
-           select count(*) as n from task_deps d
-           join tasks t on t.root_id = d.needs_id
-           where d.task_id = ? and t.state != 'completed'
-           """,
-           [task_id]
-         ) do
-      [%{"n" => 0}] -> true
-      _ -> false
+  @doc """
+  What a task with these prerequisites is: `ready` once every one is completed, `blocked` while one failed or was
+  canceled, which only a person clears (reopening it), and else `waiting`.
+  """
+  def state_for(db, needs) do
+    states = for dep <- needs, %{"state" => state} <- query(db, "select state from tasks where root_id = ?", [dep]), do: state
+
+    cond do
+      Enum.any?(states, &(&1 in ["failed", "canceled"])) -> "blocked"
+      Enum.all?(states, &(&1 == "completed")) -> "ready"
+      true -> "waiting"
     end
   end
 
-  @doc "Transitions any `waiting` tasks that depended on `completed_id` to `ready` if all deps are met."
+  @doc "Moves any `waiting` tasks that depended on `completed_id` to `ready` if all deps are met."
   def ready_dependents(db, completed_id) do
     iso = now_iso()
 
@@ -358,9 +356,56 @@ defmodule Board.Store do
       )
       |> Enum.map(& &1["root_id"])
 
-    for id <- candidates, deps_satisfied?(db, id) do
+    for id <- candidates, state_for(db, deps_for(db, id)) == "ready" do
       query(db, "update tasks set state = 'ready', updated_at = ? where root_id = ?", [iso, id])
       id
+    end
+  end
+
+  @doc """
+  Holds the `waiting` tasks that need `failed_id`, which failed or was canceled, as `blocked` (kind `needs_failed_task`),
+  so they're a person's to clear and not waiting for good. Gives each one's id, channel, body and owner.
+  """
+  def block_dependents(db, failed_id) do
+    iso = now_iso()
+
+    waiting =
+      query(
+        db,
+        """
+        select t.root_id as id, m.channel, m.body, t.owner_actor as owner
+        from task_deps d
+        join tasks t on t.root_id = d.task_id
+        join messages m on m.id = t.root_id
+        where d.needs_id = ? and t.state = 'waiting'
+        """,
+        [failed_id]
+      )
+
+    for %{"id" => id, "channel" => channel, "body" => body, "owner" => owner} <- waiting do
+      query(db, "update tasks set state = 'blocked', block_kind = 'needs_failed_task', updated_at = ? where root_id = ?", [iso, id])
+      %{id: id, channel: channel, body: body, owner: owner}
+    end
+  end
+
+  @doc "Puts back to `waiting` the tasks that `block_dependents` held for `reopened_id`, and whose other prerequisites hold no failed one. Gives each one's id and channel."
+  def unblock_dependents(db, reopened_id) do
+    iso = now_iso()
+
+    for %{"id" => id, "channel" => channel} <-
+          query(
+            db,
+            """
+            select t.root_id as id, m.channel from task_deps d
+            join tasks t on t.root_id = d.task_id
+            join messages m on m.id = t.root_id
+            where d.needs_id = ? and t.state = 'blocked' and t.block_kind = 'needs_failed_task'
+            """,
+            [reopened_id]
+          ),
+        state_for(db, deps_for(db, id)) != "blocked" do
+      query(db, "update tasks set state = 'waiting', block_kind = null, updated_at = ? where root_id = ?", [iso, id])
+      %{id: id, channel: channel}
     end
   end
 

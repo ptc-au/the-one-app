@@ -16,6 +16,12 @@ defmodule Board do
   @max_attachments 10
   @max_attachment_bytes 100 * 1024 * 1024
 
+  # What a write changes, of Board's reads (`changes` in `tools/0`): clients ask only those again.
+  @new_thread ["read", "channels"]
+  @in_thread ["read", "thread"]
+  @queue ["read", "thread", "channels", "widget"]
+  @needs_you ["read", "thread", "channels", "widget", "badge"]
+
   @impl true
   def icon, do: "client/icon.svg"
 
@@ -211,10 +217,11 @@ defmodule Board do
             channel: %{type: "string", description: "Channel path or trailing-/ subtree (e.g. dev or work/)"},
             state: %{type: "string", description: "Filter tasks by state (waiting, ready, claimed, blocked, completed, failed, canceled)"},
             label: %{type: "string", description: "Filter by key=value label on root or reply"},
-            limit: %{type: "integer", description: "Max threads to return (default 50, max 200)"}
+            limit: %{type: "integer", description: "Max threads to return (default 50, max 200)"},
+            before: %{type: "string", description: "Page: the `next` of the answer before, which gives the threads older than that one"}
           }
         },
-        outputs: %{type: "object"}
+        outputs: %{type: "object", properties: %{threads: %{type: "array", items: %{type: "object"}}, next: %{type: ["string", "null"], description: "Where the next page starts, for `before`; none on the last"}}}
       },
       %{
         name: "thread",
@@ -237,6 +244,7 @@ defmodule Board do
       },
       %{
         name: "post",
+        changes: @new_thread,
         ui: "client/index.html",
         runtime_version: 4,
         description:
@@ -259,6 +267,7 @@ defmodule Board do
       },
       %{
         name: "reply",
+        changes: @in_thread,
         ui: "client/index.html",
         path: "threads/{id}/reply",
         runtime_version: 4,
@@ -283,6 +292,7 @@ defmodule Board do
       },
       %{
         name: "edit",
+        changes: @needs_you,
         description: "Edit a message you wrote. Pass if_revision for compare-and-swap.",
         inputs: %{
           type: "object",
@@ -298,6 +308,7 @@ defmodule Board do
       },
       %{
         name: "delete",
+        changes: @needs_you,
         description: "Delete a message you wrote (leaves a tombstone; deleting a task root cancels it unless completed).",
         inputs: %{
           type: "object",
@@ -308,6 +319,7 @@ defmodule Board do
       },
       %{
         name: "react",
+        changes: @in_thread,
         description: "Add or remove a normalized emoji reaction on a message.",
         inputs: %{
           type: "object",
@@ -324,6 +336,7 @@ defmodule Board do
       },
       %{
         name: "label",
+        changes: @in_thread,
         description: "Set or unset labels on a message with optional atomic compare-and-swap (if, if_unset).",
         inputs: %{
           type: "object",
@@ -341,6 +354,7 @@ defmodule Board do
       },
       %{
         name: "attach",
+        changes: @in_thread,
         description: "Attach an uploaded file (up to 10 per message, 100 MB each) to an existing message.",
         inputs: %{
           type: "object",
@@ -364,6 +378,7 @@ defmodule Board do
       },
       %{
         name: "schemas_create",
+        changes: ["schemas_list"],
         description: "Register an immutable versioned JSON Schema (e.g. security-finding@1) for fenced data blocks.",
         inputs: %{
           type: "object",
@@ -381,6 +396,7 @@ defmodule Board do
       },
       %{
         name: "task_create",
+        changes: @queue,
         description:
           "Create a task (channel + body), convert an existing thread (id), or create an atomic multi-task plan (channel + plan array up to 100 items with key/needs).",
         inputs: %{
@@ -401,6 +417,7 @@ defmodule Board do
       },
       %{
         name: "task_claim",
+        changes: @queue,
         description:
           "Claim a specific task (id) or the oldest ready task (ready: true, channel). Only claims your own user's tasks unless from is passed explicitly.",
         inputs: %{
@@ -419,6 +436,7 @@ defmodule Board do
       },
       %{
         name: "task_renew",
+        changes: @in_thread,
         description: "Renew an active task lease.",
         inputs: %{
           type: "object",
@@ -434,6 +452,7 @@ defmodule Board do
       },
       %{
         name: "task_complete",
+        changes: @needs_you,
         description: "Complete a claimed task with its result and unblock dependent tasks.",
         inputs: %{
           type: "object",
@@ -450,6 +469,7 @@ defmodule Board do
       },
       %{
         name: "task_fail",
+        changes: @needs_you,
         description: "Fail a claimed task with a reason.",
         inputs: %{
           type: "object",
@@ -466,6 +486,7 @@ defmodule Board do
       },
       %{
         name: "task_release",
+        changes: @queue,
         description: "Release a claimed task back to ready.",
         inputs: %{
           type: "object",
@@ -476,6 +497,7 @@ defmodule Board do
       },
       %{
         name: "task_block",
+        changes: @needs_you,
         description: "Hold a task for a person, post the question in its thread, and notify them.",
         inputs: %{
           type: "object",
@@ -493,24 +515,28 @@ defmodule Board do
       },
       %{
         name: "task_unblock",
+        changes: @needs_you,
         description: "Unblock a held task back to ready (or waiting if prerequisites remain). A person does this, not an agent, so it takes no profile.",
         inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
         name: "task_cancel",
+        changes: @needs_you,
         description: "Cancel a task. Only its owner can.",
         inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}, reason: %{type: "string"}, profile: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
         name: "task_reopen",
+        changes: @needs_you,
         description: "Reopen a failed or canceled task back to ready (or waiting). A person does this, not an agent, so it takes no profile.",
         inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
         name: "schedule_create",
+        changes: ["schedules_list"],
         description: "Schedule a future or recurring post in a channel or reply in a thread.",
         inputs: %{
           type: "object",
@@ -538,12 +564,14 @@ defmodule Board do
       },
       %{
         name: "schedule_cancel",
+        changes: ["schedules_list"],
         description: "Cancel a scheduled message. Only whoever scheduled it can.",
         inputs: %{type: "object", required: ["id"], properties: %{id: %{type: "string"}, profile: %{type: "string"}}},
         outputs: %{type: "object"}
       },
       %{
         name: "tick_schedules",
+        changes: [],
         description: "Posts due scheduled messages and expires lapsed task leases. Board's timer calls it when the next lease lapses or schedule is due, and again for the next.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object"}
@@ -551,14 +579,14 @@ defmodule Board do
       %{
         name: "badge",
         read_only: true,
-        description: "Count of blocked tasks waiting on a person.",
+        description: "Count of tasks waiting on a person: blocked, or failed and not yet reopened or left.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object", properties: %{count: %{type: "integer"}}}
       },
       %{
         name: "widget",
         read_only: true,
-        description: "Home Screen widget showing blocked tasks and active swarm counts.",
+        description: "Home Screen widget showing the tasks waiting on a person, and the ready and active counts.",
         inputs: %{type: "object", properties: %{}},
         outputs: %{type: "object"}
       }
@@ -653,7 +681,7 @@ defmodule Board do
     limit = min(max(inputs["limit"] || 50, 1), 200)
 
     Store.transaction(call, fn db ->
-      {where_sql, params} = read_filters(channel, state, label)
+      {where_sql, params} = read_filters(channel, state, label, inputs["before"])
 
       roots =
         Store.query(
@@ -663,11 +691,13 @@ defmodule Board do
                  m.revision, m.no_sync, m.created_at, m.edited_at, m.deleted_at
           from messages m
           #{where_sql}
-          order by m.created_at desc
+          order by m.created_at desc, m.id desc
           limit ?
           """,
-          params ++ [limit]
+          params ++ [limit + 1]
         )
+
+      {roots, next} = if length(roots) > limit, do: {Enum.take(roots, limit), List.last(Enum.take(roots, limit))["id"]}, else: {roots, nil}
 
       threads =
         Enum.map(roots, fn %{"id" => id} = row ->
@@ -676,7 +706,7 @@ defmodule Board do
           msg |> Map.put(:reply_count, reply_count) |> Map.put(:task, Store.task_row(db, id))
         end)
 
-      %{threads: threads}
+      %{threads: threads, next: next}
     end)
   end
 
@@ -731,7 +761,6 @@ defmodule Board do
 
       case result do
         {:ok, msg} ->
-          Call.changed(call)
           posted(call, msg)
           msg
 
@@ -751,8 +780,8 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select channel from messages where id = ? and root_id is null", [root_id]) do
-            [%{"channel" => channel}] ->
+          case Store.query(db, "select channel, deleted_at from messages where id = ? and root_id is null", [root_id]) do
+            [%{"channel" => channel, "deleted_at" => nil}] ->
               with :ok <- check_after(db, root_id, inputs["after"]),
                    {:ok, blocks} <- Store.parse_and_validate_blocks(db, body) do
                 id = Store.new_id("msg")
@@ -787,6 +816,9 @@ defmodule Board do
                  }}
               end
 
+            [_deleted] ->
+              {:error, "Thread #{root_id} was deleted."}
+
             [] ->
               {:error, "Thread #{root_id} not found."}
           end
@@ -794,7 +826,6 @@ defmodule Board do
 
       case result do
         {:ok, msg} ->
-          Call.changed(call)
           posted(call, msg)
           msg
 
@@ -878,7 +909,6 @@ defmodule Board do
 
       case result do
         {:ok, msg} ->
-          Call.changed(call)
 
           Events.emit(call, "message_edited", %{
             "id" => msg.id,
@@ -916,21 +946,27 @@ defmodule Board do
 
                 true ->
                   now = Store.now_iso()
-                  new_rev = rev + 1
-                  Store.query(db, "update messages set body = '', blocks = '[]', revision = ?, deleted_at = ? where id = ?", [new_rev, now, id])
-                  Store.query(db, "delete from labels where message_id = ?", [id])
-                  Store.query(db, "delete from reactions where message_id = ?", [id])
-                  blobs = for %{"blob" => blob} <- Store.query(db, "delete from attachments where message_id = ? returning blob", [id]), do: blob
+                  [%{"body" => body}] = Store.query(db, "select body from messages where id = ?", [id])
+                  blobs = tombstone(db, id, rev + 1, now)
 
-                  if root_id == nil do
-                    Store.query(
-                      db,
-                      "update tasks set state = 'canceled', claim_token_hash = null, lease_until = null, updated_at = ? where root_id = ? and state != 'completed'",
-                      [now, id]
-                    )
-                  end
+                  # A thread's replies are deleted with it, and what waited on its task is blocked.
+                  {replies, blocked} =
+                    if root_id == nil do
+                      replies = Store.query(db, "select id, revision from messages where root_id = ? and deleted_at is null", [id])
+                      blobs = blobs ++ for(%{"id" => rid, "revision" => r} <- replies, blob <- tombstone(db, rid, r + 1, now), do: blob)
 
-                  {:ok, %{id: id, channel: channel, root_id: root_id, deleted: true, revision: new_rev, blobs: blobs}}
+                      Store.query(
+                        db,
+                        "update tasks set state = 'canceled', claim_token_hash = null, lease_until = null, updated_at = ? where root_id = ? and state != 'completed'",
+                        [now, id]
+                      )
+
+                      {for(%{"id" => rid} <- replies, do: rid), block_waiting(db, id, body, actor, profile, "was deleted")}
+                    else
+                      {[], []}
+                    end
+
+                  {:ok, %{id: id, channel: channel, root_id: root_id, deleted: true, revision: rev + 1, blobs: blobs, replies: replies, blocked: blocked}}
               end
 
             [%{"deleted_at" => _deleted}] ->
@@ -943,13 +979,13 @@ defmodule Board do
 
       case result do
         {:ok, %{channel: channel, root_id: root_id, blobs: blobs} = res} ->
-          Call.changed(call)
           for blob <- blobs, do: Artifact.remove(call.own, blob)
+          for rid <- res.replies, do: Events.emit(call, "message_deleted", %{"id" => rid, "channel" => channel, "root_id" => res.id})
           Events.emit(call, "message_deleted", %{"id" => res.id, "channel" => channel, "root_id" => root_id})
-          Map.delete(res, :blobs)
+          announce_blocked(call, actor, profile, channel, hd(res.blocked ++ [%{id: res.id}]).id, res.blocked, "deleted a task")
+          Map.take(res, [:id, :channel, :root_id, :deleted, :revision])
 
         {:ok, res} ->
-          Call.changed(call)
           res
 
         {:error, why} ->
@@ -984,7 +1020,6 @@ defmodule Board do
 
       case result do
         {:ok, res} ->
-          Call.changed(call)
 
           Events.emit(call, "reaction_changed", %{
             "id" => id,
@@ -1039,7 +1074,6 @@ defmodule Board do
 
       case result do
         {:ok, res} ->
-          Call.changed(call)
           Events.emit(call, "labels_changed", res)
           res
 
@@ -1075,7 +1109,6 @@ defmodule Board do
 
       case result do
         {:ok, att} ->
-          Call.changed(call)
           att
 
         {:error, why} ->
@@ -1159,7 +1192,6 @@ defmodule Board do
 
       case result do
         {:ok, created} ->
-          Call.changed(call)
 
           for t <- created, t.state == "ready" do
             Events.emit(call, "task_ready", %{id: t.id, channel: channel, body: t.body, owner: owner, assigned_profile: t.assigned_profile})
@@ -1257,7 +1289,6 @@ defmodule Board do
 
       case result do
         {:ok, claimed} ->
-          Call.changed(call)
           timed(call)
           claimed
 
@@ -1281,7 +1312,6 @@ defmodule Board do
 
     case result do
       {:ok, res} ->
-        Call.changed(call)
         res
 
       {:error, why} ->
@@ -1295,7 +1325,7 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor),
+          with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor, profile),
                [%{"channel" => channel, "owner_actor" => owner}] <- Store.query(db, "select m.channel, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
             now = Store.now_iso()
 
@@ -1329,7 +1359,6 @@ defmodule Board do
 
       case result do
         {:ok, done} ->
-          Call.changed(call)
           posted(call, done.reply)
           Events.emit(call, "task_completed", %{id: done.id, channel: done.channel, result: done.result, owner: done.owner, author: actor, profile: profile})
 
@@ -1351,7 +1380,7 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor),
+          with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor, profile),
                [%{"channel" => channel}] <- Store.query(db, "select channel from messages where id = ?", [id]) do
             now = Store.now_iso()
 
@@ -1362,7 +1391,8 @@ defmodule Board do
             )
 
             reply_msg = append_system_reply(db, id, channel, actor, profile, "Failed: #{reason}")
-            {:ok, %{id: id, state: "failed", reason: reason, reply: reply_msg}}
+            [%{"body" => body}] = Store.query(db, "select body from messages where id = ?", [id])
+            {:ok, %{id: id, channel: channel, state: "failed", reason: reason, reply: reply_msg, blocked: block_waiting(db, id, body, actor, profile, "failed")}}
           else
             [] -> {:error, "Task #{id} not found."}
             {:error, why} -> {:error, why}
@@ -1371,9 +1401,9 @@ defmodule Board do
 
       case result do
         {:ok, res} ->
-          Call.changed(call)
           posted(call, res.reply)
-          Map.delete(res, :reply)
+          announce_blocked(call, actor, profile, res.channel, id, res.blocked, "failed a task", reason)
+          %{id: id, state: "failed", reason: reason, blocked: Enum.map(res.blocked, & &1.id)}
 
         {:error, why} ->
           {:error, why}
@@ -1409,7 +1439,6 @@ defmodule Board do
 
       case result do
         {:ok, res} ->
-          Call.changed(call)
           posted(call, res.reply)
           Map.delete(res, :reply)
 
@@ -1426,7 +1455,7 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor),
+          with :ok <- verify_claim_or_owner(db, id, inputs["epoch"], inputs["token"], actor, profile),
                [%{"channel" => channel, "owner_actor" => owner}] <- Store.query(db, "select m.channel, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
             now = Store.now_iso()
 
@@ -1451,7 +1480,6 @@ defmodule Board do
 
       case result do
         {:ok, blocked} ->
-          Call.changed(call)
           posted(call, blocked.reply)
           Events.emit(call, "task_blocked", %{id: blocked.id, channel: blocked.channel, question: blocked.question, kind: blocked.kind, owner: blocked.owner, author: actor, profile: profile})
           notify_blocked(call, blocked, profile)
@@ -1470,10 +1498,15 @@ defmodule Board do
       Store.transaction(call, fn db ->
         case Store.query(db, "select m.channel, m.body, t.state, t.owner_actor, t.assigned_profile from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
           [%{"channel" => channel, "body" => body, "state" => "blocked", "owner_actor" => owner, "assigned_profile" => assigned}] ->
-            next_state = if Store.deps_satisfied?(db, id), do: "ready", else: "waiting"
-            Store.query(db, "update tasks set state = ?, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
-            reply_msg = append_system_reply(db, id, channel, actor, nil, "Unblocked.")
-            {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
+            case Store.state_for(db, Store.deps_for(db, id)) do
+              "blocked" ->
+                {:error, "It needs a task that failed or was canceled: reopen that one first."}
+
+              next_state ->
+                Store.query(db, "update tasks set state = ?, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
+                reply_msg = append_system_reply(db, id, channel, actor, nil, "Unblocked.")
+                {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
+            end
 
           [%{"state" => state}] ->
             {:error, "Task #{id} is #{state}, not blocked."}
@@ -1485,7 +1518,6 @@ defmodule Board do
 
     case result do
       {:ok, res} ->
-        Call.changed(call)
         posted(call, res.reply)
 
         if res.state == "ready" do
@@ -1506,14 +1538,14 @@ defmodule Board do
 
       result =
         Store.transaction(call, fn db ->
-          case Store.query(db, "select m.channel, m.profile, t.state, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
+          case Store.query(db, "select m.channel, m.body, m.profile, t.state, t.owner_actor from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
             [%{"owner_actor" => owner, "profile" => msg_profile}] when owner != actor or (profile not in [nil, ""] and profile != msg_profile) ->
               {:error, "Only the task's owner can cancel it."}
 
             [%{"state" => "completed"}] ->
               {:error, "Task #{id} is already completed."}
 
-            [%{"channel" => channel}] ->
+            [%{"channel" => channel, "body" => body}] ->
               Store.query(
                 db,
                 "update tasks set state = 'canceled', result = ?, claim_token_hash = null, lease_until = null, updated_at = ? where root_id = ?",
@@ -1521,7 +1553,7 @@ defmodule Board do
               )
 
               reply_msg = append_system_reply(db, id, channel, actor, profile, "Canceled: #{reason}")
-              {:ok, %{id: id, state: "canceled", reply: reply_msg}}
+              {:ok, %{id: id, channel: channel, state: "canceled", reply: reply_msg, blocked: block_waiting(db, id, body, actor, profile, "was canceled")}}
 
             [] ->
               {:error, "Task #{id} not found."}
@@ -1530,9 +1562,9 @@ defmodule Board do
 
       case result do
         {:ok, res} ->
-          Call.changed(call)
           posted(call, res.reply)
-          Map.delete(res, :reply)
+          announce_blocked(call, actor, profile, res.channel, id, res.blocked, "canceled a task")
+          %{id: id, state: "canceled", blocked: Enum.map(res.blocked, & &1.id)}
 
         {:error, why} ->
           {:error, why}
@@ -1547,10 +1579,15 @@ defmodule Board do
       Store.transaction(call, fn db ->
         case Store.query(db, "select m.channel, m.body, t.state, t.owner_actor, t.assigned_profile from tasks t join messages m on m.id = t.root_id where t.root_id = ?", [id]) do
           [%{"channel" => channel, "body" => body, "state" => state, "owner_actor" => owner, "assigned_profile" => assigned}] when state in ["failed", "canceled"] ->
-            next_state = if Store.deps_satisfied?(db, id), do: "ready", else: "waiting"
-            Store.query(db, "update tasks set state = ?, result = null, block_kind = null, updated_at = ? where root_id = ?", [next_state, Store.now_iso(), id])
+            next_state = Store.state_for(db, Store.deps_for(db, id))
+            kind = if next_state == "blocked", do: "needs_failed_task"
+            Store.query(db, "update tasks set state = ?, result = null, block_kind = ?, updated_at = ? where root_id = ?", [next_state, kind, Store.now_iso(), id])
             reply_msg = append_system_reply(db, id, channel, actor, nil, "Reopened.")
-            {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg}}
+
+            # What was blocked on it waits again.
+            waiting = for w <- Store.unblock_dependents(db, id), do: append_system_reply(db, w.id, w.channel, actor, nil, "Waiting again: a task it needs was reopened.")
+
+            {:ok, %{id: id, state: next_state, channel: channel, body: body, owner: owner, assigned_profile: assigned, reply: reply_msg, waiting: waiting}}
 
           [%{"state" => state}] ->
             {:error, "Only failed or canceled tasks can be reopened (currently #{state})."}
@@ -1562,8 +1599,8 @@ defmodule Board do
 
     case result do
       {:ok, res} ->
-        Call.changed(call)
         posted(call, res.reply)
+        for reply <- res.waiting, do: posted(call, reply)
 
         if res.state == "ready" do
           Events.emit(call, "task_ready", %{id: res.id, channel: res.channel, body: res.body, owner: res.owner, assigned_profile: res.assigned_profile})
@@ -1609,7 +1646,6 @@ defmodule Board do
 
       case result do
         {:ok, res} ->
-          Call.changed(call)
           timed(call)
           res
 
@@ -1676,7 +1712,6 @@ defmodule Board do
 
       case result do
         {:ok, canceled} ->
-          Call.changed(call)
           canceled
 
         {:error, why} ->
@@ -1741,6 +1776,7 @@ defmodule Board do
     sent = for {:sent, msg} <- fired, do: msg
     failed = for {:failed, sid, why} <- fired, do: {sid, why}
 
+    # The database's timer calls this, and nobody is told that a timer's call ran: it says so itself, as `changes: []` leaves it to.
     if expired != [] or fired != [] do
       Call.changed(call)
     end
@@ -1762,7 +1798,7 @@ defmodule Board do
   defp dispatch("badge", _inputs, call) do
     count =
       Store.transaction(call, fn db ->
-        [%{"n" => n}] = Store.query(db, "select count(*) as n from tasks where state = 'blocked'")
+        [%{"n" => n}] = Store.query(db, "select count(*) as n from tasks t join messages m on m.id = t.root_id where t.state in ('blocked', 'failed') and m.deleted_at is null")
         n
       end)
 
@@ -1770,31 +1806,31 @@ defmodule Board do
   end
 
   defp dispatch("widget", _inputs, call) do
-    {blocked, ready, claimed} =
+    {waiting, count, ready, claimed} =
       Store.transaction(call, fn db ->
-        blocked =
+        waiting =
           Store.query(
             db,
             """
-            select m.id, m.channel, m.body, t.block_kind
+            select m.id, m.channel, m.body, t.state, t.block_kind
             from tasks t join messages m on m.id = t.root_id
-            where t.state = 'blocked' and m.deleted_at is null
+            where t.state in ('blocked', 'failed') and m.deleted_at is null
             order by t.updated_at desc limit 3
             """
           )
 
+        [%{"n" => count}] = Store.query(db, "select count(*) as n from tasks t join messages m on m.id = t.root_id where t.state in ('blocked', 'failed') and m.deleted_at is null")
         [%{"n" => ready}] = Store.query(db, "select count(*) as n from tasks t where #{Store.state_sql()} = 'ready'")
         [%{"n" => claimed}] = Store.query(db, "select count(*) as n from tasks t where #{Store.state_sql()} = 'claimed'")
-        {blocked, ready, claimed}
+        {waiting, count, ready, claimed}
       end)
 
     rows =
-      if blocked == [] do
-        [%{part: "text", text: "Nothing blocked · #{ready} ready, #{claimed} active", size: "sm", tone: "muted"}]
+      if waiting == [] do
+        [%{part: "text", text: "Nothing waiting on you · #{ready} ready, #{claimed} active", size: "sm", tone: "muted"}]
       else
-        for %{"channel" => ch, "body" => body, "block_kind" => kind} <- blocked do
-          title = body |> String.split("\n") |> hd() |> String.slice(0, 48)
-          %{part: "item", title: title, subtitle: "#{ch} · #{kind || "blocked"}"}
+        for %{"channel" => ch, "body" => body, "state" => state, "block_kind" => kind} <- waiting do
+          %{part: "item", title: title_of(body), subtitle: "#{ch} · #{words(kind || state)}"}
         end
       end
 
@@ -1807,7 +1843,7 @@ defmodule Board do
           part: "row",
           parts: [
             %{part: "text", text: "Board", weight: "bold", grow: true},
-            %{part: "text", text: "#{length(blocked)} blocked", size: "sm", tone: if(blocked == [], do: "muted", else: "warn")}
+            %{part: "text", text: "#{count} waiting on you", size: "sm", tone: if(count == 0, do: "muted", else: "warn")}
           ]
         }
         | rows
@@ -1818,8 +1854,6 @@ defmodule Board do
   # --- Private Helpers ---
 
   defp finish_task_create(call, {:ok, task}) do
-    Call.changed(call)
-
     if task.state == "ready" do
       Events.emit(call, "task_ready", %{id: task.id, channel: task.channel, body: task.body, owner: task.owner, assigned_profile: task.assigned_profile})
     end
@@ -1885,15 +1919,16 @@ defmodule Board do
   defp insert_task(db, root_id, channel, body, owner, profile, assigned, needs) do
     with :ok <- validate_needs(db, needs) do
       now = Store.now_iso()
-      state = if needs == [] or all_completed?(db, needs), do: "ready", else: "waiting"
+      state = Store.state_for(db, needs)
+      kind = if state == "blocked", do: "needs_failed_task"
 
       Store.query(
         db,
         """
-        insert into tasks (root_id, state, owner_actor, owner_profile, assigned_profile, claim_epoch, updated_at)
-        values (?, ?, ?, ?, ?, 0, ?)
+        insert into tasks (root_id, state, owner_actor, owner_profile, assigned_profile, claim_epoch, block_kind, updated_at)
+        values (?, ?, ?, ?, ?, 0, ?, ?)
         """,
-        [root_id, state, owner, profile, assigned, now]
+        [root_id, state, owner, profile, assigned, kind, now]
       )
 
       for dep <- Enum.uniq(needs) do
@@ -1916,12 +1951,6 @@ defmodule Board do
         true ->
           {:cont, :ok}
       end
-    end)
-  end
-
-  defp all_completed?(db, needs) do
-    Enum.all?(needs, fn dep ->
-      Store.query(db, "select state from tasks where root_id = ?", [dep]) == [%{"state" => "completed"}]
     end)
   end
 
@@ -2012,16 +2041,18 @@ defmodule Board do
   defp verify_claim(_db, _id, _epoch, _token), do: {:error, "claim_not_held: epoch and token are required."}
 
   # The claim holder, by epoch and token, or the task's owner while no one holds it: ready or blocked, never one that's
-  # finished.
-  defp verify_claim_or_owner(db, id, epoch, token, _actor) when is_integer(epoch) and is_binary(token) do
+  # finished. A person, who passes no `profile`, as an agent does, settles one that an agent holds too: the agent's
+  # epoch and token then fail, as they do for any task that's no longer claimed.
+  defp verify_claim_or_owner(db, id, epoch, token, _actor, _profile) when is_integer(epoch) and is_binary(token) do
     verify_claim(db, id, epoch, token)
   end
 
-  defp verify_claim_or_owner(db, id, _epoch, _token, actor) do
+  defp verify_claim_or_owner(db, id, _epoch, _token, actor, profile) do
     case Store.query(db, "select state, owner_actor, lease_until from tasks where root_id = ?", [id]) do
       [%{"state" => state, "owner_actor" => ^actor, "lease_until" => lease}] ->
         case Store.effective_state(state, lease) do
           held when held in ["ready", "blocked"] -> :ok
+          "claimed" when profile == nil -> :ok
           "claimed" -> {:error, "claim_not_held: task is currently claimed; pass epoch and token."}
           other -> {:error, "Task #{id} is #{other}, not ready or blocked."}
         end
@@ -2118,8 +2149,15 @@ defmodule Board do
     end
   end
 
-  defp read_filters(channel, state, label) do
+  defp read_filters(channel, state, label, before) do
     {clauses, params} = {["m.root_id is null", "m.deleted_at is null"], []}
+
+    {clauses, params} =
+      if is_binary(before) and before != "" do
+        {clauses ++ ["(m.created_at, m.id) < (select created_at, id from messages where id = ?)"], params ++ [before]}
+      else
+        {clauses, params}
+      end
 
     {clauses, params} =
       if is_binary(state) and state != "" do
@@ -2318,12 +2356,50 @@ defmodule Board do
 
   defp notify_blocked(call, blocked, profile) do
     who = Store.display_author(call.actor || call.subject, profile)
-    notifications = Call.app(call, "notifications")
+    notify(call, "#{who} blocked a task in #{blocked.channel}", blocked.question, blocked.id)
+  end
 
-    notifications.send(call, %{
-      "title" => "#{who} blocked a task in #{blocked.channel}",
-      "text" => String.slice(blocked.question, 0, 140),
-      "page" => "thread&id=#{blocked.id}"
+  # Tells whoever the board is for, and a tap opens the thread.
+  defp notify(call, title, text, thread_id) do
+    Call.app(call, "notifications").send(call, %{
+      "title" => title,
+      "text" => String.slice(text, 0, 140),
+      "page" => "client/index.html#thread&id=#{thread_id}"
     })
   end
+
+  # A task that failed, was canceled or deleted: each task waiting on it is blocked, with a note in its thread saying why,
+  # as one that needs a person is (`Store.block_dependents/2`). `what` says it as a title does, "failed a task".
+  defp block_waiting(db, id, body, actor, profile, what) do
+    for dependent <- Store.block_dependents(db, id) do
+      note = "Blocked: \"#{title_of(body)}\" #{what}, and this needs it."
+      Map.put(dependent, :reply, append_system_reply(db, dependent.id, dependent.channel, actor, profile, note))
+    end
+  end
+
+  # Tells observers of the board about those notes, and the person: a failed task is theirs to clear, and so is whatever
+  # now waits on one that's gone. `opens` is the thread a tap opens (the first blocked, where the task itself is deleted).
+  defp announce_blocked(call, actor, profile, channel, opens, blocked, what, reason \\ nil) do
+    for dependent <- blocked, do: posted(call, dependent.reply)
+
+    if reason != nil or blocked != [] do
+      count = length(blocked)
+      waiting = if count > 0, do: "#{count} #{if count == 1, do: "task", else: "tasks"} waiting on it #{if count == 1, do: "is", else: "are"} blocked."
+      who = Store.display_author(actor, profile)
+      notify(call, "#{who} #{what} in #{channel}", Enum.join(Enum.reject([reason, waiting], &is_nil/1), " · "), opens)
+    end
+  end
+
+  defp title_of(body), do: body |> String.split("\n") |> hd() |> String.slice(0, 48)
+
+  # A message deleted: its text, labels, reactions and attachments go, and a tombstone stays. Gives the attachments' blobs.
+  defp tombstone(db, id, revision, now) do
+    Store.query(db, "update messages set body = '', blocks = '[]', revision = ?, deleted_at = ? where id = ?", [revision, now, id])
+    Store.query(db, "delete from labels where message_id = ?", [id])
+    Store.query(db, "delete from reactions where message_id = ?", [id])
+    for %{"blob" => blob} <- Store.query(db, "delete from attachments where message_id = ? returning blob", [id]), do: blob
+  end
+
+  # What a task's state or block kind says, as a person reads it: `awaiting_approval` is "Awaiting approval".
+  defp words(kind), do: kind |> String.replace("_", " ") |> String.capitalize()
 end
