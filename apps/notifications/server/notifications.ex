@@ -75,21 +75,22 @@ defmodule Notifications do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.35.34",
+      "core" => ">= 0.37.184",
       "database" => "to keep your inbox",
       "encryption" => "to encrypt what's sent to your devices"
     }
   end
 
-  @impl true
-  def hooks, do: ["sign-in.device_removed", "wake", "settings.sections", "renamed"]
-
   # Which apps may notify you, and whether this device is woken, are Settings' Notifications; the inbox stays the app.
   @impl true
-  def hook("settings.sections", _about, _call),
+  def settings,
     do: [%{in: "settings", name: "Notifications", component: "settings", icon: "client/icon.svg", group: "general", order: 1}]
 
+  @impl true
+  def hooks, do: ["sign-in.device_removed", "wake", "renamed"]
+
   # Someone renamed has their inbox, their devices and what they muted by their new name.
+  @impl true
   def hook("renamed", %{"who" => old, "to" => new}, call) do
     transaction(call, fn db -> for table <- ~w(notifications quiet devices), do: query(db, "update or replace #{table} set user = ? where user = ?", [new, old]) end)
     nil
@@ -141,6 +142,7 @@ defmodule Notifications do
     [
       %{
         name: "send",
+        changes: ["inbox", "apps"],
         description:
           "Notifies a person, everyone in a group or everyone in the network, on their devices and in their inbox",
         inputs: %{
@@ -235,12 +237,14 @@ defmodule Notifications do
       },
       %{
         name: "read",
+        changes: ["inbox"],
         description: "Marks a notification read",
         inputs: %{type: "object", properties: %{id: id}},
         outputs: %{type: "object", properties: %{read: %{type: "integer", description: "How many were marked read"}}, required: ["read"]}
       },
       %{
         name: "clear",
+        changes: ["inbox"],
         description: "Clears a notification from your inbox",
         inputs: %{type: "object", properties: %{id: id}},
         outputs: %{type: "object", properties: %{cleared: %{type: "integer", description: "How many were cleared"}}, required: ["cleared"]}
@@ -271,6 +275,7 @@ defmodule Notifications do
       },
       %{
         name: "allow",
+        changes: ["apps"],
         description: "Allows or mutes an app's notifications. A muted app sends you nothing",
         inputs: %{
           type: "object",
@@ -281,6 +286,7 @@ defmodule Notifications do
       },
       %{
         name: "register",
+        changes: [],
         description: "Has a phone or a browser of yours woken by its push service when you're notified",
         inputs: %{
           type: "object",
@@ -312,6 +318,7 @@ defmodule Notifications do
       },
       %{
         name: "unregister",
+        changes: ["devices"],
         description: "Stops waking a device of yours",
         inputs: %{
           type: "object",

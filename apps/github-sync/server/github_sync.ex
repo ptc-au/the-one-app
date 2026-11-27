@@ -34,7 +34,7 @@ defmodule GitHubSync do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.34.403",
+      "core" => ">= 0.37.184",
       "database" => "to keep when it last synced",
       "git-repos" => "to keep each GitHub repo in your network",
       "vault" => "to keep its GitHub App's key"
@@ -42,7 +42,10 @@ defmodule GitHubSync do
   end
 
   @impl true
-  def hooks, do: ["git-repos.push", "settings.sections"]
+  def settings, do: [%{in: "app", component: "repos"}]
+
+  @impl true
+  def hooks, do: ["git-repos.push"]
 
   @impl true
   def jobs, do: [%{tool: "sync", every: 60}]
@@ -119,8 +122,6 @@ defmodule GitHubSync do
   end
 
   @impl true
-  def hook("settings.sections", _about, _call), do: [%{in: "app", component: "repos"}]
-
   def hook("git-repos.push", %{"repo" => repo} = about, call) do
     case {connected(call), record(call, repo)} do
       {app, %{"github" => full}} when app != nil -> push_through(call, app, full, about)

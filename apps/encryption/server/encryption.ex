@@ -26,7 +26,7 @@ defmodule Encryption do
   @impl true
   def requires,
     do: %{
-      "core" => ">= 0.35.34",
+      "core" => ">= 0.37.184",
       "database" => "to keep when it last checked who holds your keys",
       "telemetry" => "to raise an alert while a server that acts for you is waiting for your key",
       "sign-in" => "to tell a device that can hold your key, an app's, from a browser or an assistant, which can't"
@@ -42,11 +42,12 @@ defmodule Encryption do
 
   # Whether a device of the app holds your key is a group on its page in Settings.
   @impl true
-  def hooks, do: ["settings.sections", "renamed"]
+  def settings, do: [%{in: "device", component: "device", kinds: ["app"]}]
 
   @impl true
-  def hook("settings.sections", _about, _call), do: [%{in: "device", component: "device", kinds: ["app"]}]
+  def hooks, do: ["renamed"]
 
+  @impl true
   # Someone renamed keeps the key they had, sealed by the name it was made under (`keyed/1`), and what's encrypted for
   # them is listed by its new name. Asked for the network or a group, its key is wrapped for them by their new name.
   def hook("renamed", %{"who" => old, "to" => new}, %Call{subject: new}) do

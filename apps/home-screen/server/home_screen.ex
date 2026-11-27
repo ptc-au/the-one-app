@@ -26,7 +26,7 @@ defmodule HomeScreen do
   def icon, do: "client/home.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.34.604"}
+  def requires, do: %{"core" => ">= 0.37.184"}
 
   alias OneCore.{Artifact, Call}
   alias OneCore.Apps.Icons
@@ -35,12 +35,9 @@ defmodule HomeScreen do
   def entrypoints, do: [%{page: "client/index.html", category: "launcher", runtime_version: 4}]
 
   # Colour Mode is in Settings' Appearance, and whether a computer's app opens at login in its General, which a phone has
-  # no login to open at and so doesn't list (`settings.sections`), each drawn by this app's component.
+  # no login to open at and so doesn't list, each drawn by this app's component.
   @impl true
-  def hooks, do: ["settings.sections"]
-
-  @impl true
-  def hook("settings.sections", _about, _call),
+  def settings,
     do: [
       %{in: "settings", name: "Appearance", component: "appearance", icon: "client/colour-mode.svg", group: "general", order: 2},
       %{in: "settings", name: "General", component: "general", icon: "client/general.svg", group: "general", order: 4, needs: "login"}
@@ -511,20 +508,20 @@ defmodule HomeScreen do
   # which opens its section in Settings. Each says who it's
   # `installed` for, by what name, and whether whoever asks may remove it: an owner of whoever that is.
   defp library(call) do
+    admins = Call.owns?(%{call | subject: "network"})
+
     entries =
       for scope <- scopes(call),
           removes <- [Call.owns?(%{call | subject: scope})],
           app <- Call.apps(%{call | subject: scope}),
           app.installed == scope,
-          entry <- shown(app),
+          entry <- shown(app, admins),
           match?("users/" <> _, call.subject) or entry[:subject] != "user" do
         installed = %{for: scope, name: app.name, removes: removes}
         {{app.app, entry.entrypoint}, opened(Map.merge(entry, %{title: app.title, installed: installed}), call.subject, scope)}
       end
       |> Enum.uniq_by(&elem(&1, 0))
       |> Enum.map(&elem(&1, 1))
-
-    admins = Call.owns?(%{call | subject: "network"})
 
     for category <- OneCore.Apps.Deploy.categories(),
         category != "Admin" or admins,
@@ -533,12 +530,22 @@ defmodule HomeScreen do
         do: %{category: category, entrypoints: Enum.sort_by(theirs, &String.downcase(&1.name))}
   end
 
-  # An app as its App Library shows it: its entrypoints, or with none, itself.
-  defp shown(%{entrypoints: []} = app),
-    do: [%{entrypoint: nil, app: app.app, name: app.title, icon: Icons.address(app.icon), category: app.category}]
+  # An app as its App Library shows it: its entrypoints, or with none, itself if it has a Settings section
+  # (not a device's page, which isn't about it).
+  defp shown(%{entrypoints: []} = app, admins) do
+    if has_settings?(app, admins),
+      do: [%{entrypoint: nil, app: app.app, name: app.title, icon: Icons.address(app.icon), category: app.category}],
+      else: []
+  end
 
-  defp shown(app),
+  defp shown(app, _admins),
     do: for(entrypoint <- app.entrypoints, entrypoint.category != "launcher", do: entry(app, entrypoint))
+
+  defp has_settings?(%{settings: [_ | _] = settings}, admins),
+    do: Enum.any?(settings, &(&1[:in] != "device" and (&1[:owner] != true or admins)))
+
+  defp has_settings?(%{hooks: hooks}, _admins), do: "settings.sections" in hooks
+  defp has_settings?(_app, _admins), do: false
 
   # Whoever an App Library is for, then each broader owner they're within, narrowest first.
   defp scopes(%{subject: "network"}), do: ["network"]

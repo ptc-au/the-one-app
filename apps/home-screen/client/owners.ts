@@ -44,18 +44,11 @@ const unseen = (who: Pick<Owner, "subject" | "name" | "avatar">, missing: true |
 /// its place. Asked again and not answered, as while a server restarts, an owner is what they were, as a phone's Home
 /// Screen stays: only a Home Screen that never had an answer says why.
 export const answered = createMemo(async function* (was?: Owner[]) {
-  // An app with no screen of its own is listed only if it has a section in Settings, which opening it shows, as macOS
-  // opens a menu-bar app's preferences: its own page, or a section of the sidebar (a device's page isn't about it).
-  const sections = json<{ sections: { app: string; in: string }[] }>("settings_sections").then(({ sections }) => new Set(sections.filter((section) => section.in !== "device").map((section) => section.app)), () => new Set<string>())
   const pages = (who: Pick<Owner, "subject" | "name" | "avatar">) =>
-    Promise.all([json<Pages>("home-screen_pages", {}, who.subject), sections]).then(([pages, has]): Owner => ({
+    json<Pages>("home-screen_pages", {}, who.subject).then((pages): Owner => ({
       ...pages,
       ...who,
       key: who.subject ?? "you",
-      library: pages.library.flatMap((category) => {
-        const entrypoints = category.entrypoints.filter((listed) => listed.entrypoint || has.has(listed.installed.name))
-        return entrypoints.length ? [{ ...category, entrypoints }] : []
-      }),
     }))
   // Whose picture is yours, beside their pages, which don't wait on it: a picture it can't be had for is their initials.
   const picture = json<{ people: { who: string }[] }>("sign-in_people").then(({ people }) => people[0]?.who ?? "", () => "")

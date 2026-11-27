@@ -17,7 +17,7 @@ defmodule Settings do
   def entrypoints, do: [%{page: "client/index.html", category: "settings", subject: "user", badge: "badge", runtime_version: 4}]
 
   @impl true
-  def requires, do: %{"core" => ">= 0.37.24"}
+  def requires, do: %{"core" => ">= 0.37.184"}
 
   @impl true
   def offers do
@@ -188,7 +188,13 @@ defmodule Settings do
   end
 
   def call("section", %{"app" => app} = inputs, call) do
-    theirs = Enum.filter(sections(call), &(&1.in == "settings" and &1.app == app))
+    {items, _failed} = listed(call)
+
+    theirs =
+      items
+      |> Enum.filter(&(&1.in == "settings" and &1.app == app))
+      |> Enum.map(&(&1 |> Map.put(:count, nil) |> Map.delete(:badge)))
+
     one = if inputs["section"], do: Enum.find(theirs, &(&1.component == inputs["section"])), else: List.first(theirs)
     if one, do: %{section: one}, else: raise(Call.Refused, "#{app} adds no section #{inputs["section"]} to Settings.")
   end
@@ -211,14 +217,20 @@ defmodule Settings do
   end
 
   def call("badge", _inputs, call) do
-    {sections, failed_apps, failed_badges} = sections_with_failures(call)
+    badges =
+      call
+      |> declared()
+      |> Enum.flat_map(&if(&1.badge, do: [{&1.app, &1.badge}], else: []))
+      |> Enum.uniq()
 
-    if failed_apps != [] or failed_badges != %{} do
-      names = Enum.uniq(failed_apps ++ for({{app, _badge}, _why} <- failed_badges, do: app))
+    {counts, failed_badges} = OneCore.Asks.each(badges, fn {app, badge} -> Call.tool(call, app, badge, %{})["count"] end)
+
+    if failed_badges != %{} do
+      names = Enum.uniq(for {{app, _badge}, _why} <- failed_badges, do: app)
       raise "Couldn't read every section's badge (#{Enum.join(names, ", ")})."
     end
 
-    %{count: sections |> Enum.map(&(&1.count || 0)) |> Enum.sum()}
+    %{count: counts |> Enum.map(&elem(&1, 1)) |> Enum.filter(&is_integer/1) |> Enum.sum()}
   end
 
   def call("apps", _inputs, call) do
@@ -245,10 +257,8 @@ defmodule Settings do
     %{apps: Enum.sort_by(apps, &String.downcase(&1.title))}
   end
 
-  defp sections(call), do: elem(sections_with_failures(call), 0)
-
-  # What every app whoever this runs for has adds, as each app answered `settings.sections`, each with its app's title
-  # and icon. One that doesn't say what it must is left out; apps whose hook didn't answer are returned in `failed_apps`.
+  # What every app whoever this runs for has adds, from its manifest (`settings/0`) and any unmigrated `settings.sections`
+  # hook, each with its app's title and icon. Apps whose hook didn't answer are returned in `failed_apps`.
   defp sections_with_failures(call) do
     {sections, failed_apps} = listed(call)
 
@@ -266,36 +276,67 @@ defmodule Settings do
   end
 
   defp listed(call) do
-    {:ok, parts, failed} = Hooks.collect("settings.sections", %{}, {call.actor, call.subject})
     running = Apps.running(call.subject)
+    from_manifest = declared(call, running)
+    declared_apps = MapSet.new(from_manifest, & &1.app)
 
-    items =
-      for {app, part} <- Enum.sort(parts),
-          version = running[app],
-          version != nil,
-          trusted <- [Map.get(version, :trusted, true)],
-          section <- List.wrap(JSON.decode!(JSON.encode!(part))),
-          section?(section, trusted) do
-        %{
-          id: "#{app}/#{section["component"]}",
-          app: app,
-          title: version.title || app,
-          icon: if(section["icon"], do: "ui://#{app}/#{version.code}/#{section["icon"]}"),
-          app_icon: Apps.Icons.address(version.icon),
-          trusted: trusted,
-          component: section["component"],
-          in: section["in"],
-          name: section["name"],
-          group: section["group"],
-          order: section["order"] || 0,
-          kinds: section["kinds"],
-          service: section["service"] == true,
-          needs: section["needs"],
-          badge: section["badge"]
-        }
+    {from_hooks, failed_apps} =
+      case Hooks.hooking("settings.sections", call.subject) do
+        [] ->
+          {[], []}
+
+        _ ->
+          {:ok, parts, failed} = Hooks.collect("settings.sections", %{}, {call.actor, call.subject})
+
+          items =
+            for {app, part} <- Enum.sort(parts),
+                not MapSet.member?(declared_apps, app),
+                version = running[app],
+                version != nil,
+                trusted <- [Map.get(version, :trusted, true)],
+                section <- List.wrap(JSON.decode!(JSON.encode!(part))),
+                section?(section, trusted),
+                do: entry(app, version, trusted, section)
+
+          {items, Map.keys(failed)}
       end
 
-    {items, Map.keys(failed)}
+    {Enum.sort_by(from_manifest ++ from_hooks, &{&1.app, &1.order, &1.component}), failed_apps}
+  end
+
+  # Sections declared in each running app's manifest (`settings/0`), read in memory with no hook fan-out.
+  defp declared(call, running \\ nil) do
+    running = running || Apps.running(call.subject)
+    needs_owner = Enum.any?(running, fn {_app, v} -> Enum.any?(Map.get(v, :settings, []), &(&1[:owner] == true)) end)
+    owns_network = needs_owner and Call.owns?(%{call | subject: "network"})
+
+    for {app, version} <- Enum.sort(running),
+        trusted <- [Map.get(version, :trusted, true)],
+        section <- Map.get(version, :settings, []),
+        section[:owner] != true or owns_network,
+        section = Map.new(section, fn {k, v} -> {to_string(k), v} end),
+        section?(section, trusted),
+        do: entry(app, version, trusted, section)
+  end
+
+  defp entry(app, version, trusted, section) do
+    %{
+      id: "#{app}/#{section["component"]}",
+      app: app,
+      title: version.title || app,
+      icon: if(section["icon"], do: "ui://#{app}/#{version.code}/#{section["icon"]}"),
+      app_icon: Apps.Icons.address(version.icon),
+      trusted: trusted,
+      component: section["component"],
+      in: section["in"],
+      name: section["name"],
+      group: section["group"],
+      order: section["order"] || 0,
+      kinds: section["kinds"],
+      service: section["service"] == true,
+      needs: section["needs"],
+      badge: section["badge"]
+    }
   end
 
   # A section of the sidebar is the network's own apps', which are trusted; any app adds a group to a page, an untrusted

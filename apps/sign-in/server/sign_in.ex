@@ -22,7 +22,7 @@ defmodule SignIn do
   def icon, do: "client/security.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.37.179", "database" => "to keep what happens in it"}
+  def requires, do: %{"core" => ">= 0.37.184", "database" => "to keep what happens in it"}
 
   @impl true
   def jobs, do: [%{tool: "notify", every: 60}]
@@ -602,8 +602,20 @@ defmodule SignIn do
     ]
   end
 
+  # Its sections of Settings: whoever's looking (Sign In & Security under their name), Devices, AI, and People & Groups,
+  # an admin thing, for the network's owners alone.
   @impl true
-  def hooks, do: ["owner", "renamed", "settings.sections", "privacy.sections"]
+  def settings do
+    [
+      %{in: "settings", name: "Sign In & Security", component: "passkeys", icon: "client/security.svg", group: "you", order: 0},
+      %{in: "settings", name: "Devices", component: "devices", icon: "client/icon.svg", group: "network", order: 1, badge: "badge"},
+      %{in: "settings", name: "AI", component: "ai", icon: "client/connect.svg", group: "general", order: 3},
+      %{in: "settings", name: "People & Groups", component: "people", icon: "client/users.svg", group: "network", order: 2, owner: true}
+    ]
+  end
+
+  @impl true
+  def hooks, do: ["owner", "renamed", "privacy.sections"]
 
   @impl true
   # Someone renamed: the name they go by and their pictures are theirs by their new name.
@@ -615,21 +627,6 @@ defmodule SignIn do
     end
 
     nil
-  end
-
-  # Its sections of Settings: whoever's looking (Sign In & Security under their name), Devices, AI, and People & Groups,
-  # an admin thing, for the network's owners alone.
-  def hook("settings.sections", _about, call) do
-    owner? = Call.owns?(%{call | subject: "network"})
-    people = %{in: "settings", name: "People & Groups", component: "people", icon: "client/users.svg", group: "network", order: 2}
-    devices = %{in: "settings", name: "Devices", component: "devices", icon: "client/icon.svg", group: "network", order: 1}
-    devices = if owner?, do: Map.put(devices, :badge, "badge"), else: devices
-
-    [
-      %{in: "settings", name: "Sign In & Security", component: "passkeys", icon: "client/security.svg", group: "you", order: 0},
-      devices,
-      %{in: "settings", name: "AI", component: "ai", icon: "client/connect.svg", group: "general", order: 3}
-    ] ++ if(owner?, do: [people], else: [])
   end
 
   # What the network's privacy page says of who runs it, and how to ask them (`privacy.sections`).

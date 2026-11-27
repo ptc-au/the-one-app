@@ -62,7 +62,7 @@ defmodule Backups do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.32.107",
+      "core" => ">= 0.37.184",
       "database" => "to keep where and when you back up",
       "vault" => "to keep your storage's keys",
       "notifications" => "to tell you when a backup couldn't be made",
@@ -70,16 +70,10 @@ defmodule Backups do
     }
   end
 
-  @impl true
-  def hooks, do: ["settings.sections"]
-
   # Backups is a section of Settings, for the network's owners, who alone see and change them.
   @impl true
-  def hook("settings.sections", _about, call) do
-    if Call.owns?(%{call | subject: "network"}),
-      do: [%{in: "settings", name: "Backups", component: "backups", icon: "client/icon.svg", group: "system", order: 1, badge: "badge"}],
-      else: []
-  end
+  def settings,
+    do: [%{in: "settings", name: "Backups", component: "backups", icon: "client/icon.svg", group: "system", order: 1, badge: "badge", owner: true}]
 
   @impl true
   def jobs, do: [%{tool: "due", every: 3600}]
@@ -186,6 +180,7 @@ defmodule Backups do
       },
       %{
         name: "add",
+        changes: ["destinations", "badge"],
         ui: "client/forms.html",
         runtime_version: 4,
         description:
@@ -226,12 +221,14 @@ defmodule Backups do
       },
       %{
         name: "remove",
+        changes: ["destinations", "badge"],
         description: "Stops backing up to a destination. What's there stays",
         inputs: %{type: "object", properties: %{destination: destination}, required: ["destination"]},
         outputs: %{type: "object", properties: %{destination: destination}, required: ["destination"]}
       },
       %{
         name: "now",
+        changes: ["destinations", "badge"],
         task_support: :optional,
         description:
           "Backs up now, to one destination or to each, and answers when it's done with what was sent. A destination that's being backed up to already isn't backed up to again: it's said under `running`, with its progress",
@@ -260,6 +257,7 @@ defmodule Backups do
       },
       %{
         name: "schedule",
+        changes: ["destinations", "badge"],
         description: "Sets how often backups are made: every hour, day or week, or never but when asked",
         inputs: %{
           type: "object",
@@ -270,6 +268,7 @@ defmodule Backups do
       },
       %{
         name: "check",
+        changes: ["destinations", "badge"],
         task_support: :optional,
         description:
           "Reads the newest backup at a destination, or at each, back whole, and compares every object with what was sent",
@@ -298,6 +297,7 @@ defmodule Backups do
       },
       %{
         name: "restore",
+        changes: [],
         ui: "client/forms.html",
         runtime_version: 4,
         task_support: :optional,
@@ -330,6 +330,7 @@ defmodule Backups do
       },
       %{
         name: "due",
+        changes: ["destinations", "badge"],
         description:
           "Backs up to each destination whose time has come, and carries on each backup cut short. The clock calls it every hour, and every few minutes while a backup is under way",
         inputs: %{type: "object", properties: %{}},

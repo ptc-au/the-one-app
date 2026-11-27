@@ -25,17 +25,16 @@ A link's other arguments are the section's own, which its component reads from `
 
 ## Sections
 
-An app adds to Settings by hooking into `settings.sections`, answering with its list of what it adds:
+An app adds to Settings by declaring `settings/0` in its manifest:
 
     @impl true
-    def hooks, do: ["settings.sections"]
-
-    @impl true
-    def hook("settings.sections", _about, _call),
+    def settings,
       do: [
         %{in: "settings", name: "Devices", component: "devices", icon: "client/icon.svg", group: "network", order: 1},
         %{in: "device", component: "awake", service: true}
       ]
+
+Add `owner: true` on a section that only the network's owners see (such as Backups or People & Groups).
 
 - `component` is what draws it: a Solid component the app's client exports (`client/package.json`: `{"exports":
   {"./devices": "./devices.tsx"}}`), the module's default export. A trusted app's is drawn in Settings' page and acts

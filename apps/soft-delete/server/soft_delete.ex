@@ -63,10 +63,15 @@ defmodule SoftDelete do
   def own, do: :installed
 
   @impl true
-  def requires, do: %{"core" => ">= 0.35.34", "database" => "to keep what you deleted for 30 days", "sign-in" => "to tell an agent's delete from yours"}
+  def requires, do: %{"core" => ">= 0.37.184", "database" => "to keep what you deleted for 30 days", "sign-in" => "to tell an agent's delete from yours"}
+
+  # Recently Deleted is a section of Settings.
+  @impl true
+  def settings,
+    do: [%{in: "settings", name: "Recently Deleted", component: "deleted", icon: "client/icon.svg", group: "system", order: 2}]
 
   @impl true
-  def hooks, do: ["uninstalled", "superseded", "settings.sections", "renamed"]
+  def hooks, do: ["uninstalled", "superseded", "renamed"]
 
   @impl true
   def offers do
@@ -254,10 +259,6 @@ defmodule SoftDelete do
 
     nil
   end
-
-  # Recently Deleted is a section of Settings.
-  def hook("settings.sections", _about, _call),
-    do: [%{in: "settings", name: "Recently Deleted", component: "deleted", icon: "client/icon.svg", group: "system", order: 2}]
 
   # The apps that required it went with it (`with`), and are one item with it: Restore brings them all back. What they
   # kept and made that goes with them, One Core says (`artifacts`).

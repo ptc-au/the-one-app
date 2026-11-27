@@ -44,7 +44,7 @@ defmodule Vault do
   @impl true
   def requires do
     %{
-      "core" => ">= 0.32.167",
+      "core" => ">= 0.37.184",
       "encryption" => "to keep your secrets from whoever runs the bucket",
       "database" => "to keep your items",
       "notifications" => "to tell you when an agent saves something to your Vault",
@@ -76,16 +76,17 @@ defmodule Vault do
   end
 
 
-  @impl true
-  def hooks, do: ["settings.sections", "privacy.sections", "soft-delete.moved"]
-
   # The Vault is a section of Settings: your accounts, passwords and keys, and what apps keep here.
   @impl true
-  def hook("settings.sections", _about, _call),
+  def settings,
     do: [%{in: "settings", name: "Vault", component: "accounts", icon: "client/icon.svg", group: "network", order: 3, badge: "badge"}]
+
+  @impl true
+  def hooks, do: ["privacy.sections", "soft-delete.moved"]
 
   # An item an agent deleted, which its person is told of, as of an agent's other changes (`told/4`): soft delete says
   # whether it was an agent (`agent`), and it's in Recently Deleted for 30 days.
+  @impl true
   def hook("soft-delete.moved", %{"artifact" => artifact, "to" => "deleted", "agent" => true}, call) do
     Store.quietly("Telling of a deleted item", fn ->
       name = Enum.find_value(Store.names(call, Store.own(call)), fn {id, name} -> id == artifact && name end)
