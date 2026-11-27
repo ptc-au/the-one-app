@@ -242,6 +242,13 @@ defmodule SignIn do
         }
       },
       %{
+        name: "badge",
+        read_only: true,
+        description: "How many devices are waiting to be let in, the red count on Devices in Settings",
+        inputs: none,
+        outputs: %{type: "object", properties: %{count: %{type: "integer"}}, required: ["count"]}
+      },
+      %{
         name: "notify",
         description:
           "Notifies the network's owners once when a device starts waiting to be let in, as the clock runs it, and again if it waits again after it was let in or stopped. Says which devices are waiting, and which it told them of just now",
@@ -613,13 +620,16 @@ defmodule SignIn do
   # Its sections of Settings: whoever's looking (Sign In & Security under their name), Devices, AI, and People & Groups,
   # an admin thing, for the network's owners alone.
   def hook("settings.sections", _about, call) do
+    owner? = Call.owns?(%{call | subject: "network"})
     people = %{in: "settings", name: "People & Groups", component: "people", icon: "client/users.svg", group: "network", order: 2}
+    devices = %{in: "settings", name: "Devices", component: "devices", icon: "client/icon.svg", group: "network", order: 1}
+    devices = if owner?, do: Map.put(devices, :badge, "badge"), else: devices
 
     [
       %{in: "settings", name: "Sign In & Security", component: "passkeys", icon: "client/security.svg", group: "you", order: 0},
-      %{in: "settings", name: "Devices", component: "devices", icon: "client/icon.svg", group: "network", order: 1},
+      devices,
       %{in: "settings", name: "AI", component: "ai", icon: "client/connect.svg", group: "general", order: 3}
-    ] ++ if(Call.owns?(%{call | subject: "network"}), do: [people], else: [])
+    ] ++ if(owner?, do: [people], else: [])
   end
 
   # What the network's privacy page says of who runs it, and how to ask them (`privacy.sections`).
@@ -745,7 +755,7 @@ defmodule SignIn do
       people = for "people/" <> name <- Artifact.list(call.own, "people/"), do: "users/" <> name
 
       for to <- Enum.filter(people, &owns_network?(call, &1)),
-          do: Call.tool(call, "notifications", "send", %{"title" => "#{title} #{are} waiting to be let in", "text" => "Open Devices and let #{if length(names) == 1, do: "it", else: "them"} in.", "to" => to, "section" => "devices"})
+          do: Call.tool(call, "notifications", "send", %{"title" => "#{title} #{are} waiting to be let in", "text" => "Open Devices and let #{if length(names) == 1, do: "it", else: "them"} in.", "to" => to, "section" => "devices", "critical" => true})
     end
 
     Artifact.update(call.own, "told/devices", fn _was -> JSON.encode!(Enum.map(waiting, & &1["device"])) end)
@@ -756,6 +766,10 @@ defmodule SignIn do
 
   def call("waiting", _inputs, call) do
     %{waiting: if(owns_network?(call, person(call)), do: waiting_devices(), else: [])}
+  end
+
+  def call("badge", _inputs, call) do
+    %{count: if(owns_network?(call, person(call)), do: length(waiting_devices()), else: 0)}
   end
 
   # The servers whose key someone was told they're waiting for are kept, so each is told of once while it waits, and again
