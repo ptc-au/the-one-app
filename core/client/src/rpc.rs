@@ -99,7 +99,7 @@ fn refused(response: &[u8]) -> Option<String> {
 }
 
 /// What a person is told when no server answered: what went wrong, and what to do about it.
-pub(crate) const UNANSWERED: &str = "No server is answering. Check this device is online and a server is on, then try again.";
+pub(crate) const UNANSWERED: &str = "No server is answering. Make sure one of this network's servers is on, then try again.";
 
 /// The JSON-RPC error a server answers a device that's nobody's (`OneCore.User`).
 pub(crate) const NOBODY: i64 = -32003;

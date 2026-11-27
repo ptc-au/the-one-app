@@ -10,7 +10,7 @@
 import { verifiedKey, unsigned, hex, NETWORK } from "../ask.ts";
 import { randomBytes } from "@noble/hashes/utils.js";
 import { reader, servers as acting } from "../presigner/presigner.ts";
-import { forward as relayed, listen as listened, notify } from "../relay/relay.ts";
+import { forward as relayed, listen as listened, notify, unanswered } from "../relay/relay.ts";
 import rules from "../../server/priv/rules.md";
 
 /** Who a request is from, as the app that signs people in says. */
@@ -437,9 +437,9 @@ async function forward(
   // its answer, however long it runs. One answered sooner is answered as any other.
   const token = meta.progressToken;
   const streams = "id" in call && (typeof token === "string" || typeof token === "number") && headers?.get("accept")?.includes("text/event-stream");
-  if (streams && (await Promise.race([forwarded.then(() => false), scheduler.wait(PROGRESS).then(() => true)]))) return streamed(forwarded, call.id, token);
+  if (streams && (await Promise.race([forwarded.then(() => false), scheduler.wait(PROGRESS).then(() => true)]))) return streamed(forwarded, call.id, token, () => unanswered(env, servers));
   const reached = await forwarded;
-  if (!reached) return refuse(503, "None of this network's servers answered. Try again once one is on.");
+  if (!reached) return refuse(503, await unanswered(env, servers));
   // A notification has no answer.
   if (reached.answer === "") return new Response(null, { status: 202 });
   // From MCP's 2026-07-28, a version or method a server doesn't have is said in the status too.
@@ -453,7 +453,7 @@ async function forward(
  * notification every second while it runs, how far it is being the seconds it's run, as a server says it, and then
  * the answer. Whoever asked closing it stops the telling, and the servers are told it went (`forward`).
  */
-function streamed(forwarded: Promise<{ answer: string } | null>, id: unknown, token: string | number) {
+function streamed(forwarded: Promise<{ answer: string } | null>, id: unknown, token: string | number, why: () => Promise<string>) {
   let ran = 1;
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const stream = writable.getWriter();
@@ -465,8 +465,7 @@ function streamed(forwarded: Promise<{ answer: string } | null>, id: unknown, to
     try {
       await progress();
       const reached = await forwarded;
-      const none = { jsonrpc: "2.0", id, error: { code: -32000, message: "None of this network's servers answered. Try again once one is on." } };
-      await send(reached?.answer ?? JSON.stringify(none));
+      await send(reached?.answer ?? JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message: await why() } }));
     } finally {
       clearInterval(telling);
       await stream.close();

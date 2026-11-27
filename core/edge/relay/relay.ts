@@ -142,6 +142,20 @@ export async function forward(env: Env, servers: string[], message: string): Pro
   return reached && answer !== null ? { server: reached.server, answer } : null;
 }
 
+/**
+ * What to tell whoever's call `forward` gave no answer to, said for them: which of the network's `servers` there are,
+ * whether any speaks a protocol the edge does, and otherwise that none answered.
+ */
+export async function unanswered(env: Env, servers: string[]): Promise<string> {
+  if (!servers.length) return "None of this network's servers is on yet. Turn one on, then try again.";
+  const protocols = await relay(env, (relay) => relay.protocols(servers));
+  if (!servers.some((server) => talk(protocols[server]))) {
+    const theirs = [...new Set(servers.map((server) => named(protocols[server])))].join(" and ");
+    return `The edge and this network's servers don't speak a protocol version in common: the edge speaks ${named(SPEAKS)}, the servers ${theirs}. Update whichever is older, then try again.`;
+  }
+  return "None of this network's servers answered. Try again once one is on.";
+}
+
 /** Tells every server that's here `message`, which none answers: a JSON-RPC notification. */
 export async function notify(env: Env, message: string): Promise<void> {
   await relay(env, (relay) => relay.fetch("https://relay/notify", { method: "POST", body: message }));
