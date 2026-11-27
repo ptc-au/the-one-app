@@ -17,7 +17,7 @@
   <script type="module" src="client.js"></script>
 </head>
 <body>
-  <!-- While its network doesn't answer, a thin banner over the launcher, as a mail or chat app has one: it says so, and
+  <!-- While its network doesn't answer, a thin banner over its apps, as a mail or chat app has one: it says so, and
        that it's reconnecting as it tries again. -->
   <p id="banner" role="status" hidden><span id="banner-spinner" class="ui-spinner" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></span><span id="banner-text"></span><button id="banner-retry" class="ui-button press ring" data-variant="ghost">Try Again</button></p>
   <!-- Where the window's title bar is over the page (a Mac's, with no title band), its top: under the window's own
@@ -49,20 +49,25 @@
   </div>
   <!-- What the window shows of itself, in its middle, over the frames, as the UI library's Steps, Status, Empty and
        Problem draw it (core/ui/src/styled-components/states.tsx): its mark from its first paint and the steps it takes as it opens, until
-       its person's home has drawn over them; an update under way; that there's no Home Screen; or a problem. -->
+       its person's home has drawn over them; an update under way, or a check after one; that there's no Home Screen; in
+       an app's own window, that its person signs in on their Home Screen, with Show; or a problem. -->
   <div id="state" class="ui-state middle">
     <img id="mark" src="Logo.png" alt="">
     <ol id="steps" class="steps" role="status"></ol>
     <button id="reconnect" class="ui-button press ring" data-variant="outline" hidden>Try Again</button>
     <div id="status" class="status" role="status" hidden>
       <span class="ui-spinner" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></span>
-      <strong>Updating…</strong>
+      <strong id="status-heading">Updating…</strong>
       <p id="status-text"></p>
     </div>
     <div id="empty" hidden>
       <p class="empty">There's no Home Screen yet.</p>
       <p id="empty-text" class="empty"></p>
       <button id="open-app-store" class="ui-button press ring" data-variant="default">Open App Store</button>
+    </div>
+    <div id="elsewhere" hidden>
+      <p class="empty">Signing in on your Home Screen</p>
+      <button id="show-home" class="ui-button press ring" data-variant="default">Show</button>
     </div>
     <div id="problem" class="problem" role="alert" hidden>
       <svg class="ui-icon" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-8,56a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm8,104a12,12,0,1,1,12-12A12,12,0,0,1,128,184Z"/></svg>

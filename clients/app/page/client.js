@@ -19,7 +19,7 @@ import { moveMachine } from "./move-machine.js"
 import { pageMachine } from "./page-machine.js"
 import { rail, unseen } from "./rail.js"
 import { used } from "./shortcuts.js"
-import { byId } from "./util.js"
+import { byId, sendKept } from "./util.js"
 import { machine } from "./window-machine.js"
 /** @import { Moved, Paged, Rect, State, View } from "./host.js" */
 
@@ -115,15 +115,14 @@ export function reloadPage(view) {
   invoke("close", { view: view.key }).finally(() => /** @type {Window} */ (view.frame.contentWindow).location.replace(located(view)))
 }
 
-/// An app whose native window didn't open, and why, until it's tried again or another opens.
-/** @type {{ entrypoint: string, link: string, subject?: string, why: string } | undefined} */
-let unopened
 /// Says over the app that's showing what its page needs of its person, if anything: that it's been updated, with
 /// Reload, or that it didn't open, with Try Again: only while the window shows its apps, as it alone owns the screen.
-/// An app whose native window didn't open says so over what's showing.
+/// An app whose native window didn't open says so over what's showing (the window's `unopened`).
 export function notes() {
   const view = showing(here())
-  const now = view && shown.getSnapshot().hasTag("pages") ? pageOf(view) : undefined
+  const snapshot = shown.getSnapshot()
+  const now = view && snapshot.hasTag("pages") ? pageOf(view) : undefined
+  const { unopened } = snapshot.context
   byId("update").hidden = !asksToReload || !now?.matches("stale")
   byId("page-problem").hidden = !unopened && !now?.matches("failed")
   const failed = unopened ?? (view && now?.matches("failed") ? { entrypoint: view.entrypoint, why: now.context.why } : undefined)
@@ -137,9 +136,9 @@ byId("reload").addEventListener("click", () => {
   if (view) page(view, { type: "reload" })
 })
 byId("page-problem-button").addEventListener("click", () => {
+  const { unopened } = shown.getSnapshot().context
   if (unopened) {
-    const { link, subject } = unopened
-    go(link, subject)
+    go(unopened.link, unopened.subject)
     return
   }
   const view = showing(here())
@@ -391,13 +390,9 @@ export function go(link, subject, behind, from) {
   if (runtimeVersion && needs.has(page) && key(page, subject) !== baseKey()) {
     if (behind) return true
     /** @param {unknown} why */
-    const failed = (why) => {
-      unopened = { entrypoint: page, link, subject, why: String(why) }
-      notes()
-    }
+    const failed = (why) => on({ type: "unopened", unopened: { entrypoint: page, link, subject, why: String(why) } })
     if ((needs.get(page) ?? 0) > runtimeVersion) return failed(NEWER), true
-    unopened = undefined
-    notes()
+    on({ type: "unopened" })
     /** @type {[number, number, number, number] | undefined} */
     const icon = from && [from.x, from.y, from.width, from.height]
     invoke("open_window", { entrypoint: page, subject, link: fragment ? `${page}#${fragment}` : page, icon, tip: unseen }).then((opened) => opened || failed(NEWER), failed)
@@ -500,6 +495,7 @@ byId("update-button").addEventListener("click", () => on({ type: "update" }))
 // Nothing dismisses it: the window works again once it's updated, or its network talks with it again.
 byId("update-required").addEventListener("cancel", (event) => event.preventDefault())
 byId("open-app-store").addEventListener("click", () => on({ type: "openAppStore" }))
+byId("show-home").addEventListener("click", () => invoke("front"))
 
 /// The user returned to the window, so what's showing asks again, and its apps' files are listed again, for a new
 /// version of any. While the window is on screen, what's showing asks again when a server says something changed.
@@ -575,6 +571,8 @@ let heard = -1
 let heardBehind = false
 /** @param {State} state */
 function hear(state) {
+  // The client tells where it is once it's open, which takes what was reported before.
+  sendKept()
   const { connection } = state
   const behind = connection === "behind"
   if (connection !== "behind" && connection !== shown.getSnapshot().context.connection) on({ type: "connection", connection })
@@ -597,7 +595,7 @@ await listen("state", ({ payload }) => hear(payload))
 await listen("title_bar", ({ payload }) => titled(payload))
 // Where the window starts: where its device is with its network, as the client says it (`State`), which it follows
 // from then on. A phone's app hears a tap on a notification through its push plugin.
-const { taps, testflight: fromTestflight, state, open: link, windows: inWindows, runtimeVersion: drawn, window: ownWindow, titleBar: overTitleBar, theme: kept, unnative } = await invoke("start")
+const { taps, testflight: fromTestflight, state, open: link, windows: inWindows, runtimeVersion: drawn, window: ownWindow, titleBar: overTitleBar, theme: kept } = await invoke("start")
 phone = Boolean(taps)
 testflight = Boolean(fromTestflight)
 windows = Boolean(inWindows)
@@ -608,7 +606,6 @@ if (overTitleBar) titled(overTitleBar)
 heardTheme(kept)
 hear(state)
 if (link) on({ type: "link", link })
-if (unnative) on({ type: "unnative", why: unnative })
 // The client isn't open yet while the app starts, and is told again as the window is shown or hidden.
 invoke("visible", { onScreen: !document.hidden }).catch(() => {})
 if (taps) hearTaps()

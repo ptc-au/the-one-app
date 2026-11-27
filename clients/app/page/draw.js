@@ -2,20 +2,22 @@
 import { appStore } from "./apps.js"
 import { fit } from "./bridge.js"
 import { placed } from "./chrome.js"
-import { baseName, notes, phone, shown, testflight } from "./client.js"
+import { baseName, notes, own, phone, shown, testflight } from "./client.js"
 import { rail } from "./rail.js"
 import { byId, report } from "./util.js"
 import { machine } from "./window-machine.js"
 /** @import { Context } from "./host.js" */
 
 /// What the window says as it opens: the steps it takes to its person's home, the first of which says whether its
-/// network answers. With a launcher kept from before, it's starting that alone.
-/** @param {Context} context @returns {{ steps: string[], at: number, text?: string }} */
+/// network answers. With a launcher kept from before, it's starting that alone. Its network not answering, that step
+/// has stopped, with no spinner, until it's tried again (`reconnecting`).
+/** @param {Context} context @returns {{ steps: string[], at: number, text?: string, stopped: boolean }} */
 function steps({ connection, starting }) {
-  if (starting && connection !== "online") return { steps: [`Opening ${baseName()}`], at: 0 }
+  if (starting && connection !== "online") return { steps: [`Opening ${baseName()}`], at: 0, stopped: false }
   const reached = connection === "offline" || connection === "reconnecting" ? "Can't reach your network" : "Connecting to your network"
   const at = starting || connection === "online" ? 1 : 0
-  return { steps: [reached, `Opening ${baseName()}`], at, text: at === 0 && reached !== "Connecting to your network" ? "Check this device is online." : undefined }
+  const text = at === 0 && reached !== "Connecting to your network" ? "Check this device is online." : undefined
+  return { steps: [reached, `Opening ${baseName()}`], at, text, stopped: at === 0 && connection === "offline" }
 }
 
 /// What each problem says: its heading, its one sentence, what's behind it for Show Details, and the button that
@@ -25,21 +27,23 @@ function problemOf(now) {
   // One that crashed once it had opened says so, with Reload, as a browser's crashed tab does (src/unopened.js).
   if (now.matches("launcher_failed") && now.context.crashed) return [`${baseName()} stopped working`, "Reload it to start it again.", now.context.why, "Reload"]
   if (now.matches("launcher_failed")) return [`${baseName()} didn't open.`, "Try again in a moment.", now.context.why, "Try Again"]
-  if (now.matches("native_failed")) return [`${baseName()} can't open its windows on this device.`, "Its graphics didn't start.", now.context.why, undefined]
   if (now.matches("update_failed")) return ["Couldn't update", now.context.why ?? "", undefined, "Try Again"]
 }
 /// What a computer's launcher says while its servers say it's behind them: Update Required, with Update.
 /** @type {[string, string, undefined, string]} */
 const UPDATE_REQUIRED = ["Update Required", "This version of the app no longer works with your network.", undefined, "Update"]
 /// Draws what the window shows of itself, in its middle, over the frames: its mark and steps while it opens, a
-/// spinner and a line while it updates, why there's no Home Screen, or a problem; and over the launcher, a banner
-/// while its network doesn't answer. The launcher is the frames alone.
+/// spinner and a line while it updates or checks, why there's no Home Screen, that its person signs in on their Home
+/// Screen in an app's own window, or a problem; and over its apps, the launcher's and every other's, a banner while
+/// its network doesn't answer. The launcher is the frames alone.
 /** @type {string | undefined} */
 let lastProblem
 export function draw() {
   const now = shown.getSnapshot()
   const { context } = now
-  byId("state").hidden = now.matches("launcher") || now.matches("app_store") || now.matches("sign_in")
+  const elsewhere = now.matches("sign_in") && Boolean(own)
+  byId("state").hidden = now.matches("launcher") || now.matches("app_store") || (now.matches("sign_in") && !elsewhere)
+  byId("elsewhere").hidden = !elsewhere
   document.body.ariaBusy = now.matches("opening") || now.matches("updating") ? "true" : null
   const opening = now.matches("opening")
   byId("mark").hidden = byId("steps").hidden = !opening
@@ -48,8 +52,8 @@ export function draw() {
   if (opening) {
     byId("steps").replaceChildren(
       ...opened.steps.map((step, i) => {
-        const item = Object.assign(document.createElement("li"), { className: i < opened.at ? "done" : i === opened.at ? "now" : "" })
-        const mark = i < opened.at ? icon(CHECK) : i === opened.at ? spinner() : Object.assign(document.createElement("span"), { className: "next" })
+        const item = Object.assign(document.createElement("li"), { className: i < opened.at ? "done" : i === opened.at ? (opened.stopped ? "now stopped" : "now") : "" })
+        const mark = i < opened.at ? icon(CHECK) : i === opened.at ? (opened.stopped ? icon(WARNING) : spinner()) : Object.assign(document.createElement("span"), { className: "next" })
         const words = Object.assign(document.createElement("span"), { textContent: step })
         if (i === opened.at && opened.text) words.append(Object.assign(document.createElement("small"), { textContent: opened.text }))
         item.append(mark, words)
@@ -61,6 +65,8 @@ export function draw() {
   const behind = now.matches("needs_updating") || (now.matches("checking") && context.behind === true)
   const updating = now.matches("updating") || (now.matches("checking") && !behind)
   byId("status").hidden = !updating
+  // Asked again after an update, it says it's checking, not updating a second time.
+  byId("status-heading").textContent = now.matches("checking") ? "Checking…" : "Updating…"
   byId("status-text").textContent = context.message ?? ""
   byId("status-text").hidden = !(updating && context.message)
   byId("empty").hidden = !now.matches("no_launcher")
@@ -100,8 +106,9 @@ export function draw() {
   fit()
   notes()
   rail()
-  // Over the launcher: its network not answering, and trying again once it has lost it. Answering, nothing.
-  const banner = now.matches("launcher") && (context.connection === "offline" || context.connection === "reconnecting")
+  // Over its apps once it has opened, the launcher and every app over it, as over an app on a phone (DESIGN.md): its
+  // network not answering, and trying again once it has lost it. Answering, nothing.
+  const banner = now.hasTag("pages") && !opening && (context.connection === "offline" || context.connection === "reconnecting")
   if (byId("banner").hidden === banner) {
     byId("banner").hidden = !banner
     placed()
@@ -111,8 +118,9 @@ export function draw() {
   byId("banner-retry").hidden = context.connection !== "offline"
 }
 
-/// The UI library's check icon and spinner, which the window draws its steps with, as the UI library does.
+/// The UI library's check and warning icons and spinner, which the window draws its steps with, as the UI library does.
 const CHECK = "M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"
+const WARNING = "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm-8,56a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm8,104a12,12,0,1,1,12-12A12,12,0,0,1,128,184Z"
 /** @param {string} path */
 function icon(path) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")

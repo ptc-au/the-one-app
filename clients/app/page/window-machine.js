@@ -111,7 +111,9 @@ export const machine = setup({
   context: { connection: "connecting", starting: false, updateReady: false },
   entry: spawnChild("move", { id: "move" }),
   on: {
-    unnative: { target: ".native_failed", actions: assign({ why: ({ event }) => event.why }) },
+    // A phone's app whose native window didn't open says so over what's showing, until it's tried again or another
+    // opens (`notes`).
+    unopened: { actions: assign({ unopened: ({ event }) => event.unopened }) },
     show: { actions: "place" },
     popped: { actions: "move" },
     session: { actions: "told" },
@@ -145,7 +147,8 @@ export const machine = setup({
       },
     },
     // The network's own sign-in page, which the client brings the window back from once its person has approved
-    // it, where it opens again (`follows` in `src/lib.rs`).
+    // it, where it opens again (`follows` in `src/lib.rs`). An app's own window says its person signs in on their
+    // Home Screen, with Show, which brings it forward.
     sign_in: { entry: ["signIn", "away", "freeze"] },
     launcher: {
       tags: "pages",
@@ -171,8 +174,6 @@ export const machine = setup({
       entry: ["openAppStore", "seen"],
       on: { show: { actions: "move" }, ...fingers, listed: "opening", tooOld: "needs_updating" },
     },
-    // This computer's native windows couldn't start, so there's no Home Screen: it says why, and that's all.
-    native_failed: {},
     // A launcher that draws after all is shown, as an app's page that does is (`pageMachine`).
     launcher_failed: {
       tags: "pages",

@@ -128,6 +128,16 @@ export interface Context {
   behind?: boolean
   /** Whether the launcher stopped working once it had opened. */
   crashed?: boolean
+  /** A phone's app whose native window didn't open, and why, until it's tried again or another opens. */
+  unopened?: Unopened
+}
+
+/** An app whose native window didn't open: what it is, the link that opens it again, and why. */
+export interface Unopened {
+  entrypoint: string
+  link: string
+  subject?: string
+  why: string
 }
 
 /** What moves the window's move between its launcher and its apps (`move-machine.js`'s `moveMachine`): an app to show,
@@ -153,7 +163,7 @@ export type Moved =
   | { type: "none"; only?: string }
   | { type: "tooOld" }
   | { type: "unchecked"; why: string }
-  | { type: "unnative"; why: string }
+  | { type: "unopened"; unopened?: Unopened }
   | { type: "drawn"; key: string }
   | { type: "failed"; key: string; why: string; crashed?: boolean }
   | { type: "load"; view: View }
@@ -170,7 +180,7 @@ export type Moved =
 /** Each command the page invokes: what it's given, and what it answers. */
 export interface Commands {
   /** Where the device is with its network as the window opens, whether its network answers, whether a phone hears taps on notifications, whether each app opens in a window of its own (a computer's), which app this window is if it's an app's own, where the window's title bar is over the page, which keeps it clear, if it's known yet (`title_bar` says it as it changes), and the Colour Mode chosen on the device, if one has been. */
-  start(): { state: State; taps?: boolean; testflight?: boolean; runtimeVersion?: number; open?: string | null; windows?: boolean; window?: { entrypoint: string; subject?: string; name?: string | null } | null; titleBar?: TitleBar; theme?: "light" | "dark" | null; unnative?: string | null }
+  start(): { state: State; taps?: boolean; testflight?: boolean; runtimeVersion?: number; open?: string | null; windows?: boolean; window?: { entrypoint: string; subject?: string; name?: string | null } | null; titleBar?: TitleBar; theme?: "light" | "dark" | null }
   /** A page's call: its microphone, connection and sound, made here where the browser lets this page take a microphone, not in the page's frame, which has no origin to ask from (`clients/web/voice.js`). */
   voice(op: string, key: string, params: Record<string, unknown>, tell: (event: Record<string, unknown>) => void): void
   /** The files a server lists for `subject`, and the apps whose open apps are out of date. */

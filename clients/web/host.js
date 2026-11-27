@@ -221,12 +221,11 @@ async function send() {
 /// Since when no server has answered, which once one does is reported, if it was long enough to show.
 let unanswered = 0
 
-/// The moves its connection makes, from each state, as the app's client has them (`Connection::moves_to`).
-const MOVES = { connecting: ["online", "offline"], offline: ["reconnecting"], reconnecting: ["online", "offline"], online: ["offline"] }
-/// Moves its connection to `next`, if that's a move there is from where it is.
+/// Moves its connection to `next`, which the page hears: what was answered says it (`answered`), and asking again
+/// while it doesn't answer is `reconnecting` (`tryAgain`).
 /** @param {import("../app/page/host.js").Connection} next */
 function connected(next) {
-  if (!MOVES[connection].includes(next)) return
+  if (next === connection) return
   connection = next
   emit("state", state())
 }
@@ -240,7 +239,6 @@ function connected(next) {
 /** @param {boolean} now */
 function answered(now) {
   const lost = connection === "offline" || connection === "reconnecting"
-  if (now) connected("reconnecting")
   const was = connection
   connected(now ? "online" : "offline")
   if (was === connection) return
@@ -252,7 +250,8 @@ function answered(now) {
   if (!now) unanswered ||= performance.now()
   if (now && unanswered && performance.now() - unanswered > 3000) report({ name: "one.client.unanswered", took: performance.now() - unanswered, error: "No server is answering" })
   else if (now) sendReports()
-  if (now) [again, unanswered] = [FIRST, 0]
+  // Answered, it stops trying again: what was waiting to would say it's reconnecting while it answers.
+  if (now) ([again, unanswered] = [FIRST, 0]), clearTimeout(asking)
   else tryAgain()
 }
 /// Tries its network again once `again` has passed, or with `now`, at once: by opening again while it hasn't, and

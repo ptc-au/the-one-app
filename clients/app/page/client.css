@@ -546,13 +546,15 @@ html[data-launcher="solid"] body {
   opacity: 0;
   animation: ui-late var(--move-settle) var(--ease-settle) 600ms forwards;
 }
-/* Why there's no Home Screen: grey lines, and the button that installs one. */
-#empty {
+/* Why there's no Home Screen, or that its person signs in on it: grey lines, and the button that does it. */
+#empty,
+#elsewhere {
   display: grid;
   justify-items: center;
   gap: 1rem;
 }
-#empty p {
+#empty p,
+#elsewhere p {
   margin: 0;
 }
 #empty p + p {
@@ -1125,6 +1127,10 @@ iframe[data-move] {
 }
 .ui-state .steps li.now {
   color: var(--foreground);
+}
+/* A step that stopped, as opening does while its network doesn't answer: a warning, not a spinner, until it's tried again. */
+.ui-state .steps li.stopped > .ui-icon {
+  color: var(--orange);
 }
 .ui-state .steps li > :first-child {
   margin-top: 0.15em;
