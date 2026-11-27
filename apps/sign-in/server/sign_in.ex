@@ -22,7 +22,7 @@ defmodule SignIn do
   def icon, do: "client/security.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.37.0", "database" => "to keep what happens in it"}
+  def requires, do: %{"core" => ">= 0.37.179", "database" => "to keep what happens in it"}
 
   @impl true
   def jobs, do: [%{tool: "notify", every: 60}]
@@ -688,7 +688,7 @@ defmodule SignIn do
   end
 
   def call("everyone", _inputs, call) do
-    if not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
+    if not Call.member?(call, "network"), do: Call.refuse("Only a member of the network sees who's in it.")
     first = OneCore.User.first_owner()
     %{"people" => people, "invitations" => invitations} = ask(%{ask: "everyone"})
     pictures = kept(call, Enum.map(people, & &1["who"]))
@@ -702,13 +702,13 @@ defmodule SignIn do
   end
 
   def call("domains", _inputs, call) do
-    if not Call.member?(call, "network"), do: raise("Only a member of the network sees who joins it.")
+    if not Call.member?(call, "network"), do: Call.refuse("Only a member of the network sees who joins it.")
     %{domains: ask(%{ask: "domains"})["domains"]}
   end
 
   # Whoever invites names the network, and any member sees what it's called.
   def call("network", _inputs, call) do
-    if not Call.member?(call, "network"), do: raise("Only a member of the network sees what it's called.")
+    if not Call.member?(call, "network"), do: Call.refuse("Only a member of the network sees what it's called.")
     network(%{})
   end
 
@@ -849,14 +849,14 @@ defmodule SignIn do
     users = Map.get(inputs, "users", [person(call)])
 
     if users -- [call.actor] != [] and not Call.member?(call, "network"),
-      do: raise("Only a member of the network sees who's in it.")
+      do: Call.refuse("Only a member of the network sees who's in it.")
 
     %{people: people(call, users)}
   end
 
   # Whoever may see who's in the network sees how each is shown, as `people` has it: a member of it, and everyone sees themselves.
   def call("pictures", %{"subjects" => subjects}, call) do
-    if subjects -- [call.actor] != [] and not Call.member?(call, "network"), do: raise("Only a member of the network sees who's in it.")
+    if subjects -- [call.actor] != [] and not Call.member?(call, "network"), do: Call.refuse("Only a member of the network sees who's in it.")
 
     in_groups = in_groups(call, Enum.filter(subjects, &String.starts_with?(&1, "groups/")))
     found = kept(call, Enum.uniq(subjects ++ Enum.concat(Map.values(in_groups))))

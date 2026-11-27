@@ -215,12 +215,19 @@ defmodule OneCore.Call do
   """
   def reach(%__MODULE__{subject: subject, actor: actor} = call, name, relation \\ "viewer") do
     name = User.renamed(name)
-    if why = refused(call, name, relation), do: raise(@no_access <> "\n\n" <> why)
+    if why = refused(call, name, relation), do: refuse(why)
     # Its blobs are whoever's it is, whom this server may not act for. One that does runs the call.
     owner = User.owner(name) || "network"
     if not OneCore.Apps.here?(owner), do: forward(call, owner)
     %Artifact{prefix: name <> "/", reached: {call.app_artifact, {actor, subject}, relation}}
   end
+
+  @doc """
+  Raises as `reach/3` does for what whoever asked may not reach: "You don't have access to this." for a person, and
+  `why` for an agent. A tool whose own check refuses someone says it so, as a screen draws it as no access, which
+  asking again can't change.
+  """
+  def refuse(why), do: raise(@no_access <> "\n\n" <> why)
 
   @doc "Whether `reach/3` would give the artifact: whether this call may reach it as `relation`."
   def reaches?(%__MODULE__{} = call, name, relation \\ "viewer"), do: refused(call, name, relation) == nil
