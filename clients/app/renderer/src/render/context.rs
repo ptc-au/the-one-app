@@ -19,7 +19,7 @@ pub struct Context {
     pub(crate) pipelines: Compiled,
     /// Its device was lost (its GPU was reset, as a Windows driver's TDR resets it, or went), so nothing drawn with
     /// it draws again: what draws makes everything again, on a new one (`Windows::recover`).
-    pub(crate) lost: Arc<AtomicBool>,
+    pub(crate) lost: Arc<Mutex<Option<String>>>,
     /// Its GPU hung: a wait for it, or a frame, ran past `HANG` with no word from the system (`Renderer::wait`), as
     /// on a Surface's Intel driver that failed its reset (22 Nov). It's lost too, and what it holds is never let go:
     /// wgpu waits for the GPU with no limit as a surface or its queue goes (`Windows::recovered`).
@@ -135,11 +135,11 @@ impl Context {
         .await
         .map_err(|error| anyhow::anyhow!("no GPU to draw with: {error}"))?;
         device.on_uncaptured_error(Arc::new(|error| log::error!("GPU error: {error}")));
-        let lost = Arc::new(AtomicBool::new(false));
+        let lost = Arc::new(Mutex::new(None));
         let told = lost.clone();
         device.set_device_lost_callback(move |reason, message| {
             log::error!("the GPU was lost ({reason:?}): {message}");
-            told.store(true, Ordering::Relaxed);
+            *told.lock().expect("nothing panics holding it") = Some(format!("{reason:?}: {message}"));
         });
         let tinted = match std::env::var("ONE_GLASS").as_deref() {
             Ok("tinted") => true,
@@ -187,7 +187,13 @@ impl Context {
 
     /// Whether its device was lost (`lost`), or hung (`hung`).
     pub fn lost(&self) -> bool {
-        self.lost.load(Ordering::Relaxed) || self.hung()
+        self.lost.lock().expect("nothing panics holding it").is_some() || self.hung()
+    }
+
+    /// Why its device was lost (`lost`) and which GPU it was, once: Telemetry hears of it, as the device is made again.
+    pub fn loss(&self) -> Option<String> {
+        let why = self.lost.lock().expect("nothing panics holding it").take()?;
+        Some(format!("the GPU was lost ({why}), drawing on {}", self.gpu()))
     }
 
     /// Whether its GPU hung (`hung`).

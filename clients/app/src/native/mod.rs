@@ -526,6 +526,13 @@ fn events(kind: &Kind, to: &UnboundedSender<Value>, entrypoint: &str, subject: O
                     views.client.report(json!({"name": "one.client.native.gpu.hang", "error": "a frame wasn't done 2 s after it was given the GPU", "attributes": {"one.view": app, "one.gpu.frame": frame.to_string()}}));
                 }
             }
+            // The GPU's device was lost, as a driver's reset does it, and the windows are drawn again on a new one.
+            Event::Lost(why) => {
+                eprintln!("{why}");
+                if let Ok(views) = crate::views() {
+                    views.client.report(json!({"name": "one.client.native.gpu.lost", "error": why, "attributes": {"one.view": app}}));
+                }
+            }
             Event::Frames(frames) => frames_reported(&app, &frames),
             // Its person knows how to go home now: the page says so to Home Screen, for every device.
             Event::Tipped => crate::app().shell.emit("tipped", json!(null)),

@@ -156,6 +156,9 @@ pub enum Event {
     /// The GPU hung: a frame of its wasn't done a while after it was given (`Renderer::hung`), or a wait for the GPU
     /// ran out, and every window's drawn again on a new device. What the frame was, where it was one of its.
     Hung(serde_json::Value),
+    /// The GPU's device was lost, as a driver's reset does it, and every window's drawn again on a new one: why, and
+    /// which GPU it was.
+    Lost(String),
 }
 
 /// Where an app's window was left on the screen and how big, in device pixels, and whether it was maximized, as its

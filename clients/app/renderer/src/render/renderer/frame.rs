@@ -327,7 +327,7 @@ impl Renderer {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         if !self.write_data(&mut encoder) {
             log::error!("the GPU was lost: a staging buffer didn't map again");
-            self.lost.store(true, std::sync::atomic::Ordering::Relaxed);
+            *self.lost.lock().expect("nothing panics holding it") = Some("a staging buffer didn't map again".into());
             return Draw::Missed;
         }
         let buffer = self.buffer.clone().expect("written above");

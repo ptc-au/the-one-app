@@ -157,6 +157,9 @@
         console.info(`first frame ${Math.round(performance.now() - started)} ms after the frame's script, ${Math.round(performance.now())} ms after it was opened`)
       },
       unopened,
+      // Its GPU's device was lost and made again, and the renderer panicked: its client tells Telemetry (bridge.js).
+      lost: (/** @type {string} */ why) => seen("lost", why),
+      panicked: (/** @type {string} */ why) => seen("panicked", why),
     })
     step("opened")
     // What a test asks, as a native window's inspector answers: `settle` before it takes a picture, `query` of what's

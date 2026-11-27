@@ -109,7 +109,7 @@ pub struct Renderer {
     hung: Arc<std::sync::atomic::AtomicBool>,
     /// Its context's device was lost (`Context::lost`), which a staging buffer that didn't map again says before the
     /// browser does (`write_data`).
-    lost: Arc<std::sync::atomic::AtomicBool>,
+    lost: Arc<std::sync::Mutex<Option<String>>>,
     /// Each frame it gave the GPU that it hasn't said it's done, oldest first (`hung`).
     given: std::collections::VecDeque<Given>,
     /// The scene it last drew, which the fake platform draws whole to check its frame by (`Windows::whole`), and how

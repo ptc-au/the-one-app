@@ -5,7 +5,7 @@ import { chosen, dress, insets, theme, titleBar, titleRow } from "./chrome.js"
 import { bar, baseKey, depth, go, host, key, located, nested, on, open, opened, own, page, panel, phone, reached, shown, tellShowing, within } from "./client.js"
 import { gestures } from "./gestures.js"
 import { shortcut } from "./shortcuts.js"
-import { byId, exception } from "./util.js"
+import { byId, exception, report } from "./util.js"
 /** @import { View } from "./host.js" */
 
 /// How tall the launcher's content last said it is (`ui/notifications/size-changed`), and how tall its panel was made.
@@ -41,6 +41,7 @@ addEventListener("message", ({ data, source }) => {
   const before = typedIn.size > 0
   if (data.params?.editing) typedIn.add(source)
   else typedIn.delete(source)
+  // A command of the app's client fails while it isn't open yet (until the app reaches its network's address), and the page says again as it changes.
   if (typedIn.size > 0 !== before) invoke("editing", { editing: typedIn.size > 0 }).catch(() => {})
 })
 /// Shows this device's person their recovery key, or with `typed`, asks them for it and lets the device in with
@@ -278,6 +279,7 @@ addEventListener("message", async ({ source, data }) => {
       reached(view, params.place, params.replace === true)
     }
     // How long a spinner was in sight on it, which Telemetry hears with the tool it waited on (`waited.rs`).
+    // The client isn't open yet while the app starts: a spinner that was in sight then is not told.
     if (method === "notifications/one/waited" && typeof params.ms === "number") invoke("waited", { view: view.key, place: view.place ?? "", ms: Math.round(params.ms) }).catch(() => {})
     // Something is open over its page, or nothing is any more, and whether it's on its first screen.
     if (method === "notifications/one/over") {
@@ -291,6 +293,8 @@ addEventListener("message", async ({ source, data }) => {
     if (method === "notifications/one/seen") for (const step of Object.keys(params)) (view.loaded ??= new Set()).add(step)
     if (method === "notifications/one/seen" && params.drawn) view.frame.style.removeProperty("--splash")
     if (method === "notifications/one/seen" && typeof params.unopened === "string") page(view, { type: "unopened", why: params.unopened })
+    // Its GPU's device was lost, or the renderer panicked, as a native window tells Telemetry (`Event::Lost`, a panic).
+    for (const kind of ["lost", "panicked"]) if (method === "notifications/one/seen" && typeof params[kind] === "string") report(`one.client.web.gpu.${kind}`, params[kind].slice(0, 500), { "one.view": view.key })
     return
   }
   // Kept as unanswered until it is, in the list its page had as it asked: loaded again, the page has one of its own.

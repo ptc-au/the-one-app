@@ -162,6 +162,11 @@ impl Windows {
             (window.on_event)(Event::Hung(frame));
         }
         if self.context.lost() {
+            if let Some(why) = self.context.loss()
+                && let Some(window) = self.windows.values_mut().next()
+            {
+                (window.on_event)(Event::Lost(why));
+            }
             self.recover();
         }
         // Glyphs and pictures not drawn lately go, before anything's painted, but none a window shows, keeps to draw

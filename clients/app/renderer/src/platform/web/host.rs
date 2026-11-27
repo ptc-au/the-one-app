@@ -75,6 +75,7 @@ pub async fn open(canvas: web_sys::HtmlCanvasElement, scale: f32, page: String, 
     let on_event = |event| match event {
         Event::Drawn => drop(call("drawn", &JsValue::UNDEFINED)),
         Event::Mismatched(why) | Event::Failed(why) => drop(call("unopened", &why.into())),
+        Event::Lost(why) => drop(call("lost", &why.into())),
         _ => {}
     };
     windows.open(options, Ok(screen), on_event).map_err(|error| JsError::new(&format!("{error:#}")))?;
@@ -200,7 +201,11 @@ fn console_log() {
     if log::set_logger(&CONSOLE).is_ok() {
         log::set_max_level(log::LevelFilter::Warn);
     }
-    std::panic::set_hook(Box::new(|info| web_sys::console::error_1(&info.to_string().into())));
+    // The frame's client tells Telemetry (renderer.js `panicked`), as the console is the browser's alone.
+    std::panic::set_hook(Box::new(|info| {
+        web_sys::console::error_1(&info.to_string().into());
+        call("panicked", &info.to_string().into());
+    }));
 }
 
 /// The page's module ran, or why it didn't.
