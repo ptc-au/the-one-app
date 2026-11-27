@@ -99,6 +99,20 @@ function show(page, whom) {
   size()
 }
 
+/// Tells Telemetry what went wrong in this page, as the web client does (`report` in host.js), as a `notifications/one/measured` to
+/// the network, which keeps it for whoever let the assistant in: a page's own error, a call the network refused it, a renderer that
+/// couldn't open it. Sent at once, since the assistant may take the page away; where this can't reach the network there's nowhere
+/// to keep it, and the page says so as it did.
+/** @param {string} name @param {unknown} error @param {Record<string, unknown>} [attributes] */
+function report(name, error, attributes = {}) {
+  const hostInfo = greeted?.hostInfo?.name
+  const record = { name, error: String(error).slice(0, 500), attributes: { ...attributes, "service.name": "web", "one.app": showing?.split("/")[0], "one.assistant": typeof hostInfo === "string" ? hostInfo : undefined }, time: Date.now() }
+  // A report that can't reach the network has no other way to be told.
+  fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/one/measured", params: { records: [record] } }) }).catch(() => {})
+}
+addEventListener("error", ({ message, filename, lineno, error }) => report("exception", message, { "code.file.path": URL.canParse(filename) ? new URL(filename).pathname : undefined, "code.line.number": lineno, "exception.stacktrace": error?.stack }))
+addEventListener("unhandledrejection", ({ reason }) => report("exception", reason?.message ?? reason, { "exception.stacktrace": reason?.stack }))
+
 /** Asks the network `method`, as whoever let the assistant in. → its JSON-RPC answer. @param {unknown} id @param {string} method @param {unknown} [params] */
 const request = (id, method, params) =>
   fetch(`${origin}${apps}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }).then(
@@ -116,6 +130,7 @@ async function ask({ id, method, params }) {
   const meta = subject ? { _meta: { subject, ...params?._meta } } : {}
   const answered = await request(id, method, { ...params, ...meta })
   answer(answered.error ? { id, error: answered.error } : { id, result: answered.result })
+  if (answered.error || answered.result?.isError) report("one.page.call", answered.error?.message ?? answered.result?.content?.[0]?.text, { "rpc.method": method, "rpc.tool": method === "tools/call" ? params?.name : undefined })
   if (method !== "tools/call" || answered.error || answered.result?.isError) return
   const whom = meta._meta?.subject ?? ""
   if (!reading.has(whom)) reading.set(whom, request(0, "tools/list", meta).then(({ result }) => new Set((result?.tools ?? []).filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name))))
@@ -190,7 +205,11 @@ function fromPage(data) {
   // The renderer has drawn its page, which is shown from then; or couldn't open it, and says why, which is said here as
   // a native host's window says it.
   if (data.method === "notifications/one/seen" && "drawn" in (data.params ?? {})) document.body.dataset.drawn = ""
-  if (data.method === "notifications/one/seen" && typeof data.params?.unopened === "string") say(unopened(data.params.unopened), showing?.split("/")[0])
+  for (const kind of ["lost", "panicked"]) if (data.method === "notifications/one/seen" && typeof data.params?.[kind] === "string") report(`one.client.web.gpu.${kind}`, data.params[kind])
+  if (data.method === "notifications/one/seen" && typeof data.params?.unopened === "string") {
+    report("one.page.unopened", data.params.unopened)
+    say(unopened(data.params.unopened), showing?.split("/")[0])
+  }
   toHost(data)
 }
 
