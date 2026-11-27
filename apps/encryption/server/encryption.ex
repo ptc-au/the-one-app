@@ -114,9 +114,21 @@ defmodule Encryption do
         # isn't passed on: one passed here already would come back as a loop, and say no server answered.
         others = Enum.filter(held, &(&1 in should)) -- [call.server]
         if others != [], do: :no_response = Call.forward(call, others)
-        raise unopened(name, should, held)
+        waiting(call, should, held)
+        # Nothing failed: it can't run until a passkey hands the key over, so it isn't an error to Telemetry.
+        raise Call.Refused, unopened(name, should, held)
     end
   end
+
+  # A job of someone's own that no server that acts for them can open the key for waits until their passkey hands it
+  # over, and they're told to use it, once while it waits (`Sign-In`'s `check`). Whoever is there to read a call's
+  # answer needs no notification.
+  defp waiting(%Call{subject: "users/" <> _} = call, should, held) do
+    if Call.client(call) == nil and Enum.all?(held, &(&1 not in should)),
+      do: Call.tool(call, "sign-in", "check", %{"waiting" => for(server <- should, do: %{"key" => server, "name" => Servers.name(server)})})
+  end
+
+  defp waiting(_call, _should, _held), do: nil
 
   # Why nothing opens an encrypted artifact for a call: which servers that act for whose it is lack its keys, and which
   # hold them but don't act for them, so can't run the call.
@@ -583,7 +595,10 @@ defmodule Encryption do
         true
       end
 
-    %{device: device, wrapped: wrapped == true, artifacts: Enum.map(inputs["artifacts"] || [], &choose(call, &1))}
+    artifacts = Enum.map(inputs["artifacts"] || [], &choose(call, &1))
+    # What they were told is waiting for their key is forgotten once it's handed over, so a server that waits again is told of.
+    if String.starts_with?(call.subject, "users/"), do: Call.tool(call, "sign-in", "check", %{})
+    %{device: device, wrapped: wrapped == true, artifacts: artifacts}
   end
 
   def call("ask", %{"device" => device} = inputs, call) do

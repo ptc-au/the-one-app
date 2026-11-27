@@ -33,7 +33,9 @@ Its words:
   which are waiting for it (`missing`) and which hold it and no longer act for them (`extra`), and Telemetry has an
   alert open while that's so (`check`, every 10 minutes). Sign In & Security shows a row for each key servers are
   waiting for, with Use Passkey, and the network's owners are notified once when a server starts waiting
-  (`sign-in`'s `check`, which `check` calls). A call that no server can open says which are waiting.
+  (`sign-in`'s `check`, which `check` calls). A job of someone's own that no server can open the key for is refused, not
+  failed, and they are notified the same way, once; it runs again once their passkey hands the key over. A call that no
+  server can open says which are waiting.
 - Choosing a server is adding it (`add_server`, `add_member`): one that acts for someone holds their keys once
   their passkey hands them over. Taking it off removes its relation tuple at the next handover, and what's written
   after is under a key it was never handed. What it read before, it read.

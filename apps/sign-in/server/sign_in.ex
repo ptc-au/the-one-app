@@ -179,10 +179,19 @@ defmodule SignIn do
         name: "check",
         description: """
         Notifies the network's owners once when a server starts waiting for the network's key, which their passkey
-        hands it in Sign In & Security, as the encryption app's `check` has it do every 10 minutes. Says which servers
-        are waiting, and which it told them of just now
+        hands it in Sign In & Security, as the encryption app's `check` has it do every 10 minutes, and a person once
+        when one starts waiting for theirs. Says which servers are waiting, and which it told them of just now
         """,
-        inputs: none,
+        inputs: %{
+          type: "object",
+          properties: %{
+            waiting: %{
+              type: "array",
+              description: "The servers waiting for the key of whose it runs for, as the encryption app's `access` says, when no one is there to ask it for them: a job's",
+              items: %{type: "object", properties: %{key: %{type: "string"}, name: %{type: ["string", "null"]}}, required: ["key"]}
+            }
+          }
+        },
         outputs: %{
           type: "object",
           properties: %{
@@ -652,31 +661,45 @@ defmodule SignIn do
     %{who: who}
   end
 
-  # The servers the network's owners were told are waiting are kept, so each is told of once while it waits, and again
-  # if it waits again after it was handed the key.
-  def call("check", _inputs, call) do
-    %{"access" => access} = Call.tool(call, "encryption", "key", %{})
-    waiting = Enum.uniq(for artifact <- access, server <- artifact["missing"], do: server)
-    told = with {:ok, told, _tag} <- Artifact.read(call.own, "told/network"), do: JSON.decode!(told), else: (:absent -> [])
+  # The servers whose key someone was told they're waiting for are kept, so each is told of once while it waits, and again
+  # if it waits again after it was handed the key. The network's owners are told of the network's, and a person of their
+  # own (a job of theirs that no server can open the key for asks, `Encryption`).
+  def call("check", inputs, call) do
+    waiting =
+      case inputs["waiting"] do
+        nil ->
+          %{"access" => access} = Call.tool(call, "encryption", "key", %{})
+          Enum.uniq(for artifact <- access, server <- artifact["missing"], do: server)
+
+        waiting ->
+          waiting
+      end
+
+    told = with {:ok, told, _tag} <- Artifact.read(call.own, "told/" <> call.subject), do: JSON.decode!(told), else: (:absent -> [])
     new = Enum.reject(waiting, &(&1["key"] in told))
     named = &Enum.map(&1, fn server -> server["name"] || String.slice(server["key"], 0, 8) end)
 
     if new != [] do
       {names, are} = {named.(new), if(length(new) == 1, do: "is", else: "are")}
-      title = "#{Enum.join(names, ", ")} #{are} waiting for the network's key"
-      # Its owners among the people it keeps, which it reads as nobody, as the clock runs it: a list of the network's
-      # users is only a user's to ask for.
-      people = for "people/" <> name <- Artifact.list(call.own, "people/"), do: "users/" <> name
-      owners = Enum.filter(people, &owns_network?(call, &1))
 
-      for owner <- owners,
-          do: Call.tool(call, "notifications", "send", %{"title" => title, "text" => "Open Sign In & Security and use your passkey.", "to" => owner, "section" => "passkeys"})
+      {title, to} =
+        if call.subject == "network" do
+          # Its owners among the people it keeps, which it reads as nobody, as the clock runs it: a list of the network's
+          # users is only a user's to ask for.
+          people = for "people/" <> name <- Artifact.list(call.own, "people/"), do: "users/" <> name
+          {"#{Enum.join(names, ", ")} #{are} waiting for the network's key", Enum.filter(people, &owns_network?(call, &1))}
+        else
+          {"#{Enum.join(names, ", ")} #{are} waiting for your key", [call.subject]}
+        end
+
+      for to <- to,
+          do: Call.tool(call, "notifications", "send", %{"title" => title, "text" => "Open Sign In & Security and use your passkey.", "to" => to, "section" => "passkeys"})
     end
 
     # Its record is kept as it changes, in one step: a check that removed it to write it again met another's write as
     # :exists and failed (23 Nov: "no match of right hand side value: :exists", two checks at once, which every server
     # of a network makes at the same 10 minutes).
-    Artifact.update(call.own, "told/network", fn _was -> JSON.encode!(Enum.map(waiting, & &1["key"])) end)
+    Artifact.update(call.own, "told/" <> call.subject, fn _was -> JSON.encode!(Enum.map(waiting, & &1["key"])) end)
     %{waiting: named.(waiting), told: named.(new)}
   end
 
