@@ -48,11 +48,12 @@ const STOP = 30_000;
 /** Cloudflare's longest inactivity timeout for a container, which it's given each time it's looked at. */
 const INACTIVE = 6 * 60 * 60_000;
 /**
- * Its size: 2 GiB, as a network's server takes 450 to 560 MB with 650 to 740 MB at its peak, and 4 vCPUs, as it builds
+ * Its size: 4 GiB, as a network's server takes 450 to 560 MB with 650 to 740 MB at its peak, but Telemetry's `spending` took
+ * it past 2 GiB, which ended the container (27 Nov), and 4 vCPUs, as it builds
  * every app again on a fresh disk as it starts: ready in 11 s, where 2 vCPUs took 17 s, 1 vCPU 95 s, standard-1's ½ 135 s
- * and basic's ¼ 230 s (27 Nov). CPU is billed as it's used, so the 4 cost only that minute more.
+ * and basic's ¼ 230 s (27 Nov). CPU is billed as it's used, so the 4 cost only that minute more, and memory by the hour it's on.
  */
-const INSTANCE = { vcpu: 4, memoryMib: 2048, diskMb: 8000 };
+const INSTANCE = { vcpu: 4, memoryMib: 4096, diskMb: 8000 };
 /** The server's `ONE_HOME` in its image (`image/Dockerfile`), named here as what's run in it is given none of its environment. */
 const HOME = "/data/home";
 /** What's kept of a joined server, from its `ONE_HOME`, as a gzipped tar in base64, once its record says it's active. */
