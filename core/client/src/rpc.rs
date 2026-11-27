@@ -14,6 +14,18 @@ use iroh::SecretKey;
 
 use crate::{Client, BUILD, PROTOCOL, telemetry, resolve, state::{State, Connection}, transport::{Reached, RequestError}};
 
+/// An error a server returned in its JSON-RPC answer: the server already recorded its own span for it.
+#[derive(Debug)]
+pub struct RpcError(pub String);
+
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for RpcError {}
+
 /// The `progressToken` a request carries, with which MCP asks for progress notifications while it runs.
 pub fn progress_token(message: &[u8]) -> Option<Value> {
     #[derive(Deserialize)]
@@ -440,7 +452,7 @@ impl Client {
         let response = self.ask_notified(message.to_string().as_bytes(), notified).await?;
         let mut response: Value = serde_json::from_slice(&response).context("the server's answer isn't JSON")?;
         if let Some(error) = response.get("error") {
-            bail!("{}", error["message"].as_str().unwrap_or("the server refused"))
+            return Err(RpcError(error["message"].as_str().unwrap_or("the server refused").to_owned()).into());
         }
         let mut result = response["result"].take();
         self.keep_files(&mut result).await?;

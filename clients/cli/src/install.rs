@@ -52,11 +52,11 @@ impl Source {
         } else if repo.split('/').count() == 2 && !repo.contains(' ') {
             repo.trim_end_matches(".git").to_owned()
         } else {
-            bail!(
+            return Err(crate::refused(format!(
                 "{written} isn't a repo: write owner/repo (on GitHub), a git URL, {}::<a repo of the network's> or a \
                  folder, with @<ref> or not",
                 client::command()
-            )
+            )));
         };
         Ok(Self { spec, reference })
     }
@@ -623,11 +623,18 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
             "--trusted" => trusted = Some(true),
             "--untrusted" => trusted = Some(false),
             "--new" => new = true,
-            "--app" => names.push(flags.next().context("--app needs an app's name")?.clone()),
-            other => bail!(
-                "`{other}` isn't something `{} install` takes: --app <name>, --trusted, --untrusted, --new or --list",
-                client::command()
-            ),
+            "--app" => {
+                let Some(name) = flags.next() else {
+                    return Err(crate::refused("--app needs an app's name"));
+                };
+                names.push(name.clone());
+            }
+            other => {
+                return Err(crate::refused(format!(
+                    "`{other}` isn't something `{} install` takes: --app <name>, --trusted, --untrusted, --new or --list",
+                    client::command()
+                )));
+            }
         }
     }
     let (folder, commit) = source.fetch(None)?;
@@ -649,7 +656,12 @@ pub async fn install(client: &Client, args: &[String]) -> Result<ExitCode> {
     let mut order: Vec<&String> = Vec::new();
     for name in &names {
         if !folder.join("apps").join(name).join("SKILL.md").exists() {
-            bail!("{} has no app {name}: `{} install {} --list` lists the ones it has", source.spec, client::command(), args[0]);
+            return Err(crate::refused(format!(
+                "{} has no app {name}: `{} install {} --list` lists the ones it has",
+                source.spec,
+                client::command(),
+                args[0]
+            )));
         }
         if !order.contains(&name) {
             order.push(name);

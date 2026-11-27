@@ -21,6 +21,23 @@ use client::{Client, Connection, InputResolver, NotApproved, State};
 use data_encoding::BASE64;
 use serde_json::{Map, Value, json};
 
+/// A caller's mistake (unknown command, bad flag or input): printed to stderr and exits non-zero, recorded with
+/// `one.outcome = "refused"` rather than as an error so it never alerts.
+#[derive(Debug)]
+pub(crate) struct Refused(String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+pub(crate) fn refused(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(Refused(message.into()))
+}
+
 /// What the native code of the apps this program ships with fills in of a tool's inputs, which every client it
 /// opens hands each call (`client::InputResolver`).
 pub fn resolvers() -> Vec<Arc<dyn InputResolver>> {
@@ -58,9 +75,15 @@ pub fn main() -> ExitCode {
     result.unwrap_or_else(|error| {
         eprintln!("{error:#}");
         // Whatever stopped it, even before a client opened, is kept for Telemetry and told by the next that reaches a
-        // server (`client::report_unopened`).
+        // server (`client::report_unopened`). A caller's mistake (bad command or input, or a request a server already
+        // answered with a JSON-RPC error) is `refused`, not an error, so it never alerts.
         if let Ok(home) = client::home() {
-            client::report_unopened(home, "cli", &json!({"name": "one.cli.failed", "error": format!("{error:#}")}));
+            let record = if error.downcast_ref::<Refused>().is_some() || error.downcast_ref::<client::RpcError>().is_some() {
+                json!({"name": "one.cli.failed", "attributes": {"one.outcome": "refused"}})
+            } else {
+                json!({"name": "one.cli.failed", "error": format!("{error:#}")})
+            };
+            client::report_unopened(home, "cli", &record);
         }
         ExitCode::FAILURE
     })
@@ -287,7 +310,11 @@ pub(crate) async fn command(client: &Client, args: &[String]) -> Result<ExitCode
             let skill = skill.map(|skill| skill.split_once("\n---\n").map_or(skill, |(_, text)| text).trim());
             if within.is_empty() && skill.is_none() {
                 listed_result?;
-                bail!("There's no tool, app or skill named `{}`. `{} --help` lists them.", words.join(" "), client::command());
+                return Err(refused(format!(
+                    "There's no tool, app or skill named `{}`. `{} --help` lists them.",
+                    words.join(" "),
+                    client::command()
+                )));
             }
             if listed_result.is_err() {
                 eprintln!("No server is answering, so this is what one last listed.\n");
@@ -361,14 +388,16 @@ async fn inputs(client: &Client, tool: &Value, flags: &[String]) -> Result<Value
     let mut inputs = Map::new();
     let mut flags = flags.iter().peekable();
     while let Some(flag) = flags.next() {
-        let name = flag.strip_prefix("--").with_context(|| format!("`{flag}` isn't an input: write --name value"))?;
+        let Some(name) = flag.strip_prefix("--") else {
+            return Err(refused(format!("`{flag}` isn't an input: write --name value")));
+        };
         if let Some(none) =
             name.strip_prefix("no-").filter(|none| known.get(name).is_none() && known.get(none).is_some())
         {
             let value = match kinds(&known[none]) {
                 kinds if kinds.contains(&"null") => Value::Null,
                 kinds if kinds.contains(&"boolean") => Value::Bool(false),
-                _ => bail!("--{none} can't be nothing. Leave it out, or give it {}.", takes(&known[none])),
+                _ => return Err(refused(format!("--{none} can't be nothing. Leave it out, or give it {}.", takes(&known[none])))),
             };
             inputs.insert(none.to_owned(), value);
             continue;
@@ -377,11 +406,13 @@ async fn inputs(client: &Client, tool: &Value, flags: &[String]) -> Result<Value
             Some(name) if known.get(name).is_some() => (name, true),
             _ => (name, false),
         };
-        let schema = known.get(name).with_context(|| format!("It has no input named `{name}`. --help shows them."))?;
+        let Some(schema) = known.get(name) else {
+            return Err(refused(format!("It has no input named `{name}`. --help shows them.")));
+        };
         let kinds = kinds(schema);
         let value = match flags.next_if(|next| !next.starts_with("--")) {
             None if kinds.contains(&"boolean") => Value::Bool(true),
-            None => bail!("--{name} needs {}", takes(schema)),
+            None => return Err(refused(format!("--{name} needs {}", takes(schema)))),
             Some(path) if from_file && schema["format"] == "upload" => {
                 let file = fs::read(path).with_context(|| format!("couldn't read {path}"))?;
                 let app = tool["name"].as_str().and_then(|tool| tool.split('_').next()).unwrap_or_default();
@@ -433,7 +464,7 @@ fn value(name: &str, schema: &Value, word: &str) -> Result<Value> {
     match json.filter(|value| kinds.is_empty() && !value.is_null() || kinds.iter().any(|kind| is(value, kind))) {
         Some(value) => Ok(value),
         None if kinds.is_empty() || kinds.contains(&"string") => Ok(Value::String(word.to_owned())),
-        None => bail!("--{name} takes {}, which `{word}` isn't", takes(schema)),
+        None => Err(refused(format!("--{name} takes {}, which `{word}` isn't", takes(schema)))),
     }
 }
 

@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -47,6 +47,6 @@ pub fn run(args: &[String]) -> Result<String> {
         [restart, json] if restart == "restart" => client::system::restart(&program(json)?).map(|()| String::new())?,
         [stop, name, key] if stop == "stop" => client::system::stop(name, key).map(|()| String::new())?,
         [remove, name, key] if remove == "remove" => client::system::remove(name, key).map(|()| String::new())?,
-        _ => bail!("one system install|start|restart <program as JSON>, or stop|remove <name> <key>"),
+        _ => return Err(crate::refused("one system install|start|restart <program as JSON>, or stop|remove <name> <key>")),
     })
 }

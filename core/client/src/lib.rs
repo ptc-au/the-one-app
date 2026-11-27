@@ -41,7 +41,7 @@ pub use cache::{Changed, Subscription};
 pub use state::{State, Connection};
 pub use auth::{Network, DeviceAuthorization, NotApproved};
 pub use transport::{ALPN, LIMIT, CONNECT, THERE, REFUSED, STOPPED, endpoint, address, relay, RequestError, Reached, Unreached, notify};
-pub use rpc::{progress_token, request_id, progress, progress_message};
+pub use rpc::{RpcError, progress_token, request_id, progress, progress_message};
 use auth::{NetworkConfig, sessions};
 use transport::{Reach, Link, accept};
 use state::reconnecting;
