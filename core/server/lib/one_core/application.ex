@@ -18,6 +18,8 @@ defmodule OneCore.Application do
     OneCore.Otlp.start()
     # What every server caches (`OneCore.Cache`), which this process, the application's, keeps.
     OneCore.Cache.table()
+    # When each target this server asks last missed its deadline (`OneCore.Asks`), which this process keeps too.
+    OneCore.Asks.table()
 
     # A server that couldn't reach the bucket may have missed being told something meanwhile: once it can, it looks again.
     OneCore.Bucket.Fuse.install(&Apps.reconnected/0)
