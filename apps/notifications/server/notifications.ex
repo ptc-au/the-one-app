@@ -60,7 +60,9 @@ defmodule Notifications do
     # Where in its app a tap opens, where it isn't the app's first page.
     "alter table notifications add column page text",
     # Or its section in Settings, which is the app's own too.
-    "alter table notifications add column section text"
+    "alter table notifications add column section text",
+    # A security notice that can't be muted, sent by a trusted network app.
+    "alter table notifications add column critical integer not null default 0"
   ]
 
   # The most of a person's notifications an inbox shows, newest first.
@@ -160,6 +162,14 @@ defmodule Notifications do
               type: "string",
               description:
                 "Where an app notifies, or one of its own sections in Settings a tap opens, by its component (settings.sections), and what follows # there, the section's own arguments: accounts#request=4"
+            },
+            app: %{
+              type: "string",
+              description: "Where a trusted network app notifies about another app's thing, the app a tap opens"
+            },
+            critical: %{
+              type: "boolean",
+              description: "A security notice that can't be muted; only a trusted network app may send one"
             }
           },
           required: ["title"]
@@ -190,12 +200,16 @@ defmodule Notifications do
         description: "Lists your notifications, newest first, with how many are unread: the Notifications app's only screen",
         inputs: %{
           type: "object",
-          properties: %{after: %{type: "integer", description: "Only those after this id, to hear what's new"}}
+          properties: %{
+            after: %{type: "integer", description: "Only those after this id, to hear what's new"},
+            before: %{type: "integer", description: "Only those before this id, to read older ones"}
+          }
         },
         outputs: %{
           type: "object",
           properties: %{
             unread: %{type: "integer"},
+            more: %{type: "boolean", description: "Whether there are older notifications before these"},
             notifications: %{
               type: "array",
               description: "Newest first",
@@ -336,25 +350,32 @@ defmodule Notifications do
   @impl true
   def call("send", %{"title" => title} = inputs, call) do
     to = Map.get(inputs, "to", call.subject)
-    app = app(call)
+    app = sender_app(call, inputs["app"])
+    critical = inputs["critical"] == true
+
+    if critical and not trusted_network_caller?(call) do
+      raise Call.Refused, "Only a trusted network app can send a notice that can't be muted."
+    end
+
     users = call |> users(to) |> told!(call)
     at = DateTime.to_iso8601(DateTime.utc_now(:second))
 
     {sent, quiet, devices} =
       transaction(call, fn db ->
-        quiet = if app, do: query(db, "select user from quiet where app = ?", [app]), else: []
+        quiet = if app && not critical, do: query(db, "select user from quiet where app = ?", [app]), else: []
         quiet = Enum.filter(users, &(%{"user" => &1} in quiet))
         sent = users -- quiet
 
         for user <- sent do
-          query(db, "insert into notifications (user, app, page, section, title, text, at) values (?, ?, ?, ?, ?, ?, ?)", [
+          query(db, "insert into notifications (user, app, page, section, title, text, at, critical) values (?, ?, ?, ?, ?, ?, ?, ?)", [
             user,
             app,
             app && inputs["page"],
             app && inputs["section"],
             title,
             inputs["text"],
-            at
+            at,
+            if(critical, do: 1, else: 0)
           ])
         end
 
@@ -379,15 +400,27 @@ defmodule Notifications do
       [%{"unread" => unread}] =
         query(db, "select count(*) as unread from notifications where user = ? and read = 0", [user])
 
-      notifications =
+      {where, params} =
+        case inputs do
+          %{"before" => before} ->
+            {"user = ? and id > ? and id < ?", [user, Map.get(inputs, "after", 0), before, @shown + 1]}
+
+          _ ->
+            {"user = ? and id > ?", [user, Map.get(inputs, "after", 0), @shown + 1]}
+        end
+
+      fetched =
         query(
           db,
           """
-          select id, app, page, section, title, text, at, read from notifications where user = ? and id > ?
+          select id, app, page, section, title, text, at, read from notifications where #{where}
           order by id desc limit ?
           """,
-          [user, Map.get(inputs, "after", 0), @shown]
+          params
         )
+
+      more = length(fetched) > @shown
+      notifications = Enum.take(fetched, @shown)
 
       names = names(user)
       shown =
@@ -397,7 +430,7 @@ defmodule Notifications do
           Map.merge(notification, %{"read" => notification["read"] == 1, "from" => names[notification["app"]], "opens" => opens})
         end
 
-      %{unread: unread, notifications: shown}
+      %{unread: unread, notifications: shown, more: more}
     end)
   end
 
@@ -431,7 +464,7 @@ defmodule Notifications do
           db,
           """
           select app, not exists (select 1 from quiet where quiet.user = ? and quiet.app = apps.app) as allowed from (
-          select app from notifications where user = ? and app is not null union select app from quiet where user = ?
+          select app from notifications where user = ? and app is not null and critical = 0 union select app from quiet where user = ?
         ) as apps order by app
         """,
           [user, user, user]
@@ -517,8 +550,28 @@ defmodule Notifications do
 
   defp users(_call, to), do: raise("#{to} isn't a user, a group or the network.")
 
-  # The app that called, by the name it's installed as, and never one that's asked for: what a notification opens is
-  # only the app that sent it. Whoever called it from outside, a person or an agent, sends it as nobody's.
+  # The app that called, by the name it's installed as, or where a trusted network app notifies about another app's
+  # thing (such as Permissions for a transfer), the app it names. Whoever called from outside sends it as nobody's.
+  defp sender_app(call, nil), do: app(call)
+
+  defp sender_app(call, named) do
+    caller_app = app(call)
+
+    cond do
+      named == caller_app -> caller_app
+      trusted_network_caller?(call) -> named
+      true -> raise Call.Refused, "Only a trusted network app can notify on behalf of another app."
+    end
+  end
+
+  defp trusted_network_caller?(%Call{caller: nil}), do: false
+
+  defp trusted_network_caller?(call) do
+    Enum.any?(OneCore.Apps.running("network"), fn {_name, version} ->
+      version.artifact == call.caller and Map.get(version, :trusted, true)
+    end)
+  end
+
   defp app(%Call{caller: nil}), do: nil
 
   defp app(call) do

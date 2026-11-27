@@ -2,6 +2,7 @@
   "Inbox": {
     "answers": {
       "notifications_inbox": {
+        "more": true,
         "notifications": [
           {
             "id": "n1",
@@ -37,6 +38,14 @@
         "theme": null
       }
     }
+  },
+  "Inbox, on a computer": {
+    "like": "Inbox",
+    "size": [
+      728,
+      600
+    ],
+    "touch": false
   },
   "Inbox, empty": {
     "answers": {
