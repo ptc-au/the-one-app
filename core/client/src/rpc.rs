@@ -396,8 +396,12 @@ impl Client {
         request["params"]["_meta"]["version"] = json!(BUILD);
         let info = &mut request["params"]["_meta"]["io.modelcontextprotocol/clientInfo"];
         if info.is_null() {
+            // Only a program that is a client in its own right goes by a name of ours: `one mcp` passes on another's, and a
+            // request it has none for is from a client that didn't say, which a person reads as such.
             let service = self.resource.read().expect("no report panics")["service.name"].clone();
-            *info = json!({"name": format!("one-{}", service.as_str().unwrap_or("cli")), "version": BUILD});
+            if let Some(service @ ("app" | "cli")) = service.as_str() {
+                *info = json!({"name": format!("one-{service}"), "version": BUILD});
+            }
         }
         for (says, value) in &self.says {
             if request["params"]["_meta"][says].is_null() {
