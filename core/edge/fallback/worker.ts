@@ -10,6 +10,10 @@
 // `network`, `server/state.json` and `server/home/key`, is kept here once it's joined, in the Durable Object's storage,
 // and handed to it as it starts (`ONE_IDENTITY`), which it then takes the network's latest build from.
 //
+// Its container runs where its Durable Object is, so the object is made where the network's bucket is (`here`): every
+// call a server answers asks the bucket, which a container on another continent waited a round trip for each time
+// (San Jose to Oceania, 27 Nov: calls took 4 to 15 times as long as on the network's other servers).
+//
 // It looks every minute, as the Worker's cron says, and at the moment something it waits for is due, by its alarm.
 // Being asked every minute is also what keeps the container on: Cloudflare stops one whose Durable Object hasn't been
 // asked anything for its inactivity timeout.
@@ -44,11 +48,11 @@ const STOP = 30_000;
 /** Cloudflare's longest inactivity timeout for a container, which it's given each time it's looked at. */
 const INACTIVE = 6 * 60 * 60_000;
 /**
- * Its size: 2 GiB, as a network's server takes 450 to 560 MB with 650 to 740 MB at its peak, and 2 vCPUs, as it builds
- * every app again on a fresh disk as it starts, which was ready in 35 s, where 1 vCPU took 95 s, standard-1's ½ 135 s
- * and basic's ¼ 230 s (27 Nov). CPU is billed as it's used, so the 2 cost only that minute more.
+ * Its size: 2 GiB, as a network's server takes 450 to 560 MB with 650 to 740 MB at its peak, and 4 vCPUs, as it builds
+ * every app again on a fresh disk as it starts: ready in 11 s, where 2 vCPUs took 17 s, 1 vCPU 95 s, standard-1's ½ 135 s
+ * and basic's ¼ 230 s (27 Nov). CPU is billed as it's used, so the 4 cost only that minute more.
  */
-const INSTANCE = { vcpu: 2, memoryMib: 2048, diskMb: 8000 };
+const INSTANCE = { vcpu: 4, memoryMib: 2048, diskMb: 8000 };
 /** The server's `ONE_HOME` in its image (`image/Dockerfile`), named here as what's run in it is given none of its environment. */
 const HOME = "/data/home";
 /** What's kept of a joined server, from its `ONE_HOME`, as a gzipped tar in base64, once its record says it's active. */
@@ -56,9 +60,21 @@ const IDENTITY = `cd ${HOME} && jq -e '.server_membership == "active"' server/st
 /** The DER of a PKCS #8 Ed25519 private key, but for its 32-byte seed, which follows. */
 const PKCS8 = hex.decode("302e020100300506032b657004220420");
 
+/** The places a Durable Object can be asked to be made in, which are those R2 says its buckets are in (lowercased). */
+const PLACES = ["wnam", "enam", "sam", "weur", "eeur", "apac", "oc", "afr", "me"] as const;
+
+/**
+ * The server's Durable Object, made where the network's bucket is, as the edge says (`Network.location`): only its first
+ * call is placed by the hint, and none is given where the bucket's place is none of those, as where it's up to Cloudflare.
+ */
+async function here(env: FallbackEnv) {
+  const place = (await env.NETWORK.location())?.toLowerCase();
+  return env.FALLBACK.getByName("server", { locationHint: PLACES.find((one) => one === place) });
+}
+
 export default {
   async scheduled(_controller, env) {
-    await env.FALLBACK.getByName("fallback").look();
+    await (await here(env)).look();
   },
 } satisfies ExportedHandler<FallbackEnv>;
 
