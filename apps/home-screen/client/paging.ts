@@ -291,9 +291,10 @@ export function createPaging(props: { owners: Owner[] }, layout: Screens) {
     // The arrow keys move as a swipe does. Escape ends editing.
     const keys = keydown((event) => {
       if (event.altKey || event.metaKey || event.ctrlKey) return
-      // Escape closes the page overview, and otherwise ends editing, carrying something or not: nothing's open over it.
+      // Escape closes the page overview, and otherwise ends editing, carrying something or not: a sheet that's open over
+      // it takes the key first.
       if (event.key === "Escape" && home.getSnapshot().matches({ editing: "overview" })) return home.send({ type: "dismiss" })
-      if (event.key === "Escape" && (home.getSnapshot().matches({ editing: "still" }) || home.getSnapshot().matches({ editing: "dragging" }))) return home.send({ type: "done" })
+      if (event.key === "Escape" && home.getSnapshot().matches("editing")) return home.send({ type: "done" })
       if (!home.getSnapshot().matches("nothing") || untrack(launcher)) return
       const to = ({ ArrowRight: { screen: 1 }, ArrowLeft: { screen: -1 }, ArrowDown: { owner: 1 }, ArrowUp: { owner: -1 } } as Record<string, { screen: 1 | -1 } | { owner: 1 | -1 }>)[event.key]
       if (!to || ("owner" in to && kindOf(home.getSnapshot().context.at.owner) !== "home")) return

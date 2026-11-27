@@ -86,7 +86,7 @@ export function Holding(props: { owner: Owner; index: number; held: Held }) {
   const [copyWidth, copyHeight] = [held.width / scale, held.height / scale]
   const tile = untrack(laidPage).tile
   return (
-    <View style={[looks.dialog, looks.heldLayer, looks.sized(windowWidth(), viewport().height)]}>
+    <View role="dialog" aria-label={`${(item ?? props.held.listed)?.name} held`} style={[looks.dialog, looks.heldLayer, looks.sized(windowWidth(), viewport().height)]}>
       {/* The Home Screen blurs through a veil under what's held, and its menu floats in glass, as a window does. */}
       <Pressable aria-hidden="true" onPress={dismiss} style={[looks.cover, looks.frosted, looks.fadeIn]} />
       <Show when={item ?? (props.held.listed as Item | undefined)}>

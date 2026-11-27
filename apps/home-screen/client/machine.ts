@@ -12,7 +12,7 @@
 //     carried. stack: a second finger's tap on another app, which joins what's carried, and lands after it as it ends
 //   asking ─install─► installing ─installed─► still (placed) · ─failed─► still (back, saying why) · ─cancel─► still (back)
 //   refused ─dismiss─► still (back)
-//   asking · refused ─link─► still (back), then the link · installing: a link waits, unfollowed, for the install
+//   dragging · asking · installing · refused ─done · link─► still (back), then Done ends editing, or the link is followed
 //
 // An app the window shows over it leaves it as it is, a phone's Home Screen under an app: what's open is open, editing
 // goes on, and an install finishes where it was dropped, or goes back, as it would have in front.
@@ -505,8 +505,10 @@ export const machine = setup({
         dragging: {
           exit: "land",
           on: {
-            // The device's back, with a finger still carrying something, waits for it to land.
-            done: {},
+            // Done, or a link, with a finger still carrying something, puts it back where it came from, as dropped where
+            // it isn't wanted does; the finger's lifting after it is nothing.
+            done: { target: "still", actions: ["back", raise(({ event }) => event)] },
+            link: { target: "still", actions: ["back", raise(({ event }) => event)] },
             stack: { guard: "stacks", actions: "stack" },
             over: { actions: "over" },
             flip: [
@@ -517,30 +519,31 @@ export const machine = setup({
           },
         },
         // Dropped on an owner it isn't installed for: Install it for them? It waits where it was dropped.
+        // Done and a link leave editing, which keeps what was edited, so what was dropped goes back first, and what left is
+        // heard again from where it is.
         asking: {
           on: {
             install: "installing",
             cancel: { target: "still", actions: "back" },
-            done: {},
-            // A link leaves editing, and what was edited is kept, so what was dropped goes back first.
+            done: { target: "still", actions: ["back", raise(({ event }) => event)] },
             link: { target: "still", actions: ["back", raise(({ event }) => event)] },
           },
         },
-        // It's installing for them, where it was dropped, until that's done, or it's back in the App Library.
+        // It's installing for them, where it was dropped, until that's done, or it's cancelled and back in the App Library.
         installing: {
           on: {
             installed: "still",
             failed: { target: "still", actions: "back" },
-            done: {},
-            // Followed now, it would keep what's installing on the page before it's installed, or after it failed.
-            link: {},
+            cancel: { target: "still", actions: "back" },
+            done: { target: "still", actions: ["back", raise(({ event }) => event)] },
+            link: { target: "still", actions: ["back", raise(({ event }) => event)] },
           },
         },
         // Dropped on an owner whose pages are someone else's to change: it goes back once that's been said.
         refused: {
           on: {
             dismiss: { target: "still", actions: "back" },
-            done: {},
+            done: { target: "still", actions: ["back", raise(({ event }) => event)] },
             link: { target: "still", actions: ["back", raise(({ event }) => event)] },
           },
         },

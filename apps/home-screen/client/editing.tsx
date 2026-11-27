@@ -65,16 +65,20 @@ export function Gallery(props: { owner: Owner }) {
 const carriedApps = (held: Held) => [held.item, ...(held.stack ?? [])].flatMap((item) => (item && !item.widget ? [{ item: item as Entrypoint, title: item === held.item ? (held.listed?.title ?? item.name) : item.name }] : []))
 
 /// Apps dropped on an owner they aren't all installed for, who you may install for, wait where they were dropped while
-/// one sheet asks about the ones that aren't: Install, as the App Store installs, for them, one after another, their
-/// progress shown where they wait, and they stay; or Cancel, and they're back where they came from. If one couldn't be
+/// one sheet asks about the ones that aren't: Install, as the App Store installs, for them, one after another, the sheet
+/// staying to say so, with Cancel, and they stay; or Cancel, and they're back where they came from. If one couldn't be
 /// installed they're all back, and a toast says why.
 export function Asking(props: { owner: Owner; held: Held }) {
   const missing = () => carriedApps(props.held).filter(({ item }) => !installedFor(item, props.owner))
   const titles = () => and(missing().map(({ title }) => title))
+  const asking = () => state().matches({ editing: "asking" })
+  const installing = () => state().matches({ editing: "installing" })
   const install = async () => {
     const [owner, apps] = [props.owner, untrack(missing)]
     home.send({ type: "install" })
     for (const { item, title } of apps) {
+      // Cancelled, the one under way finishes and the rest aren't asked for.
+      if (!home.getSnapshot().matches({ editing: "installing" })) break
       try {
         // Named as it is where it was taken from, so the entrypoint it's placed as is its own for them too.
         const done = JSON.parse(await call("install", { app: item.app, name: item.entrypoint.split("/")[0] }, { subject: owner.subject }))
@@ -92,8 +96,9 @@ export function Asking(props: { owner: Owner; held: Held }) {
     const it = missing().length > 1 ? "them" : "it"
     return props.owner.subject === "network" ? `Everyone in the network will have ${it}.` : props.owner.subject ? `Everyone in ${props.owner.name} will have ${it}.` : `${missing().length > 1 ? "They'll" : "It'll"} be yours.`
   }
+  const cancel = () => (asking() || installing()) && home.send({ type: "cancel" })
   return (
-    <Sheet heading={`Install ${titles()} for ${named(props.owner)}?`} open={state().matches({ editing: "asking" })} onClose={() => state().matches({ editing: "asking" }) && home.send({ type: "cancel" })}>
+    <Sheet heading={`${installing() ? "Installing" : "Install"} ${titles()} for ${named(props.owner)}${installing() ? "…" : "?"}`} open={asking() || installing()} onClose={cancel}>
       <View style={looks.ask}>
         <View style={looks.askIcons}>
           <For each={missing()} keyed={({ item }) => item.entrypoint}>
@@ -102,8 +107,10 @@ export function Asking(props: { owner: Owner; held: Held }) {
         </View>
         <Text style={looks.askWhy}>{reach()}</Text>
         <View style={looks.askButtons}>
-          <Button onPress={install}>Install</Button>
-          <Button variant="secondary" onPress={() => home.send({ type: "cancel" })}>Cancel</Button>
+          <Show when={!installing()}>
+            <Button onPress={install}>Install</Button>
+          </Show>
+          <Button variant="secondary" onPress={cancel}>Cancel</Button>
         </View>
       </View>
     </Sheet>

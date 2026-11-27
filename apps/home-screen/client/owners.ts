@@ -251,6 +251,8 @@ export async function keep(edited: Editing[]) {
   const asked = (pages: Page[], owner: Owner) =>
     pages.filter((page) => page.items.length).map((page) => ({ items: page.items.map((item) => (item.widget ? { widget: item.widget, size: item.size } : { entrypoint: theirs(item as Entrypoint, owner) })), ...(page.hidden ? { hidden: true } : {}) }))
   const changed = edited.filter((one) => JSON.stringify(asked(one.pages, all[one.owner])) !== JSON.stringify(asked(all[one.owner].pages, all[one.owner])))
+  // Nothing changed, nothing to say or to ask for again.
+  if (!changed.length) return
   setKept(changed)
   await Promise.all(
     changed.map((one) =>
