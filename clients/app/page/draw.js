@@ -2,7 +2,7 @@
 import { appStore } from "./apps.js"
 import { fit } from "./bridge.js"
 import { placed } from "./chrome.js"
-import { baseName, notes, own, phone, shown, testflight } from "./client.js"
+import { baseName, NEWER, newer, notes, own, phone, shown, testflight } from "./client.js"
 import { rail } from "./rail.js"
 import { byId, report } from "./util.js"
 import { machine } from "./window-machine.js"
@@ -26,8 +26,14 @@ function steps({ connection, starting }) {
 function problemOf(now) {
   // One that crashed once it had opened says so, with Reload, as a browser's crashed tab does (src/unopened.js).
   if (now.matches("launcher_failed") && now.context.crashed) return [`${baseName()} stopped working`, "Reload it to start it again.", now.context.why, "Reload"]
-  if (now.matches("launcher_failed")) return [`${baseName()} didn't open.`, "Try again in a moment.", now.context.why, "Try Again"]
-  if (now.matches("update_failed")) return ["Couldn't update", now.context.why ?? "", undefined, "Try Again"]
+  // One whose page needs a newer app than this says so, with what updates it: trying again can't help.
+  if (now.matches("launcher_failed") && now.context.why === NEWER) {
+    const [text, action] = newer()
+    return [`${baseName()} didn't open`, text, undefined, action]
+  }
+  if (now.matches("launcher_failed")) return [`${baseName()} didn't open`, "Try again in a moment.", now.context.why, "Try Again"]
+  // What failed is said in words, and what the update said under Show Details.
+  if (now.matches("update_failed")) return ["Couldn't update", "The update didn't finish.", now.context.why, "Try Again"]
 }
 /// What a computer's launcher says while its servers say it's behind them: Update Required, with Update.
 /** @type {[string, string, undefined, string]} */
@@ -86,7 +92,8 @@ export function draw() {
   if (behind && phone && !required.open) required.showModal()
   if (!(behind && phone) && required.open) required.close()
   const problem = behind && !phone ? UPDATE_REQUIRED : problemOf(now)
-  byId("problem-button").dataset.variant = behind ? "default" : "outline"
+  byId("problem-button").dataset.variant = behind || problem?.[3] === "Update the One App" ? "default" : "outline"
+  byId("problem-button").dataset.updates = problem?.[3] === "Update the One App" ? "true" : ""
   byId("problem-button").toggleAttribute("disabled", now.matches("checking"))
   byId("problem-button").ariaBusy = now.matches("checking") ? "true" : null
   byId("problem").hidden = !problem

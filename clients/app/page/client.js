@@ -32,7 +32,14 @@ export let windows = false
 /// it doesn't, as in a browser, which draws each app in a frame here with the renderer it loads.
 let runtimeVersion = 0
 /// Why a phone can't open an app's page natively: its page needs a newer renderer than the app's, or newer tables.
-const NEWER = "It needs a newer version of this app. Update it, then open it again."
+/// Trying again can't help, so what didn't open says it with what does: Update the One App, as the UI library's
+/// `Errored` does, where this device updates it, and otherwise who does.
+export const NEWER = "It needs a newer version of the One App."
+/// What a page that needs a newer app says, and its button, where this device updates its app (`updates`).
+/** @returns {[string, string | undefined]} */
+export const newer = () => (updates() ? [NEWER, "Update the One App"] : [`${NEWER} Your network's owner updates it.`, undefined])
+/// Whether this device updates its own app: a computer's does, and an iPhone's from TestFlight opens TestFlight.
+export const updates = () => !phone || testflight
 /// On a phone, the launcher is drawn natively, as its root window, under every app's (`open_launcher`).
 export let nativeLauncher = false
 /// Whether the native launcher was last told it shows, which it doesn't while an app in a frame here is in front, and
@@ -127,8 +134,13 @@ export function notes() {
   byId("page-problem").hidden = !unopened && !now?.matches("failed")
   const failed = unopened ?? (view && now?.matches("failed") ? { entrypoint: view.entrypoint, why: now.context.why } : undefined)
   if (failed) {
+    const [text, action] = failed.why === NEWER ? newer() : ["Try again in a moment.", "Try Again"]
     byId("page-problem-heading").textContent = `${names.get(failed.entrypoint) || "This app"} didn't open`
+    byId("page-problem-text").textContent = text
+    byId("page-problem-details").hidden = failed.why === NEWER || !failed.why
     byId("page-problem-details-text").textContent = failed.why ?? ""
+    byId("page-problem-action").hidden = !action
+    byId("page-problem-button").textContent = action ?? ""
   }
 }
 byId("reload").addEventListener("click", () => {
@@ -137,6 +149,7 @@ byId("reload").addEventListener("click", () => {
 })
 byId("page-problem-button").addEventListener("click", () => {
   const { unopened } = shown.getSnapshot().context
+  if (unopened?.why === NEWER) return void invoke("update").catch(() => {})
   if (unopened) {
     go(unopened.link, unopened.subject)
     return
@@ -490,7 +503,11 @@ for (const [target, event] of /** @type {const} */ ([[window, "online"], [docume
 // A retry that fails says so in the banner, from the connection it's about (`state`).
 for (const retry of ["reconnect", "banner-retry"]) byId(retry).addEventListener("click", () => invoke("retry").catch(() => {}))
 byId("try-again-button").addEventListener("click", () => on({ type: "retry" }))
-byId("problem-button").addEventListener("click", () => on({ type: shown.getSnapshot().matches("needs_updating") ? "update" : "retry" }))
+// A page that needs a newer app updates it (`newer`), as a computer's Update Required does through the window's update.
+byId("problem-button").addEventListener("click", () => {
+  if (byId("problem-button").dataset.updates) return void invoke("update").catch(() => {})
+  on({ type: shown.getSnapshot().matches("needs_updating") ? "update" : "retry" })
+})
 byId("update-button").addEventListener("click", () => on({ type: "update" }))
 // Nothing dismisses it: the window works again once it's updated, or its network talks with it again.
 byId("update-required").addEventListener("cancel", (event) => event.preventDefault())

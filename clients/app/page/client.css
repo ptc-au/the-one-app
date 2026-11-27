@@ -577,7 +577,7 @@ html[data-launcher="solid"] body {
 #page-problem p {
   margin: 0;
 }
-/* While its network doesn't answer, a thin banner across the top of the launcher, which moves it down by its height
+/* While its network doesn't answer, a thin banner across the top of its apps, which moves them down by its height
    and covers none of it, as a mail or chat app's does. A moment's gap says nothing: it comes in only once it has
    lasted a few seconds, behind what the device keeps for itself at the top, which it reaches into. */
 #banner {
@@ -1058,13 +1058,14 @@ iframe[data-move] {
   color: var(--muted-foreground);
 }
 /* A problem, as the UI library's: a box tinted by how much it needs the person, its symbol in that colour, its words
-   plain, and the action that fixes it at its end. */
+   plain, and the action that fixes it at their end, or under them where beside them would leave the words narrower
+   than a menu. */
 .ui-state .problem {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   justify-self: stretch;
-  gap: 0.125rem 0.75rem;
+  gap: 0.75rem;
   padding: 0.75rem;
   border-radius: var(--radius-medium);
   background: var(--red-tint);
@@ -1072,16 +1073,22 @@ iframe[data-move] {
   line-height: 1.4;
 }
 .ui-state .problem > .ui-icon {
-  grid-row: 1;
-  align-self: start;
   color: var(--red);
 }
-.ui-state .problem > strong {
-  font-weight: var(--label-weight);
+.ui-state .problem > .body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
 }
-.ui-state .problem > .action {
-  grid-column: 3;
-  grid-row: 1 / span 3;
+.ui-state .problem .words {
+  display: grid;
+  flex: 1 1 10rem;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.ui-state .problem strong {
+  font-weight: var(--label-weight);
 }
 /* A state in the middle of its place: what's under way, or a problem with what fills it. */
 .ui-state.middle {
@@ -1094,6 +1101,8 @@ iframe[data-move] {
 }
 .ui-state.middle .problem {
   justify-self: center;
+  box-sizing: border-box;
+  width: 100%;
   max-width: var(--readable);
   text-align: start;
 }
@@ -1156,13 +1165,11 @@ iframe[data-move] {
 .ui-state .problem > .ui-icon {
   margin-top: 0.15em;
 }
-.ui-state .problem > p {
-  grid-column: 2;
+.ui-state .problem p {
   color: var(--secondary-label);
 }
 /* Show Details: quiet, under the sentence, and what an agent reads of the problem once it's open. */
-.ui-state .problem > details {
-  grid-column: 2;
+.ui-state .problem details {
   margin-top: 0.25rem;
   color: var(--muted-foreground);
 }
