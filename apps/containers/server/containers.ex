@@ -596,16 +596,20 @@ defmodule Containers do
     %{image: name}
   end
 
-  def call("request", inputs, call) do
-    request = [
-      inputs["port"],
-      Map.get(inputs, "method", "GET"),
-      Map.get(inputs, "path", "/"),
-      Map.get(inputs, "headers", %{}),
-      Map.get(inputs, "body", "")
-    ]
+  def call("request", %{"port" => port} = inputs, call) do
+    c = container!(call, inputs)
+    if c.state != "running", do: raise(Call.Refused, "#{c.name} isn't running, it's #{c.state}: `start` starts it.")
+    published = for %{"port" => p} <- c.ports, uniq: true, do: p
 
-    on(call, inputs, :request, request)
+    if port not in published do
+      raise Call.Refused,
+            "#{c.name} has no port #{port}. " <>
+              if(published == [], do: "It has no ports", else: "Its ports are #{Enum.join(published, ", ")}") <>
+              ": a container's ports are the ones it was created with.\n\n`create` with `ports: [#{port}]` makes one with it."
+    end
+
+    request = [port, Map.get(inputs, "method", "GET"), Map.get(inputs, "path", "/"), Map.get(inputs, "headers", %{}), Map.get(inputs, "body", "")]
+    Service.call(call, Podman, :request, [c.id | request], c.server)
   end
 
   def call("screenshot", inputs, call), do: {:blob, "image/png", Base.decode64!(on(call, inputs, :screenshot))}
@@ -807,8 +811,8 @@ defmodule Containers do
 
     Enum.find(containers, &(&1.name == name)) ||
       case Enum.find(off(call), &(&1.name == name)) do
-        nil -> raise "You have no container called #{name}#{Service.unanswered(failed)}#{having(containers)}"
-        c -> raise "#{name} is on #{c.machine}, which is off"
+        nil -> raise Call.Refused, "You have no container called #{name}#{Service.unanswered(failed)}#{having(containers)}"
+        c -> raise Call.Refused, "#{name} is on #{c.machine}, which is off"
       end
   end
 
