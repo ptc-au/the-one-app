@@ -490,7 +490,7 @@ defmodule Containers do
     name = inputs["name"]
     # A name on a machine that doesn't answer is caught below, where it's taken (`take_name!/3`).
     {containers, _failed} = containers(call)
-    if Enum.any?(containers, &(&1.name == name)), do: raise("You have a container called #{name} already")
+    if Enum.any?(containers, &(&1.name == name)), do: raise(Call.Refused, "You have a container called #{name} already")
     servers = Service.servers(call, Podman)
     if servers == [], do: raise(none(call))
     {image, server} = image(call, inputs["image"], inputs["machine"] && Service.machine!(call, Podman, inputs["machine"]))
@@ -550,19 +550,27 @@ defmodule Containers do
   def call("logs", inputs, call), do: on(call, inputs, :logs, [Map.get(inputs, "tail", 200)])
 
   def call("exec", inputs, call) do
-    if String.trim(inputs["command"]) == "", do: raise("Give a command")
+    if String.trim(inputs["command"]) == "", do: raise(Call.Refused, "Give a command")
+    c = container!(call, inputs)
+    if c.state != "running", do: raise(Call.Refused, "#{c.name} isn't running, it's #{c.state}: `start` starts it.")
     exec = [inputs["command"], inputs["dir"], Map.get(inputs, "timeout", 60)]
     secrets = Map.get(inputs, "secrets", %{})
     # Only with secrets is Podman's service asked with them, so one on a machine that hasn't updated yet runs the rest.
-    on(call, inputs, :exec, if(secrets == %{}, do: exec, else: exec ++ [redeemed(call, secrets)]))
+    Service.call(call, Podman, :exec, [c.id | if(secrets == %{}, do: exec, else: exec ++ [redeemed(call, secrets)])], c.server)
   end
 
   def call("read_file", %{"path" => path} = inputs, call) do
-    data = Base.decode64!(on(call, inputs, :read_file, [path]))
+    case on(call, inputs, :read_file, [path]) do
+      %{"refused" => why} ->
+        raise Call.Refused, why
 
-    if String.valid?(data) and not String.contains?(data, <<0>>),
-      do: %{path: path, text: data},
-      else: {:blob, MIME.from_path(path), data}
+      encoded ->
+        data = Base.decode64!(encoded)
+
+        if String.valid?(data) and not String.contains?(data, <<0>>),
+          do: %{path: path, text: data},
+          else: {:blob, MIME.from_path(path), data}
+    end
   end
 
   def call("write_file", %{"path" => path} = inputs, call) do
@@ -570,7 +578,7 @@ defmodule Containers do
       case inputs do
         %{"text" => text} -> Base.encode64(text)
         %{"data" => data} -> data
-        _ -> raise "Give its text, or its data as base64"
+        _ -> raise(Call.Refused, "Give its text, or its data as base64")
       end
 
     on(call, inputs, :write_file, [path, data])
@@ -582,7 +590,7 @@ defmodule Containers do
 
   def call("commit", %{"name" => name} = inputs, call) do
     {images, _failed} = images(call)
-    if Enum.any?(images, &(&1.artifact && &1.name == name)), do: raise("You have an image called #{name} already")
+    if Enum.any?(images, &(&1.artifact && &1.name == name)), do: raise(Call.Refused, "You have an image called #{name} already")
     id = Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)
     labels = %{"artifact" => Artifact.name(Call.make(call, "image-" <> id)), "name" => name}
     on(call, inputs, :commit, ["localhost/#{name}-#{id}", labels])
@@ -591,7 +599,7 @@ defmodule Containers do
 
   def call("remove_image", %{"name" => name}, call) do
     {images, failed} = images(call)
-    image = Enum.find(images, &(&1.artifact && &1.name == name)) || raise "You have no image called #{name}#{Service.unanswered(failed)}"
+    image = Enum.find(images, &(&1.artifact && &1.name == name)) || raise(Call.Refused, "You have no image called #{name}#{Service.unanswered(failed)}")
     Service.call(call, Podman, :remove_image, [image.id], image.server)
     %{image: name}
   end
@@ -609,7 +617,16 @@ defmodule Containers do
     end
 
     request = [port, Map.get(inputs, "method", "GET"), Map.get(inputs, "path", "/"), Map.get(inputs, "headers", %{}), Map.get(inputs, "body", "")]
-    Service.call(call, Podman, :request, [c.id | request], c.server)
+
+    case Service.call(call, Podman, :request, [c.id | request], c.server) do
+      %{"closed" => true} ->
+        raise Call.Refused,
+              "Nothing is listening on port #{port} in #{c.name}. " <>
+                "Start a server on 0.0.0.0:#{port} in #{c.name} with `exec` first (a server bound only to 127.0.0.1 inside the container isn't reachable by `request`; use `exec` with curl)."
+
+      response ->
+        response
+    end
   end
 
   def call("screenshot", inputs, call), do: {:blob, "image/png", Base.decode64!(on(call, inputs, :screenshot))}
@@ -745,8 +762,8 @@ defmodule Containers do
 
     with :exists <- Artifact.write(call.own, record, server),
          {:ok, at, tag} <- Artifact.read(call.own, record) do
-      if is_integer(Service.seen(at)), do: raise("You have a container called #{name} on #{Service.name(at)}, which is off")
-      if Artifact.replace(call.own, record, server, tag) != :ok, do: raise("You have a container called #{name} already")
+      if is_integer(Service.seen(at)), do: raise(Call.Refused, "You have a container called #{name} on #{Service.name(at)}, which is off")
+      if Artifact.replace(call.own, record, server, tag) != :ok, do: raise(Call.Refused, "You have a container called #{name} already")
     end
   end
 
@@ -764,10 +781,10 @@ defmodule Containers do
         {mine.id, at}
 
       %{server: at} ->
-        raise "The image #{image} is on #{Service.name(at)}: create it there"
+        raise Call.Refused, "The image #{image} is on #{Service.name(at)}: create it there"
 
       nil ->
-        if Enum.any?(all, &(&1.artifact && named?.(&1))), do: raise("You have no image called #{image}")
+        if Enum.any?(all, &(&1.artifact && named?.(&1))), do: raise(Call.Refused, "You have no image called #{image}")
         {image, server}
     end
   end
@@ -776,7 +793,7 @@ defmodule Containers do
   # Each handle's secret, by the variable it's given in: the Vault hands it to this app's code, once.
   defp redeemed(call, secrets) do
     for {name, handle} <- secrets, into: %{} do
-      if not (name =~ ~r/^[A-Za-z_][A-Za-z0-9_]*$/), do: raise("A variable's name is letters, digits and _, like AZURE_CLIENT_SECRET.")
+      if not (name =~ ~r/^[A-Za-z_][A-Za-z0-9_]*$/), do: raise(Call.Refused, "A variable's name is letters, digits and _, like AZURE_CLIENT_SECRET.")
       {name, Call.tool(call, "vault", "redeem", %{"handle" => handle})["value"]}
     end
   end

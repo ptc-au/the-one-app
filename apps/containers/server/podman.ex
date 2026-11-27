@@ -281,9 +281,12 @@ defmodule Containers.Podman do
 
     labels = [["--label", made_here()] | labels]
 
+    # Desktop's Chrome needs time to flush its profile on SIGTERM; a shell image ignores SIGTERM so a short timeout stops it promptly.
+    stop_timeout = if String.starts_with?(spec["image"], "localhost/containers-desktop:"), do: "30", else: "3"
+
     args =
       ["create", "--name", spec["id"], "--init", "--tty", "--interactive", "--cpus", cpus, "--memory", memory] ++
-        ["--pids-limit", "4096", "--shm-size", "1g", "--stop-timeout", "30", "--restart", spec["restart"]] ++
+        ["--pids-limit", "4096", "--shm-size", "1g", "--stop-timeout", stop_timeout, "--restart", spec["restart"]] ++
         List.flatten(labels) ++
         Enum.flat_map(spec["ports"] || [], &["--publish", "127.0.0.1::#{&1}"]) ++
         Enum.flat_map(spec["env"] || %{}, fn {key, value} -> ["--env", "#{key}=#{value}"] end) ++
@@ -331,7 +334,7 @@ defmodule Containers.Podman do
   def stop(service, id), do: podman!(service, ["stop", id]) && :ok
 
   def remove(service, id) do
-    podman!(service, ["rm", "--force", "--time", "5", id])
+    podman!(service, ["rm", "--force", "--time", "2", id])
     File.rm(Path.join([OneCore.Service.folder(service), "used", id]))
     :ok
   end
@@ -365,11 +368,23 @@ defmodule Containers.Podman do
     OneCore.Service.touch(service, id)
 
     within(service, fn folder ->
-      podman!(service, ["cp", "#{id}:#{path}", folder])
-      file = Path.join(folder, Path.basename(path))
-      if File.dir?(file), do: raise("#{path} is a folder.\n\n`exec` with ls lists it.")
-      if File.stat!(file).size > @largest, do: raise("#{path} is larger than 16 MB.\n\n`exec` reads part of it.")
-      Base.encode64(File.read!(file))
+      case run(service, ["cp", "#{id}:#{path}", folder], 60) do
+        %{exit: 0} ->
+          file = Path.join(folder, Path.basename(path))
+
+          cond do
+            File.dir?(file) -> %{refused: "#{path} is a folder.\n\n`exec` with ls lists it."}
+            File.stat!(file).size > @largest -> %{refused: "#{path} is larger than 16 MB.\n\n`exec` reads part of it."}
+            true -> Base.encode64(File.read!(file))
+          end
+
+        %{stderr: stderr} ->
+          msg = reason(stderr)
+
+          if String.contains?(msg, "could not be found") or String.contains?(msg, "no such file or directory"),
+            do: %{refused: msg},
+            else: raise(why(stderr))
+      end
     end)
   end
 
@@ -530,23 +545,29 @@ defmodule Containers.Podman do
 
     url = "http://127.0.0.1:#{host_port}" <> if(String.starts_with?(path, "/"), do: path, else: "/" <> path)
 
-    response =
-      Req.request!(
-        method: method,
-        url: url,
-        headers: headers,
-        body: body,
-        retry: false,
-        redirect: false,
-        decode_body: false,
-        receive_timeout: 60_000
-      )
+    case Req.request(
+           method: method,
+           url: url,
+           headers: headers,
+           body: body,
+           retry: false,
+           redirect: false,
+           decode_body: false,
+           receive_timeout: 60_000
+         ) do
+      {:ok, response} ->
+        %{
+          status: response.status,
+          headers: Map.new(response.headers, fn {key, values} -> {key, Enum.join(values, ", ")} end),
+          body: clip(response.body, @largest)
+        }
 
-    %{
-      status: response.status,
-      headers: Map.new(response.headers, fn {key, values} -> {key, Enum.join(values, ", ")} end),
-      body: clip(response.body, @largest)
-    }
+      {:error, %Req.TransportError{reason: reason}} when reason in [:closed, :econnrefused, :econnreset] ->
+        %{closed: true}
+
+      {:error, error} ->
+        raise Exception.message(error)
+    end
   end
 
   # Enables Podman's `podman-restart` user service, which starts containers whose policy is `always` as the machine
