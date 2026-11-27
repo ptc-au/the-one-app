@@ -9,7 +9,7 @@ defmodule Database do
   def icon, do: "icon.svg"
 
   @impl true
-  def requires, do: %{"core" => ">= 0.37.0"}
+  def requires, do: %{"core" => ">= 0.37.164"}
 
   require Logger
   alias Database.Lease
@@ -158,8 +158,9 @@ defmodule Database do
           Logger.warning("#{app}'s database: #{holder} took its lease from this server and answers the network's relay, but didn't answer this server within #{waited} ms, and no other server could be asked, so this server doesn't take it back")
           unreachable(call)
 
-        # This server is stopping, or not one of its network's yet, so it takes no lease that others would then come
-        # to it for: the call goes to one of the servers that are, which takes it.
+        # This server is stopping, or not one of its network's yet, or its machine sleeps and one that doesn't is
+        # ready, so it takes no lease that others would then come to it for: the call goes to one of the servers that
+        # are, which takes it.
         :not_up ->
           Call.forward(call, OneCore.Apps.servers(whose))
 

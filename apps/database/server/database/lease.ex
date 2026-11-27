@@ -59,7 +59,8 @@ defmodule Database.Lease do
 
   Only a server that's up takes the lease (`OneCore.Server.up?/0`): a build being tried that can't be reached by its
   key, or a server that's stopping, would have everyone pass their calls to it and wait. It still holds the lease
-  the log gave it before it started, which everyone passes their calls to already.
+  the log gave it before it started, which everyone passes their calls to already. Nor does one whose machine sleeps,
+  as a laptop does, while one that doesn't is ready to (`yields?/1`), and one holding it hands it on once one is.
 
   A server whose own work on the database fails, as one out of files does, hands its lease on as well, and takes
   none for a while: an app's own error is its caller's, but one opening its copy or reading SQLite's log is this
@@ -204,6 +205,8 @@ defmodule Database.Lease do
     # So it hears that its server is stopping, and hands its lease on (`terminate/3`), from when it says so.
     Process.flag(:trap_exit, true)
     Registry.register(OneCore.Waiting, :status, nil)
+    # And that another server came or went, or said what it is, which may be one to hand it to (`yields?/1`).
+    Registry.register(OneCore.Waiting, :seen, nil)
     measures()
     {:next_state, state, data, actions} = looking(%__MODULE__{artifact: artifact, server: server, folder: folder})
     {:ok, state, data, actions}
@@ -355,6 +358,16 @@ defmodule Database.Lease do
       else: :keep_state_and_data
   end
 
+  # Another server came or went, or said what it is: a lease on a machine that sleeps goes to one that doesn't, once
+  # one is ready (`yields?/1`), once a write being logged is done.
+  def handle_event(:info, :seen, :writing, _data), do: {:keep_state_and_data, :postpone}
+
+  def handle_event(:info, :seen, state, data) when state in [:settling, :holding] do
+    if yields?(data),
+      do: {:next_state, {:following, nil}, hand_on(close(data))},
+      else: :keep_state_and_data
+  end
+
   def handle_event(:info, _message, _state, _data), do: :keep_state_and_data
 
   # It looks at the log in the background while it's in use, and stops once it hasn't been for `@renewed_while`, when
@@ -400,6 +413,8 @@ defmodule Database.Lease do
     Process.flag(:trap_exit, true)
     Registry.unregister(OneCore.Waiting, :status)
     Registry.register(OneCore.Waiting, :status, nil)
+    Registry.unregister(OneCore.Waiting, :seen)
+    Registry.register(OneCore.Waiting, :seen, nil)
     data = struct(__MODULE__, Map.from_struct(data))
     data = if match?({sqlite, _db} when sqlite != Sqlite, data.db), do: reopened(data, state), else: data
     {:ok, state, if(data.db && is_nil(data.reader), do: %{data | reader: reader(file(data))}, else: data)}
@@ -724,7 +739,7 @@ defmodule Database.Lease do
 
     case List.last(entries) || Log.entry(data.artifact, snapshot) do
       free when free in [nil, %{server: nil}] ->
-        if OneCore.Server.up?() and not failed?(data),
+        if takes?(data) and not failed?(data),
           do: take(data, if(free, do: "handed_on", else: "free")),
           else: {{:following, nil}, %{data | followed: nil}}
 
@@ -773,7 +788,7 @@ defmodule Database.Lease do
     case List.last(entries) do
       _free when not is_nil(server) and entries == [] ->
         cond do
-          not OneCore.Server.up?() ->
+          not takes?(data) ->
             {:not_up, kept}
 
           failed?(data) ->
@@ -789,7 +804,7 @@ defmodule Database.Lease do
 
       free when free in [nil, %{server: nil}] ->
         cond do
-          not OneCore.Server.up?() and why != :stopping -> {:not_up, kept}
+          not takes?(data) and why != :stopping -> {:not_up, kept}
           failed?(data) -> {:failed, kept}
           true -> {:ok, take(data, if(free, do: "handed_on", else: "free"))}
         end
@@ -801,6 +816,20 @@ defmodule Database.Lease do
       _this ->
         {:ok, look(data)}
     end
+  end
+
+  # Whether this server takes the lease: it's up (`OneCore.Server.up?/0`), and doesn't leave it to another (`yields?/1`).
+  defp takes?(data), do: OneCore.Server.up?() and not yields?(data)
+
+  # Whether this server leaves the lease to another that may hold it, as one whose machine sleeps (a laptop, a tablet)
+  # does while one that doesn't is ready (`OneCore.Builds.sleeps?/0`): a laptop asleep holding it had the next call
+  # wait for it to be taken over from, 2 to 4 s, and on a slow bucket past the 10 s a hook has (Permissions on PTC's
+  # Surface, 27 Nov). Where every server that may sleeps, one of them holds it, as before.
+  defp yields?(data) do
+    whose = OneCore.User.owner(OneCore.Artifact.name(data.artifact))
+
+    OneCore.Builds.sleeps?() and
+      Enum.any?(OneCore.Apps.servers(whose) -- [data.server], &(OneCore.Servers.ready?(&1) == true and not OneCore.Servers.sleeps?(&1)))
   end
 
   # Writing the log's next entry is taking the lease. If another server wrote it first, the lease is theirs. A lease
