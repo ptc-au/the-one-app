@@ -326,11 +326,7 @@ defmodule GoogleChat do
     subscription =
       case Store.subscription(call, space) do
         nil ->
-          topic =
-            pubsub_topic(call) ||
-              raise(Call.Refused, "Watching a space isn't set up for the network yet: one of its owners calls google-chat_configure with pubsub_topic.")
-
-          made = Map.put(Api.subscribe(call, inputs["account"], space, topic), :account, inputs["account"])
+          made = Map.put(Api.subscribe(call, inputs["account"], space, topic!(call)), :account, inputs["account"])
           route(call, made.subscription, call.subject)
           made
 
@@ -357,17 +353,29 @@ defmodule GoogleChat do
     end
   end
 
+  # Google ends a subscription four hours after it was last renewed, so one that wasn't, in an outage of every server,
+  # is gone: it's made again, for the same space and whoever's it was. One that fails doesn't stop the others being
+  # renewed: the first failure is raised once they all have been.
   defp run("renew_subscriptions", _inputs, call) do
     now = DateTime.utc_now()
 
-    renewed =
+    results =
       for subscription <- Store.subscriptions(call), expiring?(subscription.expire_time, now) do
-        subscription = %{subscription | expire_time: Api.renew(call, subscription.account, subscription.subscription).expire_time}
-        Store.save_subscription(call, subscription)
-        subscription
+        try do
+          subscription =
+            if lapsed?(subscription.expire_time, now),
+              do: resubscribe(call, subscription),
+              else: %{subscription | expire_time: Api.renew(call, subscription.account, subscription.subscription).expire_time}
+
+          Store.save_subscription(call, subscription)
+          {:ok, subscription}
+        rescue
+          failed -> {:error, failed}
+        end
       end
 
-    %{renewed: renewed}
+    with {:error, failed} <- Enum.find(results, &match?({:error, _}, &1)), do: raise(failed)
+    %{renewed: for({:ok, subscription} <- results, do: subscription)}
   end
 
   defp run("route", %{"subscription" => subscription} = inputs, call) do
@@ -451,6 +459,17 @@ defmodule GoogleChat do
       else: Call.tool(installed(call), call.app, "status", %{})["pubsub_topic"]
   end
 
+  defp topic!(call),
+    do: pubsub_topic(call) || raise(Call.Refused, "Watching a space isn't set up for the network yet: one of its owners calls google-chat_configure with pubsub_topic.")
+
+  # A subscription Google ended, made again as the account it was, its events going to whoever's they were.
+  defp resubscribe(call, lapsed) do
+    made = Map.put(Api.subscribe(call, lapsed.account, lapsed.space, topic!(call)), :account, lapsed.account)
+    route(call, made.subscription, Store.route(call, lapsed.subscription))
+    route(call, lapsed.subscription, nil)
+    made
+  end
+
   defp route(call, subscription, whose),
     do: Call.tool(installed(call), call.app, "route", %{"subscription" => subscription, "for" => whose})
 
@@ -525,6 +544,16 @@ defmodule GoogleChat do
   defp most(nil), do: 25
   defp most(size) when is_integer(size) and size > 0, do: min(size, 100)
   defp most(_size), do: raise(Call.Refused, "page_size is a whole number, 1 to 100.")
+
+  # Whether Google has already ended a subscription, which it does at the time it said.
+  defp lapsed?(expire_time, now) when is_binary(expire_time) do
+    case DateTime.from_iso8601(expire_time) do
+      {:ok, expires, _offset} -> DateTime.compare(expires, now) == :lt
+      {:error, _why} -> false
+    end
+  end
+
+  defp lapsed?(_expire_time, _now), do: false
 
   # Whether a subscription ends within two hours, as `renew_subscriptions` renews it. One it can't read the date of is
   # renewed too: Google stops it at four hours whatever it said.
