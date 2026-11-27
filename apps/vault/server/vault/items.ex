@@ -61,6 +61,17 @@ defmodule Vault.Items do
     end
   end
 
+  @doc """
+  What its person presses to sign an item of an app's type in again, if its type says how to make one: the tool that makes
+  one, as the Vault's Add Account runs it, or nil.
+  """
+  def sign_in_action(call, %{"type" => %{"app" => app, "name" => name}}) do
+    with %{create: %{"tool" => tool} = create} <- Enum.find(types(call), &(&1.artifact == app and &1.name == name)),
+         do: %{"label" => "Sign In", "tool" => tool, "inputs" => create["inputs"] || %{}}
+  end
+
+  def sign_in_action(_call, _item), do: nil
+
   @doc "The type `app` registered (`types/1`) that an item named `name` is of, by its prefix, or nil."
   def type_of(call, app, name), do: Enum.find(types(call), &(&1.artifact == app and String.starts_with?(name, &1.prefix)))
 

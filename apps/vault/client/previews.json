@@ -757,5 +757,90 @@
     "errors": [
       "You don't have access to this"
     ]
+  },
+  "Sign-in ended": {
+    "like": "Accounts",
+    "answers": {
+      "vault_list": {
+        "items": [
+          {
+            "name": "Google sam@example.com",
+            "artifact": "vault/google-sam",
+            "kind": "app_item",
+            "type": "google-account/Google account",
+            "status": {
+              "state": "needs_action",
+              "message": "Sign in again",
+              "by": "google-account",
+              "action": {
+                "label": "Sign In",
+                "tool": "sign_in",
+                "inputs": {},
+                "page": "client/sign-in.html#sign_in"
+              }
+            },
+            "fields": [
+              {
+                "name": "access_token",
+                "secret": true
+              },
+              {
+                "name": "refresh_token",
+                "secret": true
+              }
+            ],
+            "hosts": [
+              "gmail.googleapis.com"
+            ],
+            "access": [
+              "google-account"
+            ],
+            "sign_in": true
+          },
+          {
+            "name": "GitHub",
+            "artifact": "vault/github",
+            "kind": "password",
+            "type": null,
+            "status": null,
+            "fields": [
+              {
+                "name": "token",
+                "secret": true
+              }
+            ],
+            "hosts": [
+              "api.github.com"
+            ],
+            "access": [
+              "agents"
+            ]
+          }
+        ],
+        "requests": [],
+        "apps": [
+          {
+            "name": "google-account",
+            "title": "Google Account"
+          }
+        ],
+        "types": [
+          {
+            "id": "google-account/Google account",
+            "app": "google-account",
+            "title": "Google Account",
+            "icon": null,
+            "trusted": true,
+            "name": "Google account",
+            "prefix": "Google ",
+            "section": "Accounts",
+            "component": null,
+            "create": {
+              "tool": "sign_in"
+            }
+          }
+        ]
+      }
+    }
   }
 }

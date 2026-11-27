@@ -384,17 +384,48 @@ defmodule Vault.SignIns do
   def renewed(call, db, item, had) do
     client = client_fields(call, db, item["oauth"]["client"])
 
-    Store.transaction(call, db, fn _d ->
-      latest = Store.record(db, item["id"]) || raise "There's no item named #{item["name"]} in the Vault."
+    renewed =
+      Store.transaction(call, db, fn _d ->
+        latest = Store.record(db, item["id"]) || raise "There's no item named #{item["name"]} in the Vault."
 
-      if Items.fields(latest)["access_token"] != had["access_token"] do
-        Items.fields(latest)
-      else
-        refresh = Items.fields(latest)["refresh_token"] || raise "#{item["name"]} has no way to renew its sign-in. Sign in again."
-        tokens = renew(latest["oauth"], client, refresh)
-        Items.fields(Store.change!(db, latest, &kept_tokens(&1, latest["oauth"], tokens)))
-      end
-    end)
+        if Items.fields(latest)["access_token"] != had["access_token"] do
+          {:ok, Items.fields(latest)}
+        else
+          refresh = Items.fields(latest)["refresh_token"] || raise "#{item["name"]} has no way to renew its sign-in. Sign in again."
+
+          case renew(latest["oauth"], client, refresh) do
+            {:ok, tokens} -> {:ok, Items.fields(Store.change!(db, latest, &kept_tokens(&1, latest["oauth"], tokens)))}
+            :ended -> {:ended, latest}
+          end
+        end
+      end)
+
+    case renewed do
+      {:ok, fields} -> fields
+      {:ended, latest} -> ended!(call, db, latest)
+    end
+  end
+
+  # The service says its refresh token is no good any more (RFC 6749 5.2, `invalid_grant`: a Google client in testing
+  # ends them after a week, and its person can revoke one), so only its person signing in again helps. The item says
+  # so, with the one thing that fixes it where its type has one (signing in again is the same as signing in), and
+  # its person is told once, as it starts to; every call that needed it is told plainly, and fails.
+  defp ended!(call, db, item) do
+    if get_in(item, ["status", "state"]) != "needs_action" do
+      action = Items.sign_in_action(call, item)
+      status = Map.merge(%{"state" => "needs_action", "message" => "Sign in again", "by" => item["app"] && Items.app_name(call, item["app"])}, if(action, do: %{"action" => action}, else: %{}))
+      Store.change!(db, item, &Map.put(&1, "status", status))
+      Call.changed(call)
+
+      Store.notify(
+        call,
+        "#{item["name"]} needs signing in again",
+        "#{item["oauth"]["name"]} ended its sign-in. Open it in Vault to sign in again.",
+        "accounts#item=#{URI.encode_www_form(item["name"])}&owner=#{URI.encode_www_form(call.subject)}"
+      )
+    end
+
+    raise "#{item["name"]} needs signing in again. Its person does that in Vault, under Accounts."
   end
 
   defp kept_tokens(record, service, tokens) do
@@ -431,12 +462,24 @@ defmodule Vault.SignIns do
     service.authorize <> "?" <> URI.encode_query(query)
   end
 
-  defp exchange(service, client, code, verifier, back),
-    do: tokens(service, client, grant_type: "authorization_code", code: code, redirect_uri: back, code_verifier: verifier)
+  defp exchange(service, client, code, verifier, back) do
+    case tokens(service, client, grant_type: "authorization_code", code: code, redirect_uri: back, code_verifier: verifier) do
+      {:ok, tokens} -> tokens
+      {:error, _why, message} -> raise message
+    end
+  end
 
-  defp renew(service, client, refresh_token), do: tokens(service, client, grant_type: "refresh_token", refresh_token: refresh_token)
+  # Tokens, or `:ended` where the service says the refresh token is no good any more.
+  defp renew(service, client, refresh_token) do
+    case tokens(service, client, grant_type: "refresh_token", refresh_token: refresh_token) do
+      {:ok, tokens} -> {:ok, tokens}
+      {:error, "invalid_grant", _message} -> :ended
+      {:error, _why, message} -> raise message
+    end
+  end
 
-  # A code or a refresh token is spent as it's sent, so a token request isn't sent again on its own.
+  # A code or a refresh token is spent as it's sent, so a token request isn't sent again on its own. Gives the tokens, or
+  # why not: the service's `error` (RFC 6749 5.2) and what's said of it.
   defp tokens(service, client, params) do
     url = service["token"]
     Vault.Fetch.site!(URI.parse(url))
@@ -445,15 +488,11 @@ defmodule Vault.SignIns do
 
     case Req.post(url, form: form, retry: false, redirect: false) do
       {:ok, %{status: 200, body: %{"access_token" => token} = tokens}} when is_binary(token) ->
-        tokens
+        {:ok, tokens}
 
       {:ok, %{status: status, body: body}} ->
-        why =
-          if is_map(body) and is_binary(body["error"]) and body["error"] =~ ~r/^[a-z_]{1,40}$/,
-            do: ": " <> body["error"],
-            else: ""
-
-        raise "#{service["name"]} gave no tokens (#{status}#{why}). Sign in again."
+        why = if is_map(body) and is_binary(body["error"]) and body["error"] =~ ~r/^[a-z_]{1,40}$/, do: body["error"]
+        {:error, why, "#{service["name"]} gave no tokens (#{status}#{if why, do: ": " <> why}). Sign in again."}
 
       {:error, _unreached} ->
         raise "#{service["name"]} couldn't be reached for tokens."
