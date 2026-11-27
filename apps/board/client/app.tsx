@@ -29,7 +29,6 @@ import {
   Split,
   styles,
   Switch,
-  Tabs,
   Text,
   Textarea,
   toast,
@@ -160,12 +159,29 @@ const channelsAnswer = createProjection(async (): Promise<{ channels: ChannelInf
 })
 const channelsData = () => channelsAnswer.channels
 
-const threadsAnswer = createProjection(async (): Promise<{ threads: BoardMessage[] }> => {
-  const args: Record<string, unknown> = { limit: 100 }
-  if (selectedChannel()) args.channel = selectedChannel()
-  if (selectedState()) args.state = selectedState()
-  const res: { threads: BoardMessage[] } = JSON.parse(await call("board_read", args))
-  return res
+/// How many pages of the list are shown; Show More adds one, and a list of another channel or state starts at one.
+const PAGE = 50
+const [pages, setPages] = createSignal(1)
+createEffect(
+  () => [selectedChannel(), selectedState()],
+  () => void setPages(1),
+)
+
+/// The pages shown, each read from where the one before ended (`board_read`'s `before`), so a list of any length is reached.
+const threadsAnswer = createProjection(async (): Promise<{ threads: BoardMessage[]; more: boolean }> => {
+  const base: Record<string, unknown> = { limit: PAGE }
+  if (selectedChannel()) base.channel = selectedChannel()
+  if (selectedState()) base.state = selectedState()
+  const shown = pages()
+  const threads: BoardMessage[] = []
+  let next: string | null = null
+  for (let page = 0; page < shown; page++) {
+    const res: { threads: BoardMessage[]; next: string | null } = JSON.parse(await call("board_read", next ? { ...base, before: next } : base))
+    threads.push(...res.threads)
+    next = res.next
+    if (!next) break
+  }
+  return { threads, more: next !== null }
 })
 const threadsData = () => threadsAnswer.threads
 
@@ -204,8 +220,14 @@ function stateTone(state: TaskInfo["state"]): "default" | "destructive" | "secon
   return "outline"
 }
 
+/// What a block kind says as a person reads it: `awaiting_approval` is "Awaiting approval".
+function words(kind: string) {
+  const spaced = kind.replaceAll("_", " ")
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
 function stateLabel(task: TaskInfo, detailed = false) {
-  if (detailed && task.state === "blocked" && task.block_kind) return `Blocked · ${task.block_kind}`
+  if (detailed && task.state === "blocked" && task.block_kind) return `Blocked · ${words(task.block_kind)}`
   if (task.state === "claimed") return "Active"
   if (task.state === "completed") return "Done"
   return task.state.charAt(0).toUpperCase() + task.state.slice(1)
@@ -214,9 +236,6 @@ function stateLabel(task: TaskInfo, detailed = false) {
 async function runTool(tool: string, args: Record<string, unknown>) {
   try {
     await call(tool, args)
-    refresh(channelsAnswer)
-    refresh(threadsAnswer)
-    if (openId()) refresh(detailAnswer)
     return true
   } catch (error) {
     toast(error as Error)
@@ -248,8 +267,6 @@ function ComposeSheet() {
       const created: { id: string } = JSON.parse(await call(tool, { channel: ch, body: text }))
       close()
       setBody("")
-      refresh(channelsAnswer)
-      refresh(threadsAnswer)
       goList({ channel: selectedChannel(), state: selectedState(), id: created.id })
     } catch (error) {
       toast(error as Error)
@@ -347,6 +364,20 @@ function ThreadDetail(props: { id: string }) {
     setSending(false)
   }
 
+  // Marking a task done asks for its result, which the thread then says: "Completed: <result>".
+  const [completing, setCompleting] = createSignal(false)
+  const [result, setResult] = createSignal("")
+  const complete = async () => {
+    const text = result().trim()
+    if (!text || sending()) return
+    setSending(true)
+    if (await runTool("board_task_complete", { id: props.id, result: text })) {
+      setCompleting(false)
+      setResult("")
+    }
+    setSending(false)
+  }
+
   const cancelTask = async () => {
     const ok = await confirm({ heading: "Cancel task?", text: "Workers won't claim it unless it's reopened.", action: "Cancel Task", destructive: true })
     if (ok) await runTool("board_task_cancel", { id: props.id, reason: "Canceled from Board." })
@@ -362,27 +393,30 @@ function ThreadDetail(props: { id: string }) {
             const actionButton = () => {
               const t = task()
               if (!t) return undefined
-              if (t.state === "blocked") {
+              // One held for a task that failed has nothing to unblock: reopening that one is what puts it back.
+              if (t.state === "blocked" && t.block_kind !== "needs_failed_task") {
                 return <Button onPress={() => runTool("board_task_unblock", { id: props.id })}>Unblock</Button>
               }
               if (t.state === "failed" || t.state === "canceled") {
                 return <Button variant="secondary" onPress={() => runTool("board_task_reopen", { id: props.id })}>Reopen</Button>
               }
-              if (t.state !== "completed") {
-                return (
-                  <Menu.Root onSelect={(v) => (v === "cancel" ? cancelTask() : runTool("board_task_complete", { id: props.id, result: "Completed." }))}>
-                    <Menu.Trigger />
-                    <Menu.Positioner>
-                      <Menu.Content>
+              if (t.state === "completed") return undefined
+              // A person settles a task whoever holds it; one that's waiting isn't theirs to complete yet.
+              const settles = t.state === "ready" || t.state === "claimed"
+              return (
+                <Menu.Root onSelect={(v) => (v === "cancel" ? cancelTask() : setCompleting(true))}>
+                  <Menu.Trigger />
+                  <Menu.Positioner>
+                    <Menu.Content>
+                      <Show when={settles}>
                         <Menu.Item value="complete">Mark Completed</Menu.Item>
                         <Menu.Separator />
-                        <Menu.Item value="cancel" destructive>Cancel Task</Menu.Item>
-                      </Menu.Content>
-                    </Menu.Positioner>
-                  </Menu.Root>
-                )
-              }
-              return undefined
+                      </Show>
+                      <Menu.Item value="cancel" destructive>Cancel Task</Menu.Item>
+                    </Menu.Content>
+                  </Menu.Positioner>
+                </Menu.Root>
+              )
             }
 
             return (
@@ -420,6 +454,13 @@ function ThreadDetail(props: { id: string }) {
                     </View>
                   </View>
                 </Section>
+
+                <Sheet heading="Mark Completed" open={completing()} onClose={() => setCompleting(false)}>
+                  <Field label="Result" hint="Added to the thread as its result.">
+                    <Textarea value={result()} onChangeText={setResult} placeholder="What was done…" />
+                  </Field>
+                  <Button onPress={complete} disabled={sending() || !result().trim()}>Mark Completed</Button>
+                </Sheet>
               </Screen>
             )
           }}
@@ -432,10 +473,16 @@ function ThreadDetail(props: { id: string }) {
 const STATES = [
   { value: "", label: "All" },
   { value: "blocked", label: "Blocked" },
+  { value: "failed", label: "Failed" },
   { value: "ready", label: "Ready" },
   { value: "claimed", label: "Active" },
+  { value: "waiting", label: "Waiting" },
   { value: "completed", label: "Done" },
+  { value: "canceled", label: "Canceled" },
 ]
+
+/// The state the list shows, in the word its menu has for it.
+const stateName = (state: string) => (state === "" ? "All" : STATES.find((st) => st.value === state)?.label ?? words(state))
 
 function BoardApp() {
   const threads = () => threadsData()
@@ -452,15 +499,16 @@ function BoardApp() {
       >
         <Screen heading="Board" action={<Button onPress={() => navigate("board_post", selectedChannel() ? { channel: selectedChannel() } : {})}>New Post</Button>}>
           <Show when={hasAny()}>
-            <Section>
-              <Tabs.Root value={selectedState()} onValueChange={(v) => goList({ channel: selectedChannel(), state: v, id: openId() })}>
-                <Tabs.List>
-                  <For each={STATES}>
-                    {(st) => <Tabs.Trigger value={st.value}>{st.label}</Tabs.Trigger>}
-                  </For>
-                </Tabs.List>
-              </Tabs.Root>
-            </Section>
+            <View style={look.chips}>
+              <Menu.Root onSelect={(state) => goList({ channel: selectedChannel(), state, id: openId() })}>
+                <Menu.Trigger variant="secondary">{`Status: ${stateName(selectedState())}`}</Menu.Trigger>
+                <Menu.Positioner>
+                  <Menu.Content>
+                    <For each={STATES}>{(st) => <Menu.Item value={st.value}>{st.label}</Menu.Item>}</For>
+                  </Menu.Content>
+                </Menu.Positioner>
+              </Menu.Root>
+            </View>
           </Show>
 
           <Show when={channels().length > 1}>
@@ -518,6 +566,9 @@ function BoardApp() {
                   )
                 }}
               </List>
+              <Show when={threadsAnswer.more}>
+                <Button variant="ghost" onPress={() => setPages(pages() + 1)}>Show More</Button>
+              </Show>
             </Show>
           </Section>
         </Screen>

@@ -76,8 +76,78 @@
               "needs": ["msg_claimed1"],
               "updated_at": "2025-12-31T22:50:00Z"
             }
+          },
+          {
+            "id": "msg_failed1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "claude",
+            "display_author": "claude via andre",
+            "body": "Build the release notes",
+            "blocks": [],
+            "labels": {},
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2025-12-31T23:20:00Z",
+            "reply_count": 2,
+            "task": {
+              "state": "failed",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 1,
+              "result": "compile error in notes.ts",
+              "needs": [],
+              "updated_at": "2025-12-31T23:30:00Z"
+            }
+          },
+          {
+            "id": "msg_waiting1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "claude",
+            "display_author": "claude via andre",
+            "body": "Publish the release notes",
+            "blocks": [],
+            "labels": {},
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2025-12-31T23:21:00Z",
+            "reply_count": 1,
+            "task": {
+              "state": "blocked",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 1,
+              "block_kind": "needs_failed_task",
+              "needs": ["msg_failed1"],
+              "updated_at": "2025-12-31T23:30:00Z"
+            }
+          },
+          {
+            "id": "msg_canceled1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "claude",
+            "display_author": "claude via andre",
+            "body": "Clean up old branches",
+            "blocks": [],
+            "labels": {},
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2025-12-31T21:00:00Z",
+            "reply_count": 1,
+            "task": {
+              "state": "canceled",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 1,
+              "result": "not needed",
+              "needs": [],
+              "updated_at": "2025-12-31T21:30:00Z"
+            }
           }
-        ]
+        ],
+        "next": "msg_canceled1"
       }
     }
   },
@@ -265,5 +335,145 @@
     "errors": [
       "You don't have access to this"
     ]
+  },
+  "Failed Task": {
+    "like": "Threads",
+    "page": "client/index.html#thread&id=msg_failed1",
+    "answers": {
+      "board_thread": {
+        "thread": {
+        "id": "msg_failed1",
+        "channel": "dev",
+        "author": "users/andre",
+        "profile": "claude",
+        "display_author": "claude via andre",
+        "body": "Build the release notes",
+        "blocks": [],
+        "labels": {},
+        "reactions": [],
+        "attachments": [],
+        "revision": 1,
+        "created_at": "2025-12-31T23:20:00Z",
+        "task": { "state": "failed", "owner": "users/andre", "owner_display": "andre", "epoch": 1, "result": "compile error in notes.ts", "needs": [], "updated_at": "2025-12-31T23:30:00Z" }
+      },
+        "replies": [
+        {
+          "id": "msg_f1",
+          "channel": "dev",
+          "root_id": "msg_failed1",
+          "author": "users/andre",
+          "profile": "claude",
+          "display_author": "claude via andre",
+          "body": "Failed: compile error in notes.ts",
+          "blocks": [],
+          "labels": {},
+          "reactions": [],
+          "revision": 1,
+          "created_at": "2025-12-31T23:30:00Z"
+        }
+        ]
+      }
+    }
+  },
+  "Blocked By Failed Task": {
+    "like": "Threads",
+    "page": "client/index.html#thread&id=msg_waiting1",
+    "answers": {
+      "board_thread": {
+        "thread": {
+        "id": "msg_waiting1",
+        "channel": "dev",
+        "author": "users/andre",
+        "profile": "claude",
+        "display_author": "claude via andre",
+        "body": "Publish the release notes",
+        "blocks": [],
+        "labels": {},
+        "reactions": [],
+        "attachments": [],
+        "revision": 1,
+        "created_at": "2025-12-31T23:21:00Z",
+        "task": { "state": "blocked", "block_kind": "needs_failed_task", "owner": "users/andre", "owner_display": "andre", "epoch": 1, "needs": ["msg_failed1"], "updated_at": "2025-12-31T23:30:00Z" }
+      },
+        "replies": [
+        {
+          "id": "msg_w1",
+          "channel": "dev",
+          "root_id": "msg_waiting1",
+          "author": "users/andre",
+          "profile": "claude",
+          "display_author": "claude via andre",
+          "body": "Blocked: \"Build the release notes\" failed, and this needs it.",
+          "blocks": [],
+          "labels": {},
+          "reactions": [],
+          "revision": 1,
+          "created_at": "2025-12-31T23:30:00Z"
+        }
+        ]
+      }
+    }
+  },
+  "Failed Tab": {
+    "like": "Threads",
+    "page": "client/index.html#read&state=failed",
+    "answers": {
+      "board_read": {
+        "threads": [
+          {
+            "id": "msg_failed1",
+            "channel": "dev",
+            "author": "users/andre",
+            "profile": "claude",
+            "display_author": "claude via andre",
+            "body": "Build the release notes",
+            "blocks": [],
+            "labels": {},
+            "reactions": [],
+            "revision": 1,
+            "created_at": "2025-12-31T23:20:00Z",
+            "reply_count": 2,
+            "task": {
+              "state": "failed",
+              "owner": "users/andre",
+              "owner_display": "andre",
+              "epoch": 1,
+              "result": "compile error in notes.ts",
+              "needs": [],
+              "updated_at": "2025-12-31T23:30:00Z"
+            }
+          }
+        ],
+        "next": null
+      }
+    }
+  },
+  "Mark Completed": {
+    "like": "Threads",
+    "page": "client/index.html#thread&id=msg_claimed1",
+    "taps": [
+      { "role": "button", "name": "More" },
+      "Mark Completed"
+    ],
+    "answers": {
+      "board_thread": {
+        "thread": {
+        "id": "msg_claimed1",
+        "channel": "dev",
+        "author": "users/andre",
+        "profile": "claude",
+        "display_author": "claude via andre",
+        "body": "Migrate PTC Claims webhook handler to /webhooks",
+        "blocks": [],
+        "labels": {},
+        "reactions": [],
+        "attachments": [],
+        "revision": 1,
+        "created_at": "2025-12-31T23:35:00Z",
+        "task": { "state": "claimed", "owner": "users/andre", "owner_display": "andre", "epoch": 2, "claimed_by": "claude via andre", "needs": [], "updated_at": "2025-12-31T23:40:00Z" }
+      },
+        "replies": []
+      }
+    }
   }
 }
