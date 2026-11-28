@@ -357,7 +357,9 @@ defmodule OneCore.App.Manifest do
       # What an app whose code runs inside another, as `database` does, reads of the server it's on.
       "OneCore.Edge.Unreachable" => ~w(exception message __struct__)a,
       "OneCore.Server" => ~w(key up?)a,
-      "OneCore.Servers" => ~w(name answers?)a,
+      "OneCore.Servers" => ~w(name answers? ready? sleeps?)a,
+      "OneCore.Builds" => ~w(sleeps?)a,
+      "OneCore.Events" => ~w(retry redeliver)a,
       "OneCore.Release" => ~w(status)a,
       "OneCore.Writes" => ~w(taking_longer)a,
       "OneCore.Otlp" => ~w(buckets)a,

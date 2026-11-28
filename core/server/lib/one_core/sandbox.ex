@@ -284,6 +284,8 @@ defmodule OneCore.Sandbox do
   defp op("answers", %{"key" => key, "within" => within}, _call, _context) when is_binary(key) and is_integer(within),
     do: Servers.answers?(key, min(within, 5_000))
 
+  defp op("ready", %{"key" => key}, _call, _context) when is_binary(key), do: Servers.ready?(key)
+  defp op("sleeps", %{"key" => key}, _call, _context) when is_binary(key), do: Servers.sleeps?(key)
   defp op("owner", %{"who" => who}, _call, _context) when is_binary(who), do: User.owner(who)
 
   # A job of its own that's due, which its schedule's keeper inside it fires, maybe after the schedule's call ended:
@@ -730,6 +732,7 @@ defmodule OneCore.Sandbox do
     %{
       "key" => Server.key(),
       "up" => Server.up?(),
+      "sleeps" => Builds.sleeps?(),
       "status" => Map.take(Release.status(), ["server_membership", "server_daemon_status"]),
       "taking_longer" => Writes.taking_longer()
     }

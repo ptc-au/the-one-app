@@ -163,6 +163,20 @@ defmodule OneCore.Servers do
   alias OneCore.Sandbox.Child
   def name(key), do: Child.request("server_name", %{"key" => key}, nil)
   def answers?(key, within), do: Child.request("answers", %{"key" => key, "within" => within}, nil)
+  def ready?(key), do: Child.request("ready", %{"key" => key}, nil)
+  def sleeps?(key), do: Child.request("sleeps", %{"key" => key}, nil)
+end
+
+defmodule OneCore.Builds do
+  @moduledoc false
+  def sleeps?, do: OneCore.Sandbox.Child.server()["sleeps"]
+end
+
+defmodule OneCore.Events do
+  @moduledoc false
+  # An untrusted app says no events, so it has no timer that tries a delivery of them again, which its database looks for.
+  def retry, do: nil
+  def redeliver(_call), do: raise("An untrusted app has no events to deliver")
 end
 
 defmodule OneCore.User do
@@ -238,7 +252,7 @@ defmodule OneCore.Sandbox.Child do
   @doc false
   def send_json(message), do: send(__MODULE__, {:send, JSON.encode!(message)})
 
-  @doc "What the server last told this VM of itself: its `key`, whether it's `up`, its `status` and whether writes are taking longer."
+  @doc "What the server last told this VM of itself: its `key`, whether it's `up`, whether its machine `sleeps`, its `status` and whether writes are taking longer."
   def server, do: :persistent_term.get({__MODULE__, :server})
 
   @doc "Asks the server `op` with `args`, for the call `call` (its id, or nil), and gives its answer, or raises why."
