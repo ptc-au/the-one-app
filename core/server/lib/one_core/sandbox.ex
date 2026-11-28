@@ -16,13 +16,14 @@ defmodule OneCore.Sandbox do
   call starts another. What the first child of a version compiled is kept on this machine, and every owner's next child
   loads it read-only instead.
 
-  The protocol, over the child's standard input and output, each message a frame of a 4-byte length:
+  The protocol, over the child's standard input and output:
 
-  - This server sends Erlang terms, which the child trusts: `{:load, sets, target}`, the apps' files to compile,
+  - This server sends Erlang terms, which the child trusts, each as a line of text (the term in Erlang's binary
+    format, in base64), since Windows' VM reads a carriage return on its standard input as a line feed: `{:load, sets, target}`, the apps' files to compile,
     those it requires first; `{:call, id, what, about}`, a tool, a hook heard or what `server-debug` asks (`debug/5`),
     with who it's for;
     `{:reply, request, result}`; and `{:cancel, id}`.
-  - The child sends JSON, which never reaches `binary_to_term`: `{"answer": id, "ok" | "raised" | "refused": ...}`,
+  - The child sends JSON, each message a frame of a 4-byte length, which never reaches `binary_to_term`: `{"answer": id, "ok" | "raised" | "refused": ...}`,
     `{"request": n, "call": id, "op": ..., ...}`, one of the functions below, and `{"log": level, "text": ...}`.
     A frame over 64 MB, or that isn't one of these, stops it.
 
@@ -393,10 +394,8 @@ defmodule OneCore.Sandbox do
 
   defp artifact!(_context, _handle), do: raise("That isn't an artifact this app was given")
 
-  defp command(port, term) do
-    frame = :erlang.term_to_binary(term)
-    Port.command(port, [<<byte_size(frame)::32>>, frame])
-  end
+  # A line of text, the term in Erlang's binary format as base64 (`child.ex` says why).
+  defp command(port, term), do: Port.command(port, [Base.encode64(:erlang.term_to_binary(term)), ?\n])
 
   # The child of a version with the versions whose code runs inside it, for whoever it's installed for, `owner`, started
   # if there's none, asked `ask` once it has loaded: `:loaded`, or `{:begin, id}`, a call it runs from now on. Gives

@@ -230,8 +230,9 @@ defmodule OneCore.Sandbox.Child do
     {:ok, _} = Registry.start_link(keys: :unique, name: __MODULE__.Processes)
     # Who waits for the server's status to change, as on the server (`OneCore.Release`).
     {:ok, _} = Registry.start_link(keys: :duplicate, name: OneCore.Waiting)
-    port = Port.open({:fd, 0, 1}, [:binary, :eof, packet: 4])
-    loop(%{port: port, waiting: %{}, calls: %{}, next: 0, loaded: %{}})
+    # What the server sends is lines of text, as Windows' VM reads a carriage return on its standard input as a line feed.
+    port = Port.open({:fd, 0, 1}, [:binary, :eof, line: 65_536])
+    loop(%{port: port, line: [], waiting: %{}, calls: %{}, next: 0, loaded: %{}})
   end
 
   @doc false
@@ -252,18 +253,25 @@ defmodule OneCore.Sandbox.Child do
     end
   end
 
+  # A frame to the server: its length in 4 bytes, then the JSON.
+  defp write(port, json), do: Port.command(port, [<<byte_size(json)::32>>, json])
+
   defp loop(state) do
     receive do
-      {port, {:data, frame}} when port == state.port ->
-        loop(received(:erlang.binary_to_term(frame), state))
+      {port, {:data, {:noeol, part}}} when port == state.port ->
+        loop(%{state | line: [state.line | part]})
+
+      {port, {:data, {:eol, part}}} when port == state.port ->
+        term = [state.line | part] |> IO.iodata_to_binary() |> Base.decode64!() |> :erlang.binary_to_term()
+        loop(received(term, %{state | line: []}))
 
       {:request, from, ref, request} ->
         rid = state.next
-        Port.command(state.port, JSON.encode!(Map.put(request, "request", rid)))
+        write(state.port, JSON.encode!(Map.put(request, "request", rid)))
         loop(%{state | next: rid + 1, waiting: Map.put(state.waiting, rid, {from, ref})})
 
       {:send, json} ->
-        Port.command(state.port, json)
+        write(state.port, json)
         loop(state)
 
       {:DOWN, _monitor, :process, pid, why} ->
@@ -312,8 +320,8 @@ defmodule OneCore.Sandbox.Child do
     %{state | calls: Map.delete(state.calls, id)}
   end
 
-  defp reply(port, id, {:returned, value}), do: Port.command(port, JSON.encode!(%{"answer" => id, "ok" => value}))
-  defp reply(port, id, {:raised, why}), do: Port.command(port, JSON.encode!(%{"answer" => id, "raised" => why}))
+  defp reply(port, id, {:returned, value}), do: write(port, JSON.encode!(%{"answer" => id, "ok" => value}))
+  defp reply(port, id, {:raised, why}), do: write(port, JSON.encode!(%{"answer" => id, "raised" => why}))
 
   # A call runs in a process of its own, which answers it. `server-debug` traces this function to hear one begin.
   defp called(id, what, about) do
