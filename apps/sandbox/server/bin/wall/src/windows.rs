@@ -1,6 +1,8 @@
 use std::ffi::{OsStr, OsString, c_void};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use std::{env, fs, mem, ptr};
 
 use windows_sys::Win32::Foundation::{
@@ -42,9 +44,20 @@ const CONTAINER: &str = "app.theone.sandbox";
 /// What this program is started with, by itself, to take back a run's grants once the run's wall ends, however it ends.
 const REVOKE: &str = "--revoke";
 
+/// What this program is started with, by itself and inside the AppContainer, to try a port of this machine's own
+/// (`isolated`).
+const CONNECT: &str = "--connect";
+
 pub fn main() -> i32 {
-    let reaping = env::args_os().nth(1).is_some_and(|arg| arg == REVOKE);
-    match if reaping { revoked() } else { walled() } {
+    let first = env::args_os().nth(1);
+    let mode = |name: &str| first.as_ref().is_some_and(|arg| arg == name);
+    match if mode(REVOKE) {
+        revoked()
+    } else if mode(CONNECT) {
+        connected()
+    } else {
+        walled()
+    } {
         Ok(code) => code as i32,
         Err(why) => {
             eprintln!("The wall didn't start it: {why}");
@@ -60,11 +73,13 @@ struct Asked {
     write: Vec<PathBuf>,
     env: Vec<(OsString, OsString)>,
     memory: Option<usize>,
+    /// Only whether the AppContainer reaches nothing of this machine's own, and no program.
+    check: bool,
     program: Vec<OsString>,
 }
 
 fn asked() -> Result<Asked> {
-    let mut asked = Asked { read: vec![], write: vec![], env: vec![], memory: None, program: vec![] };
+    let mut asked = Asked { read: vec![], write: vec![], env: vec![], memory: None, check: false, program: vec![] };
     let mut args = env::args_os().skip(1);
     while let Some(arg) = args.next() {
         let mut value = || args.next().ok_or(format!("{} needs a value", arg.display()));
@@ -78,11 +93,12 @@ fn asked() -> Result<Asked> {
                 let (name, value) = said.to_str().and_then(|said| said.split_once('=')).ok_or("--env is NAME=value")?;
                 asked.env.push((name.into(), value.into()));
             }
+            Some("--check") => asked.check = true,
             Some("--") => asked.program = args.by_ref().collect(),
             _ => return Err(format!("{} isn't something the wall takes", arg.display())),
         }
     }
-    if asked.program.is_empty() {
+    if asked.program.is_empty() && !asked.check {
         return Err("it's given no program, after --".into());
     }
     Ok(asked)
@@ -97,7 +113,9 @@ fn failed(what: &str) -> String {
 }
 
 fn walled() -> Result<u32> {
-    let asked = asked()?;
+    let mut asked = asked()?;
+    // Read by the program that tries a port (`isolated`), as it's started from this one.
+    asked.read.push(env::current_exe().map_err(|error| format!("this program's own path: {error}"))?);
     unsafe {
         let container = container()?;
         // This run's own capability: its folder is granted to it alone.
@@ -120,7 +138,8 @@ fn walled() -> Result<u32> {
         fs::create_dir(&folder).map_err(|error| format!("its folder: {error}"))?;
         let walled = (|| {
             own(&folder, capability)?;
-            started(&asked, container, capability, &folder)
+            isolated(container, capability, &folder)?;
+            if asked.check { Ok(0) } else { started(&asked, container, capability, &folder) }
         })();
         let _ = fs::remove_dir_all(&folder);
         walled
@@ -167,6 +186,34 @@ unsafe fn revoker(asked: &Asked, run: &str) -> Result<()> {
         CloseHandle(process.hProcess);
     }
     Ok(())
+}
+
+/// Tries one of this machine's own ports from inside the AppContainer, which must be refused. Windows keeps an
+/// AppContainer from them (loopback, and the machine's own addresses too) by its firewall's isolation, which a setting
+/// ends for one AppContainer (a loopback exemption, `CheckNetIsolation`) or for every one (Group Policy, the firewall
+/// not running), and then the program reaches everything that listens here. Nothing in the AppContainer's own token
+/// stops it, so this finds out, each time, that it can't: a port this program listens on, which a copy of it started in
+/// the AppContainer tries. A connection that's let through is waiting to be accepted, and one that's refused is
+/// dropped by Windows, so the copy gives it a moment.
+unsafe fn isolated(container: PSID, capability: PSID, folder: &Path) -> Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|error| format!("a port to try: {error}"))?;
+    listener.set_nonblocking(true).map_err(|error| format!("a port to try: {error}"))?;
+    let port = listener.local_addr().map_err(|error| format!("a port to try: {error}"))?.port();
+    let me = env::current_exe().map_err(|error| format!("this program's own path: {error}"))?;
+    let program = vec![me.into(), CONNECT.into(), port.to_string().into()];
+    let tried = Asked { read: vec![], write: vec![], env: vec![], memory: None, check: false, program };
+    unsafe { started(&tried, container, capability, folder)? };
+    if listener.accept().is_ok() {
+        return Err("Windows lets its AppContainer reach this machine's own ports (a loopback exemption, or its firewall's isolation of apps is off), and a program behind the wall would reach whatever listens here".into());
+    }
+    Ok(())
+}
+
+/// `wall --connect <port>`, inside the AppContainer: tries that port of this machine's own, and ends.
+fn connected() -> Result<u32> {
+    let port: u16 = env::args_os().nth(2).and_then(|arg| arg.to_str()?.parse().ok()).ok_or("--connect needs a port")?;
+    let _ = TcpStream::connect_timeout(&SocketAddr::from(([127, 0, 0, 1], port)), Duration::from_millis(300));
+    Ok(0)
 }
 
 /// The AppContainer's SID, which it's made with the first time.

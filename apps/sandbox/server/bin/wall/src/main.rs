@@ -1,11 +1,14 @@
 //! The sandbox app's wall on Windows, as `bwrap` is on Linux and `sandbox-exec` on a Mac (`Sandbox.start/3`):
 //!
 //!     wall [--read <path>]... [--write <path>]... [--env NAME=value]... [--memory <bytes>] -- <program> [<argument>]...
+//!     wall --check
 //!
 //! It starts the program in an AppContainer, Windows' own sandbox for apps, as Chromium's sandbox and Microsoft's MXC
 //! do, with its standard input, output and error, and ends with its exit code. In it the program has:
 //!
 //! - no network: the AppContainer has no capabilities, so Windows lets it reach nothing, the machine itself neither.
+//!   That last is Windows' firewall's to keep, and a setting can end it, so before each program the wall tries a port of
+//!   this machine's own from inside the AppContainer and starts nothing if it's let through. `--check` only tries it.
 //! - none of the person's files: an AppContainer reads only what's granted to it, or to every app (Windows' own
 //!   files, which are never granted again). Each `--read` path is granted to this run's own capability to read, and
 //!   `--write` to write, and taken back once this ends, however it ends.
