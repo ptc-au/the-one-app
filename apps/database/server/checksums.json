@@ -1,18 +1,18 @@
 {
   "server/nif/sqlite/linux-aarch64.so": {
-    "sha256": "baca72cfe9735d82a2509c7cf1817863994890548e04e9a783e87d84e138ef6d",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-4c7ff3c7191a/sqlite-1ecdc284ab48e2380e30eeca0052bca1b007303affcc070dbbc967c0e352bd5f-linux-aarch64.so"
+    "sha256": "e9e0cb9a6d89ea4b254fb4ac0b522d6a774a2414ebe97a1703cd9fe936c84eeb",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/sqlite-cdc5dd8fa5aed3c3a31b5a7d869e1f774137bbaf7f64fda839db6c8a55659804-linux-aarch64.so"
   },
   "server/nif/sqlite/linux-x86_64.so": {
-    "sha256": "eedfcfdecc52731048a450f7afd4a3bcad857d17a59c04d6304f56b1f8aa7c7c",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-4c7ff3c7191a/sqlite-67163196fa9cabe7ce8fe0e0a88b65a0ade2e5d6e4879c64c91790029dc92272-linux-x86_64.so"
+    "sha256": "b0b3c7d94b07ffe24439c941b6c756537784dc887c412fc6916cb6bb93a4adda",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/sqlite-803274059a4954a10fa39c6d77e038f8a9597feb988207c500c02fa70030d9c2-linux-x86_64.so"
   },
   "server/nif/sqlite/macos-aarch64.so": {
-    "sha256": "7185336a2d5ede14c1a331b6f968b64a8350c537e8e4b1b4a134c7165dac6a6a",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-4c7ff3c7191a/sqlite-7542b092d2836458ad7384cfa5209d667dfaffb1cca7eaaf5cf4b8409d12e3a2-macos-aarch64.so"
+    "sha256": "6f60226ee6b7ba3bbf9dac650c48efb1963f521e40065871f350ed7d5454dcac",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/sqlite-e13cc2b1ca35a1b3a638425d696af8dadec5afe793ebf615fa6b19b71ad320c0-macos-aarch64.so"
   },
   "server/nif/sqlite/windows-x86_64.so": {
-    "sha256": "6846fcd43fedc2566719247e83a738ad4024f92c3322aac69c8181d1d096e055",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-4c7ff3c7191a/sqlite-89814be3d60c89fd3da46a1d987bf595846776e660277260b23ff2f678c365af-windows-x86_64.so"
+    "sha256": "637d60c51a1b9c3a9f2c5a302faa30714008d8d7b3f9f88730dd9cffd56d260b",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/sqlite-12d068ffe431b404dd40788cfb6be7e47dd383977a0734a7aae50abb9324411f-windows-x86_64.so"
   }
 }

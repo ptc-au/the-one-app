@@ -1,18 +1,18 @@
 {
   "server/nif/encryption/linux-aarch64.so": {
-    "sha256": "593f817e1046a03887839bf92f5eccee75a830e860a594a8ee9c2f34d6e455b4",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/encryption-b4660d4c32a2b605557f715b213585dc871105b0772863af48fb54f30ec2a99c-linux-aarch64.so"
+    "sha256": "2ba980a8667c0d53d8568f203ac686214c16eaf569a16df5131bc91fdc595541",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/encryption-521e48302e8cdd6abd0dd4cfd28fc9a3b824056376225c3302876ea7164d80c4-linux-aarch64.so"
   },
   "server/nif/encryption/linux-x86_64.so": {
-    "sha256": "39121fe50660de7e38bf29d968b3997b42e1196a898b1bac8ef4106c3cda2f11",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/encryption-537e525633815ea36884d4dedacc7cdff7105f4475a79aa67c254761c99a6f32-linux-x86_64.so"
+    "sha256": "2626857a5eb89951b934b5ef8d57e953fa93ecf664a9182053fe794541c38242",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/encryption-d7daa71d8d4bd7ac174784a36564f87843cf04e967c011b4a37ebd7678e476c6-linux-x86_64.so"
   },
   "server/nif/encryption/macos-aarch64.so": {
-    "sha256": "ce74e84ece951139208c003c4d4fda5b3b6694c4026f325842e43ced79261d2b",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/encryption-9c4ab94fe2f18428fc6c45531cc06791723b882c2d7d07628e87c2a94a472fe4-macos-aarch64.so"
+    "sha256": "1e1c55097c64fd6d8c547cefb53d29434712fff89ad1ee5b2107156e5c6f4210",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/encryption-6cbaca3d6b096d938b22b4f49381f8773ca90d7a1cc3db7dcf564669370fbb3c-macos-aarch64.so"
   },
   "server/nif/encryption/windows-x86_64.so": {
-    "sha256": "e62117a8ccff4782d0306da1212558e60493e512306dc151c3c1961d6869aca4",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-adacfcf7ff83/encryption-a2fe24e0aea639d8daaa23e2773e160bfcdd43c65cf8ab4652c28e9d96850632-windows-x86_64.so"
+    "sha256": "bf015ae6137502c895f22a408b81cdf403d05c8bc67b7915e8498653feffa72b",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-26cb5be3f923/encryption-d591e4ee1d01e903a815d8701fbc5b035d4617906ce7b4033bb5ef8a28116fdc-windows-x86_64.so"
   }
 }
