@@ -47,6 +47,9 @@ defmodule OneCore.Sandbox do
   @registry __MODULE__.Children
   @supervisor __MODULE__.Supervisor
 
+  # The child's side of One Core, which it compiles as it starts, unless that was kept.
+  @child_files ~w(child.ex manifest.ex redact.ex nif.ex)
+
   # How long a child that runs no call is kept, in milliseconds.
   @idle :timer.minutes(1)
   # How long a call waits on its child saying nothing, in milliseconds, before it's cancelled.
@@ -493,9 +496,7 @@ defmodule OneCore.Sandbox do
 
     # What a version's VM compiled is kept on this machine for its next VM, whoever's it is, which loads it instead:
     # its own code and the child's side of One Core, as this server has it.
-    runtime =
-      for file <- ~w(child.ex manifest.ex redact.ex nif.ex),
-          do: File.read!(Application.app_dir(:one_core, "priv/sandbox/#{file}"))
+    runtime = for file <- @child_files, do: File.read!(Application.app_dir(:one_core, "priv/sandbox/#{file}"))
 
     cache = if version, do: Path.join([Server.home(), "sandbox", Version.code({key, runtime})])
 
@@ -597,54 +598,34 @@ defmodule OneCore.Sandbox do
 
   # The program the child is: this server's own Erlang VM and Elixir, read-only, with the child's side of One Core.
   defp started(cache) do
-    root = :code.root_dir() |> to_string()
-    erts = Path.join(root, "erts-#{:erlang.system_info(:version)}")
+    folder = vm()
+    erts = Path.join(folder, "erts-#{:erlang.system_info(:version)}")
+    boot = Path.join(folder, "start_clean")
+    child = Path.join(folder, "child")
 
-    boot =
-      hd(
-        Path.wildcard(Path.join(root, "bin/start_clean.boot")) ++
-          Path.wildcard(Path.join(root, "releases/*/start_clean.boot"))
-      )
-
-    boot = Path.rootname(boot)
-    elixir = :code.lib_dir(:elixir) |> to_string() |> Path.dirname()
-    child = Application.app_dir(:one_core, "priv/sandbox")
-
-    # Erlang's and Elixir's applications, and the server's libraries (OpenTelemetry's API, which an app records with,
-    # and Recon, which it's debugged with, `debug/5`), but not the server's own code, which is kept beside them: in an
-    # installed server's release, all in its `lib`, and in Mix's `_build` otherwise.
-    libraries = Application.app_dir(:one_core) |> Path.dirname()
-
-    apps =
-      for ebin <- Enum.flat_map([root <> "/lib", elixir, libraries], &Path.wildcard(Path.join(&1, "*/ebin"))),
-          app = Path.dirname(ebin),
-          hd(String.split(Path.basename(app), "-")) != "one_core",
-          uniq: true,
-          do: app
-
-    ebins = for app <- apps, do: Path.join(app, "ebin")
-
-    # Its own side of One Core is compiled as it starts, unless it was kept.
+    # Its own side of One Core is compiled as it starts, unless it was kept, into the folder it starts in (`child.ex` says
+    # why a path is relative to it).
     compile =
       if cache,
         do: "",
         else:
-          "{ok, _, _} = 'Elixir.Kernel.ParallelCompiler':compile_to_path([<<\"#{child}/child.ex\"/utf8>>, " <>
-            "<<\"#{child}/manifest.ex\"/utf8>>, <<\"#{child}/redact.ex\"/utf8>>, <<\"#{child}/nif.ex\"/utf8>>], " <>
-            "unicode:characters_to_binary(filename:join(os:getenv(\"TMPDIR\"), \"runtime\")), " <>
+          "{ok, _, _} = 'Elixir.Kernel.ParallelCompiler':compile_to_path([" <>
+            Enum.map_join(@child_files, ", ", &"<<\"#{child}/#{&1}\"/utf8>>") <>
+            "], <<\"runtime\">>, " <>
             "[{return_diagnostics, true}]), "
 
     # Its time zones are this server's: the database its VM uses (`OneCore.Application`), whose library is among those.
     zones = "application:set_env(elixir, time_zone_database, '#{Calendar.get_time_zone_database()}'), "
 
+    # Its code path is its folder's `lib`, which the VM adds as it starts.
     arguments =
       ~w(-noshell -noinput +fnu +S 1:1 +SDcpu 1:1 +SDio 1 +A 1 +MIscs 128 -boot) ++
-        [boot, "-boot_var", "RELEASE_LIB", Path.join(root, "lib")] ++
-        Enum.flat_map(List.wrap(cache) ++ ebins, &["-pa", &1]) ++
+        [boot, "-boot_var", "RELEASE_LIB", Path.join(folder, "lib")] ++
+        Enum.flat_map(List.wrap(cache), &["-pa", &1]) ++
         ["-eval", "application:ensure_all_started([elixir, logger]), #{zones}#{compile}'Elixir.OneCore.Sandbox.Child':main()."]
 
     env = %{
-      "ROOTDIR" => root,
+      "ROOTDIR" => folder,
       "BINDIR" => Path.join(erts, "bin"),
       "EMU" => emulator(erts),
       "PROGNAME" => "erl",
@@ -653,12 +634,77 @@ defmodule OneCore.Sandbox do
       "ERL_CRASH_DUMP_SECONDS" => "0"
     }
 
-    policy = %{read: Enum.uniq([erts, boot <> ".boot", child | apps] ++ List.wrap(cache)), env: env, memory: @memory}
+    policy = %{read: Enum.uniq([folder | List.wrap(cache)]), env: env, memory: @memory}
 
     # The VM's own program, which on Windows is `one-server.exe` (the release's `erl.exe`, `tooling/release`), with the VM
     # in it rather than started by it.
     vm = if match?({:win32, _}, :os.type()), do: "bin/one-server.exe", else: "bin/erlexec"
     walled(Path.join(erts, vm), arguments, policy)
+  rescue
+    error in [File.Error, File.CopyError] -> {:error, "the folder its VM runs from couldn't be made: #{Exception.message(error)}"}
+  end
+
+  # The one folder a child reads: a copy of what its VM runs on, made once for each release of this server's VM and
+  # Elixir, as a release's own folders are, with the apps the child loads in `lib` and no other, so that its code path
+  # (every app in `lib`) holds exactly those. They're Erlang's and Elixir's applications, and the server's libraries
+  # (OpenTelemetry's API, which an app records with, and Recon, which it's debugged with, `debug/5`), but not the
+  # server's own code, which is kept beside them: in an installed server's release, all in its `lib`, and in Mix's
+  # `_build` otherwise. The wall then gives the child that folder alone, and not the release's, where the server's own
+  # code is.
+  defp vm do
+    root = :code.root_dir() |> to_string()
+    version = :erlang.system_info(:version)
+    elixir = :code.lib_dir(:elixir) |> to_string() |> Path.dirname()
+    libraries = Application.app_dir(:one_core) |> Path.dirname()
+    child = Application.app_dir(:one_core, "priv/sandbox")
+
+    apps =
+      for ebin <- Enum.flat_map([root <> "/lib", elixir, libraries], &Path.wildcard(Path.join(&1, "*/ebin"))),
+          app = Path.dirname(ebin),
+          hd(String.split(Path.basename(app), "-")) != "one_core",
+          uniq: true,
+          do: app
+
+    sources = for file <- @child_files, do: File.read!(Path.join(child, file))
+    key = Version.code({version, Enum.map(apps, &Path.basename/1), sources})
+    folder = Path.join([Server.home(), "sandbox", "vm-" <> binary_part(key, 0, 16)])
+
+    if not File.dir?(folder) do
+      boot =
+        hd(
+          Path.wildcard(Path.join(root, "bin/start_clean.boot")) ++
+            Path.wildcard(Path.join(root, "releases/*/start_clean.boot"))
+        )
+
+      part = Path.join([Server.home(), "sandbox", "part-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)])
+      bin = Path.join([part, "erts-#{version}", "bin"])
+      File.mkdir_p!(bin)
+      File.cp_r!(Path.join([root, "erts-#{version}", "bin"]), bin)
+      File.cp!(boot, Path.join(part, "start_clean.boot"))
+      File.cp_r!(child, Path.join(part, "child"))
+
+      for app <- apps, kind <- ~w(ebin priv), File.dir?(Path.join(app, kind)) do
+        to = Path.join([part, "lib", Path.basename(app), kind])
+        File.mkdir_p!(to)
+        File.cp_r!(Path.join(app, kind), to, dereference_symlinks: true)
+      end
+
+      # Windows' `erl.exe` finds its VM from its own path with `GetLongPathName`, which an AppContainer can't call (it
+      # can list no drive's root), unless an `erl.ini` beside it says where the VM is.
+      if match?({:win32, _}, :os.type()) do
+        escaped = &String.replace(Path.absname(&1), "/", "\\\\")
+        bindir = escaped.(Path.join(folder, "erts-#{version}/bin"))
+        File.write!(Path.join(bin, "erl.ini"), "[erlang]\r\nBindir=#{bindir}\r\nProgname=erl\r\nRootdir=#{escaped.(folder)}\r\n")
+      end
+
+      # Another child that started as this one did made it first, and its folder is the same. An older release's go.
+      case File.rename(part, folder) do
+        :ok -> for old <- Path.wildcard(Path.join([Server.home(), "sandbox", "vm-*"])), old != folder, do: File.rm_rf(old)
+        {:error, _} -> File.rm_rf!(part)
+      end
+    end
+
+    folder
   end
 
   # The emulator erlexec starts is named by the release (`tooling/release`): `<EMU>.smp` in the VM's bin folder. Windows'

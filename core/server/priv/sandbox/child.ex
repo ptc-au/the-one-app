@@ -477,7 +477,9 @@ defmodule OneCore.Sandbox.Child do
   end
 
   defp compiled(name, files, target, cache) do
-    folder = Path.join([System.tmp_dir!(), "apps", name])
+    # Its files are in the folder it starts in, by paths relative to it: Elixir's `File.mkdir_p` and its compiler look at
+    # every folder above a path they're given, which an AppContainer on Windows can't.
+    folder = Path.join("apps", name)
     out = if cache, do: cache["ebin"], else: Path.join(folder, "ebin")
     File.mkdir_p!(folder)
 
@@ -485,7 +487,7 @@ defmodule OneCore.Sandbox.Child do
     for {path, text} <- files, Path.dirname(path) == "server/nif", Path.extname(path) == ".ex" do
       library = files[Path.rootname(path) <> "/#{target}.so"] || raise "#{path} has no build for this kind of machine"
 
-      with {:error, why} <- OneCore.Nif.load(text, library, name, Path.join([System.tmp_dir!(), "nif", name])),
+      with {:error, why} <- OneCore.Nif.load(text, library, name, Path.join("nif", name)),
            do: raise("#{path} didn't load on this machine, #{target}: #{why}")
     end
 
@@ -507,7 +509,7 @@ defmodule OneCore.Sandbox.Child do
       modules
     else
       File.mkdir_p!(out)
-      Code.prepend_path(out)
+      Code.prepend_path(Path.expand(out))
       compiled(sources, name, out, files, folder)
     end
   end
@@ -517,7 +519,7 @@ defmodule OneCore.Sandbox.Child do
       {:ok, modules, warnings} ->
         Process.put(
           {__MODULE__, :warnings, name},
-          messages(warnings.compile_warnings ++ warnings.runtime_warnings, folder)
+          messages(warnings.compile_warnings ++ warnings.runtime_warnings, Path.expand(folder))
         )
 
         for module <- modules, do: :persistent_term.put({__MODULE__, :files, module}, {name, out, files})
@@ -525,7 +527,7 @@ defmodule OneCore.Sandbox.Child do
         modules
 
       {:error, errors, _warnings} ->
-        raise messages(errors, folder) |> Enum.join("\n")
+        raise messages(errors, Path.expand(folder)) |> Enum.join("\n")
     end
   end
 
