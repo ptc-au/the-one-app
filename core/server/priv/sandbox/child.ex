@@ -407,7 +407,9 @@ defmodule OneCore.Sandbox.Child do
       id: id,
       own: artifact(about["own"]),
       installed: about["installed"],
-      folder: Path.join(System.tmp_dir!(), Enum.at(about["own"], 1)),
+      # Relative to the folder the VM starts in, where it may write: an AppContainer on Windows can't look at the folders
+      # above an absolute path, so Elixir's `File.mkdir_p` on one fails with `:enotdir`.
+      folder: Enum.at(about["own"], 1),
       server: about["server"],
       subject: about["subject"],
       actor: about["actor"],
