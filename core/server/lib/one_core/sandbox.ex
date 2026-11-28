@@ -66,7 +66,11 @@ defmodule OneCore.Sandbox do
   @logs 120
 
   @doc "What runs the children: where they're registered, and what starts them."
-  def children, do: [{Registry, keys: :unique, name: @registry}, {DynamicSupervisor, name: @supervisor}]
+  def children, do: [{Registry, keys: :unique, name: @registry}, {DynamicSupervisor, name: @supervisor}, {Task, &swept/0}]
+
+  # A folder of a VM that this server was making when it stopped (`vm/0`) is never finished, and no child starts before
+  # this runs, so none is being made.
+  defp swept, do: for(part <- Path.wildcard(Path.join([Server.home(), "sandbox", "part-*"])), do: File.rm_rf(part))
 
   @doc """
   What a set of an untrusted app's files says of itself, from a child that compiles only them: `{:ok, version}`
