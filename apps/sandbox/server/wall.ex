@@ -12,8 +12,8 @@ defmodule Sandbox.Wall do
 
   @impl OneCore.Service
   def needs do
-    "On Linux, bubblewrap (the package bubblewrap) and prlimit (util-linux), which can make the namespaces a sandbox " <>
-      "needs; on a Mac, its own sandbox-exec. " <>
+    "On Linux, bubblewrap (the package bubblewrap), which can make the namespaces a sandbox needs, and the user's " <>
+      "systemd (systemd-run --user), which limits its memory; on a Mac, its own sandbox-exec. " <>
       "On Windows, its firewall isolating apps (it does unless a loopback exemption or a policy ends that), which keeps an " <>
       "untrusted app from this machine's own ports."
   end
@@ -44,13 +44,15 @@ defmodule Sandbox.Wall do
       System.find_executable("bwrap") == nil ->
         "bubblewrap isn't installed, so untrusted apps can't run here"
 
-      System.find_executable("prlimit") == nil ->
-        "prlimit isn't installed (it's in util-linux), so untrusted apps can't run here"
+      System.find_executable("systemd-run") == nil ->
+        "systemd-run isn't installed (it's in systemd), so untrusted apps can't run here"
 
       true ->
-        case OneCore.Command.run(["bwrap", "--unshare-all", "--ro-bind", "/", "/", "--", "true"], 30) do
+        wall = ["systemd-run" | Sandbox.scope(64 * 1024 * 1024)] ++ ["bwrap", "--unshare-all", "--ro-bind", "/", "/", "--", "true"]
+
+        case OneCore.Command.run(wall, 30) do
           %{exit: 0} -> nil
-          %{stderr: stderr} -> "bubblewrap is installed, but it can't make a sandbox on this machine: #{stderr |> String.trim() |> String.split("\n") |> List.last()}"
+          %{stderr: stderr} -> "bubblewrap or the user's systemd can't make a sandbox on this machine: #{stderr |> String.trim() |> String.split("\n") |> List.last()}"
         end
     end
   end

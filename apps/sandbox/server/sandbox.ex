@@ -2,7 +2,8 @@ defmodule Sandbox do
   @moduledoc """
   The wall an untrusted app runs behind: this machine's own process sandbox, around a program One Core
   starts (`OneCore.Sandbox`). On Linux it's bubblewrap, the distro's own `bwrap` (Ubuntu's AppArmor lets that one
-  make the namespaces it needs), in new namespaces with no network, under an address-space limit (`prlimit`). On a
+  make the namespaces it needs), in new namespaces with no network, under a cgroup's memory limit (`systemd-run --scope`, which Chrome needs: it
+  reserves far more address space than it uses, which `prlimit --as` counts). On a
   Mac it's a Seatbelt profile (`sandbox-exec`). On Windows it's an AppContainer, Windows' own sandbox for apps, under
   a job object's memory limit, which this app's own program starts the program in (`server/bin/wall/`), as
   Windows has no program of its own for that.
@@ -50,7 +51,7 @@ defmodule Sandbox do
 
   defp linux(program, arguments, read, write, env, memory) do
     with {:ok, bwrap} <- found("bwrap", "bubblewrap"),
-         {:ok, prlimit} <- found("prlimit", "util-linux") do
+         {:ok, systemd_run} <- found("systemd-run", "systemd") do
       binds = Enum.flat_map(read, &["--ro-bind", &1, &1]) ++ Enum.flat_map(write, &["--bind", &1, &1])
       # The system's own libraries, which the program links against, wherever this distro keeps them.
       system = Enum.flat_map(~w(/usr/lib /usr/lib64 /lib /lib64), &["--ro-bind-try", &1, &1])
@@ -63,12 +64,20 @@ defmodule Sandbox do
           binds ++ system ++ ["--chdir", "/tmp", "--cap-drop", "ALL"] ++ vars ++ ["--", program | arguments]
 
       # Nothing of this server's environment is passed on, to bubblewrap either: its process is the sandbox's first,
-      # whose environment the program could read.
+      # whose environment the program could read. Only `systemd-run` is told where to find the user's systemd.
+      runtime = Map.put(unset(), "XDG_RUNTIME_DIR", System.get_env("XDG_RUNTIME_DIR") || false)
+
       if memory,
-        do: opened(prlimit, ["--as=#{memory}", "--", bwrap | walled], unset(), nil),
+        do: opened(systemd_run, scope(memory) ++ [bwrap | walled], runtime, nil),
         else: opened(bwrap, walled, unset(), nil)
     end
   end
+
+  @doc """
+  What goes before a program for the user's systemd to start it in a cgroup (a scope, so that it's still this
+  process's child) that holds `memory` bytes, with no swap: where it goes beyond, the kernel kills it.
+  """
+  def scope(memory), do: ["--user", "--scope", "--quiet", "-p", "MemoryMax=#{memory}", "-p", "MemorySwapMax=0", "--"]
 
   # Seatbelt reads its profile from the command line. Paths go into it as string literals, which a path can't break
   # out of: they're quoted, and a quote or backslash in one is refused.
