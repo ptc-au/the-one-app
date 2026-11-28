@@ -128,7 +128,7 @@ fn walled() -> Result<u32> {
 }
 
 /// `wall --revoke <the wall's process id> <its run> <path>...`: waits for that wall to end, then takes back what the run
-/// was granted on each path.
+/// was granted on each path, and removes its folder, which the wall itself does when it ends on its own.
 fn revoked() -> Result<u32> {
     let mut args = env::args_os().skip(2);
     let pid: u32 = args.next().and_then(|arg| arg.to_str()?.parse().ok()).ok_or("--revoke needs a process id")?;
@@ -139,6 +139,7 @@ fn revoked() -> Result<u32> {
             WaitForSingleObject(wall, INFINITE);
             CloseHandle(wall);
         }
+        let _ = fs::remove_dir_all(folder_of(container()?)?.join(&run));
         let capability = capability(&run)?;
         for path in args {
             revoke(Path::new(&path), capability)?;
