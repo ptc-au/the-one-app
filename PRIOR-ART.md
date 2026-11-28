@@ -43,7 +43,9 @@ None of these is chosen. Each is named so it's weighed before anything like it i
   - **Taffy**: layout.
   - **Rune** (anomalyco/rune, MIT): its text editing model (cursor, selection, bidi, undo, IME composition), and the
     design of its inspector. Rune itself as the renderer was set aside: weak IME on Windows and Linux, and it takes no
-    pull requests.
+    pull requests. We expect to move onto Rune once it's ready on every platform we need (28 November 2026), so its
+    team carries the renderer and we keep only what's ours: the JS bridge, each app's sandbox, the inspector tools.
+    Keep the renderer easy to swap.
   - **Flutter's Android embedder** (BSD-3): its windowing, keyboard bridge (`InputConnection`) and autofill.
   - **Flutter's text input plugins** (BSD-3, 19 November 2026): typing on every platform goes through Flutter's own
     bridge, which keeps the input's editing state itself and speaks Flutter's text input protocol (set client, editing
