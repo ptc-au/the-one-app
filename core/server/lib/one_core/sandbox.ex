@@ -673,7 +673,9 @@ defmodule OneCore.Sandbox do
 
     sources = for file <- @child_files, do: File.read!(Path.join(child, file))
     key = Version.code({version, Enum.map(apps, &Path.basename/1), sources})
-    folder = Path.join([Server.home(), "sandbox", "vm-" <> binary_part(key, 0, 16)])
+    # Expanded, so on Windows its separators are slashes, as it's in the Erlang code the VM starts with (`started/1`),
+    # where a backslash begins an escape.
+    folder = Path.expand(Path.join([Server.home(), "sandbox", "vm-" <> binary_part(key, 0, 16)]))
 
     if not File.dir?(folder) do
       boot =
@@ -760,7 +762,7 @@ defmodule OneCore.Sandbox do
 
   # Its VM's own words, such as that it ran out of memory, aren't a frame either.
   defp frames(state, %{buffer: <<size::32, _::binary>>} = data) when size > @largest,
-    do: stop(state, data, "it wrote what isn't the protocol: #{inspect(String.slice(data.buffer, 0, 200))}")
+    do: stop(state, data, "it wrote what isn't the protocol: #{inspect(String.slice(data.buffer, 0, 2000))}")
 
   defp frames(state, %{buffer: <<size::32, frame::binary-size(size), rest::binary>>} = data) do
     case JSON.decode(frame) do
