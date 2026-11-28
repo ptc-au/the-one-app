@@ -399,13 +399,16 @@ defmodule OneCore.Sandbox do
   # The child of a version with the versions whose code runs inside it, for whoever it's installed for, `owner`, started
   # if there's none, asked `ask` once it has loaded: `:loaded`, or `{:begin, id}`, a call it runs from now on. Gives
   # `{:ok, child, port, context}`, or `{:error, why}` with why it couldn't start or load.
+  # What's asked waits for its child's answer, which it gives or fails within `@silent` of its start, or not at all
+  # if it stops: a first call has it load, which compiles the app's code, and takes longer than the five seconds a
+  # call waits by default where a machine is slow (a Windows server's).
   defp child(owner, version, required, files, ask) do
     key = key(version, required)
 
     case Registry.lookup(@registry, {owner, key}) do
       [{child, _}] ->
         try do
-          :gen_statem.call(child, ask)
+          :gen_statem.call(child, ask, :infinity)
         catch
           # It stopped, idle, between being found and being asked, so it's another that's asked.
           :exit, {stopped, _} when stopped in [:noproc, :normal] -> child(owner, version, required, files, ask)
@@ -416,7 +419,7 @@ defmodule OneCore.Sandbox do
         spec = {__MODULE__, {owner, key, Path.basename(version.artifact), sets, version}}
 
         case DynamicSupervisor.start_child(@supervisor, spec) do
-          {:ok, child} -> :gen_statem.call(child, ask)
+          {:ok, child} -> :gen_statem.call(child, ask, :infinity)
           {:error, {:already_started, _child}} -> child(owner, version, required, files, ask)
         end
     end
@@ -435,7 +438,7 @@ defmodule OneCore.Sandbox do
     {:ok, child} = DynamicSupervisor.start_child(@supervisor, {__MODULE__, {nil, key, name, fn -> sets end, nil}})
 
     try do
-      with {:ok, _child, _port, context} <- :gen_statem.call(child, :loaded), do: {:ok, context.description}
+      with {:ok, _child, _port, context} <- :gen_statem.call(child, :loaded, :infinity), do: {:ok, context.description}
     after
       DynamicSupervisor.terminate_child(@supervisor, child)
     end
