@@ -171,6 +171,14 @@ unsafe fn folder_of(container: PSID) -> Result<PathBuf> {
     Ok(folder.into())
 }
 
+/// The folder the AppContainer's own is in, three folders down (`<it>\Packages\<name>\AC`), which is what Windows
+/// makes `LOCALAPPDATA` out of for a program in an AppContainer: it's the value it needs there, and the one it gives
+/// the program is the AppContainer's own folder, not the person's.
+unsafe fn local_app_data(container: PSID) -> Result<PathBuf> {
+    let own = unsafe { folder_of(container)? };
+    own.ancestors().nth(3).map(Path::to_path_buf).ok_or_else(|| format!("{} isn't in a Packages folder", own.display()))
+}
+
 fn trustee(sid: PSID) -> TRUSTEE_W {
     TRUSTEE_W {
         pMultipleTrustee: ptr::null_mut(),
@@ -376,15 +384,18 @@ unsafe fn started(asked: &Asked, container: PSID, capability: PSID, folder: &Pat
     startup.StartupInfo.hStdError = unsafe { GetStdHandle(STD_ERROR_HANDLE) };
     startup.lpAttributeList = attributes;
 
-    // Its environment: what it's given, Windows' folder, which Windows' own libraries need, and its own folder.
+    // Its environment: what it's given, Windows' folder, which Windows' own libraries need, and its own folder as
+    // its profile. CreateProcess for an AppContainer refuses to start without `LOCALAPPDATA` (os error 203), and
+    // makes `LOCALAPPDATA`, `TEMP` and `TMP` the AppContainer's own folders out of it, whatever else is given.
     let mut windows = [0u16; 260];
     let length = unsafe { GetWindowsDirectoryW(windows.as_mut_ptr(), windows.len() as u32) } as usize;
     let windows = OsString::from_wide(&windows[..length]);
     let mut environment: Vec<(OsString, OsString)> = asked.env.clone();
     environment.push(("SystemRoot".into(), windows));
-    for name in ["TMPDIR", "TEMP", "TMP"] {
+    for name in ["TMPDIR", "USERPROFILE", "APPDATA"] {
         environment.push((name.into(), folder.into()));
     }
+    environment.push(("LOCALAPPDATA".into(), unsafe { local_app_data(container)? }.into()));
     let mut block: Vec<u16> = Vec::new();
     for (name, value) in &environment {
         block.extend(name.encode_wide());
