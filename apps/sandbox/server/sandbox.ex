@@ -119,7 +119,9 @@ defmodule Sandbox do
         Enum.flat_map(env, fn {name, value} -> ["--env", "#{name}=#{value}"] end) ++
         if(memory, do: ["--memory", to_string(memory)], else: []) ++ ["--", program | arguments]
 
-    opened(wall, walled, unset(), nil)
+    # The wall's own environment is this server's with each variable unset but `SystemRoot`: Windows refuses to start a
+    # program with none (`eacces`). The wall gives its program an environment of its own.
+    opened(wall, walled, Map.reject(unset(), fn {name, _} -> String.upcase(name) == "SYSTEMROOT" end), nil)
   end
 
   # Each of this server's environment variables, unset.
