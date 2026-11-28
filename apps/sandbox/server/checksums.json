@@ -1,18 +1,18 @@
 {
   "server/bin/wall/linux-aarch64": {
     "sha256": "c52516fdc2649b1c9b5b410bedc101e3fd4e08e4b0dcb51449116ac930e28f8a",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-95ca126fd546/wall-6453d827a30740e23bdee0e9d11be35f7bfc64cac3ec420e7211c32f9f490c77-linux-aarch64"
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-616aa9ac808e/wall-116910ed1ddd7621d86d4f6e2015de246b487158f911b34964c6ebbd8e131d12-linux-aarch64"
   },
   "server/bin/wall/linux-x86_64": {
     "sha256": "dab75eea997af7faec920d10198bddd14a7c947a39449b47e3e9f8a5418cdb2d",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-95ca126fd546/wall-579617eb9db763cf90a7382f0f09a3cefaed4dbc71514e8ed38676ae7b83a655-linux-x86_64"
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-616aa9ac808e/wall-eb0e5ec9d1fefca894932f0030b2911c980d4bcdea8d8c010b134f54526ad62b-linux-x86_64"
   },
   "server/bin/wall/macos-aarch64": {
     "sha256": "3f1c80cf1b3d6ab090550c6c48e8b2ed7a46f8a086eb0cf446c3043a74b47552",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-95ca126fd546/wall-dd45db920d695325f6b106278e140621e578dc0730ac6df1170ed0726238d1cf-macos-aarch64"
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-616aa9ac808e/wall-98da9ff92d65b33deeb5d0bc13595681043903b45b8734d60da53504061c2922-macos-aarch64"
   },
   "server/bin/wall/windows-x86_64": {
-    "sha256": "cd4e5f078feae1877e0b7297409d1bcd685fe74f91c0b86925fb8d3900bcdf67",
-    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-95ca126fd546/wall-acdb04b9a3e3fb818695aa131878b61078c0822480122f9090ee30856e4f409b-windows-x86_64"
+    "sha256": "d491e1a38ee69c9a8e5cd6d390689308af45f7ad44c844865561ccd2e96fde53",
+    "url": "https://github.com/ptc-au/the-one-app/releases/download/nifs-616aa9ac808e/wall-4b52ada4d0be43e4a23d484064709c9eabea98874164bfb4c19f6403e5c11111-windows-x86_64"
   }
 }
