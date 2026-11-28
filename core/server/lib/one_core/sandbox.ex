@@ -52,6 +52,8 @@ defmodule OneCore.Sandbox do
 
   # How long a child that runs no call is kept, in milliseconds.
   @idle :timer.minutes(1)
+  # How long a child that failed to start stays, saying why to what's asked of it, in milliseconds.
+  @failed :timer.seconds(10)
   # How long a call waits on its child saying nothing, in milliseconds, before it's cancelled.
   @silent :timer.minutes(2)
   # The largest frame a child may send, and the most memory it may have.
@@ -523,8 +525,9 @@ defmodule OneCore.Sandbox do
   def handle_event(:enter, _was, :loading, _data), do: {:keep_state_and_data, [{:state_timeout, @silent, :loading}]}
   def handle_event(:enter, _was, :ready, _data), do: {:keep_state_and_data, [{:state_timeout, @idle, :idle}]}
   def handle_event(:enter, _was, :busy, _data), do: :keep_state_and_data
-  # What was asked while it loaded is answered first.
-  def handle_event(:enter, _was, {:failed, _why}, _data), do: {:keep_state_and_data, [{:state_timeout, 0, :failed}]}
+  # What was asked while it loaded, and what's asked just after, is answered with why. A child that fails at once is
+  # started before its first call is made, so it can't stop as it fails: that call would find none, and say nothing.
+  def handle_event(:enter, _was, {:failed, _why}, _data), do: {:keep_state_and_data, [{:state_timeout, @failed, :failed}]}
 
   def handle_event(:internal, {:start, sets}, :loading, data) do
     # A VM started from what's kept marks it as in use.
