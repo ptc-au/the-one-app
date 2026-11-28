@@ -7,7 +7,8 @@
 //!
 //! - no network: the AppContainer has no capabilities, so Windows lets it reach nothing, the machine itself neither.
 //! - none of the person's files: an AppContainer reads only what's granted to it, or to every app (Windows' own
-//!   files). Each `--read` path is granted to the One App's AppContainer to read, once, and `--write` to write.
+//!   files, which are never granted again). Each `--read` path is granted to this run's own capability to read, and
+//!   `--write` to write, and taken back once this ends, however it ends.
 //! - a folder of its own, which `TMPDIR`, `USERPROFILE` and `APPDATA` name and it starts in, granted to this run's
 //!   own capability alone, so no other program behind the wall reads it, and removed once it ends.
 //! - the environment `--env` gives it, and `SystemRoot`, which Windows' own libraries need. `LOCALAPPDATA`, `TEMP` and

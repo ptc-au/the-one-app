@@ -8,7 +8,8 @@ use windows_sys::Win32::Foundation::{
     SetHandleInformation,
 };
 use windows_sys::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, SE_FILE_OBJECT, SET_ACCESS,
+    ConvertSidToStringSidW, ConvertStringSidToSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW, REVOKE_ACCESS,
+    SE_FILE_OBJECT, SET_ACCESS,
     SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID, TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
 };
 use windows_sys::Win32::Security::Isolation::{
@@ -29,17 +30,21 @@ use windows_sys::Win32::System::JobObjects::{
 use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
 use windows_sys::Win32::System::SystemServices::SE_GROUP_ENABLED;
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
+    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessW, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
     GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcessToken,
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-    PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
+    OpenProcess, PROCESS_INFORMATION, PROCESS_SYNCHRONIZE, ReleaseMutex, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
-/// The AppContainer every program behind the wall runs in, which what they all read is granted to once.
+/// The AppContainer every program behind the wall runs in.
 const CONTAINER: &str = "app.theone.sandbox";
 
+/// What this program is started with, by itself, to take back a run's grants once the run's wall ends, however it ends.
+const REVOKE: &str = "--revoke";
+
 pub fn main() -> i32 {
-    match walled() {
+    let reaping = env::args_os().nth(1).is_some_and(|arg| arg == REVOKE);
+    match if reaping { revoked() } else { walled() } {
         Ok(code) => code as i32,
         Err(why) => {
             eprintln!("The wall didn't start it: {why}");
@@ -101,11 +106,13 @@ fn walled() -> Result<u32> {
         let run = format!("one-sandbox-{random:016x}");
         let capability = capability(&run)?;
 
-        for path in &asked.read {
-            grant(path, container, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE)?;
-        }
-        for path in &asked.write {
-            grant(path, container, FILE_ALL_ACCESS)?;
+        // What it's granted is the run's capability's alone, and taken back by a program of its own once this ends, as
+        // a server stops a wall by killing it, which leaves it no chance to.
+        revoker(&asked, &run)?;
+        for (paths, access) in [(&asked.read, FILE_GENERIC_READ | FILE_GENERIC_EXECUTE), (&asked.write, FILE_ALL_ACCESS)] {
+            for path in paths {
+                grant(path, capability, access)?;
+            }
         }
 
         // Its folder, in the AppContainer's own, with only the person and this run's capability on it.
@@ -118,6 +125,47 @@ fn walled() -> Result<u32> {
         let _ = fs::remove_dir_all(&folder);
         walled
     }
+}
+
+/// `wall --revoke <the wall's process id> <its run> <path>...`: waits for that wall to end, then takes back what the run
+/// was granted on each path.
+fn revoked() -> Result<u32> {
+    let mut args = env::args_os().skip(2);
+    let pid: u32 = args.next().and_then(|arg| arg.to_str()?.parse().ok()).ok_or("--revoke needs a process id")?;
+    let run = args.next().and_then(|arg| arg.into_string().ok()).ok_or("--revoke needs a run")?;
+    unsafe {
+        let wall = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+        if !wall.is_null() {
+            WaitForSingleObject(wall, INFINITE);
+            CloseHandle(wall);
+        }
+        let capability = capability(&run)?;
+        for path in args {
+            revoke(Path::new(&path), capability)?;
+        }
+    }
+    Ok(0)
+}
+
+/// Starts this program again to wait for this wall and take back what `run` is granted on the paths it's asked for,
+/// as no process of the wall's own: no window, no handle of this one's, nor the job its program's in.
+unsafe fn revoker(asked: &Asked, run: &str) -> Result<()> {
+    let me = env::current_exe().map_err(|error| format!("this program's own path: {error}"))?;
+    let mut program: Vec<OsString> = vec![me.clone().into(), REVOKE.into(), std::process::id().to_string().into(), run.into()];
+    program.extend(asked.read.iter().chain(&asked.write).map(OsString::from));
+    let mut line = command_line(&program);
+    let (startup, mut process): (STARTUPINFOW, PROCESS_INFORMATION) = unsafe { (mem::zeroed(), mem::zeroed()) };
+    let started = unsafe {
+        CreateProcessW(wide(&me).as_ptr(), line.as_mut_ptr(), ptr::null(), ptr::null(), 0, CREATE_NO_WINDOW, ptr::null(), ptr::null(), &startup, &mut process)
+    };
+    if started == 0 {
+        return Err(failed("what takes back its access"));
+    }
+    unsafe {
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+    Ok(())
 }
 
 /// The AppContainer's SID, which it's made with the first time.
@@ -189,9 +237,14 @@ fn trustee(sid: PSID) -> TRUSTEE_W {
     }
 }
 
-/// Grants `sid` `access` to `path`, and what's in it, unless it has it already: each grant is made once, as it's
-/// carried down to everything in the folder, which takes a while.
-unsafe fn grant(path: &Path, sid: PSID, access: u32) -> Result<()> {
+/// Runs `change` on `path`'s access list and writes the result back, to everything in the folder too, which takes a
+/// while. One program at a time does this, as each reads the list and writes it back whole.
+unsafe fn edit(path: &Path, change: impl FnOnce(*mut ACL) -> Result<Option<*mut ACL>>) -> Result<()> {
+    let lock = unsafe { CreateMutexW(ptr::null(), 0, wide("Local\\app.theone.sandbox.access").as_ptr()) };
+    if lock.is_null() {
+        return Err(failed("the lock on access lists"));
+    }
+    unsafe { WaitForSingleObject(lock, INFINITE) };
     let name = wide(path);
     let (mut dacl, mut descriptor): (*mut ACL, PSECURITY_DESCRIPTOR) = (ptr::null_mut(), ptr::null_mut());
     let read = unsafe {
@@ -206,10 +259,35 @@ unsafe fn grant(path: &Path, sid: PSID, access: u32) -> Result<()> {
             &mut descriptor,
         )
     };
-    if read != ERROR_SUCCESS {
-        return Err(format!("{} can't be read for its access: {}", path.display(), std::io::Error::from_raw_os_error(read as i32)));
+    let done = if read != ERROR_SUCCESS {
+        Err(format!("{} can't be read for its access: {}", path.display(), std::io::Error::from_raw_os_error(read as i32)))
+    } else {
+        change(dacl).and_then(|new| match new {
+            None => Ok(()),
+            Some(new) => {
+                let set = unsafe {
+                    SetNamedSecurityInfoW(name.as_ptr() as _, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, ptr::null_mut(), ptr::null_mut(), new, ptr::null())
+                };
+                unsafe { LocalFree(new as _) };
+                if set == ERROR_SUCCESS {
+                    Ok(())
+                } else {
+                    Err(format!("{} couldn't be changed for its access: {}", path.display(), std::io::Error::from_raw_os_error(set as i32)))
+                }
+            }
+        })
+    };
+    unsafe {
+        LocalFree(descriptor);
+        ReleaseMutex(lock);
+        CloseHandle(lock);
     }
-    let granted = !dacl.is_null()
+    done
+}
+
+/// Whether `dacl` lets `sid` have all of `access` (none: any), by an entry of its own.
+unsafe fn lets(dacl: *mut ACL, sid: PSID, access: u32) -> bool {
+    !dacl.is_null()
         && (0..unsafe { (*dacl).AceCount } as u32).any(|index| {
             let mut ace: *mut c_void = ptr::null_mut();
             unsafe {
@@ -218,34 +296,55 @@ unsafe fn grant(path: &Path, sid: PSID, access: u32) -> Result<()> {
                     && (*(ace as *const ACCESS_ALLOWED_ACE)).Mask & access == access
                     && EqualSid(&raw const (*(ace as *const ACCESS_ALLOWED_ACE)).SidStart as PSID, sid) != 0
             }
-        });
-    let set = if granted {
-        ERROR_SUCCESS
-    } else {
-        let inheritance = if path.is_dir() { SUB_CONTAINERS_AND_OBJECTS_INHERIT } else { NO_INHERITANCE };
-        let entry = EXPLICIT_ACCESS_W {
-            grfAccessPermissions: access,
-            grfAccessMode: GRANT_ACCESS,
-            grfInheritance: inheritance,
-            Trustee: trustee(sid),
-        };
-        let mut new: *mut ACL = ptr::null_mut();
-        let made = unsafe { SetEntriesInAclW(1, &entry, dacl, &mut new) };
-        let set = if made == ERROR_SUCCESS {
-            unsafe {
-                SetNamedSecurityInfoW(name.as_ptr() as _, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, ptr::null_mut(), ptr::null_mut(), new, ptr::null())
-            }
-        } else {
-            made
-        };
-        unsafe { LocalFree(new as _) };
-        set
-    };
-    unsafe { LocalFree(descriptor) };
-    if set != ERROR_SUCCESS {
-        return Err(format!("{} couldn't be granted: {}", path.display(), std::io::Error::from_raw_os_error(set as i32)));
+        })
+}
+
+/// Grants `sid` `access` to `path`, and what's in it: not where every app has it already, as Windows' own folders
+/// are (`ALL APPLICATION PACKAGES`), whose access lists the wall never writes to.
+unsafe fn grant(path: &Path, sid: PSID, access: u32) -> Result<()> {
+    let mut everyone: PSID = ptr::null_mut();
+    if unsafe { ConvertStringSidToSidW(wide("S-1-15-2-1").as_ptr(), &mut everyone) } == 0 {
+        return Err(failed("the SID of every app"));
     }
-    Ok(())
+    let done = unsafe {
+        edit(path, |dacl| {
+            if lets(dacl, everyone, access) {
+                return Ok(None);
+            }
+            let entry = EXPLICIT_ACCESS_W {
+                grfAccessPermissions: access,
+                grfAccessMode: GRANT_ACCESS,
+                grfInheritance: if path.is_dir() { SUB_CONTAINERS_AND_OBJECTS_INHERIT } else { NO_INHERITANCE },
+                Trustee: trustee(sid),
+            };
+            let mut new: *mut ACL = ptr::null_mut();
+            let made = SetEntriesInAclW(1, &entry, dacl, &mut new);
+            if made != ERROR_SUCCESS {
+                return Err(format!("{}'s access: {}", path.display(), std::io::Error::from_raw_os_error(made as i32)));
+            }
+            Ok(Some(new))
+        })
+    };
+    unsafe { LocalFree(everyone) };
+    done
+}
+
+/// Takes back what `grant` gave `sid` on `path`, and on what's in it, where it did.
+unsafe fn revoke(path: &Path, sid: PSID) -> Result<()> {
+    unsafe {
+        edit(path, |dacl| {
+            if !lets(dacl, sid, 0) {
+                return Ok(None);
+            }
+            let entry = EXPLICIT_ACCESS_W { grfAccessPermissions: 0, grfAccessMode: REVOKE_ACCESS, grfInheritance: NO_INHERITANCE, Trustee: trustee(sid) };
+            let mut new: *mut ACL = ptr::null_mut();
+            let made = SetEntriesInAclW(1, &entry, dacl, &mut new);
+            if made != ERROR_SUCCESS {
+                return Err(format!("{}'s access: {}", path.display(), std::io::Error::from_raw_os_error(made as i32)));
+            }
+            Ok(Some(new))
+        })
+    }
 }
 
 /// Makes `folder` the person's and this run's capability's alone, with nothing of its parent's.
