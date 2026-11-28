@@ -113,6 +113,9 @@ defmodule Sandbox do
       File.rename!(wall <> ".part", wall)
     end
 
+    # An older build's goes. Windows doesn't remove one a running child still has: it goes with the next.
+    for old <- Path.wildcard(Path.join(Path.dirname(wall), "wall-*.exe")), old != wall, do: File.rm(old)
+
     walled =
       Enum.flat_map(read, &["--read", &1]) ++
         Enum.flat_map(write, &["--write", &1]) ++
