@@ -102,8 +102,25 @@ defmodule Sandbox do
     end
   end
 
-  # This app's program, the wall, written out where the server keeps its own files the first time, by its SHA-256.
   defp windows(program, arguments, read, write, env, memory) do
+    wall = wall()
+
+    walled =
+      Enum.flat_map(read, &["--read", &1]) ++
+        Enum.flat_map(write, &["--write", &1]) ++
+        Enum.flat_map(env, fn {name, value} -> ["--env", "#{name}=#{value}"] end) ++
+        if(memory, do: ["--memory", to_string(memory)], else: []) ++ ["--", program | arguments]
+
+    # The wall's own environment is this server's with each variable unset but `SystemRoot`: Windows refuses to start a
+    # program with none (`eacces`). The wall gives its program an environment of its own.
+    opened(wall, walled, Map.reject(unset(), fn {name, _} -> String.upcase(name) == "SYSTEMROOT" end), nil)
+  end
+
+  @doc """
+  This app's program on Windows, the wall, written out where the server keeps its own files the first time, by its
+  SHA-256: its path.
+  """
+  def wall do
     built = OneCore.App.file(__MODULE__, "server/bin/wall/windows-x86_64")
     wall = Path.join([OneCore.Server.home(), "sandbox", "wall-#{Base.encode16(:crypto.hash(:sha256, built), case: :lower)}.exe"])
 
@@ -116,15 +133,7 @@ defmodule Sandbox do
     # An older build's goes. Windows doesn't remove one a running child still has: it goes with the next.
     for old <- Path.wildcard(Path.join(Path.dirname(wall), "wall-*.exe")), old != wall, do: File.rm(old)
 
-    walled =
-      Enum.flat_map(read, &["--read", &1]) ++
-        Enum.flat_map(write, &["--write", &1]) ++
-        Enum.flat_map(env, fn {name, value} -> ["--env", "#{name}=#{value}"] end) ++
-        if(memory, do: ["--memory", to_string(memory)], else: []) ++ ["--", program | arguments]
-
-    # The wall's own environment is this server's with each variable unset but `SystemRoot`: Windows refuses to start a
-    # program with none (`eacces`). The wall gives its program an environment of its own.
-    opened(wall, walled, Map.reject(unset(), fn {name, _} -> String.upcase(name) == "SYSTEMROOT" end), nil)
+    wall
   end
 
   # Each of this server's environment variables, unset.

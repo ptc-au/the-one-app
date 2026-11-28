@@ -13,7 +13,9 @@ defmodule Sandbox.Wall do
   @impl OneCore.Service
   def needs do
     "On Linux, bubblewrap (the package bubblewrap) and prlimit (util-linux), which can make the namespaces a sandbox " <>
-      "needs; on a Mac, its own sandbox-exec. Windows has what it needs."
+      "needs; on a Mac, its own sandbox-exec. " <>
+      "On Windows, its firewall isolating apps (it does unless a loopback exemption or a policy ends that), which keeps an " <>
+      "untrusted app from this machine's own ports."
   end
 
   @impl OneCore.Service
@@ -21,7 +23,17 @@ defmodule Sandbox.Wall do
     case :os.type() do
       {:unix, :linux} -> linux()
       {:unix, :darwin} -> if File.exists?("/usr/bin/sandbox-exec"), do: nil, else: "sandbox-exec isn't on this Mac"
+      {:win32, _} -> windows()
       _ -> nil
+    end
+  end
+
+  # Windows keeps an AppContainer from this machine's own ports by its firewall's isolation, which the wall tries
+  # (`wall --check`), as it does before each program it starts.
+  defp windows do
+    case OneCore.Command.run([Sandbox.wall(), "--check"], 30) do
+      %{exit: 0} -> nil
+      %{stdout: stdout} -> stdout |> String.trim() |> String.replace_prefix("The wall didn't start it: ", "")
     end
   end
 
