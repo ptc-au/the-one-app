@@ -491,11 +491,18 @@ unsafe fn started(asked: &Asked, container: PSID, capability: PSID, folder: &Pat
     let length = unsafe { GetWindowsDirectoryW(windows.as_mut_ptr(), windows.len() as u32) } as usize;
     let windows = OsString::from_wide(&windows[..length]);
     let mut environment: Vec<(OsString, OsString)> = asked.env.clone();
-    environment.push(("SystemRoot".into(), windows));
+    environment.push(("SystemRoot".into(), windows.clone()));
     for name in ["TMPDIR", "USERPROFILE", "APPDATA"] {
         environment.push((name.into(), folder.into()));
     }
     environment.push(("LOCALAPPDATA".into(), unsafe { local_app_data(container)? }.into()));
+    // Where its home is as Erlang's VM reads it (`HOMEDRIVE` and `HOMEPATH`, before `USERPROFILE`), and where its
+    // programs are as Windows' own and Erlang's read it (`PATH`): Windows' folders, and no other.
+    let home = folder.to_string_lossy();
+    let (drive, path) = home.split_at(home.find(':').map_or(0, |colon| colon + 1));
+    environment.push(("HOMEDRIVE".into(), drive.into()));
+    environment.push(("HOMEPATH".into(), path.into()));
+    environment.push(("PATH".into(), format!("{0}\\System32;{0}", windows.to_string_lossy()).into()));
     let mut block: Vec<u16> = Vec::new();
     for (name, value) in &environment {
         block.extend(name.encode_wide());

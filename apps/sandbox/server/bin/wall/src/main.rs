@@ -11,8 +11,9 @@
 //!   `--write` to write, and taken back once this ends, however it ends.
 //! - a folder of its own, which `TMPDIR`, `USERPROFILE` and `APPDATA` name and it starts in, granted to this run's
 //!   own capability alone, so no other program behind the wall reads it, and removed once it ends.
-//! - the environment `--env` gives it, and `SystemRoot`, which Windows' own libraries need. `LOCALAPPDATA`, `TEMP` and
-//!   `TMP` are the AppContainer's own folders, which Windows makes of them for any program in one.
+//! - the environment `--env` gives it, and `SystemRoot`, `PATH` (Windows' folders), `HOMEDRIVE` and `HOMEPATH` (its own
+//!   folder), which Windows' own libraries and Erlang's VM need. `LOCALAPPDATA`, `TEMP` and `TMP` are the AppContainer's
+//!   own folders, which Windows makes of them for any program in one.
 //! - at most `--memory` bytes, and nothing left once this ends however it ends: it's in a job object this holds.
 
 #[cfg(windows)]
